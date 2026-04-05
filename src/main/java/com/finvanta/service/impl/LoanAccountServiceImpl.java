@@ -315,9 +315,13 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             return null;
         }
 
-        // Calculate from last accrual date or next EMI date (whichever is the overdue trigger)
-        LocalDate fromDate = account.getLastInterestAccrualDate() != null
-            ? account.getLastInterestAccrualDate()
+        // CBS: Use independent penal accrual date tracker.
+        // Regular interest accrual runs before penal in EOD and advances lastInterestAccrualDate
+        // to the business date. If we used that same field, days=0 and penal is never calculated.
+        // Per Finacle penal interest module, penal has its own accrual date lifecycle.
+        // Fallback to nextEmiDate (the overdue trigger date) if penal has never been accrued.
+        LocalDate fromDate = account.getLastPenalAccrualDate() != null
+            ? account.getLastPenalAccrualDate()
             : account.getNextEmiDate();
 
         if (fromDate == null || !businessDate.isAfter(fromDate)) {
@@ -361,6 +365,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
         account.setPenalInterestAccrued(account.getPenalInterestAccrued().add(penalAmount));
+        account.setLastPenalAccrualDate(businessDate);
         account.setUpdatedBy("SYSTEM");
         accountRepository.save(account);
 
@@ -664,6 +669,18 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                     + "). For partial payment, use regular repayment.");
         }
 
+        // CBS: Reject overpayment — amount must exactly match total outstanding.
+        // Per RBI Fair Lending Code 2023 and Finacle foreclosure module:
+        // excess funds cannot be silently absorbed. If the customer pays more than
+        // totalOutstanding, the excess must be explicitly handled (refund or credit
+        // to operating account). For now, enforce exact match to prevent unaccounted
+        // funds. The controller pre-fills totalOutstanding as the default amount.
+        if (amount.compareTo(totalOutstanding) > 0) {
+            throw new BusinessException("PREPAYMENT_OVERPAYMENT",
+                "Prepayment amount (" + amount + ") exceeds total outstanding (" + totalOutstanding
+                    + "). Amount must exactly match outstanding balance.");
+        }
+
         BigDecimal principalDue = account.getOutstandingPrincipal();
         BigDecimal interestDue = account.getOutstandingInterest()
             .add(account.getAccruedInterest())
@@ -752,7 +769,18 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Reversal reason is mandatory per CBS audit rules");
         }
 
-        LoanAccount account = original.getLoanAccount();
+        // CBS: Acquire pessimistic lock on the loan account to prevent concurrent mutations
+        // during balance restoration. Per Finacle TRAN_REVERSAL, account balances must be
+        // atomically restored to the pre-transaction state within the same DB transaction.
+        LoanAccount account = accountRepository.findAndLockByTenantIdAndAccountNumber(
+                tenantId, original.getLoanAccount().getAccountNumber())
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
+                "Loan account not found for transaction: " + transactionRef));
+
+        if (account.getStatus().isTerminal()) {
+            throw new BusinessException("ACCOUNT_TERMINAL",
+                "Cannot reverse transaction on " + account.getStatus() + " account");
+        }
 
         // Post contra journal entry — exact reverse of original GL lines
         BigDecimal amount = original.getAmount();
@@ -772,6 +800,11 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 original.getInterestComponent(),
                 "REVERSAL interest: " + transactionRef));
         }
+        if (original.getPenaltyComponent().compareTo(BigDecimal.ZERO) > 0) {
+            reversalLines.add(new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.DEBIT,
+                original.getPenaltyComponent(),
+                "REVERSAL penalty: " + transactionRef));
+        }
 
         var journalEntry = accountingService.postJournalEntry(
             businessDate,
@@ -780,7 +813,46 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             reversalLines
         );
 
-        // Create reversal transaction
+        // CBS: Restore account subsidiary ledger balances to pre-transaction state.
+        // Per Finacle TRAN_REVERSAL and Temenos REVERSAL.TRANSACTION, the account's
+        // running balance must be atomically restored. GL and subledger must stay in sync.
+        BigDecimal principalToRestore = original.getPrincipalComponent();
+        BigDecimal interestToRestore = original.getInterestComponent();
+        BigDecimal penaltyToRestore = original.getPenaltyComponent();
+
+        if (original.getTransactionType() == TransactionType.REPAYMENT_PRINCIPAL
+                || original.getTransactionType() == TransactionType.PREPAYMENT) {
+            // Repayment reversal: restore the amounts that were subtracted
+            account.setOutstandingPrincipal(
+                account.getOutstandingPrincipal().add(principalToRestore));
+            account.setOutstandingInterest(
+                account.getOutstandingInterest().add(interestToRestore));
+            account.setAccruedInterest(
+                account.getAccruedInterest().add(interestToRestore));
+            if (penaltyToRestore.compareTo(BigDecimal.ZERO) > 0) {
+                account.setPenalInterestAccrued(
+                    account.getPenalInterestAccrued().add(penaltyToRestore));
+            }
+        } else if (original.getTransactionType() == TransactionType.DISBURSEMENT) {
+            // Disbursement reversal: reduce the amounts that were added
+            account.setOutstandingPrincipal(
+                account.getOutstandingPrincipal().subtract(principalToRestore).max(BigDecimal.ZERO));
+            account.setDisbursedAmount(
+                account.getDisbursedAmount().subtract(principalToRestore).max(BigDecimal.ZERO));
+        } else if (original.getTransactionType() == TransactionType.INTEREST_ACCRUAL) {
+            // Interest accrual reversal: reduce the accrued amount
+            account.setAccruedInterest(
+                account.getAccruedInterest().subtract(interestToRestore).max(BigDecimal.ZERO));
+        } else if (original.getTransactionType() == TransactionType.PENALTY_CHARGE) {
+            // Penal interest reversal: reduce the penal accrued amount
+            account.setPenalInterestAccrued(
+                account.getPenalInterestAccrued().subtract(penaltyToRestore).max(BigDecimal.ZERO));
+        }
+
+        account.setUpdatedBy(currentUser);
+        accountRepository.save(account);
+
+        // Create reversal transaction — balanceAfter reflects RESTORED account state
         LoanTransaction reversal = new LoanTransaction();
         reversal.setTenantId(tenantId);
         reversal.setTransactionRef(ReferenceGenerator.generateTransactionRef());
@@ -808,10 +880,11 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         auditService.logEvent("LoanTransaction", original.getId(), "REVERSAL",
             transactionRef, savedReversal.getTransactionRef(), "LOAN_ACCOUNTS",
             "Transaction reversed: " + transactionRef + " → " + savedReversal.getTransactionRef()
-                + ", reason: " + reason);
+                + ", reason: " + reason + ", P:" + principalToRestore
+                + " I:" + interestToRestore + " Pen:" + penaltyToRestore);
 
-        log.info("Transaction reversed: original={}, reversal={}, reason={}",
-            transactionRef, savedReversal.getTransactionRef(), reason);
+        log.info("Transaction reversed: original={}, reversal={}, reason={}, balanceRestored={}",
+            transactionRef, savedReversal.getTransactionRef(), reason, account.getTotalOutstanding());
 
         return savedReversal;
     }

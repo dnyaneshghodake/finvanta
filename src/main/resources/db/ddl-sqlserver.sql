@@ -171,6 +171,7 @@ CREATE TABLE loan_accounts (
     npa_classification_date DATE,
     provisioning_amount DECIMAL(18,2) DEFAULT 0.00,
     penal_interest_accrued DECIMAL(18,2) DEFAULT 0.00,
+    last_penal_accrual_date DATE,
     collateral_reference VARCHAR(100),
     risk_category   VARCHAR(20),
     version         BIGINT          NOT NULL DEFAULT 0,

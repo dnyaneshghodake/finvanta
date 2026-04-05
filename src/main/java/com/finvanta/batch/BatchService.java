@@ -314,6 +314,21 @@ public class BatchService {
         batchJobRepository.save(fresh);
     }
 
+    /**
+     * Completes the EOD batch and transitions calendar to DAY_CLOSED.
+     *
+     * Per Finacle/Temenos Day Control lifecycle:
+     *   NOT_OPENED → DAY_OPEN → EOD_RUNNING → DAY_CLOSED
+     *
+     * After EOD completes, the day must be closed automatically. If we leave the
+     * calendar in EOD_RUNNING, BusinessDateService.getCurrentBusinessDate() will
+     * fail (it looks for DAY_OPEN), and no subsequent operations can proceed.
+     *
+     * In Finacle, EOD completion automatically triggers day close. The separate
+     * closeDay() in BusinessDateService exists for manual day close scenarios
+     * (e.g., when EOD is run but day close is deferred for operational reasons).
+     * For standard CBS flow, EOD completion = day close.
+     */
     @Transactional
     protected void completeEodBatch(BatchJob eodJob, BusinessCalendar calendar,
                                      BatchStatus status, int totalRecords,
@@ -321,6 +336,11 @@ public class BatchService {
                                      String errorMessage) {
         BusinessCalendar freshCal = calendarRepository.findById(calendar.getId()).orElse(calendar);
         freshCal.setEodComplete(true);
+        freshCal.setDayStatus(DayStatus.DAY_CLOSED);
+        freshCal.setDayClosedBy(SecurityUtil.getCurrentUsername());
+        freshCal.setDayClosedAt(LocalDateTime.now());
+        freshCal.setLocked(false);
+        freshCal.setUpdatedBy(SecurityUtil.getCurrentUsername());
         calendarRepository.save(freshCal);
 
         BatchJob fresh = batchJobRepository.findById(eodJob.getId()).orElse(eodJob);

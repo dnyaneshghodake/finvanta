@@ -119,6 +119,17 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "penal_interest_accrued", precision = 18, scale = 2)
     private BigDecimal penalInterestAccrued = BigDecimal.ZERO;
 
+    /**
+     * RBI Fair Lending: Independent penal interest accrual date tracker.
+     * Separate from lastInterestAccrualDate because regular interest and penal interest
+     * have different accrual bases (outstanding principal vs overdue principal) and
+     * different lifecycle triggers. EOD runs regular accrual before penal accrual,
+     * so sharing the same date field would cause penal calculation to always get
+     * days=0 (since regular accrual already advanced the date to today).
+     */
+    @Column(name = "last_penal_accrual_date")
+    private LocalDate lastPenalAccrualDate;
+
     /** Collateral reference for secured loans */
     @Column(name = "collateral_reference", length = 100)
     private String collateralReference;
