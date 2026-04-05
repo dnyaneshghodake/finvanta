@@ -42,4 +42,6 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
     BigDecimal calculateTotalOutstandingPrincipal(@Param("tenantId") String tenantId);
 
     long countByTenantIdAndStatus(String tenantId, LoanStatus status);
+
+    boolean existsByTenantIdAndApplicationId(String tenantId, Long applicationId);
 }
