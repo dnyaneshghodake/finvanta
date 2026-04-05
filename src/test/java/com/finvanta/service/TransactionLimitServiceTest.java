@@ -1,6 +1,7 @@
 package com.finvanta.service;
 
 import com.finvanta.domain.entity.TransactionLimit;
+import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.repository.TransactionLimitRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
@@ -34,6 +35,9 @@ class TransactionLimitServiceTest {
 
     @Mock
     private TransactionLimitRepository limitRepository;
+
+    @Mock
+    private LoanTransactionRepository transactionRepository;
 
     @InjectMocks
     private TransactionLimitService limitService;
@@ -149,6 +153,7 @@ class TransactionLimitServiceTest {
 
         TransactionLimit unlimitedLimit = new TransactionLimit();
         unlimitedLimit.setPerTransactionLimit(null);
+        unlimitedLimit.setDailyAggregateLimit(null);
         unlimitedLimit.setActive(true);
 
         when(limitRepository.findByRoleAndType("DEFAULT", "ADMIN", "REPAYMENT"))
@@ -156,5 +161,48 @@ class TransactionLimitServiceTest {
 
         assertDoesNotThrow(() ->
             limitService.validateTransactionLimit(new BigDecimal("999999999"), "REPAYMENT"));
+    }
+
+    @Test
+    @DisplayName("Daily aggregate limit exceeded throws DAILY_LIMIT_EXCEEDED")
+    void dailyAggregateExceeded_throws() {
+        setCurrentUser("maker1", "MAKER");
+
+        TransactionLimit limit = new TransactionLimit();
+        limit.setPerTransactionLimit(new BigDecimal("1000000"));
+        limit.setDailyAggregateLimit(new BigDecimal("5000000"));
+        limit.setActive(true);
+
+        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT"))
+            .thenReturn(Optional.of(limit));
+        // User already processed ₹45L today
+        when(transactionRepository.sumDailyAmountByUser(eq("DEFAULT"), eq("maker1"), any()))
+            .thenReturn(new BigDecimal("4500000"));
+
+        // This ₹6L transaction would push total to ₹51L, exceeding ₹50L daily limit
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+            limitService.validateTransactionLimit(new BigDecimal("600000"), "REPAYMENT"));
+        assertEquals("DAILY_LIMIT_EXCEEDED", ex.getErrorCode());
+    }
+
+    @Test
+    @DisplayName("Daily aggregate within limit passes")
+    void dailyAggregateWithinLimit_passes() {
+        setCurrentUser("maker1", "MAKER");
+
+        TransactionLimit limit = new TransactionLimit();
+        limit.setPerTransactionLimit(new BigDecimal("1000000"));
+        limit.setDailyAggregateLimit(new BigDecimal("5000000"));
+        limit.setActive(true);
+
+        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT"))
+            .thenReturn(Optional.of(limit));
+        // User already processed ₹30L today
+        when(transactionRepository.sumDailyAmountByUser(eq("DEFAULT"), eq("maker1"), any()))
+            .thenReturn(new BigDecimal("3000000"));
+
+        // This ₹5L transaction would push total to ₹35L, within ₹50L daily limit
+        assertDoesNotThrow(() ->
+            limitService.validateTransactionLimit(new BigDecimal("500000"), "REPAYMENT"));
     }
 }

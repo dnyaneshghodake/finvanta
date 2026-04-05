@@ -47,4 +47,18 @@ public interface LoanTransactionRepository extends JpaRepository<LoanTransaction
      */
     Optional<LoanTransaction> findByTenantIdAndIdempotencyKey(
         String tenantId, String idempotencyKey);
+
+    /**
+     * CBS Daily Aggregate: sum of all non-reversed transactions by a user on a date.
+     * Used by TransactionLimitService for daily aggregate limit validation.
+     * Per Finacle/Temenos internal controls, daily aggregate limits prevent
+     * a single user from processing excessive amounts in one business day.
+     */
+    @Query("SELECT COALESCE(SUM(t.amount), 0) FROM LoanTransaction t " +
+           "WHERE t.tenantId = :tenantId AND t.createdBy = :username " +
+           "AND t.valueDate = :valueDate AND t.reversed = false")
+    BigDecimal sumDailyAmountByUser(
+        @Param("tenantId") String tenantId,
+        @Param("username") String username,
+        @Param("valueDate") LocalDate valueDate);
 }
