@@ -18,18 +18,50 @@ public class NpaClassificationRule {
     private static final int SUBSTANDARD_MAX_DAYS = 365;
     private static final int DOUBTFUL_MAX_DAYS = 1095;
 
+    /**
+     * Classifies loan NPA status per RBI IRAC norms.
+     * NPA status can only be upgraded (worsened), never downgraded.
+     * Per RBI guidelines, an NPA account cannot be reclassified as standard
+     * merely because DPD drops — all arrears must be cleared first.
+     * Downgrade (upgrade to standard) must be handled explicitly via
+     * a separate arrears-clearance workflow, not by DPD alone.
+     */
     public LoanStatus classify(LoanAccount account) {
         int dpd = account.getDaysPastDue();
+        LoanStatus currentStatus = account.getStatus();
 
+        LoanStatus dpdBasedStatus;
         if (dpd < NPA_THRESHOLD_DAYS) {
-            return LoanStatus.ACTIVE;
+            dpdBasedStatus = LoanStatus.ACTIVE;
         } else if (dpd <= SUBSTANDARD_MAX_DAYS) {
-            return LoanStatus.NPA_SUBSTANDARD;
+            dpdBasedStatus = LoanStatus.NPA_SUBSTANDARD;
         } else if (dpd <= DOUBTFUL_MAX_DAYS) {
-            return LoanStatus.NPA_DOUBTFUL;
+            dpdBasedStatus = LoanStatus.NPA_DOUBTFUL;
         } else {
-            return LoanStatus.NPA_LOSS;
+            dpdBasedStatus = LoanStatus.NPA_LOSS;
         }
+
+        // RBI IRAC: NPA can only worsen, never auto-downgrade
+        // Once NPA, only explicit upgrade via arrears clearance is allowed
+        if (currentStatus.isNpa() && !dpdBasedStatus.isNpa()) {
+            return currentStatus; // Retain current NPA status
+        }
+        if (currentStatus.isNpa() && dpdBasedStatus.isNpa()
+                && getNpaSeverity(dpdBasedStatus) < getNpaSeverity(currentStatus)) {
+            return currentStatus; // Cannot improve NPA tier automatically
+        }
+
+        return dpdBasedStatus;
+    }
+
+    private int getNpaSeverity(LoanStatus status) {
+        return switch (status) {
+            case ACTIVE -> 0;
+            case NPA_SUBSTANDARD -> 1;
+            case NPA_DOUBTFUL -> 2;
+            case NPA_LOSS -> 3;
+            default -> -1;
+        };
     }
 
     public boolean isNpa(int daysPastDue) {

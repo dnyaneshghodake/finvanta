@@ -211,10 +211,12 @@ CREATE TABLE gl_master (
     gl_code         VARCHAR(20)     NOT NULL,
     gl_name         VARCHAR(200)    NOT NULL,
     account_type    VARCHAR(20)     NOT NULL,
+    parent_gl_code  VARCHAR(20),
     debit_balance   DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
     credit_balance  DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
     is_active       BIT             NOT NULL DEFAULT 1,
     is_header_account BIT           NOT NULL DEFAULT 0,
+    description     VARCHAR(500),
     version         BIGINT          NOT NULL DEFAULT 0,
     created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
     updated_at      DATETIME2,
@@ -271,8 +273,8 @@ CREATE TABLE journal_entry_lines (
 CREATE INDEX idx_jeline_journal ON journal_entry_lines (journal_entry_id);
 CREATE INDEX idx_jeline_gl ON journal_entry_lines (tenant_id, gl_code);
 
--- 11. APPROVAL WORKFLOW
-CREATE TABLE approval_workflow (
+-- 11. APPROVAL WORKFLOWS
+CREATE TABLE approval_workflows (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
     entity_type     VARCHAR(50)     NOT NULL,
@@ -292,12 +294,12 @@ CREATE TABLE approval_workflow (
     created_by      VARCHAR(100),
     updated_by      VARCHAR(100)
 );
-CREATE INDEX idx_wf_entity ON approval_workflow (tenant_id, entity_type, entity_id);
-CREATE INDEX idx_wf_status ON approval_workflow (tenant_id, status);
-CREATE INDEX idx_wf_checker ON approval_workflow (tenant_id, checker_user_id);
+CREATE INDEX idx_wf_entity ON approval_workflows (tenant_id, entity_type, entity_id);
+CREATE INDEX idx_wf_status ON approval_workflows (tenant_id, status);
+CREATE INDEX idx_wf_checker ON approval_workflows (tenant_id, checker_user_id);
 
--- 12. AUDIT LOG (append-only, no updates, no deletes)
-CREATE TABLE audit_log (
+-- 12. AUDIT LOGS (append-only, no updates, no deletes)
+CREATE TABLE audit_logs (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
     entity_type     VARCHAR(50)     NOT NULL,
@@ -311,13 +313,13 @@ CREATE TABLE audit_log (
     hash            VARCHAR(64)     NOT NULL,
     previous_hash   VARCHAR(64)     NOT NULL,
     module          VARCHAR(50),
-    description     VARCHAR(500)
+    description     VARCHAR(1000)
 );
 -- No @Version column - audit logs are immutable
 -- No UPDATE or DELETE triggers should be allowed
-CREATE INDEX idx_audit_entity ON audit_log (tenant_id, entity_type, entity_id);
-CREATE INDEX idx_audit_timestamp ON audit_log (tenant_id, event_timestamp);
-CREATE INDEX idx_audit_user ON audit_log (tenant_id, performed_by);
+CREATE INDEX idx_audit_entity ON audit_logs (tenant_id, entity_type, entity_id);
+CREATE INDEX idx_audit_timestamp ON audit_logs (tenant_id, event_timestamp);
+CREATE INDEX idx_audit_user ON audit_logs (tenant_id, performed_by);
 
 -- 13. BATCH JOBS
 CREATE TABLE batch_jobs (
@@ -372,7 +374,7 @@ CREATE INDEX idx_user_tenant_username ON app_users (tenant_id, username);
 -- PROTECT AUDIT LOG FROM MODIFICATIONS
 -- ============================================================
 GO
-CREATE TRIGGER trg_audit_no_update ON audit_log
+CREATE TRIGGER trg_audit_no_update ON audit_logs
 INSTEAD OF UPDATE
 AS
 BEGIN
@@ -381,7 +383,7 @@ BEGIN
 END;
 GO
 
-CREATE TRIGGER trg_audit_no_delete ON audit_log
+CREATE TRIGGER trg_audit_no_delete ON audit_logs
 INSTEAD OF DELETE
 AS
 BEGIN

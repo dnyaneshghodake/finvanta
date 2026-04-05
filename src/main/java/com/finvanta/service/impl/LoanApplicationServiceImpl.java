@@ -110,7 +110,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
                 "Application cannot be verified in current state: " + app.getStatus());
         }
 
-        if (app.getCreatedBy().equals(currentUser)) {
+        if (currentUser.equals(app.getCreatedBy())) {
             throw new BusinessException("WORKFLOW_SELF_APPROVAL",
                 "Maker cannot verify their own application");
         }
@@ -156,7 +156,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
                 "Application cannot be approved in current state: " + app.getStatus());
         }
 
-        if (app.getCreatedBy().equals(currentUser)) {
+        if (currentUser.equals(app.getCreatedBy())) {
             throw new BusinessException("WORKFLOW_SELF_APPROVAL",
                 "Maker cannot approve their own application");
         }
