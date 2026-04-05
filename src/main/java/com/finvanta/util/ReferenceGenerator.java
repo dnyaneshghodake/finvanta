@@ -64,6 +64,11 @@ public final class ReferenceGenerator {
         return "JRN" + timestamp() + nextSequence();
     }
 
+    /** Generates customer number per CBS CIF convention: CUST + branchCode + timestamp + seq */
+    public static String generateCustomerNumber(String branchCode) {
+        return "CUST" + branchCode + timestamp() + nextSequence();
+    }
+
     private static String timestamp() {
         return LocalDateTime.now().format(FORMATTER);
     }

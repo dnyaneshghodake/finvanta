@@ -13,7 +13,14 @@
     </c:if>
 
     <div class="fv-card">
-        <div class="card-header">Customer Details <a href="${pageContext.request.contextPath}/customer/list" class="btn btn-sm btn-outline-secondary float-end">Back</a></div>
+        <div class="card-header">Customer Details
+            <div class="float-end">
+                <a href="${pageContext.request.contextPath}/customer/list" class="btn btn-sm btn-outline-secondary">Back</a>
+                <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                <a href="${pageContext.request.contextPath}/customer/edit/${customer.id}" class="btn btn-sm btn-fv-primary">Edit</a>
+                </c:if>
+            </div>
+        </div>
         <div class="card-body">
             <table class="table fv-table">
                 <tbody>
@@ -123,6 +130,29 @@
                     </c:if>
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- CBS Actions: Apply for Loan + Deactivate -->
+    <div class="fv-card">
+        <div class="card-header">Actions</div>
+        <div class="card-body">
+            <c:if test="${customer.active and customer.kycVerified}">
+                <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                <a href="${pageContext.request.contextPath}/loan/apply?customerId=${customer.id}" class="btn btn-sm btn-fv-primary me-1">Apply for Loan</a>
+                </c:if>
+            </c:if>
+            <c:if test="${customer.active}">
+                <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                <form method="post" action="${pageContext.request.contextPath}/customer/deactivate/${customer.id}" class="d-inline">
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-sm btn-danger" data-confirm="Deactivate this customer? This action cannot be undone.">Deactivate Customer</button>
+                </form>
+                </c:if>
+            </c:if>
+            <c:if test="${not customer.active}">
+                <span class="fv-badge fv-badge-rejected">Customer is Inactive</span>
+            </c:if>
         </div>
     </div>
 </div>
