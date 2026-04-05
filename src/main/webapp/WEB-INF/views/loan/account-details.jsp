@@ -246,7 +246,7 @@
                 <tbody>
                     <c:forEach var="txn" items="${transactions}">
                         <tr class="${txn.reversed ? 'table-secondary text-decoration-line-through' : ''}">
-                            <td><c:out value="${txn.transactionRef}" /></td>
+                            <td><a href="${pageContext.request.contextPath}/txn360/${txn.transactionRef}" title="Transaction 360 View" class="font-monospace"><c:out value="${txn.transactionRef}" /></a></td>
                             <td><c:out value="${txn.transactionType}" /></td>
                             <td class="amount"><fmt:formatNumber value="${txn.amount}" type="number" maxFractionDigits="2" /></td>
                             <td class="amount"><fmt:formatNumber value="${txn.principalComponent}" type="number" maxFractionDigits="2" /></td>
