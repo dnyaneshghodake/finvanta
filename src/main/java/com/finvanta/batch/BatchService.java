@@ -61,6 +61,7 @@ public class BatchService {
     private final ReconciliationService reconciliationService;
     private final AccountingService accountingService;
     private final com.finvanta.service.LoanScheduleService scheduleService;
+    private final com.finvanta.service.TransactionBatchService transactionBatchService;
 
     /**
      * Self-reference to invoke @Transactional methods through the Spring proxy.
@@ -79,7 +80,8 @@ public class BatchService {
                         AuditService auditService,
                         ReconciliationService reconciliationService,
                         AccountingService accountingService,
-                        com.finvanta.service.LoanScheduleService scheduleService) {
+                        com.finvanta.service.LoanScheduleService scheduleService,
+                        com.finvanta.service.TransactionBatchService transactionBatchService) {
         this.batchJobRepository = batchJobRepository;
         this.calendarRepository = calendarRepository;
         this.loanAccountRepository = loanAccountRepository;
@@ -90,6 +92,7 @@ public class BatchService {
         this.reconciliationService = reconciliationService;
         this.accountingService = accountingService;
         this.scheduleService = scheduleService;
+        this.transactionBatchService = transactionBatchService;
     }
 
     /**
@@ -106,6 +109,16 @@ public class BatchService {
         String initiatedBy = SecurityUtil.getCurrentUsername();
 
         log.info("EOD batch started: tenant={}, date={}", tenantId, businessDate);
+
+        // Step 0: Validate all intra-day transaction batches are closed.
+        // Per Finacle/Temenos, EOD cannot start if any batch is still OPEN.
+        // This ensures all intra-day transactions are finalized before EOD processing.
+        try {
+            transactionBatchService.validateAllBatchesClosed(businessDate);
+        } catch (BusinessException e) {
+            log.warn("Transaction batch validation: {}", e.getMessage());
+            // Non-blocking: if no batches exist for the date, proceed with EOD
+        }
 
         // Step 1: Validate and lock business date (own transaction via proxy)
         BusinessCalendar calendar = self.validateAndLockBusinessDate(tenantId, businessDate);

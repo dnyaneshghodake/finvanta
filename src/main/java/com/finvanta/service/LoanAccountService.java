@@ -49,6 +49,19 @@ public interface LoanAccountService {
      */
     LoanAccount writeOffAccount(String accountNumber, LocalDate businessDate);
 
+    /**
+     * CBS Prepayment/Foreclosure per RBI Fair Lending Code 2023.
+     * Per RBI circular: No prepayment penalty on floating rate loans.
+     * Closes the loan early by paying off all outstanding components.
+     * GL Entry: DR Bank Operations (1100) / CR Loan Asset (1001) + Interest Receivable (1002)
+     *
+     * @param accountNumber Loan account number
+     * @param amount        Prepayment amount (must cover total outstanding)
+     * @param businessDate  CBS business date
+     * @return Transaction record
+     */
+    LoanTransaction processPrepayment(String accountNumber, BigDecimal amount, LocalDate businessDate);
+
     LoanAccount getAccount(String accountNumber);
 
     List<LoanAccount> getActiveAccounts();

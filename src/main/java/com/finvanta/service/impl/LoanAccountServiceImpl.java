@@ -644,6 +644,100 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     }
 
     @Override
+    @Transactional
+    public LoanTransaction processPrepayment(String accountNumber, BigDecimal amount, LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String currentUser = SecurityUtil.getCurrentUsername();
+
+        LoanAccount account = accountRepository.findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
+                "Loan account not found: " + accountNumber));
+
+        if (account.getStatus().isTerminal()) {
+            throw new BusinessException("ACCOUNT_CLOSED",
+                "Cannot process prepayment on " + account.getStatus() + " account");
+        }
+
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("INVALID_AMOUNT",
+                "Prepayment amount must be positive");
+        }
+
+        BigDecimal totalOutstanding = account.getTotalOutstanding();
+        if (amount.compareTo(totalOutstanding) < 0) {
+            throw new BusinessException("PREPAYMENT_INSUFFICIENT",
+                "Prepayment amount (" + amount + ") must cover total outstanding (" + totalOutstanding
+                    + "). For partial payment, use regular repayment.");
+        }
+
+        BigDecimal principalDue = account.getOutstandingPrincipal();
+        BigDecimal interestDue = account.getOutstandingInterest()
+            .add(account.getAccruedInterest())
+            .add(account.getPenalInterestAccrued());
+
+        // GL Entry: DR Bank Operations / CR Loan Asset + Interest Receivable
+        List<JournalLineRequest> journalLines = new java.util.ArrayList<>();
+        journalLines.add(new JournalLineRequest(GL_CASH_BANK, DebitCredit.DEBIT, totalOutstanding,
+            "Loan prepayment/foreclosure - " + accountNumber));
+        if (principalDue.compareTo(BigDecimal.ZERO) > 0) {
+            journalLines.add(new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.CREDIT, principalDue,
+                "Prepayment principal closure - " + accountNumber));
+        }
+        if (interestDue.compareTo(BigDecimal.ZERO) > 0) {
+            journalLines.add(new JournalLineRequest(GL_INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestDue,
+                "Prepayment interest closure - " + accountNumber));
+        }
+
+        var journalEntry = accountingService.postJournalEntry(
+            businessDate,
+            "Loan prepayment/foreclosure for " + accountNumber,
+            "LOAN", accountNumber,
+            journalLines
+        );
+
+        // Record prepayment transaction
+        LoanTransaction txn = new LoanTransaction();
+        txn.setTenantId(tenantId);
+        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setLoanAccount(account);
+        txn.setTransactionType(TransactionType.PREPAYMENT);
+        txn.setAmount(totalOutstanding);
+        txn.setPrincipalComponent(principalDue);
+        txn.setInterestComponent(interestDue);
+        txn.setValueDate(businessDate);
+        txn.setPostingDate(LocalDateTime.now());
+        txn.setBalanceAfter(BigDecimal.ZERO);
+        txn.setNarration("Prepayment/Foreclosure: P=" + principalDue + ", I=" + interestDue);
+        txn.setJournalEntryId(journalEntry.getId());
+        txn.setCreatedBy(currentUser);
+        LoanTransaction savedTxn = transactionRepository.save(txn);
+
+        // Close the account — all components to zero
+        LoanStatus previousStatus = account.getStatus();
+        account.setStatus(LoanStatus.CLOSED);
+        account.setOutstandingPrincipal(BigDecimal.ZERO);
+        account.setOutstandingInterest(BigDecimal.ZERO);
+        account.setAccruedInterest(BigDecimal.ZERO);
+        account.setPenalInterestAccrued(BigDecimal.ZERO);
+        account.setOverduePrincipal(BigDecimal.ZERO);
+        account.setOverdueInterest(BigDecimal.ZERO);
+        account.setDaysPastDue(0);
+        account.setLastPaymentDate(businessDate);
+        account.setRemainingTenure(0);
+        account.setUpdatedBy(currentUser);
+        accountRepository.save(account);
+
+        auditService.logEvent("LoanAccount", account.getId(), "PREPAYMENT",
+            previousStatus.name(), LoanStatus.CLOSED.name(), "LOAN_ACCOUNTS",
+            "Prepayment/Foreclosure: " + totalOutstanding + " (P:" + principalDue + " I:" + interestDue + ")");
+
+        log.info("Prepayment processed: accNo={}, total={}, principal={}, interest={}",
+            accountNumber, totalOutstanding, principalDue, interestDue);
+
+        return savedTxn;
+    }
+
+    @Override
     public LoanAccount getAccount(String accountNumber) {
         String tenantId = TenantContext.getCurrentTenant();
         return accountRepository.findByTenantIdAndAccountNumber(tenantId, accountNumber)

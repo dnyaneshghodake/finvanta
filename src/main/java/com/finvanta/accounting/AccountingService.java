@@ -4,9 +4,11 @@ import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.domain.entity.JournalEntryLine;
+import com.finvanta.domain.entity.TransactionBatch;
 import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.JournalEntryRepository;
+import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.TenantContext;
@@ -43,15 +45,18 @@ public class AccountingService {
     private final GLMasterRepository glMasterRepository;
     private final AuditService auditService;
     private final LedgerService ledgerService;
+    private final TransactionBatchRepository batchRepository;
 
     public AccountingService(JournalEntryRepository journalEntryRepository,
                              GLMasterRepository glMasterRepository,
                              AuditService auditService,
-                             LedgerService ledgerService) {
+                             LedgerService ledgerService,
+                             TransactionBatchRepository batchRepository) {
         this.journalEntryRepository = journalEntryRepository;
         this.glMasterRepository = glMasterRepository;
         this.auditService = auditService;
         this.ledgerService = ledgerService;
+        this.batchRepository = batchRepository;
     }
 
     @Transactional
@@ -63,6 +68,18 @@ public class AccountingService {
         if (lines == null || lines.size() < 2) {
             throw new BusinessException("ACCOUNTING_INVALID_ENTRY",
                 "Journal entry must have at least 2 lines (double-entry)");
+        }
+
+        // CBS Batch Control: Find an OPEN batch for this business date.
+        // Per Finacle/Temenos, all transactions must be tagged to a batch.
+        // If no batch exists, the posting proceeds (for backward compatibility)
+        // but logs a warning. In strict mode, this would throw an exception.
+        TransactionBatch activeBatch = null;
+        List<TransactionBatch> openBatches = batchRepository.findOpenBatches(tenantId, valueDate);
+        if (!openBatches.isEmpty()) {
+            activeBatch = openBatches.get(0);
+        } else {
+            log.warn("No OPEN transaction batch for date {}. Posting without batch tag.", valueDate);
         }
 
         JournalEntry entry = new JournalEntry();
@@ -123,6 +140,12 @@ public class AccountingService {
 
         // CBS: Post to immutable ledger (append-only with hash chain)
         ledgerService.postToLedger(savedEntry);
+
+        // CBS Batch Control: Update batch running totals for intra-day reconciliation
+        if (activeBatch != null) {
+            activeBatch.addTransaction(totalDebit, totalCredit);
+            batchRepository.save(activeBatch);
+        }
 
         auditService.logEvent("JournalEntry", savedEntry.getId(), "POST",
             null, savedEntry.getJournalRef(), "ACCOUNTING",
