@@ -40,7 +40,7 @@ public final class GLConstants {
     /** Fee Income */
     public static final String FEE_INCOME = "4002";
     /** Penal Interest Income */
-    public static final String PENAL_INTEREST_INCOME = "4001";
+    public static final String PENAL_INTEREST_INCOME = "4003";
 
     // --- EXPENSE GL Codes ---
     /** Provision Expense — P&L charge for NPA provisioning */
