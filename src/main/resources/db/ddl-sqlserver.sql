@@ -505,7 +505,27 @@ CREATE TABLE batch_jobs (
 CREATE INDEX idx_batch_tenant_date ON batch_jobs (tenant_id, business_date);
 CREATE INDEX idx_batch_status ON batch_jobs (tenant_id, status);
 
--- 17. APP USERS
+-- 17. TRANSACTION LIMITS (CBS Internal Controls — per-role amount limits)
+CREATE TABLE transaction_limits (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    role            VARCHAR(20)     NOT NULL,
+    transaction_type VARCHAR(30)    NOT NULL,
+    per_transaction_limit DECIMAL(18,2),
+    daily_aggregate_limit DECIMAL(18,2),
+    branch_id       BIGINT,
+    is_active       BIT             NOT NULL DEFAULT 1,
+    description     VARCHAR(500),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT fk_txnlimit_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX idx_txnlimit_tenant_role ON transaction_limits (tenant_id, role, transaction_type);
+
+-- 18. APP USERS
 CREATE TABLE app_users (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,

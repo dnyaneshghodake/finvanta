@@ -125,3 +125,20 @@ VALUES ('DEFAULT', 'admin', '{noop}finvanta123', 'Vikram Joshi (Branch Manager)'
 -- Auditor (Internal Audit)
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
 VALUES ('DEFAULT', 'auditor1', '{noop}finvanta123', 'Meera Kulkarni (Internal Auditor)', 'auditor@finvanta.com', 'AUDITOR', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Transaction Limits (CBS Internal Controls — per-role amount limits)
+-- Per RBI guidelines: every financial transaction must be validated against configured limits
+-- MAKER: ₹10L per transaction, ₹50L daily aggregate
+-- CHECKER: ₹50L per transaction, ₹2Cr daily aggregate
+-- ADMIN: ₹5Cr per transaction, ₹20Cr daily aggregate
+INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
+VALUES ('DEFAULT', 'MAKER', 'ALL', 1000000.00, 5000000.00, true, 'Maker default limit: ₹10L per txn, ₹50L daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
+VALUES ('DEFAULT', 'CHECKER', 'ALL', 5000000.00, 20000000.00, true, 'Checker default limit: ₹50L per txn, ₹2Cr daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
+VALUES ('DEFAULT', 'ADMIN', 'ALL', 50000000.00, 200000000.00, true, 'Admin default limit: ₹5Cr per txn, ₹20Cr daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
+VALUES ('DEFAULT', 'MAKER', 'WRITE_OFF', 0.00, 0.00, true, 'Makers cannot perform write-offs (enforced via limit=0)', 0, CURRENT_TIMESTAMP, 'SYSTEM');
