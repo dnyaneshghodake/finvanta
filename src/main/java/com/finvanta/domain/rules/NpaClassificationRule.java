@@ -5,61 +5,86 @@ import com.finvanta.domain.enums.LoanStatus;
 import org.springframework.stereotype.Component;
 
 /**
- * NPA classification as per RBI IRAC norms:
- * - Standard: 0-89 days past due
- * - Sub-Standard: 90-365 days (12 months)
- * - Doubtful: 366-1095 days (12-36 months)
- * - Loss: >1095 days (>36 months)
+ * Asset classification per RBI IRAC norms and Early Warning Framework.
+ *
+ * DPD-based classification (RBI Master Circular):
+ *   0 DPD         → ACTIVE (Standard)
+ *   1-30 DPD      → SMA-0 (Special Mention Account)
+ *   31-60 DPD     → SMA-1
+ *   61-90 DPD     → SMA-2
+ *   91-365 DPD    → NPA Sub-Standard (12 months)
+ *   366-1095 DPD  → NPA Doubtful (12-36 months)
+ *   >1095 DPD     → NPA Loss (>36 months)
+ *
+ * Key rules:
+ * - SMA can auto-upgrade (worsen) and auto-downgrade (improve) based on DPD
+ * - NPA can only worsen, never auto-downgrade — requires explicit arrears clearance
+ * - Income recognition must stop when account becomes NPA
  */
 @Component
 public class NpaClassificationRule {
 
-    private static final int NPA_THRESHOLD_DAYS = 90;
+    private static final int SMA_0_THRESHOLD = 1;
+    private static final int SMA_1_THRESHOLD = 31;
+    private static final int SMA_2_THRESHOLD = 61;
+    private static final int NPA_THRESHOLD_DAYS = 91;
     private static final int SUBSTANDARD_MAX_DAYS = 365;
     private static final int DOUBTFUL_MAX_DAYS = 1095;
 
     /**
-     * Classifies loan NPA status per RBI IRAC norms.
-     * NPA status can only be upgraded (worsened), never downgraded.
-     * Per RBI guidelines, an NPA account cannot be reclassified as standard
-     * merely because DPD drops — all arrears must be cleared first.
-     * Downgrade (upgrade to standard) must be handled explicitly via
-     * a separate arrears-clearance workflow, not by DPD alone.
+     * Classifies loan status per RBI IRAC norms and Early Warning Framework.
+     * SMA status is fluid (can improve with payment). NPA status is sticky
+     * (can only worsen; improvement requires explicit arrears clearance).
      */
     public LoanStatus classify(LoanAccount account) {
         int dpd = account.getDaysPastDue();
         LoanStatus currentStatus = account.getStatus();
 
-        LoanStatus dpdBasedStatus;
-        if (dpd < NPA_THRESHOLD_DAYS) {
-            dpdBasedStatus = LoanStatus.ACTIVE;
-        } else if (dpd <= SUBSTANDARD_MAX_DAYS) {
-            dpdBasedStatus = LoanStatus.NPA_SUBSTANDARD;
-        } else if (dpd <= DOUBTFUL_MAX_DAYS) {
-            dpdBasedStatus = LoanStatus.NPA_DOUBTFUL;
-        } else {
-            dpdBasedStatus = LoanStatus.NPA_LOSS;
-        }
+        LoanStatus dpdBasedStatus = classifyByDpd(dpd);
 
         // RBI IRAC: NPA can only worsen, never auto-downgrade
-        // Once NPA, only explicit upgrade via arrears clearance is allowed
         if (currentStatus.isNpa() && !dpdBasedStatus.isNpa()) {
-            return currentStatus; // Retain current NPA status
+            return currentStatus;
         }
         if (currentStatus.isNpa() && dpdBasedStatus.isNpa()
-                && getNpaSeverity(dpdBasedStatus) < getNpaSeverity(currentStatus)) {
-            return currentStatus; // Cannot improve NPA tier automatically
+                && getSeverity(dpdBasedStatus) < getSeverity(currentStatus)) {
+            return currentStatus;
         }
 
         return dpdBasedStatus;
     }
 
-    private int getNpaSeverity(LoanStatus status) {
+    /**
+     * Pure DPD-based classification without sticky NPA logic.
+     * Used for initial classification and reporting.
+     */
+    public LoanStatus classifyByDpd(int dpd) {
+        if (dpd < SMA_0_THRESHOLD) {
+            return LoanStatus.ACTIVE;
+        } else if (dpd < SMA_1_THRESHOLD) {
+            return LoanStatus.SMA_0;
+        } else if (dpd < SMA_2_THRESHOLD) {
+            return LoanStatus.SMA_1;
+        } else if (dpd < NPA_THRESHOLD_DAYS) {
+            return LoanStatus.SMA_2;
+        } else if (dpd <= SUBSTANDARD_MAX_DAYS) {
+            return LoanStatus.NPA_SUBSTANDARD;
+        } else if (dpd <= DOUBTFUL_MAX_DAYS) {
+            return LoanStatus.NPA_DOUBTFUL;
+        } else {
+            return LoanStatus.NPA_LOSS;
+        }
+    }
+
+    private int getSeverity(LoanStatus status) {
         return switch (status) {
             case ACTIVE -> 0;
-            case NPA_SUBSTANDARD -> 1;
-            case NPA_DOUBTFUL -> 2;
-            case NPA_LOSS -> 3;
+            case SMA_0 -> 1;
+            case SMA_1 -> 2;
+            case SMA_2 -> 3;
+            case NPA_SUBSTANDARD -> 4;
+            case NPA_DOUBTFUL -> 5;
+            case NPA_LOSS -> 6;
             default -> -1;
         };
     }

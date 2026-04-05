@@ -44,7 +44,8 @@ public class ProvisioningRule {
 
     public BigDecimal getProvisioningRate(LoanStatus status) {
         return switch (status) {
-            case ACTIVE, OVERDUE, RESTRUCTURED -> STANDARD_RATE;
+            case ACTIVE, SMA_0, OVERDUE, RESTRUCTURED -> STANDARD_RATE;
+            case SMA_1, SMA_2 -> STANDARD_RATE; // SMA still Standard asset provisioning
             case NPA_SUBSTANDARD -> SUBSTANDARD_RATE;
             case NPA_DOUBTFUL -> DOUBTFUL_RATE;
             case NPA_LOSS -> LOSS_RATE;
@@ -57,7 +58,7 @@ public class ProvisioningRule {
      */
     public String getProvisioningPercentage(LoanStatus status) {
         return switch (status) {
-            case ACTIVE, OVERDUE, RESTRUCTURED -> "0.40%";
+            case ACTIVE, SMA_0, SMA_1, SMA_2, OVERDUE, RESTRUCTURED -> "0.40%";
             case NPA_SUBSTANDARD -> "10%";
             case NPA_DOUBTFUL -> "40%";
             case NPA_LOSS -> "100%";

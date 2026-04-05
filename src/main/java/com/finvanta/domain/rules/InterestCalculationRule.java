@@ -10,13 +10,18 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 
 /**
- * Interest calculation using 30/360 day-count convention (Indian banking standard).
- * Supports daily accrual and EMI computation using reducing balance method.
+ * Interest calculation using Actual/365 day-count convention.
+ * Per RBI circular on interest rate computation (2009):
+ *   Daily Interest = (Outstanding Principal × ROI) / 365
+ *
+ * EMI computation uses standard reducing balance formula.
+ * EMI monthly rate uses /12 (not /365*30).
  */
 @Component
 public class InterestCalculationRule {
 
-    private static final int DAYS_IN_YEAR = 360;
+    /** RBI mandates 365-day year for daily interest accrual */
+    private static final int DAYS_IN_YEAR = 365;
     private static final int SCALE = 2;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
     private static final MathContext MC = new MathContext(18, ROUNDING);
