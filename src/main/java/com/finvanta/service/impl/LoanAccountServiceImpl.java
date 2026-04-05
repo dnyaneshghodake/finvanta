@@ -378,8 +378,38 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     @Override
     @Transactional
     public LoanTransaction processRepayment(String accountNumber, BigDecimal amount, LocalDate valueDate) {
+        return processRepayment(accountNumber, amount, valueDate, null);
+    }
+
+    /**
+     * CBS Repayment with idempotency key support per Finacle UNIQUE.REF pattern.
+     *
+     * If idempotencyKey is non-null and a transaction with that key already exists,
+     * the existing transaction is returned without re-processing. This prevents
+     * duplicate repayments on network retries (e.g., user double-clicks submit,
+     * or load balancer retries a timed-out request).
+     *
+     * @param accountNumber Loan account number
+     * @param amount        Repayment amount
+     * @param valueDate     CBS business date
+     * @param idempotencyKey Client-supplied unique key (null = no idempotency protection)
+     * @return Transaction record (existing if idempotent retry, new otherwise)
+     */
+    @Transactional
+    public LoanTransaction processRepayment(String accountNumber, BigDecimal amount,
+                                             LocalDate valueDate, String idempotencyKey) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
+
+        // CBS Idempotency: check for existing transaction with same key
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            var existing = transactionRepository.findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey);
+            if (existing.isPresent()) {
+                log.info("Idempotent repayment detected: key={}, existingRef={}",
+                    idempotencyKey, existing.get().getTransactionRef());
+                return existing.get();
+            }
+        }
 
         LoanAccount account = accountRepository.findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
@@ -482,6 +512,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setBalanceAfter(account.getTotalOutstanding());
         txn.setNarration("EMI repayment - Principal: " + principalPaid + ", Interest: " + interestPaid);
         txn.setJournalEntryId(journalEntry.getId());
+        txn.setIdempotencyKey(idempotencyKey);
         txn.setCreatedBy(currentUser);
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
