@@ -35,7 +35,7 @@
                 <tbody>
                 <tr><td class="fw-bold">Account Number</td><td><c:out value="${account.accountNumber}" /></td></tr>
                 <tr><td class="fw-bold">Customer</td><td><a href="${pageContext.request.contextPath}/customer/view/${account.customer.id}"><c:out value="${account.customer.fullName}" /></a> (<c:out value="${account.customer.customerNumber}" />)</td></tr>
-                <tr><td class="fw-bold">Branch</td><td><c:out value="${account.branch.branchCode}" /> - <c:out value="${account.branch.branchName}" /></td></tr>
+                <tr><td class="fw-bold">Branch</td><td><a href="${pageContext.request.contextPath}/branch/view/${account.branch.id}"><c:out value="${account.branch.branchCode}" /> - <c:out value="${account.branch.branchName}" /></a></td></tr>
                 <tr><td class="fw-bold">Application</td><td><c:out value="${account.application.applicationNumber}" /></td></tr>
                 <tr><td class="fw-bold">Product Type</td><td><c:out value="${account.productType}" />
                     <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN') && not empty productId}">
