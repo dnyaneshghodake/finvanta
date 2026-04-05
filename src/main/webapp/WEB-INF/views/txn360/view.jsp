@@ -122,7 +122,9 @@
     <!-- GL Posting -->
     <c:if test="${not empty journal}">
     <div class="fv-card mb-3">
-        <div class="card-header">GL Posting — Journal: <span class="font-monospace"><c:out value="${journal.journalRef}" /></span></div>
+        <div class="card-header">GL Posting — Journal: <span class="font-monospace"><c:out value="${journal.journalRef}" /></span>
+            <c:if test="${not empty compoundJournals}"><span class="fv-badge fv-badge-pending ms-2">Compound (${compoundJournals.size()} journals)</span></c:if>
+        </div>
         <div class="card-body">
             <table class="table fv-table">
                 <thead>
@@ -159,6 +161,53 @@
             </table>
         </div>
     </div>
+    </c:if>
+
+    <!-- CBS Compound Journals (e.g., Write-Off with multiple balanced journal groups) -->
+    <c:if test="${not empty compoundJournals}">
+    <c:forEach var="cj" items="${compoundJournals}" varStatus="cjStatus">
+    <c:if test="${cj.id != journal.id}">
+    <div class="fv-card mb-3">
+        <div class="card-header">Compound Journal ${cjStatus.index + 1}: <span class="font-monospace"><c:out value="${cj.journalRef}" /></span></div>
+        <div class="card-body">
+            <p class="text-muted small mb-2"><c:out value="${cj.narration}" /></p>
+            <table class="table fv-table">
+                <thead>
+                    <tr><th>GL Code</th><th>GL Name</th><th>DR/CR</th><th class="text-end">Amount</th><th>Narration</th></tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="cjLine" items="${cj.lines}">
+                    <tr>
+                        <td class="font-monospace"><c:out value="${cjLine.glCode}" /></td>
+                        <td><c:out value="${cjLine.glName}" /></td>
+                        <td>
+                            <c:choose>
+                                <c:when test="${cjLine.debitCredit == 'DEBIT'}"><span class="text-danger fw-bold">DR</span></c:when>
+                                <c:otherwise><span class="text-success fw-bold">CR</span></c:otherwise>
+                            </c:choose>
+                        </td>
+                        <td class="text-end amount"><fmt:formatNumber value="${cjLine.amount}" type="number" maxFractionDigits="2" /></td>
+                        <td class="small"><c:out value="${cjLine.narration}" /></td>
+                    </tr>
+                    </c:forEach>
+                </tbody>
+                <tfoot>
+                    <tr class="table-light fw-bold">
+                        <td colspan="3">Total</td>
+                        <td class="text-end">DR: <fmt:formatNumber value="${cj.totalDebit}" type="number" maxFractionDigits="2" /> | CR: <fmt:formatNumber value="${cj.totalCredit}" type="number" maxFractionDigits="2" /></td>
+                        <td>
+                            <c:choose>
+                                <c:when test="${cj.totalDebit == cj.totalCredit}"><span class="text-success">Balanced &#10003;</span></c:when>
+                                <c:otherwise><span class="text-danger">IMBALANCED &#10007;</span></c:otherwise>
+                            </c:choose>
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+    </c:if>
+    </c:forEach>
     </c:if>
 
     <!-- Reversal Linkage -->

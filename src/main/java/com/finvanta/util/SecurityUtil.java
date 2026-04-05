@@ -4,6 +4,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 /**
  * CBS Security Utility — extracts current user context from Spring Security.
  *
@@ -44,12 +48,12 @@ public final class SecurityUtil {
             return null;
         }
         // CBS role hierarchy: ADMIN has highest limits, then CHECKER, MAKER, AUDITOR
-        java.util.List<String> hierarchy = java.util.List.of("ADMIN", "CHECKER", "MAKER", "AUDITOR");
-        java.util.Set<String> userRoles = auth.getAuthorities().stream()
+        List<String> hierarchy = List.of("ADMIN", "CHECKER", "MAKER", "AUDITOR");
+        Set<String> userRoles = auth.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
             .filter(a -> a.startsWith("ROLE_"))
             .map(a -> a.substring(5))
-            .collect(java.util.stream.Collectors.toSet());
+            .collect(Collectors.toSet());
 
         return hierarchy.stream()
             .filter(userRoles::contains)
