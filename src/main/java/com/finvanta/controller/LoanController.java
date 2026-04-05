@@ -193,6 +193,22 @@ public class LoanController {
         return "redirect:/loan/account/" + accountNumber;
     }
 
+    /** CBS Prepayment/Foreclosure — MAKER/ADMIN. Pays off total outstanding and closes loan. */
+    @PostMapping("/prepayment/{accountNumber}")
+    public String processPrepayment(@PathVariable String accountNumber,
+                                     @RequestParam BigDecimal amount,
+                                     RedirectAttributes redirectAttributes) {
+        try {
+            accountService.processPrepayment(accountNumber, amount,
+                businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success",
+                "Loan prepaid/foreclosed successfully: " + accountNumber);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
     /** CBS Write-Off — ADMIN only (enforced in SecurityConfig). NPA accounts only. */
     @PostMapping("/write-off/{accountNumber}")
     public String writeOffAccount(@PathVariable String accountNumber,

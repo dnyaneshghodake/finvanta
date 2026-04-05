@@ -51,6 +51,7 @@ public class SecurityConfig {
                 .requestMatchers("/reports/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/loan/apply").hasAnyRole("MAKER", "ADMIN")
                 .requestMatchers("/loan/repayment/**").hasAnyRole("MAKER", "ADMIN")
+                .requestMatchers("/loan/prepayment/**").hasAnyRole("MAKER", "ADMIN")
                 .requestMatchers("/audit/**").hasAnyRole("AUDITOR", "ADMIN")
                 .anyRequest().authenticated()
             )
