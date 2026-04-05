@@ -66,7 +66,12 @@ public class SuspenseService {
      * Per RBI IRAC: "Interest accrued and credited to income account in the past
      * periods which has not been realized should be reversed."
      *
-     * @param account The loan account that just became NPA
+     * IMPORTANT: This method modifies account.accruedInterest on the passed entity reference
+     * but does NOT save the account. The caller (classifyNPA) is responsible for saving
+     * to avoid the double-save overwrite problem where two saves in the same transaction
+     * with different field modifications cause one to overwrite the other.
+     *
+     * @param account The loan account that just became NPA (modified in-place, not saved)
      * @param businessDate CBS business date
      */
     @Transactional
@@ -95,12 +100,11 @@ public class SuspenseService {
             lines
         );
 
-        // Update account: move accrued interest to suspense tracking
-        // The accruedInterest on the account represents what was recognized in P&L
-        // After reversal, it's in suspense — tracked but not in P&L
+        // Update account in-place: move accrued interest to suspense tracking.
+        // The accruedInterest on the account represents what was recognized in P&L.
+        // After reversal, it's in suspense — tracked but not in P&L.
+        // NOTE: Do NOT save here — caller (classifyNPA) saves after all modifications.
         account.setAccruedInterest(BigDecimal.ZERO);
-        account.setUpdatedBy("SYSTEM");
-        loanAccountRepository.save(account);
 
         auditService.logEvent("LoanAccount", account.getId(), "SUSPENSE_REVERSAL",
             accruedInterest.toString(), "0", "SUSPENSE",

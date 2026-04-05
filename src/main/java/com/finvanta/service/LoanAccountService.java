@@ -17,7 +17,14 @@ public interface LoanAccountService {
 
     LoanTransaction processRepayment(String accountNumber, BigDecimal amount, LocalDate valueDate);
 
-    void classifyNPA(String accountNumber);
+    /**
+     * CBS NPA Classification per RBI IRAC norms.
+     * Must receive CBS business date — never use LocalDate.now() for financial operations.
+     *
+     * @param accountNumber Loan account number
+     * @param businessDate  CBS business date from BusinessDateService (NOT system date)
+     */
+    void classifyNPA(String accountNumber, LocalDate businessDate);
 
     LoanAccount getAccount(String accountNumber);
 

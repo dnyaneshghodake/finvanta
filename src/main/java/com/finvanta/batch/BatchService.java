@@ -156,7 +156,7 @@ public class BatchService {
 
             for (LoanAccount account : classificationCandidates) {
                 try {
-                    loanAccountService.classifyNPA(account.getAccountNumber());
+                    loanAccountService.classifyNPA(account.getAccountNumber(), businessDate);
                 } catch (Exception e) {
                     errorLog.append("SMA/NPA classification failed for ")
                         .append(account.getAccountNumber()).append(": ")

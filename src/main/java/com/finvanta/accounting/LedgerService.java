@@ -66,11 +66,12 @@ public class LedgerService {
     public List<LedgerEntry> postToLedger(JournalEntry journalEntry) {
         String tenantId = TenantContext.getCurrentTenant();
 
-        // Get current max sequence and previous hash for chain
-        long currentSequence = ledgerRepository.getMaxSequence(tenantId);
-        String previousHash = ledgerRepository.findLatestByTenantId(tenantId)
-            .map(LedgerEntry::getHashValue)
-            .orElse("GENESIS");
+        // Get current max sequence and previous hash for chain.
+        // Uses pessimistic lock to serialize concurrent postings and prevent
+        // duplicate sequences or broken hash chains.
+        java.util.Optional<LedgerEntry> latestEntry = ledgerRepository.findAndLockLatestByTenantId(tenantId);
+        long currentSequence = latestEntry.map(LedgerEntry::getLedgerSequence).orElse(0L);
+        String previousHash = latestEntry.map(LedgerEntry::getHashValue).orElse("GENESIS");
 
         List<LedgerEntry> entries = new ArrayList<>();
 
@@ -108,10 +109,12 @@ public class LedgerService {
 
         List<LedgerEntry> saved = ledgerRepository.saveAll(entries);
 
-        log.debug("Ledger posted: journalRef={}, entries={}, sequences={}-{}",
-            journalEntry.getJournalRef(), saved.size(),
-            saved.get(0).getLedgerSequence(),
-            saved.get(saved.size() - 1).getLedgerSequence());
+        if (!saved.isEmpty()) {
+            log.debug("Ledger posted: journalRef={}, entries={}, sequences={}-{}",
+                journalEntry.getJournalRef(), saved.size(),
+                saved.get(0).getLedgerSequence(),
+                saved.get(saved.size() - 1).getLedgerSequence());
+        }
 
         return saved;
     }

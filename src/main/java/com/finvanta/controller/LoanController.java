@@ -6,6 +6,7 @@ import com.finvanta.domain.enums.ApplicationStatus;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanTransactionRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanApplicationService;
 import com.finvanta.service.LoanScheduleService;
@@ -18,7 +19,6 @@ import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 
 @Controller
 @RequestMapping("/loan")
@@ -27,6 +27,7 @@ public class LoanController {
     private final LoanApplicationService applicationService;
     private final LoanAccountService accountService;
     private final LoanScheduleService scheduleService;
+    private final BusinessDateService businessDateService;
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
     private final LoanTransactionRepository transactionRepository;
@@ -34,12 +35,14 @@ public class LoanController {
     public LoanController(LoanApplicationService applicationService,
                            LoanAccountService accountService,
                            LoanScheduleService scheduleService,
+                           BusinessDateService businessDateService,
                            CustomerRepository customerRepository,
                            BranchRepository branchRepository,
                            LoanTransactionRepository transactionRepository) {
         this.applicationService = applicationService;
         this.accountService = accountService;
         this.scheduleService = scheduleService;
+        this.businessDateService = businessDateService;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.transactionRepository = transactionRepository;
@@ -181,7 +184,8 @@ public class LoanController {
                                     @RequestParam BigDecimal amount,
                                     RedirectAttributes redirectAttributes) {
         try {
-            accountService.processRepayment(accountNumber, amount, LocalDate.now());
+            accountService.processRepayment(accountNumber, amount,
+                businessDateService.getCurrentBusinessDate());
             redirectAttributes.addFlashAttribute("success", "Repayment processed successfully");
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());

@@ -406,7 +406,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
     @Override
     @Transactional
-    public void classifyNPA(String accountNumber) {
+    public void classifyNPA(String accountNumber, LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
 
         LoanAccount account = accountRepository.findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
@@ -423,22 +423,25 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         if (previousStatus != newStatus) {
             account.setStatus(newStatus);
             if (newStatus.isNpa() && account.getNpaDate() == null) {
-                account.setNpaDate(LocalDate.now());
+                account.setNpaDate(businessDate);
             }
-            account.setNpaClassificationDate(LocalDate.now());
+            account.setNpaClassificationDate(businessDate);
             account.setUpdatedBy("SYSTEM");
-            accountRepository.save(account);
 
             // RBI IRAC: When account transitions to NPA, reverse accrued interest to suspense.
             // Previously recognized interest income must be reversed from P&L.
             // GL Entry: DR Interest Income (4001) / CR Interest Suspense (2100)
+            // NOTE: reverseInterestToSuspense modifies account.accruedInterest, so we must
+            // call it BEFORE saving to avoid the double-save overwrite problem.
             if (newStatus.isNpa() && !previousStatus.isNpa()) {
                 try {
-                    suspenseService.reverseInterestToSuspense(account, LocalDate.now());
+                    suspenseService.reverseInterestToSuspense(account, businessDate);
                 } catch (Exception e) {
                     log.warn("Suspense reversal failed for {}: {}", accountNumber, e.getMessage());
                 }
             }
+
+            accountRepository.save(account);
 
             auditService.logEvent("LoanAccount", account.getId(), "NPA_CLASSIFY",
                 previousStatus.name(), newStatus.name(), "LOAN_ACCOUNTS",
