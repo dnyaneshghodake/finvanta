@@ -53,9 +53,9 @@ public class LoanController {
 
     @PostMapping("/apply")
     public String submitApplication(@Valid @ModelAttribute("application") LoanApplication application,
+                                     BindingResult result,
                                      @RequestParam Long customerId,
                                      @RequestParam Long branchId,
-                                     BindingResult result,
                                      RedirectAttributes redirectAttributes) {
         if (result.hasErrors()) {
             return "loan/apply";

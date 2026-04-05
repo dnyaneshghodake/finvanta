@@ -92,6 +92,14 @@ public class AuditService {
                 return false;
             }
         }
+
+        // Verify the oldest record in the chain links to GENESIS
+        AuditLog oldest = logs.get(logs.size() - 1);
+        if (!"GENESIS".equals(oldest.getPreviousHash())) {
+            log.error("Audit chain integrity violation: oldest record id={} does not link to GENESIS", oldest.getId());
+            return false;
+        }
+
         return true;
     }
 

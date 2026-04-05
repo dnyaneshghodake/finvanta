@@ -20,7 +20,7 @@ import java.time.LocalDate;
 @NoArgsConstructor
 public class LoanApplication extends BaseEntity {
 
-    @Column(name = "application_number", nullable = false, length = 30)
+    @Column(name = "application_number", nullable = false, length = 40)
     private String applicationNumber;
 
     @ManyToOne(fetch = FetchType.LAZY)

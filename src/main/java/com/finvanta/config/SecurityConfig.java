@@ -38,6 +38,9 @@ public class SecurityConfig {
                 .sessionFixation().migrateSession()
                 .maximumSessions(1)
             )
+            .csrf(csrf -> csrf
+                .ignoringRequestMatchers("/h2-console/**")
+            )
             .headers(headers -> headers
                 .frameOptions(frame -> frame.sameOrigin())
             );

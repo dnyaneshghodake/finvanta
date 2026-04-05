@@ -97,7 +97,7 @@ CREATE INDEX idx_cust_aadhaar ON customers (tenant_id, aadhaar_number);
 CREATE TABLE loan_applications (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
-    application_number VARCHAR(30)  NOT NULL,
+    application_number VARCHAR(40)  NOT NULL,
     customer_id     BIGINT          NOT NULL,
     branch_id       BIGINT          NOT NULL,
     product_type    VARCHAR(50)     NOT NULL,
@@ -133,7 +133,7 @@ CREATE INDEX idx_loanapp_customer ON loan_applications (tenant_id, customer_id);
 CREATE TABLE loan_accounts (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
-    account_number  VARCHAR(20)     NOT NULL,
+    account_number  VARCHAR(40)     NOT NULL,
     application_id  BIGINT          NOT NULL,
     customer_id     BIGINT          NOT NULL,
     branch_id       BIGINT          NOT NULL,

@@ -75,7 +75,11 @@ public class InterestCalculationRule {
 
         BigDecimal principalComponent = emiAmount.subtract(interestComponent).setScale(SCALE, ROUNDING);
 
-        if (principalComponent.compareTo(outstandingPrincipal) > 0) {
+        if (principalComponent.compareTo(BigDecimal.ZERO) < 0) {
+            // Payment is less than interest due — all goes to interest
+            interestComponent = emiAmount;
+            principalComponent = BigDecimal.ZERO.setScale(SCALE, ROUNDING);
+        } else if (principalComponent.compareTo(outstandingPrincipal) > 0) {
             principalComponent = outstandingPrincipal;
             interestComponent = emiAmount.subtract(principalComponent).setScale(SCALE, ROUNDING);
         }

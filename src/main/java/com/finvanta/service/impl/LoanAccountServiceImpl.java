@@ -102,10 +102,6 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         LoanAccount saved = accountRepository.save(account);
 
-        application.setStatus(ApplicationStatus.DISBURSED);
-        application.setUpdatedBy(currentUser);
-        applicationRepository.save(application);
-
         auditService.logEvent("LoanAccount", saved.getId(), "CREATE",
             null, saved.getAccountNumber(), "LOAN_ACCOUNTS",
             "Loan account created: " + saved.getAccountNumber() + ", EMI: " + emi);
@@ -171,6 +167,12 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setUpdatedBy(currentUser);
 
         LoanAccount saved = accountRepository.save(account);
+
+        // Mark application as DISBURSED now that disbursement is complete
+        LoanApplication application = saved.getApplication();
+        application.setStatus(ApplicationStatus.DISBURSED);
+        application.setUpdatedBy(currentUser);
+        applicationRepository.save(application);
 
         auditService.logEvent("LoanAccount", saved.getId(), "DISBURSE",
             null, saved.getAccountNumber(), "LOAN_ACCOUNTS",
@@ -274,14 +276,18 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         BigDecimal principalPaid = components[0];
         BigDecimal interestPaid = components[1];
 
-        List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GL_CASH_BANK, DebitCredit.DEBIT, amount,
-                "Loan repayment received - " + accountNumber),
-            new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.CREDIT, principalPaid,
-                "Principal repayment - " + accountNumber),
-            new JournalLineRequest(GL_INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestPaid,
-                "Interest repayment - " + accountNumber)
-        );
+        // Build journal lines dynamically — only include non-zero components
+        java.util.ArrayList<JournalLineRequest> journalLines = new java.util.ArrayList<>();
+        journalLines.add(new JournalLineRequest(GL_CASH_BANK, DebitCredit.DEBIT, amount,
+            "Loan repayment received - " + accountNumber));
+        if (principalPaid.compareTo(BigDecimal.ZERO) > 0) {
+            journalLines.add(new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.CREDIT, principalPaid,
+                "Principal repayment - " + accountNumber));
+        }
+        if (interestPaid.compareTo(BigDecimal.ZERO) > 0) {
+            journalLines.add(new JournalLineRequest(GL_INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestPaid,
+                "Interest repayment - " + accountNumber));
+        }
 
         var journalEntry = accountingService.postJournalEntry(
             valueDate,

@@ -29,6 +29,9 @@ public final class ReferenceGenerator {
     }
 
     private static String nextSequence() {
-        return String.format("%04d", SEQUENCE.incrementAndGet() % 10000);
+        long val = SEQUENCE.incrementAndGet();
+        // Use modulo to keep 4 digits, but avoid 0 to prevent collisions
+        long mod = ((val - 1) % 9999) + 1;
+        return String.format("%04d", mod);
     }
 }

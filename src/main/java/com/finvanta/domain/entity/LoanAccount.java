@@ -21,7 +21,7 @@ import java.time.LocalDate;
 @NoArgsConstructor
 public class LoanAccount extends BaseEntity {
 
-    @Column(name = "account_number", nullable = false, length = 20)
+    @Column(name = "account_number", nullable = false, length = 40)
     private String accountNumber;
 
     @ManyToOne(fetch = FetchType.LAZY)
