@@ -360,8 +360,8 @@ CREATE INDEX idx_batch_status ON batch_jobs (tenant_id, status);
 CREATE TABLE app_users (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
-    username        VARCHAR(50)     NOT NULL,
-    password_hash   VARCHAR(200)    NOT NULL,
+    username        VARCHAR(100)    NOT NULL,
+    password_hash   VARCHAR(256)    NOT NULL,
     full_name       VARCHAR(200)    NOT NULL,
     email           VARCHAR(200),
     role            VARCHAR(20)     NOT NULL,
