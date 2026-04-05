@@ -51,15 +51,16 @@ INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance,
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '5001', 'Provision Expense', 'EXPENSE', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '5002', 'Write-Off Expense', 'EXPENSE', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
--- App Users (password for all: finvanta123)
+-- App Users (password for all: password)
+-- BCrypt hash for "password" with strength 12: $2a$12$WApznUPhDubN0oeveSXHp.xUiPA4eFhBhZRmJFnEpNz/6Wf3mZdCy
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'maker1', '$2a$12$LJ3m4ys3uz5s8v8ERFaBWeNz1gIyvnFBN4Bfazp5mvUDkP7ss3F3G', 'Maker User One', 'maker1@finvanta.com', 'MAKER', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'maker1', '$2a$12$WApznUPhDubN0oeveSXHp.xUiPA4eFhBhZRmJFnEpNz/6Wf3mZdCy', 'Maker User One', 'maker1@finvanta.com', 'MAKER', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'checker1', '$2a$12$LJ3m4ys3uz5s8v8ERFaBWeNz1gIyvnFBN4Bfazp5mvUDkP7ss3F3G', 'Checker User One', 'checker1@finvanta.com', 'CHECKER', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'checker1', '$2a$12$WApznUPhDubN0oeveSXHp.xUiPA4eFhBhZRmJFnEpNz/6Wf3mZdCy', 'Checker User One', 'checker1@finvanta.com', 'CHECKER', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'admin', '$2a$12$LJ3m4ys3uz5s8v8ERFaBWeNz1gIyvnFBN4Bfazp5mvUDkP7ss3F3G', 'System Admin', 'admin@finvanta.com', 'ADMIN', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'admin', '$2a$12$WApznUPhDubN0oeveSXHp.xUiPA4eFhBhZRmJFnEpNz/6Wf3mZdCy', 'System Admin', 'admin@finvanta.com', 'ADMIN', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'auditor1', '$2a$12$LJ3m4ys3uz5s8v8ERFaBWeNz1gIyvnFBN4Bfazp5mvUDkP7ss3F3G', 'Auditor User', 'auditor@finvanta.com', 'AUDITOR', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'auditor1', '$2a$12$WApznUPhDubN0oeveSXHp.xUiPA4eFhBhZRmJFnEpNz/6Wf3mZdCy', 'Auditor User', 'auditor@finvanta.com', 'AUDITOR', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
