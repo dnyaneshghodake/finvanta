@@ -225,8 +225,8 @@ class InterestCalculationRuleTest {
                 LocalDate.of(2024, 1, 1), LocalDate.of(2024, 1, 31));
 
             // Should be on 87916, not 1000000
-            // (87,916 × 2 / 100) / 365 × 30 = 144.54
-            assertEquals(new BigDecimal("144.54"), result);
+            // (87,916 × 2 / 100) / 365 × 30 = 144.5227... → 144.52 (HALF_UP at scale 2)
+            assertEquals(new BigDecimal("144.52"), result);
         }
     }
 

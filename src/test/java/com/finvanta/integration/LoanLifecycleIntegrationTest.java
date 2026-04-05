@@ -97,12 +97,16 @@ class LoanLifecycleIntegrationTest {
         calendar.setCreatedBy("SYSTEM");
         calendarRepository.save(calendar);
 
-        // Also create next day for accrual tests
+        // Also create next day for accrual tests.
+        // Per CBS Day Control: only ONE day can be DAY_OPEN at a time per tenant.
+        // The next day starts as NOT_OPENED — the accrual test uses it via
+        // TransactionEngine with systemGenerated(true) which allows EOD_RUNNING,
+        // but the calendar entry must exist for business date validation (Step 2).
+        // We set it to DAY_OPEN only after closing the current day's operations.
         BusinessCalendar nextDay = new BusinessCalendar();
         nextDay.setTenantId(TENANT);
         nextDay.setBusinessDate(BIZ_DATE.plusDays(1));
-        nextDay.setDayStatus(DayStatus.DAY_OPEN);
-        nextDay.setDayOpenedBy("admin");
+        nextDay.setDayStatus(DayStatus.NOT_OPENED);
         nextDay.setCreatedBy("SYSTEM");
         calendarRepository.save(nextDay);
 
@@ -192,6 +196,19 @@ class LoanLifecycleIntegrationTest {
         GLMaster bankOpsGL = glMasterRepository.findByTenantIdAndGlCode(TENANT, "1100").orElseThrow();
         assertEquals(0, new BigDecimal("1000000.00").compareTo(loanAssetGL.getDebitBalance()));
         assertEquals(0, new BigDecimal("1000000.00").compareTo(bankOpsGL.getCreditBalance()));
+
+        // --- CBS Day Control: Close day 1, open day 2 for accrual ---
+        // Per Finacle/Temenos lifecycle: NOT_OPENED → DAY_OPEN → EOD_RUNNING → DAY_CLOSED
+        // Only ONE day can be DAY_OPEN at a time per tenant.
+        BusinessCalendar day1 = calendarRepository.findByTenantIdAndBusinessDate(TENANT, BIZ_DATE).orElseThrow();
+        day1.setDayStatus(DayStatus.DAY_CLOSED);
+        day1.setEodComplete(true);
+        calendarRepository.save(day1);
+
+        BusinessCalendar day2 = calendarRepository.findByTenantIdAndBusinessDate(TENANT, BIZ_DATE.plusDays(1)).orElseThrow();
+        day2.setDayStatus(DayStatus.DAY_OPEN);
+        day2.setDayOpenedBy("admin");
+        calendarRepository.save(day2);
 
         // --- Interest Accrual (1 day) ---
         LocalDate accrualDate = BIZ_DATE.plusDays(1);

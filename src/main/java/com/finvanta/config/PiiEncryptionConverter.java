@@ -97,6 +97,15 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
         try {
             byte[] combined = Base64.getDecoder().decode(dbData);
 
+            // Minimum size: IV (12 bytes) + GCM tag (16 bytes) + at least 1 byte ciphertext = 29 bytes
+            // If decoded data is too short, it's plaintext that happens to be valid Base64
+            // (e.g., PAN "ABCDE1234F" decodes to 7 bytes — too short for IV extraction)
+            if (combined.length < GCM_IV_LENGTH + 16) {
+                log.debug("PII field too short for AES-GCM ({} bytes) — treating as plaintext: {}",
+                    combined.length, maskPii(dbData));
+                return dbData;
+            }
+
             // Extract IV and ciphertext
             ByteBuffer buffer = ByteBuffer.wrap(combined);
             byte[] iv = new byte[GCM_IV_LENGTH];
