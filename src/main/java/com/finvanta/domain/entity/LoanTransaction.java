@@ -17,17 +17,15 @@ import java.time.LocalDateTime;
         @Index(name = "idx_loantxn_txnref", columnList = "tenant_id, transaction_ref", unique = true),
         @Index(name = "idx_loantxn_value_date", columnList = "tenant_id, value_date"),
         @Index(name = "idx_loantxn_type", columnList = "tenant_id, transaction_type")
-    },
-    uniqueConstraints = {
-        // CBS Idempotency: cross-DB unique constraint on (tenant_id, idempotency_key).
-        // Per Finacle UNIQUE.REF pattern, prevents duplicate processing on retries.
-        // JPA @UniqueConstraint works on both H2 (tests) and SQL Server (production),
-        // unlike the filtered index in DDL which is SQL Server-specific.
-        // NULL idempotency keys (system-generated transactions) are allowed by most DBs
-        // because NULL != NULL in SQL standard. H2 follows this standard.
-        @UniqueConstraint(name = "uq_loantxn_tenant_idempotency",
-            columnNames = {"tenant_id", "idempotency_key"})
     }
+    // CBS Idempotency: unique constraint on (tenant_id, idempotency_key) for non-null keys.
+    // NOT enforced via JPA @UniqueConstraint because H2 (used in tests) treats NULL as a
+    // value in unique indexes — two system-generated transactions with idempotency_key=NULL
+    // would collide. The SQL standard says NULL != NULL, but H2 does not follow this.
+    //
+    // Production enforcement:
+    //   SQL Server: filtered unique index in DDL (WHERE idempotency_key IS NOT NULL)
+    //   Application: LoanAccountServiceImpl.processRepayment() checks before insert
 )
 @Getter
 @Setter
