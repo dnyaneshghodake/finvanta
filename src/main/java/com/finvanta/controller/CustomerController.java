@@ -47,7 +47,9 @@ public class CustomerController {
         String tenantId = TenantContext.getCurrentTenant();
         try {
             customer.setTenantId(tenantId);
-            customer.setBranch(branchRepository.findById(branchId).orElseThrow());
+            customer.setBranch(branchRepository.findById(branchId)
+                .orElseThrow(() -> new com.finvanta.util.BusinessException(
+                    "BRANCH_NOT_FOUND", "Branch not found: " + branchId)));
             customer.setCreatedBy(SecurityUtil.getCurrentUsername());
             customerRepository.save(customer);
             redirectAttributes.addFlashAttribute("success", "Customer added: " + customer.getCustomerNumber());
@@ -63,7 +65,8 @@ public class CustomerController {
         ModelAndView mav = new ModelAndView("customer/view");
         Customer customer = customerRepository.findById(id)
             .filter(c -> c.getTenantId().equals(tenantId))
-            .orElseThrow();
+            .orElseThrow(() -> new com.finvanta.util.BusinessException(
+                "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
         mav.addObject("customer", customer);
         return mav;
     }

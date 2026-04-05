@@ -52,23 +52,27 @@ public class LoanController {
     }
 
     @PostMapping("/apply")
-    public String submitApplication(@Valid @ModelAttribute("application") LoanApplication application,
-                                     BindingResult result,
-                                     @RequestParam Long customerId,
-                                     @RequestParam Long branchId,
-                                     RedirectAttributes redirectAttributes) {
+    public ModelAndView submitApplication(@Valid @ModelAttribute("application") LoanApplication application,
+                                          BindingResult result,
+                                          @RequestParam Long customerId,
+                                          @RequestParam Long branchId,
+                                          RedirectAttributes redirectAttributes) {
         if (result.hasErrors()) {
-            return "loan/apply";
+            String tenantId = TenantContext.getCurrentTenant();
+            ModelAndView mav = new ModelAndView("loan/apply");
+            mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
+            mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+            return mav;
         }
 
         try {
             LoanApplication saved = applicationService.createApplication(application, customerId, branchId);
             redirectAttributes.addFlashAttribute("success",
                 "Application created: " + saved.getApplicationNumber());
-            return "redirect:/loan/applications";
+            return new ModelAndView("redirect:/loan/applications");
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
-            return "redirect:/loan/apply";
+            return new ModelAndView("redirect:/loan/apply");
         }
     }
 
