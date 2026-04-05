@@ -237,4 +237,46 @@ public class LoanController {
             return "redirect:/loan/applications";
         }
     }
+
+    /**
+     * CBS Transaction Reversal — CHECKER/ADMIN only.
+     * Per Finacle TRAN_REVERSAL: creates contra GL entries and restores account balances.
+     * Original transaction is marked reversed (never deleted per CBS audit rules).
+     */
+    @PostMapping("/reversal/{transactionRef}")
+    public String reverseTransaction(@PathVariable String transactionRef,
+                                      @RequestParam String reason,
+                                      @RequestParam String accountNumber,
+                                      RedirectAttributes redirectAttributes) {
+        try {
+            accountService.reverseTransaction(transactionRef, reason,
+                businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success",
+                "Transaction reversed: " + transactionRef);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
+    /**
+     * CBS Fee Charging — MAKER/ADMIN.
+     * Processing fees, documentation charges, etc.
+     * GL Entry: DR Bank Operations / CR Fee Income
+     */
+    @PostMapping("/fee/{accountNumber}")
+    public String chargeFee(@PathVariable String accountNumber,
+                             @RequestParam BigDecimal feeAmount,
+                             @RequestParam String feeType,
+                             RedirectAttributes redirectAttributes) {
+        try {
+            accountService.chargeFee(accountNumber, feeAmount, feeType,
+                businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success",
+                feeType + " charged: ₹" + feeAmount);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
 }

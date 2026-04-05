@@ -31,6 +31,7 @@
                 <tr><td class="fw-bold">Branch</td><td><c:out value="${account.branch.branchCode}" /> - <c:out value="${account.branch.branchName}" /></td></tr>
                 <tr><td class="fw-bold">Application</td><td><c:out value="${account.application.applicationNumber}" /></td></tr>
                 <tr><td class="fw-bold">Product Type</td><td><c:out value="${account.productType}" /></td></tr>
+                <tr><td class="fw-bold">Currency</td><td><c:out value="${account.currencyCode}" /></td></tr>
                 <tr><td class="fw-bold">Status</td><td>
                     <c:choose>
                         <c:when test="${account.status.npa}"><span class="fv-badge fv-badge-npa"><c:out value="${account.status}" /></span></c:when>
@@ -108,6 +109,36 @@
                     </div>
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                     <button type="submit" class="btn btn-warning" data-confirm="Confirm prepayment/foreclosure? This will close the loan.">Prepay / Foreclose</button>
+                </form>
+            </div>
+        </div>
+        </c:if>
+
+        <!-- CBS Fee Charging — MAKER/ADMIN -->
+        <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <div class="fv-card">
+            <div class="card-header">Charge Fee</div>
+            <div class="card-body">
+                <p class="text-muted">Processing fee, documentation charge, or other ad-hoc fees. GL: DR Bank Operations / CR Fee Income.</p>
+                <form method="post" action="${pageContext.request.contextPath}/loan/fee/${account.accountNumber}" class="fv-form">
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Fee Type</label>
+                            <select name="feeType" class="form-select" required>
+                                <option value="Processing Fee">Processing Fee</option>
+                                <option value="Documentation Charge">Documentation Charge</option>
+                                <option value="Late Payment Fee">Late Payment Fee</option>
+                                <option value="Stamp Duty">Stamp Duty</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Amount (INR)</label>
+                            <input type="number" name="feeAmount" class="form-control" step="0.01" min="1" required />
+                        </div>
+                    </div>
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-outline-primary" data-confirm="Confirm fee charge?">Charge Fee</button>
                 </form>
             </div>
         </div>
@@ -192,11 +223,15 @@
                         <th class="text-end">Balance After</th>
                         <th>Value Date</th>
                         <th>Narration</th>
+                        <th>Status</th>
+                        <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                        <th>Action</th>
+                        </c:if>
                     </tr>
                 </thead>
                 <tbody>
                     <c:forEach var="txn" items="${transactions}">
-                        <tr>
+                        <tr class="${txn.reversed ? 'table-secondary text-decoration-line-through' : ''}">
                             <td><c:out value="${txn.transactionRef}" /></td>
                             <td><c:out value="${txn.transactionType}" /></td>
                             <td class="amount"><fmt:formatNumber value="${txn.amount}" type="number" maxFractionDigits="2" /></td>
@@ -205,10 +240,32 @@
                             <td class="amount"><fmt:formatNumber value="${txn.balanceAfter}" type="number" maxFractionDigits="2" /></td>
                             <td><c:out value="${txn.valueDate}" /></td>
                             <td><c:out value="${txn.narration}" /></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${txn.reversed}"><span class="fv-badge fv-badge-npa">REVERSED</span></c:when>
+                                    <c:when test="${txn.transactionType == 'REVERSAL'}"><span class="fv-badge fv-badge-pending">REVERSAL</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-active">POSTED</span></c:otherwise>
+                                </c:choose>
+                            </td>
+                            <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                            <td>
+                                <c:if test="${!txn.reversed && txn.transactionType != 'REVERSAL' && !account.status.terminal}">
+                                    <form method="post" action="${pageContext.request.contextPath}/loan/reversal/${txn.transactionRef}" style="display:inline">
+                                        <input type="hidden" name="accountNumber" value="${account.accountNumber}" />
+                                        <input type="hidden" name="reason" value="" id="reason_${txn.transactionRef}" />
+                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"
+                                            onclick="var r=prompt('Reversal reason (mandatory):'); if(!r){return false;} document.getElementById('reason_${txn.transactionRef}').value=r; return confirm('Reverse transaction ${txn.transactionRef}?');">
+                                            Reverse
+                                        </button>
+                                    </form>
+                                </c:if>
+                            </td>
+                            </c:if>
                         </tr>
                     </c:forEach>
                     <c:if test="${empty transactions}">
-                        <tr><td colspan="8" class="text-center text-muted">No transactions yet</td></tr>
+                        <tr><td colspan="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN') ? 10 : 9}" class="text-center text-muted">No transactions yet</td></tr>
                     </c:if>
                 </tbody>
             </table>
