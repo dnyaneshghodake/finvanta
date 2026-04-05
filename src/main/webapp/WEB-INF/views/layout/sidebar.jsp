@@ -31,6 +31,13 @@
         <li><a href="${pageContext.request.contextPath}/reconciliation/report" class="nav-link"><i class="bi bi-arrow-up-right"></i><span class="nav-text">GL Reconciliation</span></a></li>
         </c:if>
 
+        <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">Reports</li>
+        <li><a href="${pageContext.request.contextPath}/reports/dpd" class="nav-link"><i class="bi bi-clock-history"></i><span class="nav-text">DPD Report</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/reports/irac" class="nav-link"><i class="bi bi-exclamation-triangle"></i><span class="nav-text">IRAC Report</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/reports/provision" class="nav-link"><i class="bi bi-percent"></i><span class="nav-text">Provision Report</span></a></li>
+        </c:if>
+
         <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <li class="nav-section">EOD / Batch</li>
         <li><a href="${pageContext.request.contextPath}/batch/txn/list" class="nav-link"><i class="bi bi-cash-stack"></i><span class="nav-text">Transaction Batches</span></a></li>
