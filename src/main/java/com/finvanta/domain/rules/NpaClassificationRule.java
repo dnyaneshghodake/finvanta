@@ -33,14 +33,31 @@ public class NpaClassificationRule {
 
     /**
      * Classifies loan status per RBI IRAC norms and Early Warning Framework.
-     * SMA status is fluid (can improve with payment). NPA status is sticky
-     * (can only worsen; improvement requires explicit arrears clearance).
+     *
+     * Classification rules:
+     * - SMA status is fluid (can improve with payment, worsen with DPD increase)
+     * - NPA status is sticky (can only worsen; improvement requires explicit arrears clearance)
+     * - RESTRUCTURED accounts: retain RESTRUCTURED status unless DPD crosses NPA threshold,
+     *   at which point they transition to NPA per RBI CDR norms. Restructured accounts
+     *   that become NPA cannot auto-revert to RESTRUCTURED.
+     * - Terminal states (CLOSED, WRITTEN_OFF) are never reclassified.
      */
     public LoanStatus classify(LoanAccount account) {
         int dpd = account.getDaysPastDue();
         LoanStatus currentStatus = account.getStatus();
 
+        // Terminal states — no reclassification
+        if (currentStatus.isTerminal()) {
+            return currentStatus;
+        }
+
         LoanStatus dpdBasedStatus = classifyByDpd(dpd);
+
+        // RBI CDR: Restructured accounts stay RESTRUCTURED unless they cross NPA threshold.
+        // Once an NPA, a restructured account follows normal NPA sticky rules.
+        if (currentStatus == LoanStatus.RESTRUCTURED && !dpdBasedStatus.isNpa()) {
+            return LoanStatus.RESTRUCTURED;
+        }
 
         // RBI IRAC: NPA can only worsen, never auto-downgrade
         if (currentStatus.isNpa() && !dpdBasedStatus.isNpa()) {

@@ -220,7 +220,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
                 "Loan account not found: " + accountNumber));
 
-        if (account.getStatus() == LoanStatus.CLOSED || account.getStatus() == LoanStatus.WRITTEN_OFF) {
+        if (account.getStatus().isTerminal()) {
             return null;
         }
 
@@ -298,7 +298,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
                 "Loan account not found: " + accountNumber));
 
-        if (account.getStatus() == LoanStatus.CLOSED || account.getStatus() == LoanStatus.WRITTEN_OFF) {
+        if (account.getStatus().isTerminal()) {
             throw new BusinessException("ACCOUNT_CLOSED",
                 "Cannot process repayment on " + account.getStatus() + " account");
         }
@@ -403,7 +403,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
                 "Loan account not found: " + accountNumber));
 
-        if (account.getStatus() == LoanStatus.CLOSED || account.getStatus() == LoanStatus.WRITTEN_OFF) {
+        if (account.getStatus().isTerminal()) {
             return;
         }
 

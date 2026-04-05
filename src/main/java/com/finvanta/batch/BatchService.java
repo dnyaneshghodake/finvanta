@@ -334,7 +334,7 @@ public class BatchService {
 
     @Transactional
     protected void updateDaysPastDue(LoanAccount account, LocalDate businessDate) {
-        if (account.getStatus() == LoanStatus.CLOSED || account.getStatus() == LoanStatus.WRITTEN_OFF) {
+        if (account.getStatus().isTerminal()) {
             return;
         }
 
