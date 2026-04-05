@@ -1,8 +1,7 @@
-    </div><!-- end content-area -->
-    </div><!-- end main-content -->
-</div><!-- end app-container -->
-<footer style="text-align: center; padding: 16px; color: #999; font-size: 12px; margin-left: 250px;">
+</div><!-- end fv-main -->
+<footer class="fv-footer">
     Finvanta Systems Pvt Ltd &copy; 2026 | Tier-1 CBS Platform | RBI Compliant
 </footer>
+<script src="${pageContext.request.contextPath}/js/finvanta-app.js"></script>
 </body>
 </html>

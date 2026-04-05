@@ -1,95 +1,59 @@
 <%@ taglib prefix="c" uri="jakarta.tags.core" %>
-<nav class="sidebar" style="width: 250px; background: #0d1b3e; color: white; position: fixed; top: 0; left: 0; bottom: 0; overflow-y: auto; z-index: 200;">
-    <div style="padding: 20px; text-align: center; border-bottom: 1px solid #1a2d5e;">
-        <h1 style="font-size: 22px; font-weight: 700; color: #64b5f6;">FINVANTA</h1>
-        <p style="font-size: 11px; color: #90a4ae; margin-top: 4px;">Core Banking System</p>
+<nav class="fv-sidebar">
+    <div class="fv-sidebar-brand">
+        <h1>FINVANTA</h1>
+        <small>Core Banking System</small>
     </div>
-    <ul style="list-style: none; padding: 12px 0;">
-        <li style="padding: 0;">
-            <a href="${pageContext.request.contextPath}/dashboard"
-               style="display: block; padding: 12px 24px; color: #b0bec5; text-decoration: none; font-size: 14px; transition: all 0.2s;"
-               onmouseover="this.style.background='#1a2d5e';this.style.color='white'"
-               onmouseout="this.style.background='';this.style.color='#b0bec5'">
-                Dashboard
-            </a>
-        </li>
-        <li style="padding: 8px 24px 4px; font-size: 11px; color: #546e7a; text-transform: uppercase; letter-spacing: 1px;">Loan Origination</li>
-        <li>
-            <a href="${pageContext.request.contextPath}/loan/apply"
-               style="display: block; padding: 10px 24px 10px 36px; color: #b0bec5; text-decoration: none; font-size: 13px;"
-               onmouseover="this.style.background='#1a2d5e';this.style.color='white'"
-               onmouseout="this.style.background='';this.style.color='#b0bec5'">
-                New Application
-            </a>
-        </li>
-        <li>
-            <a href="${pageContext.request.contextPath}/loan/applications"
-               style="display: block; padding: 10px 24px 10px 36px; color: #b0bec5; text-decoration: none; font-size: 13px;"
-               onmouseover="this.style.background='#1a2d5e';this.style.color='white'"
-               onmouseout="this.style.background='';this.style.color='#b0bec5'">
-                Applications
-            </a>
-        </li>
-        <li style="padding: 8px 24px 4px; font-size: 11px; color: #546e7a; text-transform: uppercase; letter-spacing: 1px;">Loan Accounts</li>
-        <li>
-            <a href="${pageContext.request.contextPath}/loan/accounts"
-               style="display: block; padding: 10px 24px 10px 36px; color: #b0bec5; text-decoration: none; font-size: 13px;"
-               onmouseover="this.style.background='#1a2d5e';this.style.color='white'"
-               onmouseout="this.style.background='';this.style.color='#b0bec5'">
-                Active Accounts
-            </a>
-        </li>
-        <li style="padding: 8px 24px 4px; font-size: 11px; color: #546e7a; text-transform: uppercase; letter-spacing: 1px;">Accounting</li>
-        <li>
-            <a href="${pageContext.request.contextPath}/accounting/trial-balance"
-               style="display: block; padding: 10px 24px 10px 36px; color: #b0bec5; text-decoration: none; font-size: 13px;"
-               onmouseover="this.style.background='#1a2d5e';this.style.color='white'"
-               onmouseout="this.style.background='';this.style.color='#b0bec5'">
-                Trial Balance
-            </a>
-        </li>
-        <li>
-            <a href="${pageContext.request.contextPath}/accounting/journal-entries"
-               style="display: block; padding: 10px 24px 10px 36px; color: #b0bec5; text-decoration: none; font-size: 13px;"
-               onmouseover="this.style.background='#1a2d5e';this.style.color='white'"
-               onmouseout="this.style.background='';this.style.color='#b0bec5'">
-                Journal Entries
-            </a>
-        </li>
-        <li style="padding: 8px 24px 4px; font-size: 11px; color: #546e7a; text-transform: uppercase; letter-spacing: 1px;">EOD / Batch</li>
-        <li>
-            <a href="${pageContext.request.contextPath}/batch/eod"
-               style="display: block; padding: 10px 24px 10px 36px; color: #b0bec5; text-decoration: none; font-size: 13px;"
-               onmouseover="this.style.background='#1a2d5e';this.style.color='white'"
-               onmouseout="this.style.background='';this.style.color='#b0bec5'">
-                EOD Processing
-            </a>
-        </li>
-        <li style="padding: 8px 24px 4px; font-size: 11px; color: #546e7a; text-transform: uppercase; letter-spacing: 1px;">Workflow</li>
-        <li>
-            <a href="${pageContext.request.contextPath}/workflow/pending"
-               style="display: block; padding: 10px 24px 10px 36px; color: #b0bec5; text-decoration: none; font-size: 13px;"
-               onmouseover="this.style.background='#1a2d5e';this.style.color='white'"
-               onmouseout="this.style.background='';this.style.color='#b0bec5'">
-                Pending Approvals
-            </a>
-        </li>
-        <li style="padding: 8px 24px 4px; font-size: 11px; color: #546e7a; text-transform: uppercase; letter-spacing: 1px;">Admin</li>
-        <li>
-            <a href="${pageContext.request.contextPath}/customer/list"
-               style="display: block; padding: 10px 24px 10px 36px; color: #b0bec5; text-decoration: none; font-size: 13px;"
-               onmouseover="this.style.background='#1a2d5e';this.style.color='white'"
-               onmouseout="this.style.background='';this.style.color='#b0bec5'">
-                Customers
-            </a>
-        </li>
-        <li>
-            <a href="${pageContext.request.contextPath}/branch/list"
-               style="display: block; padding: 10px 24px 10px 36px; color: #b0bec5; text-decoration: none; font-size: 13px;"
-               onmouseover="this.style.background='#1a2d5e';this.style.color='white'"
-               onmouseout="this.style.background='';this.style.color='#b0bec5'">
-                Branches
-            </a>
-        </li>
+    <ul class="nav flex-column">
+        <li><a href="${pageContext.request.contextPath}/dashboard" class="nav-link"><i class="bi bi-speedometer2"></i><span class="nav-text">Dashboard</span></a></li>
+
+        <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">Loan Origination</li>
+        <li><a href="${pageContext.request.contextPath}/loan/apply" class="nav-link"><i class="bi bi-plus-circle"></i><span class="nav-text">New Application</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/loan/applications" class="nav-link"><i class="bi bi-file-earmark-text"></i><span class="nav-text">Applications</span></a></li>
+        </c:if>
+
+        <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">Verification</li>
+        <li><a href="${pageContext.request.contextPath}/loan/applications" class="nav-link"><i class="bi bi-clipboard-check"></i><span class="nav-text">Verification Queue</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/workflow/pending" class="nav-link"><i class="bi bi-check2-square"></i><span class="nav-text">Approval Queue</span></a></li>
+        </c:if>
+
+        <li class="nav-section">Loan Accounts</li>
+        <li><a href="${pageContext.request.contextPath}/loan/accounts" class="nav-link"><i class="bi bi-bank"></i><span class="nav-text">Active Accounts</span></a></li>
+
+        <li class="nav-section">Accounting</li>
+        <li><a href="${pageContext.request.contextPath}/accounting/trial-balance" class="nav-link"><i class="bi bi-journal-bookmark"></i><span class="nav-text">Trial Balance</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/accounting/journal-entries" class="nav-link"><i class="bi bi-journal-text"></i><span class="nav-text">Journal Entries</span></a></li>
+
+        <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">EOD / Batch</li>
+        <li><a href="${pageContext.request.contextPath}/batch/eod" class="nav-link"><i class="bi bi-gear-wide-connected"></i><span class="nav-text">EOD Processing</span></a></li>
+        </c:if>
+
+        <li class="nav-section">Workflow</li>
+        <li><a href="${pageContext.request.contextPath}/workflow/pending" class="nav-link"><i class="bi bi-hourglass-split"></i><span class="nav-text">Pending Approvals</span></a></li>
+
+        <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">Admin</li>
+        <li><a href="${pageContext.request.contextPath}/customer/list" class="nav-link"><i class="bi bi-people"></i><span class="nav-text">Customers</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/branch/list" class="nav-link"><i class="bi bi-building"></i><span class="nav-text">Branches</span></a></li>
+        </c:if>
+
+        <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">Audit</li>
+        <li><a href="${pageContext.request.contextPath}/audit/logs" class="nav-link"><i class="bi bi-shield-lock"></i><span class="nav-text">Audit Logs</span></a></li>
+        </c:if>
     </ul>
 </nav>
+
+<!-- Top Navbar -->
+<div class="fv-topbar">
+    <h2 class="fv-page-title"><c:out value="${pageTitle}" default="Dashboard" /></h2>
+    <div class="fv-topbar-right">
+        <span class="fv-biz-date"><c:out value="${businessDate}" default="--" /></span>
+        <span class="fv-user-role"><c:out value="${userRole}" default="USER" /></span>
+        <span><c:out value="${pageContext.request.userPrincipal.name}" default="" /></span>
+        <a href="${pageContext.request.contextPath}/logout">Logout</a>
+    </div>
+</div>
