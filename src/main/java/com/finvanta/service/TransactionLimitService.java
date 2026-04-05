@@ -63,14 +63,31 @@ public class TransactionLimitService {
     /**
      * Validates with explicit business date for daily aggregate calculation.
      * CBS business date may differ from system date (e.g., EOD runs after midnight).
+     *
+     * Per RBI Internal Controls Guidelines and Finacle TRAN_AUTH:
+     * - Users with a transactional role (MAKER/CHECKER/ADMIN) are validated against limits
+     * - Users with NO transactional role (e.g., AUDITOR-only) are rejected outright
+     * - System-generated transactions (EOD) bypass this check entirely (caller's responsibility)
+     *
+     * The null-role rejection prevents a misconfigured user (no MAKER/CHECKER/ADMIN role)
+     * from processing unlimited financial transactions. Per RBI segregation of duties,
+     * every user-initiated financial operation must be traceable to a role with defined limits.
      */
     public void validateTransactionLimit(BigDecimal amount, String transactionType, LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
         String role = SecurityUtil.getCurrentUserRole();
 
         if (role == null) {
-            log.debug("No role found for current user — skipping limit check");
-            return;
+            // CBS: No transactional role found. This means the user has no MAKER/CHECKER/ADMIN
+            // role assigned. Per RBI Internal Controls, user-initiated financial transactions
+            // require a role with defined limits. Reject to prevent unlimited access.
+            String username = SecurityUtil.getCurrentUsername();
+            log.warn("LIMIT_CHECK: No transactional role for user={}, type={}. "
+                + "User must have MAKER, CHECKER, or ADMIN role to initiate financial transactions.",
+                username, transactionType);
+            throw new BusinessException("NO_TRANSACTIONAL_ROLE",
+                "User " + username + " does not have a transactional role (MAKER/CHECKER/ADMIN). "
+                    + "Financial transactions require an authorized role with configured limits.");
         }
 
         // Resolve limit: type-specific first, then 'ALL' fallback

@@ -141,25 +141,17 @@ public class LedgerService {
     }
 
     /**
-     * Verifies the SHA-256 hash chain integrity of the ledger.
+     * Full paginated ledger chain verification per RBI IT Governance Direction 2023.
      *
-     * Per RBI IT Governance Direction 2023 and Finacle/Temenos audit standards,
-     * the immutable ledger must support independent tamper verification.
+     * Iterates ALL ledger entries in ascending sequence order using paginated queries
+     * to avoid loading the entire ledger into memory. Each page is verified and the
+     * hash chain state (expectedPreviousHash) carries across page boundaries.
      *
-     * Verification algorithm:
-     *   1. Load ledger entries in sequence order (paginated for memory safety)
-     *   2. For each entry, recompute SHA-256 hash from its data + previousHash
-     *   3. Compare recomputed hash against stored hash
-     *   4. Verify previousHash links to the prior entry's hash (chain continuity)
-     *   5. Verify first entry links to "GENESIS"
+     * Memory profile: O(pageSize) per page, not O(totalEntries).
+     * For a ledger with 10M entries at pageSize=5000: ~2000 DB queries, each returning
+     * 5000 rows. Total wall time depends on DB latency but is typically < 5 minutes.
      *
-     * Returns true if all hashes are valid, false if tampering detected.
-     * On failure, logs the exact sequence number and nature of the break.
-     *
-     * Performance: Uses paginated query (10K entries per page). For production
-     * ledgers with millions of entries, add outer pagination loop.
-     *
-     * @return true if chain is intact, false if tampered
+     * @return true if the entire chain is intact, false if any tamper detected
      */
     public boolean verifyChainIntegrity() {
         String tenantId = TenantContext.getCurrentTenant();
@@ -167,62 +159,67 @@ public class LedgerService {
 
         long maxSeq = ledgerRepository.getMaxSequence(tenantId);
         if (maxSeq == 0) {
-            log.info("Ledger is empty for tenant={} — chain trivially valid", tenantId);
+            log.info("Ledger is empty for tenant={} -- chain trivially valid", tenantId);
             return true;
-        }
-
-        // Load entries in ascending sequence order for full chain verification.
-        // Uses paginated query to support large ledgers. For production with millions of
-        // entries, iterate pages in a loop. Current implementation loads first page only.
-        // TODO: Add outer loop for multi-page verification in production deployments.
-        int pageSize = 10000;
-        List<LedgerEntry> entries = ledgerRepository.findAllByTenantIdOrderByLedgerSequenceAsc(
-            tenantId, org.springframework.data.domain.PageRequest.of(0, pageSize));
-
-        if (entries.isEmpty()) {
-            log.warn("Ledger verification: no entries found despite maxSeq={}. Possible query issue.", maxSeq);
-            return false;
         }
 
         String expectedPreviousHash = "GENESIS";
         long verifiedCount = 0;
         boolean chainValid = true;
+        int pageSize = 5000;
+        int pageNumber = 0;
 
-        for (LedgerEntry entry : entries) {
-            // 1. Verify chain linkage: entry's previousHash must match expected
-            if (!expectedPreviousHash.equals(entry.getPreviousHash())) {
-                log.error("LEDGER TAMPER DETECTED: Chain break at sequence {}. "
-                    + "Expected previousHash={}, found previousHash={}",
-                    entry.getLedgerSequence(), expectedPreviousHash, entry.getPreviousHash());
-                chainValid = false;
+        // CBS: Iterate all pages until every entry is verified or tamper is detected.
+        // Per RBI audit standards, partial verification is NOT acceptable — the entire
+        // chain must be walked to certify integrity.
+        while (chainValid) {
+            List<LedgerEntry> entries = ledgerRepository.findAllByTenantIdOrderByLedgerSequenceAsc(
+                tenantId, org.springframework.data.domain.PageRequest.of(pageNumber, pageSize));
+
+            if (entries.isEmpty()) {
+                // No more entries — verification complete
                 break;
             }
 
-            // 2. Recompute hash from entry data and verify against stored hash
-            String recomputedHash = computeHash(entry, entry.getPreviousHash());
-            if (!recomputedHash.equals(entry.getHashValue())) {
-                log.error("LEDGER TAMPER DETECTED: Hash mismatch at sequence {}. "
-                    + "Stored hash={}, recomputed hash={}. Entry data may have been modified.",
-                    entry.getLedgerSequence(), entry.getHashValue(), recomputedHash);
-                chainValid = false;
-                break;
+            for (LedgerEntry entry : entries) {
+                // 1. Verify chain linkage: entry's previousHash must match expected
+                if (!expectedPreviousHash.equals(entry.getPreviousHash())) {
+                    log.error("LEDGER TAMPER DETECTED: Chain break at sequence {}. "
+                        + "Expected previousHash={}, found previousHash={}",
+                        entry.getLedgerSequence(), expectedPreviousHash, entry.getPreviousHash());
+                    chainValid = false;
+                    break;
+                }
+
+                // 2. Recompute hash from entry data and verify against stored hash
+                String recomputedHash = computeHash(entry, entry.getPreviousHash());
+                if (!recomputedHash.equals(entry.getHashValue())) {
+                    log.error("LEDGER TAMPER DETECTED: Hash mismatch at sequence {}. "
+                        + "Stored hash={}, recomputed hash={}. Entry data may have been modified.",
+                        entry.getLedgerSequence(), entry.getHashValue(), recomputedHash);
+                    chainValid = false;
+                    break;
+                }
+
+                // 3. Advance chain: this entry's hash becomes the expected previousHash for next
+                expectedPreviousHash = entry.getHashValue();
+                verifiedCount++;
             }
 
-            // 3. Advance chain: this entry's hash becomes the expected previousHash for next
-            expectedPreviousHash = entry.getHashValue();
-            verifiedCount++;
+            pageNumber++;
+
+            // Progress logging for large ledgers (every 50K entries)
+            if (verifiedCount % 50000 == 0 && verifiedCount > 0) {
+                log.info("Ledger verification progress: tenant={}, verified={}/{}", tenantId, verifiedCount, maxSeq);
+            }
         }
 
-        if (chainValid && verifiedCount < maxSeq) {
-            // Partial verification — only the first page was checked.
-            // CBS audit requires full chain verification; partial is insufficient.
-            log.warn("Ledger chain PARTIALLY verified: tenant={}, verified={}/{} — "
-                + "full verification requires paginated iteration over all entries.",
-                tenantId, verifiedCount, maxSeq);
-            // Return true for the verified portion, but log clearly that it's partial.
-            // Production: implement outer pagination loop to verify all pages.
-        } else if (chainValid) {
-            log.info("Ledger chain integrity VERIFIED: tenant={}, entries={}", tenantId, verifiedCount);
+        if (chainValid && verifiedCount == maxSeq) {
+            log.info("Ledger chain integrity FULLY VERIFIED: tenant={}, entries={}", tenantId, verifiedCount);
+        } else if (chainValid && verifiedCount < maxSeq) {
+            // This should not happen if the paginated query is correct, but guard against it.
+            log.warn("Ledger chain verification ended early: tenant={}, verified={}/{} -- "
+                + "possible gap in ledger_sequence numbering.", tenantId, verifiedCount, maxSeq);
         } else {
             log.error("LEDGER CHAIN INTEGRITY FAILED: tenant={}, verified={}/{}", tenantId, verifiedCount, maxSeq);
         }

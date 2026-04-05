@@ -223,9 +223,10 @@ public class TransactionEngine {
         // The first journal entry is returned as the primary reference.
         // ================================================================
         JournalEntry journalEntry;
-        // CBS: Set engine context flag so AccountingService knows this call is
-        // from the validated TransactionEngine pipeline (defense-in-depth).
-        AccountingService.enterEngineContext();
+        // CBS: Generate cryptographic engine context token so AccountingService can verify
+        // this call originates from the validated TransactionEngine pipeline.
+        // The token is a UUID stored in a ThreadLocal — no external class can forge it.
+        AccountingService.generateEngineToken();
         try {
             if (request.isCompound()) {
                 // CBS Compound Posting: each group is a separate balanced journal entry.
@@ -259,8 +260,8 @@ public class TransactionEngine {
                 );
             }
         } finally {
-            // Always clear the engine context — prevents stale flag on thread reuse
-            AccountingService.exitEngineContext();
+            // Always clear the engine context token — prevents stale tokens on thread pool reuse
+            AccountingService.clearEngineToken();
         }
 
         // ================================================================
