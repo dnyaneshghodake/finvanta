@@ -3,6 +3,7 @@ package com.finvanta.batch;
 import com.finvanta.accounting.AccountingService;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
+import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.accounting.ReconciliationService;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BatchJob;
@@ -64,6 +65,7 @@ public class BatchService {
     private final AccountingService accountingService;
     private final LoanScheduleService scheduleService;
     private final TransactionBatchService transactionBatchService;
+    private final ProductGLResolver glResolver;
 
     /**
      * Self-reference to invoke @Transactional methods through the Spring proxy.
@@ -83,7 +85,8 @@ public class BatchService {
                         ReconciliationService reconciliationService,
                         AccountingService accountingService,
                         com.finvanta.service.LoanScheduleService scheduleService,
-                        com.finvanta.service.TransactionBatchService transactionBatchService) {
+                        com.finvanta.service.TransactionBatchService transactionBatchService,
+                        ProductGLResolver glResolver) {
         this.batchJobRepository = batchJobRepository;
         this.calendarRepository = calendarRepository;
         this.loanAccountRepository = loanAccountRepository;
@@ -95,6 +98,7 @@ public class BatchService {
         this.accountingService = accountingService;
         this.scheduleService = scheduleService;
         this.transactionBatchService = transactionBatchService;
+        this.glResolver = glResolver;
     }
 
     /**
@@ -408,12 +412,14 @@ public class BatchService {
             DebitCredit provisionSide = delta.compareTo(BigDecimal.ZERO) > 0
                 ? DebitCredit.CREDIT : DebitCredit.DEBIT;
 
+            // CBS: GL codes resolved through product definition per Finacle PDDEF
+            String productType = fresh.getProductType();
             String action = delta.compareTo(BigDecimal.ZERO) > 0 ? "charge" : "release";
             try {
                 java.util.List<JournalLineRequest> lines = java.util.List.of(
-                    new JournalLineRequest(GLConstants.PROVISION_EXPENSE, expenseSide, absDelta,
+                    new JournalLineRequest(glResolver.getProvisionExpenseGL(productType), expenseSide, absDelta,
                         "Provisioning " + action + " - " + fresh.getAccountNumber()),
-                    new JournalLineRequest(GLConstants.PROVISION_NPA, provisionSide, absDelta,
+                    new JournalLineRequest(glResolver.getProvisionNpaGL(productType), provisionSide, absDelta,
                         "Loan loss provision - " + fresh.getAccountNumber())
                 );
                 accountingService.postJournalEntry(

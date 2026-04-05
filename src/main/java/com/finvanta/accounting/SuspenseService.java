@@ -50,13 +50,16 @@ public class SuspenseService {
     private final AccountingService accountingService;
     private final LoanAccountRepository loanAccountRepository;
     private final AuditService auditService;
+    private final ProductGLResolver glResolver;
 
     public SuspenseService(AccountingService accountingService,
                             LoanAccountRepository loanAccountRepository,
-                            AuditService auditService) {
+                            AuditService auditService,
+                            ProductGLResolver glResolver) {
         this.accountingService = accountingService;
         this.loanAccountRepository = loanAccountRepository;
         this.auditService = auditService;
+        this.glResolver = glResolver;
     }
 
     /**
@@ -84,12 +87,14 @@ public class SuspenseService {
         }
 
         // Post GL entry: reverse interest from P&L to suspense
+        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        String productType = account.getProductType();
         List<AccountingService.JournalLineRequest> lines = List.of(
             new AccountingService.JournalLineRequest(
-                GLConstants.INTEREST_INCOME, DebitCredit.DEBIT, accruedInterest,
+                glResolver.getInterestIncomeGL(productType), DebitCredit.DEBIT, accruedInterest,
                 "NPA income reversal - " + account.getAccountNumber()),
             new AccountingService.JournalLineRequest(
-                GLConstants.INTEREST_SUSPENSE, DebitCredit.CREDIT, accruedInterest,
+                glResolver.getInterestSuspenseGL(productType), DebitCredit.CREDIT, accruedInterest,
                 "Interest to suspense - " + account.getAccountNumber())
         );
 
@@ -130,12 +135,14 @@ public class SuspenseService {
         }
 
         // Post GL entry: release from suspense to income
+        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        String productType = account.getProductType();
         List<AccountingService.JournalLineRequest> lines = List.of(
             new AccountingService.JournalLineRequest(
-                GLConstants.INTEREST_SUSPENSE, DebitCredit.DEBIT, interestCollected,
+                glResolver.getInterestSuspenseGL(productType), DebitCredit.DEBIT, interestCollected,
                 "Suspense release - " + account.getAccountNumber()),
             new AccountingService.JournalLineRequest(
-                GLConstants.INTEREST_INCOME, DebitCredit.CREDIT, interestCollected,
+                glResolver.getInterestIncomeGL(productType), DebitCredit.CREDIT, interestCollected,
                 "NPA interest collected - " + account.getAccountNumber())
         );
 
