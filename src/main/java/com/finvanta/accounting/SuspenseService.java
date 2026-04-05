@@ -1,8 +1,11 @@
 package com.finvanta.accounting;
 
+import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.DebitCredit;
+import com.finvanta.transaction.TransactionEngine;
+import com.finvanta.transaction.TransactionRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -44,14 +47,14 @@ public class SuspenseService {
 
     private static final Logger log = LoggerFactory.getLogger(SuspenseService.class);
 
-    private final AccountingService accountingService;
+    private final TransactionEngine transactionEngine;
     private final AuditService auditService;
     private final ProductGLResolver glResolver;
 
-    public SuspenseService(AccountingService accountingService,
+    public SuspenseService(TransactionEngine transactionEngine,
                             AuditService auditService,
                             ProductGLResolver glResolver) {
-        this.accountingService = accountingService;
+        this.transactionEngine = transactionEngine;
         this.auditService = auditService;
         this.glResolver = glResolver;
     }
@@ -80,23 +83,32 @@ public class SuspenseService {
             return;
         }
 
-        // Post GL entry: reverse interest from P&L to suspense
-        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
+        // Suspense reversal is a system-generated GL adjustment during NPA classification.
         String productType = account.getProductType();
-        List<AccountingService.JournalLineRequest> lines = List.of(
-            new AccountingService.JournalLineRequest(
+        List<JournalLineRequest> lines = List.of(
+            new JournalLineRequest(
                 glResolver.getInterestIncomeGL(productType), DebitCredit.DEBIT, accruedInterest,
                 "NPA income reversal - " + account.getAccountNumber()),
-            new AccountingService.JournalLineRequest(
+            new JournalLineRequest(
                 glResolver.getInterestSuspenseGL(productType), DebitCredit.CREDIT, accruedInterest,
                 "Interest to suspense - " + account.getAccountNumber())
         );
 
-        accountingService.postJournalEntry(
-            businessDate,
-            "RBI IRAC income reversal for NPA account " + account.getAccountNumber(),
-            "SUSPENSE", account.getAccountNumber(),
-            lines
+        transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("SUSPENSE")
+                .transactionType("SUSPENSE_REVERSAL")
+                .accountReference(account.getAccountNumber())
+                .amount(accruedInterest)
+                .valueDate(businessDate)
+                .branchCode(account.getBranch() != null ? account.getBranch().getBranchCode() : null)
+                .productType(productType)
+                .narration("RBI IRAC income reversal for NPA account " + account.getAccountNumber())
+                .journalLines(lines)
+                .systemGenerated(true)
+                .initiatedBy("SYSTEM")
+                .build()
         );
 
         // Update account in-place: move accrued interest to suspense tracking.
@@ -128,23 +140,32 @@ public class SuspenseService {
             return;
         }
 
-        // Post GL entry: release from suspense to income
-        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
+        // Suspense release is a system-generated GL adjustment when NPA interest is collected.
         String productType = account.getProductType();
-        List<AccountingService.JournalLineRequest> lines = List.of(
-            new AccountingService.JournalLineRequest(
+        List<JournalLineRequest> lines = List.of(
+            new JournalLineRequest(
                 glResolver.getInterestSuspenseGL(productType), DebitCredit.DEBIT, interestCollected,
                 "Suspense release - " + account.getAccountNumber()),
-            new AccountingService.JournalLineRequest(
+            new JournalLineRequest(
                 glResolver.getInterestIncomeGL(productType), DebitCredit.CREDIT, interestCollected,
                 "NPA interest collected - " + account.getAccountNumber())
         );
 
-        accountingService.postJournalEntry(
-            businessDate,
-            "NPA interest collected for " + account.getAccountNumber(),
-            "SUSPENSE", account.getAccountNumber(),
-            lines
+        transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("SUSPENSE")
+                .transactionType("SUSPENSE_RELEASE")
+                .accountReference(account.getAccountNumber())
+                .amount(interestCollected)
+                .valueDate(businessDate)
+                .branchCode(account.getBranch() != null ? account.getBranch().getBranchCode() : null)
+                .productType(productType)
+                .narration("NPA interest collected for " + account.getAccountNumber())
+                .journalLines(lines)
+                .systemGenerated(true)
+                .initiatedBy("SYSTEM")
+                .build()
         );
 
         auditService.logEvent("LoanAccount", account.getId(), "SUSPENSE_RELEASE",
