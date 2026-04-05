@@ -18,7 +18,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/resources/**", "/css/**", "/js/**", "/fonts/**", "/img/**", "/h2-console/**").permitAll()
                 .requestMatchers("/admin/**").hasRole("ADMIN")
-                .requestMatchers("/workflow/approve/**", "/workflow/reject/**").hasAnyRole("CHECKER", "ADMIN")
+                .requestMatchers("/workflow/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/audit/**").hasAnyRole("AUDITOR", "ADMIN")
                 .anyRequest().authenticated()
             )

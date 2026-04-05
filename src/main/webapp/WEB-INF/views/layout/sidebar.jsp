@@ -31,9 +31,6 @@
         <li><a href="${pageContext.request.contextPath}/batch/eod" class="nav-link"><i class="bi bi-gear-wide-connected"></i><span class="nav-text">EOD Processing</span></a></li>
         </c:if>
 
-        <li class="nav-section">Workflow</li>
-        <li><a href="${pageContext.request.contextPath}/workflow/pending" class="nav-link"><i class="bi bi-hourglass-split"></i><span class="nav-text">Pending Approvals</span></a></li>
-
         <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <li class="nav-section">Admin</li>
         <li><a href="${pageContext.request.contextPath}/customer/list" class="nav-link"><i class="bi bi-people"></i><span class="nav-text">Customers</span></a></li>
