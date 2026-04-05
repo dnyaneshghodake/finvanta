@@ -193,6 +193,21 @@ public class LoanController {
         return "redirect:/loan/account/" + accountNumber;
     }
 
+    /** CBS Write-Off — ADMIN only (enforced in SecurityConfig). NPA accounts only. */
+    @PostMapping("/write-off/{accountNumber}")
+    public String writeOffAccount(@PathVariable String accountNumber,
+                                   RedirectAttributes redirectAttributes) {
+        try {
+            accountService.writeOffAccount(accountNumber,
+                businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success",
+                "Loan written off successfully: " + accountNumber);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
     @PostMapping("/create-account/{applicationId}")
     public String createAccount(@PathVariable Long applicationId,
                                  RedirectAttributes redirectAttributes) {

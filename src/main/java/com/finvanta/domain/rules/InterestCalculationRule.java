@@ -69,6 +69,43 @@ public class InterestCalculationRule {
         return numerator.divide(denominator, SCALE, ROUNDING);
     }
 
+    /**
+     * RBI Fair Lending Code 2023: Penal interest calculation on overdue EMIs.
+     * Penal interest is charged on the overdue principal component only (not on interest).
+     * Per RBI circular dated 18 Aug 2023: "Penal charges shall be levied on the
+     * outstanding loan amount and not on the EMI/installment amount."
+     *
+     * Daily penal = (Overdue Principal × Penal Rate) / 365
+     *
+     * @param account  The loan account with overdue EMIs
+     * @param fromDate Start date for penal calculation
+     * @param toDate   End date (business date)
+     * @return Penal interest amount for the period
+     */
+    public BigDecimal calculatePenalInterest(LoanAccount account, LocalDate fromDate, LocalDate toDate) {
+        BigDecimal overduePrincipal = account.getOverduePrincipal();
+        BigDecimal penalRate = account.getPenalRate();
+
+        if (overduePrincipal.compareTo(BigDecimal.ZERO) <= 0
+                || penalRate.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        long days = ChronoUnit.DAYS.between(fromDate, toDate);
+        if (days <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal ratePerDay = penalRate
+            .divide(BigDecimal.valueOf(100), MC)
+            .divide(BigDecimal.valueOf(DAYS_IN_YEAR), MC);
+
+        return overduePrincipal
+            .multiply(ratePerDay, MC)
+            .multiply(BigDecimal.valueOf(days), MC)
+            .setScale(SCALE, ROUNDING);
+    }
+
     public BigDecimal[] splitEmiComponents(BigDecimal emiAmount, BigDecimal outstandingPrincipal, BigDecimal annualRate) {
         BigDecimal monthlyRate = annualRate
             .divide(BigDecimal.valueOf(100), MC)

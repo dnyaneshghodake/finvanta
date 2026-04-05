@@ -15,6 +15,17 @@ public interface LoanAccountService {
 
     LoanTransaction applyInterestAccrual(String accountNumber, LocalDate accrualDate);
 
+    /**
+     * RBI Fair Lending Code 2023: Penal interest accrual on overdue accounts.
+     * Charged on overdue principal at the penal rate (% p.a.) using Actual/365.
+     * GL Entry: DR Interest Receivable (1002) / CR Penal Interest Income (4003)
+     *
+     * @param accountNumber Loan account number
+     * @param businessDate  CBS business date
+     * @return Transaction record, or null if no penal applicable
+     */
+    LoanTransaction applyPenalInterest(String accountNumber, LocalDate businessDate);
+
     LoanTransaction processRepayment(String accountNumber, BigDecimal amount, LocalDate valueDate);
 
     /**
@@ -25,6 +36,18 @@ public interface LoanAccountService {
      * @param businessDate  CBS business date from BusinessDateService (NOT system date)
      */
     void classifyNPA(String accountNumber, LocalDate businessDate);
+
+    /**
+     * CBS Write-Off per RBI IRAC norms for NPA Loss accounts.
+     * GL Entry: DR Write-Off Expense (5002) / CR Loan Asset (1001)
+     * Reverses provisioning: DR Provision for NPA (1003) / CR Provision Expense (5001)
+     * Account status transitions to WRITTEN_OFF (terminal state).
+     *
+     * @param accountNumber Loan account number
+     * @param businessDate  CBS business date
+     * @return The written-off account
+     */
+    LoanAccount writeOffAccount(String accountNumber, LocalDate businessDate);
 
     LoanAccount getAccount(String accountNumber);
 

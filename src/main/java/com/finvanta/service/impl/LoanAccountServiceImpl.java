@@ -305,6 +305,79 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
     @Override
     @Transactional
+    public LoanTransaction applyPenalInterest(String accountNumber, LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+
+        LoanAccount account = accountRepository.findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
+                "Loan account not found: " + accountNumber));
+
+        if (account.getStatus().isTerminal()) {
+            return null;
+        }
+
+        // Penal interest only applies to overdue accounts (DPD > 0)
+        if (account.getDaysPastDue() <= 0 || account.getOverduePrincipal().compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+
+        // Calculate from last accrual date or next EMI date (whichever is the overdue trigger)
+        LocalDate fromDate = account.getLastInterestAccrualDate() != null
+            ? account.getLastInterestAccrualDate()
+            : account.getNextEmiDate();
+
+        if (fromDate == null || !businessDate.isAfter(fromDate)) {
+            return null;
+        }
+
+        BigDecimal penalAmount = interestRule.calculatePenalInterest(account, fromDate, businessDate);
+
+        if (penalAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+
+        // GL Entry: DR Interest Receivable (1002) / CR Penal Interest Income (4003)
+        List<JournalLineRequest> journalLines = List.of(
+            new JournalLineRequest(GL_INTEREST_RECEIVABLE, DebitCredit.DEBIT, penalAmount,
+                "Penal interest accrual - " + accountNumber),
+            new JournalLineRequest(GLConstants.PENAL_INTEREST_INCOME, DebitCredit.CREDIT, penalAmount,
+                "Penal interest income - " + accountNumber)
+        );
+
+        var journalEntry = accountingService.postJournalEntry(
+            businessDate,
+            "RBI penal interest for overdue account " + accountNumber,
+            "LOAN", accountNumber,
+            journalLines
+        );
+
+        LoanTransaction txn = new LoanTransaction();
+        txn.setTenantId(tenantId);
+        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setLoanAccount(account);
+        txn.setTransactionType(TransactionType.PENALTY_CHARGE);
+        txn.setAmount(penalAmount);
+        txn.setPenaltyComponent(penalAmount);
+        txn.setValueDate(businessDate);
+        txn.setPostingDate(LocalDateTime.now());
+        txn.setBalanceAfter(account.getTotalOutstanding().add(penalAmount));
+        txn.setNarration("Penal interest: " + penalAmount + " on overdue principal " + account.getOverduePrincipal());
+        txn.setJournalEntryId(journalEntry.getId());
+        txn.setCreatedBy("SYSTEM");
+        LoanTransaction savedTxn = transactionRepository.save(txn);
+
+        account.setPenalInterestAccrued(account.getPenalInterestAccrued().add(penalAmount));
+        account.setUpdatedBy("SYSTEM");
+        accountRepository.save(account);
+
+        log.info("Penal interest accrued: accNo={}, amount={}, dpd={}, overduePrincipal={}",
+            accountNumber, penalAmount, account.getDaysPastDue(), account.getOverduePrincipal());
+
+        return savedTxn;
+    }
+
+    @Override
+    @Transactional
     public LoanTransaction processRepayment(String accountNumber, BigDecimal amount, LocalDate valueDate) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
@@ -475,6 +548,99 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             log.info("NPA classification: accNo={}, {} -> {}, dpd={}",
                 accountNumber, previousStatus, newStatus, account.getDaysPastDue());
         }
+    }
+
+    @Override
+    @Transactional
+    public LoanAccount writeOffAccount(String accountNumber, LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String currentUser = SecurityUtil.getCurrentUsername();
+
+        LoanAccount account = accountRepository.findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
+                "Loan account not found: " + accountNumber));
+
+        if (account.getStatus().isTerminal()) {
+            throw new BusinessException("ACCOUNT_ALREADY_TERMINAL",
+                "Account is already in terminal state: " + account.getStatus());
+        }
+
+        if (!account.getStatus().isNpa()) {
+            throw new BusinessException("ACCOUNT_NOT_NPA",
+                "Only NPA accounts can be written off. Current status: " + account.getStatus());
+        }
+
+        BigDecimal writeOffAmount = account.getOutstandingPrincipal();
+        BigDecimal provisionHeld = account.getProvisioningAmount();
+
+        // GL Entry 1: Write off the loan asset
+        // DR Write-Off Expense (5002) / CR Loan Asset (1001)
+        if (writeOffAmount.compareTo(BigDecimal.ZERO) > 0) {
+            List<JournalLineRequest> writeOffLines = List.of(
+                new JournalLineRequest(GLConstants.WRITE_OFF_EXPENSE, DebitCredit.DEBIT, writeOffAmount,
+                    "Loan write-off - " + accountNumber),
+                new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.CREDIT, writeOffAmount,
+                    "Write-off asset removal - " + accountNumber)
+            );
+            accountingService.postJournalEntry(
+                businessDate,
+                "RBI IRAC write-off for NPA account " + accountNumber,
+                "WRITE_OFF", accountNumber,
+                writeOffLines
+            );
+        }
+
+        // GL Entry 2: Reverse existing provisioning (no longer needed after write-off)
+        // DR Provision for NPA (1003) / CR Provision Expense (5001)
+        if (provisionHeld.compareTo(BigDecimal.ZERO) > 0) {
+            List<JournalLineRequest> provisionReversal = List.of(
+                new JournalLineRequest(GLConstants.PROVISION_NPA, DebitCredit.DEBIT, provisionHeld,
+                    "Provision reversal on write-off - " + accountNumber),
+                new JournalLineRequest(GLConstants.PROVISION_EXPENSE, DebitCredit.CREDIT, provisionHeld,
+                    "Provision expense release on write-off - " + accountNumber)
+            );
+            accountingService.postJournalEntry(
+                businessDate,
+                "Provision reversal on write-off for " + accountNumber,
+                "WRITE_OFF", accountNumber,
+                provisionReversal
+            );
+        }
+
+        // Record write-off transaction
+        LoanTransaction txn = new LoanTransaction();
+        txn.setTenantId(tenantId);
+        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setLoanAccount(account);
+        txn.setTransactionType(TransactionType.WRITE_OFF);
+        txn.setAmount(writeOffAmount);
+        txn.setPrincipalComponent(writeOffAmount);
+        txn.setValueDate(businessDate);
+        txn.setPostingDate(LocalDateTime.now());
+        txn.setBalanceAfter(BigDecimal.ZERO);
+        txn.setNarration("NPA write-off: principal=" + writeOffAmount + ", provision reversed=" + provisionHeld);
+        txn.setCreatedBy(currentUser);
+        transactionRepository.save(txn);
+
+        // Update account to terminal state
+        LoanStatus previousStatus = account.getStatus();
+        account.setStatus(LoanStatus.WRITTEN_OFF);
+        account.setOutstandingPrincipal(BigDecimal.ZERO);
+        account.setOutstandingInterest(BigDecimal.ZERO);
+        account.setAccruedInterest(BigDecimal.ZERO);
+        account.setPenalInterestAccrued(BigDecimal.ZERO);
+        account.setProvisioningAmount(BigDecimal.ZERO);
+        account.setUpdatedBy(currentUser);
+        accountRepository.save(account);
+
+        auditService.logEvent("LoanAccount", account.getId(), "WRITE_OFF",
+            previousStatus.name(), LoanStatus.WRITTEN_OFF.name(), "LOAN_ACCOUNTS",
+            "NPA write-off: " + writeOffAmount + ", provision reversed: " + provisionHeld);
+
+        log.info("Loan written off: accNo={}, amount={}, provisionReversed={}",
+            accountNumber, writeOffAmount, provisionHeld);
+
+        return account;
     }
 
     @Override

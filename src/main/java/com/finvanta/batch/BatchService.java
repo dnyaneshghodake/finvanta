@@ -138,6 +138,23 @@ public class BatchService {
                 }
             }
 
+            // Step 3b: Run penal interest accrual on overdue accounts
+            // Per RBI Fair Lending Code 2023, penal interest is charged on overdue principal.
+            // Must run after regular interest accrual but before DPD recalculation.
+            self.updateBatchStep(eodJob, "PENAL_INTEREST");
+
+            List<LoanAccount> overdueAccounts = loanAccountRepository.findNpaCandidates(tenantId, 1);
+            for (LoanAccount account : overdueAccounts) {
+                try {
+                    loanAccountService.applyPenalInterest(account.getAccountNumber(), businessDate);
+                } catch (Exception e) {
+                    errorLog.append("Penal interest failed for ")
+                        .append(account.getAccountNumber()).append(": ")
+                        .append(e.getMessage()).append("\n");
+                    log.error("Penal interest failed: accNo={}", account.getAccountNumber(), e);
+                }
+            }
+
             // Step 4: Run DPD calculation.
             // Re-fetch accounts to avoid stale entity versions after interest accrual
             // modified and saved them with incremented @Version in Step 3.
