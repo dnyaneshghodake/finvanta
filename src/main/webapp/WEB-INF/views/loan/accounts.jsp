@@ -45,7 +45,7 @@
                                 </c:choose>
                             </td>
                             <td>
-                                <span class="fv-badge ${acc.status.npa() ? 'fv-badge-npa' : 'fv-badge-active'}">
+                                <span class="fv-badge ${acc.status.npa ? 'fv-badge-npa' : 'fv-badge-active'}">
                                     <c:out value="${acc.status}" />
                                 </span>
                             </td>

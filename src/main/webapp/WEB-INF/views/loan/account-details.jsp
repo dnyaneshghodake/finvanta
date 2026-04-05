@@ -33,9 +33,9 @@
                 <tr><td class="fw-bold">Product Type</td><td><c:out value="${account.productType}" /></td></tr>
                 <tr><td class="fw-bold">Status</td><td>
                     <c:choose>
-                        <c:when test="${account.status.npa()}"><span class="fv-badge fv-badge-npa"><c:out value="${account.status}" /></span></c:when>
-                        <c:when test="${account.status == 'ACTIVE'}"><span class="fv-badge fv-badge-active"><c:out value="${account.status}" /></span></c:when>
-                        <c:when test="${account.status == 'CLOSED'}"><span class="fv-badge fv-badge-closed"><c:out value="${account.status}" /></span></c:when>
+                        <c:when test="${account.status.npa}"><span class="fv-badge fv-badge-npa"><c:out value="${account.status}" /></span></c:when>
+                        <c:when test="${account.status.active}"><span class="fv-badge fv-badge-active"><c:out value="${account.status}" /></span></c:when>
+                        <c:when test="${account.status.closed}"><span class="fv-badge fv-badge-closed"><c:out value="${account.status}" /></span></c:when>
                         <c:otherwise><span class="fv-badge fv-badge-pending"><c:out value="${account.status}" /></span></c:otherwise>
                     </c:choose>
                 </td></tr>
@@ -68,7 +68,7 @@
         </div>
     </c:if>
 
-    <c:if test="${account.disbursedAmount.unscaledValue() > 0 && !account.status.closed}">
+    <c:if test="${account.disbursedAmount.unscaledValue() > 0 and not account.status.closed}">
         <div class="fv-card">
             <div class="card-header">Process Repayment</div>
             <div class="card-body">
