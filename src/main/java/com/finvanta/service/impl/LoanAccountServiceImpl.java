@@ -356,6 +356,19 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setAccruedInterest(
             account.getAccruedInterest().subtract(interestPaid).max(BigDecimal.ZERO));
         account.setLastPaymentDate(valueDate);
+
+        // RBI IRAC: When interest is collected on an NPA account, release from suspense to income.
+        // Per RBI Master Circular: "Interest on NPA accounts, if collected, should be taken to
+        // income account only on realization basis."
+        // GL Entry: DR Interest Suspense (2100) / CR Interest Income (4001)
+        if (account.getStatus().isNpa() && interestPaid.compareTo(BigDecimal.ZERO) > 0) {
+            try {
+                suspenseService.releaseFromSuspense(account, interestPaid, valueDate);
+            } catch (Exception e) {
+                log.warn("Suspense release failed for NPA repayment {}: {}", accountNumber, e.getMessage());
+            }
+        }
+
         // RBI IRAC: DPD resets only when all overdue EMIs are cleared.
         // If outstanding principal is fully paid or remaining balance equals
         // or is less than the scheduled outstanding, DPD can be reset.

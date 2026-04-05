@@ -1,5 +1,7 @@
 package com.finvanta.batch;
 
+import com.finvanta.accounting.AccountingService;
+import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
 import com.finvanta.accounting.ReconciliationService;
 import com.finvanta.audit.AuditService;
@@ -7,6 +9,7 @@ import com.finvanta.domain.entity.BatchJob;
 import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.BatchStatus;
+import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.domain.rules.NpaClassificationRule;
 import com.finvanta.domain.rules.ProvisioningRule;
 import com.finvanta.repository.BatchJobRepository;
@@ -55,6 +58,7 @@ public class BatchService {
     private final ProvisioningRule provisioningRule;
     private final AuditService auditService;
     private final ReconciliationService reconciliationService;
+    private final AccountingService accountingService;
 
     /**
      * Self-reference to invoke @Transactional methods through the Spring proxy.
@@ -71,7 +75,8 @@ public class BatchService {
                         NpaClassificationRule npaRule,
                         ProvisioningRule provisioningRule,
                         AuditService auditService,
-                        ReconciliationService reconciliationService) {
+                        ReconciliationService reconciliationService,
+                        AccountingService accountingService) {
         this.batchJobRepository = batchJobRepository;
         this.calendarRepository = calendarRepository;
         this.loanAccountRepository = loanAccountRepository;
@@ -80,6 +85,7 @@ public class BatchService {
         this.provisioningRule = provisioningRule;
         this.auditService = auditService;
         this.reconciliationService = reconciliationService;
+        this.accountingService = accountingService;
     }
 
     /**
@@ -331,15 +337,35 @@ public class BatchService {
             fresh.setUpdatedBy("SYSTEM");
             loanAccountRepository.save(fresh);
 
-            // TODO: Inject AccountingService and post provisioning GL entry.
-            // GL Entry: DR Provision Expense (5001) / CR Provision for NPA (1003) on increase,
-            //           DR Provision for NPA (1003) / CR Provision Expense (5001) on release.
-            log.info("Provisioning updated: accNo={}, delta={}, status={}, expenseGL={}, provisionGL={}",
-                fresh.getAccountNumber(), delta, fresh.getStatus(),
-                GLConstants.PROVISION_EXPENSE, GLConstants.PROVISION_NPA);
+            // Post provisioning GL entry — delta-based (only the change amount)
+            BigDecimal absDelta = delta.abs();
+            DebitCredit expenseSide = delta.compareTo(BigDecimal.ZERO) > 0
+                ? DebitCredit.DEBIT : DebitCredit.CREDIT;
+            DebitCredit provisionSide = delta.compareTo(BigDecimal.ZERO) > 0
+                ? DebitCredit.CREDIT : DebitCredit.DEBIT;
 
-            log.debug("Provisioning updated: accNo={}, old={}, new={}, delta={}, status={}",
-                fresh.getAccountNumber(), currentProvisioning, newProvisioning, delta, fresh.getStatus());
+            String action = delta.compareTo(BigDecimal.ZERO) > 0 ? "charge" : "release";
+            try {
+                java.util.List<JournalLineRequest> lines = java.util.List.of(
+                    new JournalLineRequest(GLConstants.PROVISION_EXPENSE, expenseSide, absDelta,
+                        "Provisioning " + action + " - " + fresh.getAccountNumber()),
+                    new JournalLineRequest(GLConstants.PROVISION_NPA, provisionSide, absDelta,
+                        "Loan loss provision - " + fresh.getAccountNumber())
+                );
+                accountingService.postJournalEntry(
+                    fresh.getLastInterestAccrualDate() != null
+                        ? fresh.getLastInterestAccrualDate() : java.time.LocalDate.now(),
+                    "RBI IRAC provisioning " + action + " for " + fresh.getAccountNumber(),
+                    "PROVISIONING", fresh.getAccountNumber(),
+                    lines
+                );
+            } catch (Exception e) {
+                log.warn("Provisioning GL posting failed for {}: {}", fresh.getAccountNumber(), e.getMessage());
+            }
+
+            log.info("Provisioning {}: accNo={}, old={}, new={}, delta={}, status={}",
+                action, fresh.getAccountNumber(), currentProvisioning, newProvisioning,
+                delta, fresh.getStatus());
         }
     }
 
