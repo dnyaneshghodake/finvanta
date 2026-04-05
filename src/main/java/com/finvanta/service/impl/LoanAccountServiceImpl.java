@@ -309,7 +309,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         BigDecimal interestPaid = components[1];
 
         // Build journal lines dynamically — only include non-zero components per CBS GL posting rules
-        java.util.List<JournalLineRequest> journalLines = new java.util.ArrayList<>();
+        List<JournalLineRequest> journalLines = new java.util.ArrayList<>();
         journalLines.add(new JournalLineRequest(GL_CASH_BANK, DebitCredit.DEBIT, amount,
             "Loan repayment received - " + accountNumber));
         if (principalPaid.compareTo(BigDecimal.ZERO) > 0) {
