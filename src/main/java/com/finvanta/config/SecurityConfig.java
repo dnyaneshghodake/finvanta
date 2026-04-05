@@ -45,6 +45,7 @@ public class SecurityConfig {
                 .requestMatchers("/loan/reject/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/loan/create-account/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/loan/disburse/**").hasAnyRole("CHECKER", "ADMIN")
+                .requestMatchers("/loan/write-off/**").hasRole("ADMIN")
                 .requestMatchers("/workflow/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/reconciliation/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/reports/**").hasAnyRole("CHECKER", "ADMIN")
