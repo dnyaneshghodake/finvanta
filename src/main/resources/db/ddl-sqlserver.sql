@@ -482,7 +482,7 @@ CREATE INDEX idx_audit_entity ON audit_logs (tenant_id, entity_type, entity_id);
 CREATE INDEX idx_audit_timestamp ON audit_logs (tenant_id, event_timestamp);
 CREATE INDEX idx_audit_user ON audit_logs (tenant_id, performed_by);
 
--- 16. BATCH JOBS
+-- 17. BATCH JOBS
 CREATE TABLE batch_jobs (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -508,7 +508,7 @@ CREATE TABLE batch_jobs (
 CREATE INDEX idx_batch_tenant_date ON batch_jobs (tenant_id, business_date);
 CREATE INDEX idx_batch_status ON batch_jobs (tenant_id, status);
 
--- 17. TRANSACTION LIMITS (CBS Internal Controls — per-role amount limits)
+-- 18. TRANSACTION LIMITS (CBS Internal Controls — per-role amount limits)
 CREATE TABLE transaction_limits (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -528,7 +528,7 @@ CREATE TABLE transaction_limits (
 );
 CREATE INDEX idx_txnlimit_tenant_role ON transaction_limits (tenant_id, role, transaction_type);
 
--- 18. APP USERS
+-- 19. APP USERS
 CREATE TABLE app_users (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,

@@ -39,6 +39,7 @@ class LoanLifecycleIntegrationTest {
     @Autowired private LoanAccountService loanAccountService;
     @Autowired private LoanAccountRepository accountRepository;
     @Autowired private LoanApplicationRepository applicationRepository;
+    @Autowired private LoanTransactionRepository transactionRepository;
     @Autowired private CustomerRepository customerRepository;
     @Autowired private BranchRepository branchRepository;
     @Autowired private GLMasterRepository glMasterRepository;
@@ -177,6 +178,15 @@ class LoanLifecycleIntegrationTest {
         assertEquals(0, new BigDecimal("1000000.00").compareTo(disbursed.getOutstandingPrincipal()));
         assertEquals(BIZ_DATE, disbursed.getDisbursementDate());
 
+        // CBS Transaction 360: Verify disbursement has voucher and journal linkage
+        var disbTxns = transactionRepository.findByTenantIdAndLoanAccountIdOrderByPostingDateDesc(
+            TENANT, disbursed.getId());
+        assertFalse(disbTxns.isEmpty(), "Disbursement transaction must exist");
+        LoanTransaction disbTxn = disbTxns.get(0);
+        assertNotNull(disbTxn.getVoucherNumber(), "Disbursement must have voucher number");
+        assertNotNull(disbTxn.getJournalEntryId(), "Disbursement must link to journal entry");
+        assertNotNull(disbTxn.getTransactionRef(), "Disbursement must have transaction ref");
+
         // Verify GL after disbursement
         GLMaster loanAssetGL = glMasterRepository.findByTenantIdAndGlCode(TENANT, "1001").orElseThrow();
         GLMaster bankOpsGL = glMasterRepository.findByTenantIdAndGlCode(TENANT, "1100").orElseThrow();
@@ -192,6 +202,11 @@ class LoanLifecycleIntegrationTest {
         // (1,000,000 × 10% / 365) × 1 = 273.97
         assertEquals(0, new BigDecimal("273.97").compareTo(accrualTxn.getAmount()));
 
+        // CBS: Verify voucher number is generated for every transaction (Transaction 360 view)
+        assertNotNull(accrualTxn.getVoucherNumber(), "Voucher number must be generated for accrual");
+        assertTrue(accrualTxn.getVoucherNumber().startsWith("VCH/"),
+            "Voucher must follow CBS format VCH/branch/date/seq");
+
         // Verify account balance
         LoanAccount afterAccrual = loanAccountService.getAccount(accNo);
         assertEquals(0, new BigDecimal("273.97").compareTo(afterAccrual.getAccruedInterest()));
@@ -202,6 +217,11 @@ class LoanLifecycleIntegrationTest {
         assertNotNull(repayTxn);
         assertTrue(repayTxn.getPrincipalComponent().compareTo(BigDecimal.ZERO) > 0);
         assertTrue(repayTxn.getInterestComponent().compareTo(BigDecimal.ZERO) > 0);
+
+        // CBS Transaction 360: Verify repayment has voucher
+        assertNotNull(repayTxn.getVoucherNumber(), "Repayment must have voucher number");
+        assertTrue(repayTxn.getVoucherNumber().startsWith("VCH/"),
+            "Repayment voucher must follow CBS format");
 
         // Principal should decrease
         LoanAccount afterRepay = loanAccountService.getAccount(accNo);

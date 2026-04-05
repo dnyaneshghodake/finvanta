@@ -89,7 +89,8 @@ public class LoanTransaction extends BaseEntity {
      * Format: VCH/{branchCode}/{YYYYMMDD}/{sequence}
      * Example: "VCH/HQ001/20260401/000042"
      *
-     * Null for system-generated EOD transactions that bypass TransactionEngine.
+     * All transactions (user-initiated and EOD system-generated) route through
+     * TransactionEngine, so every LoanTransaction has a voucher number.
      */
     @Column(name = "voucher_number", length = 40)
     private String voucherNumber;
