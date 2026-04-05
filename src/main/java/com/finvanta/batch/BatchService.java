@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -275,11 +276,11 @@ public class BatchService {
      */
     @Transactional
     protected void calculateProvisioning(LoanAccount account) {
-        java.math.BigDecimal newProvisioning = provisioningRule.calculateProvisioning(account);
-        java.math.BigDecimal currentProvisioning = account.getProvisioningAmount();
-        java.math.BigDecimal delta = newProvisioning.subtract(currentProvisioning);
+        BigDecimal newProvisioning = provisioningRule.calculateProvisioning(account);
+        BigDecimal currentProvisioning = account.getProvisioningAmount();
+        BigDecimal delta = newProvisioning.subtract(currentProvisioning);
 
-        if (delta.compareTo(java.math.BigDecimal.ZERO) != 0) {
+        if (delta.compareTo(BigDecimal.ZERO) != 0) {
             account.setProvisioningAmount(newProvisioning);
             account.setUpdatedBy("SYSTEM");
             loanAccountRepository.save(account);
@@ -298,14 +299,13 @@ public class BatchService {
     }
 
     /**
-     * CBS Blueprint Step 8: GL Balance Validation.
-     * Validates that total debits == total credits across all postable GL accounts.
-     * Per Finacle/Temenos, this is a mandatory pre-close check.
+     * CBS EOD Step: GL Balance Validation (Trial Balance Check).
+     * Per Finacle/Temenos, validates total debits == total credits across
+     * all postable GL accounts before day close.
+     *
      * GL imbalance is logged as a warning — it indicates a reconciliation issue
      * but should not block EOD completion (would lock the business day).
-     */
-    /**
-     * GL Balance Validation stub.
+     *
      * TODO: Inject GLMasterRepository or AccountingService and query
      * SUM(debit_balance) vs SUM(credit_balance) from gl_master.
      * If imbalanced, log WARNING and create a reconciliation exception record.
