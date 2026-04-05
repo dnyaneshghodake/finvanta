@@ -1,14 +1,12 @@
 package com.finvanta.controller;
 
-import com.finvanta.domain.entity.ProductMaster;
-import com.finvanta.domain.entity.TransactionLimit;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.repository.TransactionLimitRepository;
+import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /**
  * CBS Admin Controller — Product Master and Transaction Limit management.
@@ -45,10 +43,14 @@ public class AdminController {
         return mav;
     }
 
-    /** View product details */
+    /** View product details — validates tenant ownership to prevent cross-tenant data leak */
     @GetMapping("/products/{id}")
     public ModelAndView viewProduct(@PathVariable Long id) {
-        ProductMaster product = productRepository.findById(id).orElse(null);
+        String tenantId = TenantContext.getCurrentTenant();
+        var product = productRepository.findById(id)
+            .filter(p -> p.getTenantId().equals(tenantId))
+            .orElseThrow(() -> new BusinessException("PRODUCT_NOT_FOUND",
+                "Product not found: " + id));
         ModelAndView mav = new ModelAndView("admin/product-detail");
         mav.addObject("product", product);
         return mav;

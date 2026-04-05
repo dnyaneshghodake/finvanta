@@ -3,9 +3,6 @@ package com.finvanta.accounting;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.DebitCredit;
-import com.finvanta.repository.LoanAccountRepository;
-import com.finvanta.util.BusinessException;
-import com.finvanta.util.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -48,16 +45,13 @@ public class SuspenseService {
     private static final Logger log = LoggerFactory.getLogger(SuspenseService.class);
 
     private final AccountingService accountingService;
-    private final LoanAccountRepository loanAccountRepository;
     private final AuditService auditService;
     private final ProductGLResolver glResolver;
 
     public SuspenseService(AccountingService accountingService,
-                            LoanAccountRepository loanAccountRepository,
                             AuditService auditService,
                             ProductGLResolver glResolver) {
         this.accountingService = accountingService;
-        this.loanAccountRepository = loanAccountRepository;
         this.auditService = auditService;
         this.glResolver = glResolver;
     }
