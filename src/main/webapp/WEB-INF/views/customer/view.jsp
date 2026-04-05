@@ -50,6 +50,74 @@
             </table>
         </div>
     </div>
+
+    <!-- Loan Applications for this Customer -->
+    <div class="fv-card">
+        <div class="card-header">Loan Applications</div>
+        <div class="card-body">
+            <table class="table fv-table">
+                <thead>
+                    <tr>
+                        <th>App No.</th>
+                        <th>Product</th>
+                        <th class="text-end">Amount</th>
+                        <th>Rate</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="app" items="${loanApplications}">
+                        <tr>
+                            <td><c:out value="${app.applicationNumber}" /></td>
+                            <td><c:out value="${app.productType}" /></td>
+                            <td class="amount"><fmt:formatNumber value="${app.requestedAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td><fmt:formatNumber value="${app.interestRate}" type="number" maxFractionDigits="2" />%</td>
+                            <td><span class="fv-badge fv-badge-pending"><c:out value="${app.status}" /></span></td>
+                            <td><c:out value="${app.applicationDate}" /></td>
+                        </tr>
+                    </c:forEach>
+                    <c:if test="${empty loanApplications}">
+                        <tr><td colspan="6" class="text-center text-muted">No loan applications</td></tr>
+                    </c:if>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Loan Accounts for this Customer -->
+    <div class="fv-card">
+        <div class="card-header">Loan Accounts</div>
+        <div class="card-body">
+            <table class="table fv-table">
+                <thead>
+                    <tr>
+                        <th>Account No.</th>
+                        <th>Product</th>
+                        <th class="text-end">Sanctioned</th>
+                        <th class="text-end">Outstanding</th>
+                        <th>DPD</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="acc" items="${loanAccounts}">
+                        <tr>
+                            <td><a href="${pageContext.request.contextPath}/loan/account/${acc.accountNumber}"><c:out value="${acc.accountNumber}" /></a></td>
+                            <td><c:out value="${acc.productType}" /></td>
+                            <td class="amount"><fmt:formatNumber value="${acc.sanctionedAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${acc.outstandingPrincipal}" type="number" maxFractionDigits="2" /></td>
+                            <td><c:out value="${acc.daysPastDue}" /></td>
+                            <td><span class="fv-badge ${acc.status.npa() ? 'fv-badge-npa' : 'fv-badge-active'}"><c:out value="${acc.status}" /></span></td>
+                        </tr>
+                    </c:forEach>
+                    <c:if test="${empty loanAccounts}">
+                        <tr><td colspan="6" class="text-center text-muted">No loan accounts</td></tr>
+                    </c:if>
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 
 <%@ include file="../layout/footer.jsp" %>
