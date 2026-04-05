@@ -16,7 +16,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/resources/**", "/css/**", "/js/**", "/h2-console/**").permitAll()
+                .requestMatchers("/resources/**", "/css/**", "/js/**", "/fonts/**", "/img/**", "/h2-console/**").permitAll()
                 .requestMatchers("/admin/**").hasRole("ADMIN")
                 .requestMatchers("/workflow/approve/**", "/workflow/reject/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/audit/**").hasAnyRole("AUDITOR", "ADMIN")
