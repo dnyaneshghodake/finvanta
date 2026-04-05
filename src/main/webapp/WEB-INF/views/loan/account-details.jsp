@@ -55,7 +55,9 @@
                 <tr><td class="fw-bold">Total Outstanding</td><td class="amount fw-bold"><fmt:formatNumber value="${account.totalOutstanding}" type="number" maxFractionDigits="2" /> INR</td></tr>
                 <tr><td class="fw-bold">Overdue Principal</td><td class="amount"><fmt:formatNumber value="${account.overduePrincipal}" type="number" maxFractionDigits="2" /> INR</td></tr>
                 <tr><td class="fw-bold">Overdue Interest</td><td class="amount"><fmt:formatNumber value="${account.overdueInterest}" type="number" maxFractionDigits="2" /> INR</td></tr>
+                <tr><td class="fw-bold">Disbursed Amount</td><td class="amount"><fmt:formatNumber value="${account.disbursedAmount}" type="number" maxFractionDigits="2" /> INR</td></tr>
                 <tr><td class="fw-bold">Last Accrual Date</td><td><c:out value="${account.lastInterestAccrualDate}" default="--" /></td></tr>
+                <tr><td class="fw-bold">Last Penal Accrual Date</td><td><c:out value="${account.lastPenalAccrualDate}" default="--" /></td></tr>
                 <tr><td class="fw-bold">NPA Date</td><td><c:out value="${account.npaDate}" default="--" /></td></tr>
                 <tr><td class="fw-bold">NPA Classification Date</td><td><c:out value="${account.npaClassificationDate}" default="--" /></td></tr>
                 <tr><td class="fw-bold">Provisioning</td><td class="amount"><fmt:formatNumber value="${account.provisioningAmount}" type="number" maxFractionDigits="2" /> INR</td></tr>
@@ -220,6 +222,7 @@
                         <th class="text-end">Amount</th>
                         <th class="text-end">Principal</th>
                         <th class="text-end">Interest</th>
+                        <th class="text-end">Penalty</th>
                         <th class="text-end">Balance After</th>
                         <th>Value Date</th>
                         <th>Narration</th>
@@ -237,6 +240,7 @@
                             <td class="amount"><fmt:formatNumber value="${txn.amount}" type="number" maxFractionDigits="2" /></td>
                             <td class="amount"><fmt:formatNumber value="${txn.principalComponent}" type="number" maxFractionDigits="2" /></td>
                             <td class="amount"><fmt:formatNumber value="${txn.interestComponent}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${txn.penaltyComponent}" type="number" maxFractionDigits="2" /></td>
                             <td class="amount"><fmt:formatNumber value="${txn.balanceAfter}" type="number" maxFractionDigits="2" /></td>
                             <td><c:out value="${txn.valueDate}" /></td>
                             <td><c:out value="${txn.narration}" /></td>
@@ -265,7 +269,7 @@
                         </tr>
                     </c:forEach>
                     <c:if test="${empty transactions}">
-                        <tr><td colspan="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN') ? 10 : 9}" class="text-center text-muted">No transactions yet</td></tr>
+                        <tr><td colspan="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN') ? 11 : 10}" class="text-center text-muted">No transactions yet</td></tr>
                     </c:if>
                 </tbody>
             </table>

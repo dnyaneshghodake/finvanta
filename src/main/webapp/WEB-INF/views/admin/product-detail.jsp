@@ -24,6 +24,17 @@
                 <tr><td class="fw-bold">Repayment Allocation</td><td><c:out value="${product.repaymentAllocation}" /></td></tr>
                 <tr><td class="fw-bold">Prepayment Penalty</td><td><c:out value="${product.prepaymentPenaltyApplicable ? 'Yes' : 'No'}" /></td></tr>
                 <tr><td class="fw-bold">Processing Fee</td><td><fmt:formatNumber value="${product.processingFeePct}" maxFractionDigits="2" />%</td></tr>
+                <tr><td class="fw-bold">Default Penal Rate</td><td><fmt:formatNumber value="${product.defaultPenalRate}" maxFractionDigits="2" />% p.a.</td></tr>
+                <tr><td class="fw-bold">Interest Rate Range</td><td><fmt:formatNumber value="${product.minInterestRate}" maxFractionDigits="2" />% — <fmt:formatNumber value="${product.maxInterestRate}" maxFractionDigits="2" />%</td></tr>
+                <tr><td class="fw-bold">Loan Amount Range</td><td class="amount"><fmt:formatNumber value="${product.minLoanAmount}" type="number" maxFractionDigits="0" /> — <fmt:formatNumber value="${product.maxLoanAmount}" type="number" maxFractionDigits="0" /></td></tr>
+                <tr><td class="fw-bold">Tenure Range</td><td><c:out value="${product.minTenureMonths}" /> — <c:out value="${product.maxTenureMonths}" /> months</td></tr>
+                <tr><td class="fw-bold">Description</td><td><c:out value="${product.description}" default="—" /></td></tr>
+                <tr><td class="fw-bold">Status</td><td>
+                    <c:choose>
+                        <c:when test="${product.active}"><span class="fv-badge fv-badge-active">ACTIVE</span></c:when>
+                        <c:otherwise><span class="fv-badge fv-badge-rejected">INACTIVE</span></c:otherwise>
+                    </c:choose>
+                </td></tr>
                 </tbody>
             </table>
 
