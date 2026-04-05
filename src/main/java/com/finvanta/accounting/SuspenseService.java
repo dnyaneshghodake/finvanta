@@ -35,11 +35,11 @@ import java.util.List;
  *   CR Interest Income (4001)          — recognize as income (now actually received)
  *
  * Example:
- *   Loan ₹10,00,000 at 10% — ₹8,333/month interest
- *   Account accrued interest for 3 months before NPA: ₹25,000
+ *   Loan INR 10,00,000 at 10% -- INR 8,333/month interest
+ *   Account accrued interest for 3 months before NPA: INR 25,000
  *   On NPA classification:
- *     DR Interest Income (4001)    ₹25,000
- *     CR Interest Suspense (2100)  ₹25,000
+ *     DR Interest Income (4001)    INR 25,000
+ *     CR Interest Suspense (2100)  INR 25,000
  *   Account's accruedInterest moves to suspense tracking
  */
 @Service
@@ -119,7 +119,7 @@ public class SuspenseService {
 
         auditService.logEvent("LoanAccount", account.getId(), "SUSPENSE_REVERSAL",
             accruedInterest.toString(), "0", "SUSPENSE",
-            "Interest reversed to suspense: ₹" + accruedInterest + " for " + account.getAccountNumber());
+            "Interest reversed to suspense: INR " + accruedInterest + " for " + account.getAccountNumber());
 
         log.info("Interest reversed to suspense: accNo={}, amount={}",
             account.getAccountNumber(), accruedInterest);
@@ -170,7 +170,7 @@ public class SuspenseService {
 
         auditService.logEvent("LoanAccount", account.getId(), "SUSPENSE_RELEASE",
             null, interestCollected.toString(), "SUSPENSE",
-            "Interest released from suspense: ₹" + interestCollected + " for " + account.getAccountNumber());
+            "Interest released from suspense: INR " + interestCollected + " for " + account.getAccountNumber());
 
         log.info("Interest released from suspense: accNo={}, amount={}",
             account.getAccountNumber(), interestCollected);
