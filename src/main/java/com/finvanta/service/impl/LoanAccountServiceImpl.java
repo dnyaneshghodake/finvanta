@@ -694,6 +694,13 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         BigDecimal provisionHeld = account.getProvisioningAmount();
         String productType = account.getProductType();
 
+        // CBS: Guard against write-off with nothing to write off
+        if (writeOffAmount.compareTo(BigDecimal.ZERO) <= 0
+                && interestReceivable.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("NOTHING_TO_WRITE_OFF",
+                "Account " + accountNumber + " has no outstanding principal or interest to write off.");
+        }
+
         // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
         // Write-off is a compound posting (multiple balanced journals in one atomic transaction):
         //   1. DR Write-Off Expense / CR Loan Asset (principal)

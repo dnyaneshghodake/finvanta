@@ -218,6 +218,11 @@ public class TransactionEngine {
         // ================================================================
         JournalEntry journalEntry;
         if (request.isCompound()) {
+            // CBS Compound Posting: each group is a separate balanced journal entry.
+            // All groups share the same voucher, transaction ref, and audit trail.
+            // The first journal entry is returned as the primary reference.
+            // All journal entries use the same sourceRef (account number) so they can
+            // be queried together via JournalEntryRepository.findByTenantIdAndSourceModuleAndSourceRef().
             JournalEntry firstEntry = null;
             for (TransactionRequest.CompoundJournalGroup group : request.getCompoundJournalGroups()) {
                 JournalEntry entry = accountingService.postJournalEntry(
@@ -230,6 +235,8 @@ public class TransactionEngine {
                 if (firstEntry == null) {
                     firstEntry = entry;
                 }
+                log.debug("Compound journal group posted: ref={}, debit={}, credit={}",
+                    entry.getJournalRef(), entry.getTotalDebit(), entry.getTotalCredit());
             }
             journalEntry = firstEntry;
         } else {

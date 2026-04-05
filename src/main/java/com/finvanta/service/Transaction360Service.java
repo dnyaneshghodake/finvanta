@@ -113,10 +113,21 @@ public class Transaction360Service {
         view.put("branch", account.getBranch());
 
         // 3. GL Posting (Journal + Lines)
+        // For compound transactions (e.g., write-off), the primary journalEntryId points to
+        // the first journal entry only. All compound journals share the same sourceModule and
+        // sourceRef (account number), so we query all related journals for complete 360 view.
         if (txn.getJournalEntryId() != null) {
             journalEntryRepository.findById(txn.getJournalEntryId()).ifPresent(journal -> {
                 view.put("journal", journal);
                 view.put("journalLines", journal.getLines());
+
+                // CBS Compound Journal: find all related journals for this transaction
+                List<JournalEntry> relatedJournals = journalEntryRepository
+                    .findByTenantIdAndSourceModuleAndSourceRef(
+                        tenantId, journal.getSourceModule(), journal.getSourceRef());
+                if (relatedJournals.size() > 1) {
+                    view.put("compoundJournals", relatedJournals);
+                }
             });
         }
 
