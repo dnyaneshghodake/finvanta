@@ -6,6 +6,7 @@ import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.BranchRepository;
+import com.finvanta.service.MakerCheckerService;
 import com.finvanta.service.SequenceGeneratorService;
 import com.finvanta.service.TransactionLimitService;
 import com.finvanta.util.BusinessException;
@@ -67,6 +68,7 @@ public class TransactionEngine {
 
     private final AccountingService accountingService;
     private final TransactionLimitService limitService;
+    private final MakerCheckerService makerCheckerService;
     private final BusinessCalendarRepository calendarRepository;
     private final BranchRepository branchRepository;
     private final AuditService auditService;
@@ -74,12 +76,14 @@ public class TransactionEngine {
 
     public TransactionEngine(AccountingService accountingService,
                               TransactionLimitService limitService,
+                              MakerCheckerService makerCheckerService,
                               BusinessCalendarRepository calendarRepository,
                               BranchRepository branchRepository,
                               AuditService auditService,
                               SequenceGeneratorService sequenceGenerator) {
         this.accountingService = accountingService;
         this.limitService = limitService;
+        this.makerCheckerService = makerCheckerService;
         this.calendarRepository = calendarRepository;
         this.branchRepository = branchRepository;
         this.auditService = auditService;
@@ -196,16 +200,49 @@ public class TransactionEngine {
 
         // ================================================================
         // STEP 7: Maker-Checker Gate
-        // Transactions above configured threshold require checker approval
-        // For now: all transactions are auto-approved (maker-checker on
-        // financial transactions is a future enhancement)
-        // System-generated transactions (EOD) bypass maker-checker
+        // Per RBI Internal Controls: transactions above the per-transaction limit
+        // require dual authorization (maker initiates, checker approves).
+        // System-generated transactions (EOD batch) bypass maker-checker.
+        // Below-threshold transactions are auto-approved (single authorization).
+        //
+        // When maker-checker is triggered:
+        //   - An ApprovalWorkflow record is created with PENDING_APPROVAL status
+        //   - TransactionResult is returned with status=PENDING_APPROVAL
+        //   - NO GL posting occurs until checker approves
+        //   - Caller must check result.isPendingApproval() and handle accordingly
         // ================================================================
         String postingStatus = "POSTED";
-        // Future: if (!request.isSystemGenerated() && exceedsThreshold(request)) {
-        //     postingStatus = "PENDING_APPROVAL";
-        //     // Save to pending_transactions table, return without GL posting
-        // }
+        if (!request.isSystemGenerated()
+                && makerCheckerService.requiresApproval(
+                    request.getAmount(), request.getTransactionType())) {
+            postingStatus = "PENDING_APPROVAL";
+
+            // Create approval workflow -- no GL posting yet
+            makerCheckerService.createPendingApproval(
+                "Transaction", 0L,
+                request.getTransactionType(),
+                request.getSourceModule() + "|" + request.getAccountReference()
+                    + "|" + request.getAmount() + "|" + request.getTransactionType());
+
+            String txnRef = ReferenceGenerator.generateTransactionRef();
+            auditService.logEvent("Transaction", 0L,
+                "PENDING_APPROVAL", null, txnRef, request.getSourceModule(),
+                "Transaction pending approval: " + request.getTransactionType()
+                    + " INR " + request.getAmount()
+                    + " for " + request.getAccountReference()
+                    + " | User: " + currentUser);
+
+            log.info("Transaction pending maker-checker approval: type={}, amount={}, account={}, user={}",
+                request.getTransactionType(), request.getAmount(),
+                request.getAccountReference(), currentUser);
+
+            return new TransactionResult(
+                txnRef, null, null, null,
+                request.getAmount(), request.getAmount(),
+                request.getValueDate(), LocalDateTime.now(),
+                postingStatus
+            );
+        }
 
         // ================================================================
         // STEP 8: Double-Entry Journal Posting
