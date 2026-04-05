@@ -62,6 +62,32 @@ public interface LoanAccountService {
      */
     LoanTransaction processPrepayment(String accountNumber, BigDecimal amount, LocalDate businessDate);
 
+    /**
+     * CBS Transaction Reversal per Finacle/Temenos standards.
+     * Creates a contra journal entry that mirrors the original transaction.
+     * Per CBS audit rules: original transaction is marked reversed (never deleted).
+     * GL entries are the exact reverse of the original posting.
+     *
+     * @param transactionRef Reference of the transaction to reverse
+     * @param reason         Reversal reason (mandatory for audit trail)
+     * @param businessDate   CBS business date
+     * @return The reversal transaction record
+     */
+    LoanTransaction reverseTransaction(String transactionRef, String reason, LocalDate businessDate);
+
+    /**
+     * CBS Fee Charging per RBI Fair Lending Code.
+     * Processing fees, documentation charges, etc. charged at disbursement or ad-hoc.
+     * GL Entry: DR Bank Operations (1100) / CR Fee Income (4002)
+     *
+     * @param accountNumber Loan account number
+     * @param feeAmount     Fee amount to charge
+     * @param feeType       Fee description (e.g., "Processing Fee", "Documentation Charge")
+     * @param businessDate  CBS business date
+     * @return Transaction record
+     */
+    LoanTransaction chargeFee(String accountNumber, BigDecimal feeAmount, String feeType, LocalDate businessDate);
+
     LoanAccount getAccount(String accountNumber);
 
     List<LoanAccount> getActiveAccounts();

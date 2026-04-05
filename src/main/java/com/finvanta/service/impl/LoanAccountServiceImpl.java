@@ -738,6 +738,153 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     }
 
     @Override
+    @Transactional
+    public LoanTransaction reverseTransaction(String transactionRef, String reason, LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String currentUser = SecurityUtil.getCurrentUsername();
+
+        LoanTransaction original = transactionRepository
+            .findByTenantIdAndTransactionRef(tenantId, transactionRef)
+            .orElseThrow(() -> new BusinessException("TRANSACTION_NOT_FOUND",
+                "Transaction not found: " + transactionRef));
+
+        if (original.isReversed()) {
+            throw new BusinessException("ALREADY_REVERSED",
+                "Transaction " + transactionRef + " has already been reversed");
+        }
+
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException("REVERSAL_REASON_REQUIRED",
+                "Reversal reason is mandatory per CBS audit rules");
+        }
+
+        LoanAccount account = original.getLoanAccount();
+
+        // Post contra journal entry — exact reverse of original GL lines
+        // The original journal entry's debit becomes credit and vice versa
+        var originalJournal = original.getJournalEntryId();
+        BigDecimal amount = original.getAmount();
+
+        List<JournalLineRequest> reversalLines = new java.util.ArrayList<>();
+        // Reverse the bank/cash side
+        reversalLines.add(new JournalLineRequest(GL_CASH_BANK, DebitCredit.CREDIT, amount,
+            "REVERSAL: " + transactionRef + " - " + reason));
+        // Reverse the asset/receivable side
+        if (original.getPrincipalComponent().compareTo(BigDecimal.ZERO) > 0) {
+            reversalLines.add(new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.DEBIT,
+                original.getPrincipalComponent(),
+                "REVERSAL principal: " + transactionRef));
+        }
+        if (original.getInterestComponent().compareTo(BigDecimal.ZERO) > 0) {
+            reversalLines.add(new JournalLineRequest(GL_INTEREST_RECEIVABLE, DebitCredit.DEBIT,
+                original.getInterestComponent(),
+                "REVERSAL interest: " + transactionRef));
+        }
+
+        var journalEntry = accountingService.postJournalEntry(
+            businessDate,
+            "REVERSAL of " + transactionRef + ": " + reason,
+            "REVERSAL", account.getAccountNumber(),
+            reversalLines
+        );
+
+        // Create reversal transaction
+        LoanTransaction reversal = new LoanTransaction();
+        reversal.setTenantId(tenantId);
+        reversal.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        reversal.setLoanAccount(account);
+        reversal.setTransactionType(TransactionType.REVERSAL);
+        reversal.setAmount(amount);
+        reversal.setPrincipalComponent(original.getPrincipalComponent());
+        reversal.setInterestComponent(original.getInterestComponent());
+        reversal.setPenaltyComponent(original.getPenaltyComponent());
+        reversal.setValueDate(businessDate);
+        reversal.setPostingDate(LocalDateTime.now());
+        reversal.setBalanceAfter(account.getTotalOutstanding());
+        reversal.setNarration("REVERSAL of " + transactionRef + ": " + reason);
+        reversal.setJournalEntryId(journalEntry.getId());
+        reversal.setReversedByRef(transactionRef);
+        reversal.setCreatedBy(currentUser);
+        LoanTransaction savedReversal = transactionRepository.save(reversal);
+
+        // Mark original as reversed (never delete per CBS audit rules)
+        original.setReversed(true);
+        original.setReversedByRef(savedReversal.getTransactionRef());
+        original.setUpdatedBy(currentUser);
+        transactionRepository.save(original);
+
+        auditService.logEvent("LoanTransaction", original.getId(), "REVERSAL",
+            transactionRef, savedReversal.getTransactionRef(), "LOAN_ACCOUNTS",
+            "Transaction reversed: " + transactionRef + " → " + savedReversal.getTransactionRef()
+                + ", reason: " + reason);
+
+        log.info("Transaction reversed: original={}, reversal={}, reason={}",
+            transactionRef, savedReversal.getTransactionRef(), reason);
+
+        return savedReversal;
+    }
+
+    @Override
+    @Transactional
+    public LoanTransaction chargeFee(String accountNumber, BigDecimal feeAmount,
+                                      String feeType, LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String currentUser = SecurityUtil.getCurrentUsername();
+
+        LoanAccount account = accountRepository.findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
+                "Loan account not found: " + accountNumber));
+
+        if (account.getStatus().isTerminal()) {
+            throw new BusinessException("ACCOUNT_CLOSED",
+                "Cannot charge fee on " + account.getStatus() + " account");
+        }
+
+        if (feeAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("INVALID_AMOUNT",
+                "Fee amount must be positive");
+        }
+
+        // GL Entry: DR Bank Operations (1100) — fee collected from borrower
+        //           CR Fee Income (4002) — recognized as income
+        List<JournalLineRequest> journalLines = List.of(
+            new JournalLineRequest(GL_CASH_BANK, DebitCredit.DEBIT, feeAmount,
+                feeType + " - " + accountNumber),
+            new JournalLineRequest(GLConstants.FEE_INCOME, DebitCredit.CREDIT, feeAmount,
+                feeType + " income - " + accountNumber)
+        );
+
+        var journalEntry = accountingService.postJournalEntry(
+            businessDate,
+            feeType + " for " + accountNumber,
+            "LOAN", accountNumber,
+            journalLines
+        );
+
+        LoanTransaction txn = new LoanTransaction();
+        txn.setTenantId(tenantId);
+        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setLoanAccount(account);
+        txn.setTransactionType(TransactionType.FEE_CHARGE);
+        txn.setAmount(feeAmount);
+        txn.setValueDate(businessDate);
+        txn.setPostingDate(LocalDateTime.now());
+        txn.setBalanceAfter(account.getTotalOutstanding());
+        txn.setNarration(feeType + ": " + feeAmount);
+        txn.setJournalEntryId(journalEntry.getId());
+        txn.setCreatedBy(currentUser);
+        LoanTransaction savedTxn = transactionRepository.save(txn);
+
+        auditService.logEvent("LoanAccount", account.getId(), "FEE_CHARGE",
+            null, savedTxn.getTransactionRef(), "LOAN_ACCOUNTS",
+            feeType + ": " + feeAmount + " for " + accountNumber);
+
+        log.info("Fee charged: accNo={}, type={}, amount={}", accountNumber, feeType, feeAmount);
+
+        return savedTxn;
+    }
+
+    @Override
     public LoanAccount getAccount(String accountNumber) {
         String tenantId = TenantContext.getCurrentTenant();
         return accountRepository.findByTenantIdAndAccountNumber(tenantId, accountNumber)
