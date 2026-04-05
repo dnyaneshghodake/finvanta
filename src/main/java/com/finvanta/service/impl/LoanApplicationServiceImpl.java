@@ -124,6 +124,10 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
 
         LoanApplication saved = applicationRepository.save(app);
 
+        // Resolve the existing VERIFY workflow before initiating APPROVE
+        workflowService.resolveExistingPendingWorkflow(
+            "LoanApplication", saved.getId(), currentUser, "Verified");
+
         workflowService.initiateApproval(
             "LoanApplication", saved.getId(),
             "APPROVE", "Verified, pending approval",

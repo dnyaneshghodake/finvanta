@@ -145,6 +145,29 @@ public class ApprovalWorkflowService {
         return saved;
     }
 
+    /**
+     * Resolves an existing PENDING_APPROVAL workflow for an entity.
+     * Called before initiating a new workflow to prevent the duplicate check
+     * from blocking the loan origination pipeline (VERIFY → APPROVE transition).
+     */
+    @Transactional
+    public void resolveExistingPendingWorkflow(String entityType, Long entityId,
+                                                String resolvedBy, String remarks) {
+        String tenantId = TenantContext.getCurrentTenant();
+        workflowRepository.findByTenantIdAndEntityTypeAndEntityIdAndStatus(
+            tenantId, entityType, entityId, ApprovalStatus.PENDING_APPROVAL
+        ).ifPresent(existing -> {
+            existing.setStatus(ApprovalStatus.APPROVED);
+            existing.setCheckerUserId(resolvedBy);
+            existing.setCheckerRemarks(remarks);
+            existing.setActionedAt(LocalDateTime.now());
+            existing.setUpdatedBy(resolvedBy);
+            workflowRepository.save(existing);
+            log.info("Resolved pending workflow: entity={}/{}, action={}",
+                entityType, entityId, existing.getActionType());
+        });
+    }
+
     public List<ApprovalWorkflow> getPendingApprovals() {
         String tenantId = TenantContext.getCurrentTenant();
         return workflowRepository.findByTenantIdAndStatus(tenantId, ApprovalStatus.PENDING_APPROVAL);
