@@ -23,7 +23,8 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "business_calendar", indexes = {
-    @Index(name = "idx_buscal_tenant_date", columnList = "tenant_id, business_date", unique = true)
+    @Index(name = "idx_buscal_tenant_date", columnList = "tenant_id, business_date", unique = true),
+    @Index(name = "idx_buscal_day_status", columnList = "tenant_id, day_status")
 })
 @Getter
 @Setter

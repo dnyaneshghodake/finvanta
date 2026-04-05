@@ -183,6 +183,11 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
 
         LoanApplication saved = applicationRepository.save(app);
 
+        // Resolve the APPROVE workflow — verifyApplication initiated it, approval completes it.
+        // Without this, the workflow stays in PENDING_APPROVAL forever.
+        workflowService.resolveExistingPendingWorkflow(
+            "LoanApplication", saved.getId(), currentUser, "Approved: " + remarks);
+
         auditService.logEvent("LoanApplication", saved.getId(), "APPROVE",
             previousStatus.name(), saved.getStatus().name(), "LOAN_ORIGINATION",
             "Application approved by " + currentUser + ", amount: " + saved.getApprovedAmount());

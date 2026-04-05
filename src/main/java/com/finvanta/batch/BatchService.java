@@ -210,6 +210,12 @@ public class BatchService {
         return eodJob;
     }
 
+    /**
+     * Validates and locks the business date for EOD processing.
+     * Sets dayStatus to EOD_RUNNING per documented lifecycle:
+     *   NOT_OPENED → DAY_OPEN → EOD_RUNNING → DAY_CLOSED
+     * This prevents new transactions during EOD and signals the system state.
+     */
     @Transactional
     protected BusinessCalendar validateAndLockBusinessDate(String tenantId, LocalDate businessDate) {
         BusinessCalendar calendar = calendarRepository
@@ -228,6 +234,7 @@ public class BatchService {
         }
 
         calendar.setLocked(true);
+        calendar.setDayStatus("EOD_RUNNING");
         return calendarRepository.save(calendar);
     }
 
@@ -290,8 +297,10 @@ public class BatchService {
         fresh.setErrorMessage(errorMessage);
         batchJobRepository.save(fresh);
 
+        // Revert calendar: unlock and restore DAY_OPEN so EOD can be retried
         BusinessCalendar freshCal = calendarRepository.findById(calendar.getId()).orElse(calendar);
         freshCal.setLocked(false);
+        freshCal.setDayStatus("DAY_OPEN");
         calendarRepository.save(freshCal);
     }
 

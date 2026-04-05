@@ -14,6 +14,7 @@ import com.finvanta.domain.rules.NpaClassificationRule;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.repository.LoanApplicationRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
@@ -65,6 +66,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final AuditService auditService;
     private final SuspenseService suspenseService;
     private final com.finvanta.service.LoanScheduleService scheduleService;
+    private final BusinessDateService businessDateService;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
                                    LoanApplicationRepository applicationRepository,
@@ -74,7 +76,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    NpaClassificationRule npaRule,
                                    AuditService auditService,
                                    SuspenseService suspenseService,
-                                   com.finvanta.service.LoanScheduleService scheduleService) {
+                                   com.finvanta.service.LoanScheduleService scheduleService,
+                                   BusinessDateService businessDateService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
@@ -84,6 +87,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.auditService = auditService;
         this.suspenseService = suspenseService;
         this.scheduleService = scheduleService;
+        this.businessDateService = businessDateService;
     }
 
     @Override
@@ -163,6 +167,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         }
 
         BigDecimal disbursementAmount = account.getSanctionedAmount();
+        LocalDate bizDate = businessDateService.getCurrentBusinessDate();
 
         List<JournalLineRequest> journalLines = List.of(
             new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.DEBIT, disbursementAmount,
@@ -172,7 +177,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         );
 
         var journalEntry = accountingService.postJournalEntry(
-            LocalDate.now(),
+            bizDate,
             "Loan disbursement for account " + accountNumber,
             "LOAN", accountNumber,
             journalLines
@@ -185,7 +190,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTransactionType(TransactionType.DISBURSEMENT);
         txn.setAmount(disbursementAmount);
         txn.setPrincipalComponent(disbursementAmount);
-        txn.setValueDate(LocalDate.now());
+        txn.setValueDate(bizDate);
         txn.setPostingDate(LocalDateTime.now());
         txn.setBalanceAfter(disbursementAmount);
         txn.setNarration("Loan disbursement");
@@ -195,10 +200,10 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         account.setDisbursedAmount(disbursementAmount);
         account.setOutstandingPrincipal(disbursementAmount);
-        account.setDisbursementDate(LocalDate.now());
-        account.setLastInterestAccrualDate(LocalDate.now());
-        account.setNextEmiDate(LocalDate.now().plusMonths(1));
-        account.setMaturityDate(LocalDate.now().plusMonths(account.getTenureMonths()));
+        account.setDisbursementDate(bizDate);
+        account.setLastInterestAccrualDate(bizDate);
+        account.setNextEmiDate(bizDate.plusMonths(1));
+        account.setMaturityDate(bizDate.plusMonths(account.getTenureMonths()));
         account.setUpdatedBy(currentUser);
 
         LoanAccount saved = accountRepository.save(account);
