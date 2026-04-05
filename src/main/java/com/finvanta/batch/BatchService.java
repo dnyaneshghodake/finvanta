@@ -1,5 +1,6 @@
 package com.finvanta.batch;
 
+import com.finvanta.accounting.GLConstants;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BatchJob;
 import com.finvanta.domain.entity.BusinessCalendar;
@@ -292,21 +293,16 @@ public class BatchService {
     }
 
     /**
-     * RBI IRAC: Calculate provisioning and post GL entry.
-     * Provisioning is mandatory for all loan accounts:
-     *   Standard/SMA: 0.40%, Sub-Standard: 10%, Doubtful: 40%, Loss: 100%
-     *
-     * GL Entry (when provisioning increases):
-     *   DR Provision Expense (5001) — P&L impact
-     *   CR Provision for NPA (1003) — Balance sheet contra-asset
-     *
-     * GL Entry (when provisioning decreases — e.g., account upgraded):
-     *   DR Provision for NPA (1003) — Release provision
-     *   CR Provision Expense (5001) — P&L reversal
-     */
-    /**
      * RBI IRAC provisioning calculation. Re-fetches account by ID to ensure
      * fresh @Version after prior EOD steps (accrual, DPD, NPA classification).
+     *
+     * Provisioning is mandatory for all loan accounts:
+     *   Standard/SMA: 0.40%, Restructured: 5%, Sub-Standard: 10%, Doubtful: 40%, Loss: 100%
+     *
+     * GL Entry (when provisioning increases):
+     *   DR Provision Expense (5001) / CR Provision for NPA (1003)
+     * GL Entry (when provisioning decreases — e.g., account upgraded):
+     *   DR Provision for NPA (1003) / CR Provision Expense (5001)
      */
     @Transactional
     protected void calculateProvisioning(LoanAccount account) {
