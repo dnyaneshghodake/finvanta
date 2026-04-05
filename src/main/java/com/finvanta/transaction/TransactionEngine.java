@@ -210,14 +210,37 @@ public class TransactionEngine {
         //   - GL balance update (pessimistic lock)
         //   - Immutable ledger posting (hash chain)
         //   - Batch running totals update (pessimistic lock)
+        //
+        // CBS Compound Posting (Finacle TRAN_POSTING multi-leg):
+        // When compoundJournalGroups is set, each group is posted as a separate
+        // balanced journal entry. All share the same voucher and transaction ref.
+        // The first journal entry is returned as the primary reference.
         // ================================================================
-        JournalEntry journalEntry = accountingService.postJournalEntry(
-            request.getValueDate(),
-            request.getNarration(),
-            request.getSourceModule(),
-            request.getAccountReference(),
-            request.getJournalLines()
-        );
+        JournalEntry journalEntry;
+        if (request.isCompound()) {
+            JournalEntry firstEntry = null;
+            for (TransactionRequest.CompoundJournalGroup group : request.getCompoundJournalGroups()) {
+                JournalEntry entry = accountingService.postJournalEntry(
+                    request.getValueDate(),
+                    group.narration(),
+                    request.getSourceModule(),
+                    request.getAccountReference(),
+                    group.lines()
+                );
+                if (firstEntry == null) {
+                    firstEntry = entry;
+                }
+            }
+            journalEntry = firstEntry;
+        } else {
+            journalEntry = accountingService.postJournalEntry(
+                request.getValueDate(),
+                request.getNarration(),
+                request.getSourceModule(),
+                request.getAccountReference(),
+                request.getJournalLines()
+            );
+        }
 
         // ================================================================
         // STEP 9: Voucher Generation

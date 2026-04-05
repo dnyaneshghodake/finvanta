@@ -675,71 +675,81 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         BigDecimal provisionHeld = account.getProvisioningAmount();
         String productType = account.getProductType();
 
-        // CBS: Transaction limit validation before write-off
-        limitService.validateTransactionLimit(writeOffAmount.add(interestReceivable), "WRITE_OFF");
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
+        // Write-off is a compound posting (multiple balanced journals in one atomic transaction):
+        //   1. DR Write-Off Expense / CR Loan Asset (principal)
+        //   2. DR Write-Off Expense / CR Interest Receivable (interest — if any)
+        //   3. DR Provision NPA / CR Provision Expense (provision reversal — if any)
+        // TransactionEngine enforces: amount → business date → day status → branch →
+        // transaction limits (WRITE_OFF) → GL posting → voucher → audit trail
+        List<TransactionRequest.CompoundJournalGroup> journalGroups = new java.util.ArrayList<>();
 
-        // GL Entry 1: Write off the loan asset (principal component)
         if (writeOffAmount.compareTo(BigDecimal.ZERO) > 0) {
-            List<JournalLineRequest> writeOffLines = List.of(
-                new JournalLineRequest(glResolver.getWriteOffExpenseGL(productType), DebitCredit.DEBIT, writeOffAmount,
-                    "Loan write-off principal - " + accountNumber),
-                new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.CREDIT, writeOffAmount,
-                    "Write-off principal asset removal - " + accountNumber)
-            );
-            accountingService.postJournalEntry(
-                businessDate,
+            journalGroups.add(new TransactionRequest.CompoundJournalGroup(
                 "RBI IRAC write-off principal for NPA account " + accountNumber,
-                "WRITE_OFF", accountNumber,
-                writeOffLines
-            );
+                List.of(
+                    new JournalLineRequest(glResolver.getWriteOffExpenseGL(productType), DebitCredit.DEBIT, writeOffAmount,
+                        "Loan write-off principal - " + accountNumber),
+                    new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.CREDIT, writeOffAmount,
+                        "Write-off principal asset removal - " + accountNumber)
+                )
+            ));
         }
 
-        // GL Entry 1b: Write off the interest receivable (interest component)
         if (interestReceivable.compareTo(BigDecimal.ZERO) > 0) {
-            List<JournalLineRequest> interestWriteOffLines = List.of(
-                new JournalLineRequest(glResolver.getWriteOffExpenseGL(productType), DebitCredit.DEBIT, interestReceivable,
-                    "Loan write-off interest - " + accountNumber),
-                new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.CREDIT, interestReceivable,
-                    "Write-off interest receivable removal - " + accountNumber)
-            );
-            accountingService.postJournalEntry(
-                businessDate,
+            journalGroups.add(new TransactionRequest.CompoundJournalGroup(
                 "RBI IRAC write-off interest for NPA account " + accountNumber,
-                "WRITE_OFF", accountNumber,
-                interestWriteOffLines
-            );
+                List.of(
+                    new JournalLineRequest(glResolver.getWriteOffExpenseGL(productType), DebitCredit.DEBIT, interestReceivable,
+                        "Loan write-off interest - " + accountNumber),
+                    new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.CREDIT, interestReceivable,
+                        "Write-off interest receivable removal - " + accountNumber)
+                )
+            ));
         }
 
-        // GL Entry 2: Reverse existing provisioning (no longer needed after write-off)
         if (provisionHeld.compareTo(BigDecimal.ZERO) > 0) {
-            List<JournalLineRequest> provisionReversal = List.of(
-                new JournalLineRequest(glResolver.getProvisionNpaGL(productType), DebitCredit.DEBIT, provisionHeld,
-                    "Provision reversal on write-off - " + accountNumber),
-                new JournalLineRequest(glResolver.getProvisionExpenseGL(productType), DebitCredit.CREDIT, provisionHeld,
-                    "Provision expense release on write-off - " + accountNumber)
-            );
-            accountingService.postJournalEntry(
-                businessDate,
+            journalGroups.add(new TransactionRequest.CompoundJournalGroup(
                 "Provision reversal on write-off for " + accountNumber,
-                "WRITE_OFF", accountNumber,
-                provisionReversal
-            );
+                List.of(
+                    new JournalLineRequest(glResolver.getProvisionNpaGL(productType), DebitCredit.DEBIT, provisionHeld,
+                        "Provision reversal on write-off - " + accountNumber),
+                    new JournalLineRequest(glResolver.getProvisionExpenseGL(productType), DebitCredit.CREDIT, provisionHeld,
+                        "Provision expense release on write-off - " + accountNumber)
+                )
+            ));
         }
+
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("WRITE_OFF")
+                .transactionType("WRITE_OFF")
+                .accountReference(accountNumber)
+                .amount(writeOffAmount.add(interestReceivable))
+                .valueDate(businessDate)
+                .branchCode(account.getBranch().getBranchCode())
+                .productType(productType)
+                .narration("RBI IRAC NPA write-off for " + accountNumber)
+                .compoundJournalGroups(journalGroups)
+                .build()
+        );
 
         // Record write-off transaction
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.WRITE_OFF);
         txn.setAmount(writeOffAmount.add(interestReceivable));
         txn.setPrincipalComponent(writeOffAmount);
         txn.setInterestComponent(interestReceivable);
         txn.setValueDate(businessDate);
-        txn.setPostingDate(LocalDateTime.now());
+        txn.setPostingDate(txnResult.getPostingDate());
         txn.setBalanceAfter(BigDecimal.ZERO);
         txn.setNarration("NPA write-off: principal=" + writeOffAmount
-            + ", interest=" + interestReceivable + ", provision reversed=" + provisionHeld);
+            + ", interest=" + interestReceivable + ", provision reversed=" + provisionHeld
+            + " | Voucher: " + txnResult.getVoucherNumber());
+        txn.setJournalEntryId(txnResult.getJournalEntryId());
         txn.setCreatedBy(currentUser);
         transactionRepository.save(txn);
 
