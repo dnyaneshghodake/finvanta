@@ -1,0 +1,68 @@
+<%@ taglib prefix="c" uri="jakarta.tags.core" %>
+<%@ taglib prefix="fmt" uri="jakarta.tags.fmt" %>
+<c:set var="pageTitle" value="Journal Entries" />
+<%@ include file="../layout/header.jsp" %>
+<%@ include file="../layout/sidebar.jsp" %>
+
+<div class="fv-main">
+    <div class="fv-card">
+        <div class="card-header">Filter</div>
+        <div class="card-body">
+            <form method="get" action="${pageContext.request.contextPath}/accounting/journal-entries" class="fv-form row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label">From Date</label>
+                    <input type="date" name="fromDate" class="form-control" value="${fromDate}" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label">To Date</label>
+                    <input type="date" name="toDate" class="form-control" value="${toDate}" />
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-fv-primary">Filter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="fv-card">
+        <div class="card-header">Journal Entries</div>
+        <div class="card-body">
+            <table class="table fv-table fv-datatable">
+                <thead>
+                    <tr>
+                        <th>Journal Ref</th>
+                        <th>Value Date</th>
+                        <th>Narration</th>
+                        <th>Source</th>
+                        <th class="text-end">Total Debit</th>
+                        <th class="text-end">Total Credit</th>
+                        <th>Posted</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="entry" items="${entries}">
+                        <tr>
+                            <td><c:out value="${entry.journalRef}" /></td>
+                            <td><c:out value="${entry.valueDate}" /></td>
+                            <td><c:out value="${entry.narration}" /></td>
+                            <td><c:out value="${entry.sourceModule}" /> / <c:out value="${entry.sourceRef}" /></td>
+                            <td class="amount"><fmt:formatNumber value="${entry.totalDebit}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${entry.totalCredit}" type="number" maxFractionDigits="2" /></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${entry.posted}"><span class="fv-badge fv-badge-active">Yes</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-pending">No</span></c:otherwise>
+                                </c:choose>
+                            </td>
+                        </tr>
+                    </c:forEach>
+                    <c:if test="${empty entries}">
+                        <tr><td colspan="7" class="text-center text-muted">No journal entries found</td></tr>
+                    </c:if>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<%@ include file="../layout/footer.jsp" %>

@@ -1,0 +1,19 @@
+/* DataTables 2.0 Bootstrap 5 Subset — Finvanta CBS Offline Build */
+table.dataTable{width:100%!important;border-collapse:collapse}
+table.dataTable thead th{cursor:pointer;padding:8px 10px;position:relative}
+table.dataTable thead th.sorting::after,table.dataTable thead th.sorting_asc::after,table.dataTable thead th.sorting_desc::after{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;color:#999}
+table.dataTable thead th.sorting::after{content:"\2195"}
+table.dataTable thead th.sorting_asc::after{content:"\2191"}
+table.dataTable thead th.sorting_desc::after{content:"\2193"}
+.dataTables_wrapper{padding:0}
+.dataTables_wrapper .dataTables_length{float:left;padding:8px 0}
+.dataTables_wrapper .dataTables_filter{float:right;padding:8px 0}
+.dataTables_wrapper .dataTables_filter input{margin-left:8px;padding:4px 8px;border:1px solid #dee2e6;border-radius:4px;font-size:13px}
+.dataTables_wrapper .dataTables_length select{padding:4px 6px;border:1px solid #dee2e6;border-radius:4px;font-size:13px}
+.dataTables_wrapper .dataTables_info{float:left;padding:8px 0;font-size:12px;color:#6c757d}
+.dataTables_wrapper .dataTables_paginate{float:right;padding:8px 0}
+.dataTables_wrapper .dataTables_paginate .paginate_button{display:inline-block;padding:4px 10px;margin:0 2px;border:1px solid #dee2e6;border-radius:4px;cursor:pointer;font-size:12px;text-decoration:none;color:#333;background:#fff}
+.dataTables_wrapper .dataTables_paginate .paginate_button.current{background:#1a237e;color:#fff;border-color:#1a237e}
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover{background:#e8eaf6;border-color:#c5cae9}
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled{color:#ccc;cursor:default;background:#f8f9fa}
+.dataTables_wrapper::after{content:"";display:table;clear:both}
