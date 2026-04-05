@@ -7,23 +7,29 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * CBS Reference Number Generator per Finacle/Temenos numbering conventions.
  *
- * Reference format: PREFIX + BRANCH_CODE + TIMESTAMP + SEQUENCE
- *   APP = Loan Application Number  (e.g., APPHQ001202604011430220500001)
- *   LN  = Loan Account Number      (e.g., LNHQ00120260401143022050001)
- *   TXN = Transaction Reference     (e.g., TXN20260401143022050001)
- *   JRN = Journal Entry Reference   (e.g., JRN20260401143022050001)
+ * Reference format: PREFIX + BRANCH_CODE + TIMESTAMP(17) + SEQUENCE(6)
+ *
+ * Generated lengths (with 5-char branch code like HQ001):
+ *   CUST  = Customer CIF Number     → 4 + 5 + 17 + 6 = 32 chars (column: VARCHAR 40)
+ *   APP   = Loan Application Number → 3 + 5 + 17 + 6 = 31 chars (column: VARCHAR 40)
+ *   LN    = Loan Account Number     → 2 + 5 + 17 + 6 = 30 chars (column: VARCHAR 40)
+ *   TXN   = Transaction Reference   → 3 + 0 + 17 + 6 = 26 chars (column: VARCHAR 40)
+ *   JRN   = Journal Entry Reference → 3 + 0 + 17 + 6 = 26 chars (column: VARCHAR 40)
+ *
+ * CBS Column Width Standard (all reference fields: VARCHAR 40):
+ *   Max generated = 32 chars (CUST with 5-char branch) → 8 chars headroom
  *
  * Uniqueness guarantees (single-JVM):
- * - Millisecond-precision timestamp (yyyyMMddHHmmssSS) — 100ms granularity
+ * - Millisecond-precision timestamp (yyyyMMddHHmmssSSS) — ms granularity
  * - Monotonically increasing 6-digit sequence (never wraps, never resets)
- * - Combined: unique up to 999,999 refs per 10ms window per JVM
+ * - Combined: unique up to 999,999 refs per millisecond per JVM
  *
  * Production CBS deployment (clustered / HA):
- * Replace this generator with a database-backed sequence strategy:
+ * Replace with database-backed sequence:
  *   - SQL Server: CREATE SEQUENCE finvanta_ref_seq START WITH 1 INCREMENT BY 1
  *   - Oracle: CREATE SEQUENCE finvanta_ref_seq MINVALUE 1 CACHE 1000
  *   - Or use a distributed ID generator (Snowflake / ULID)
- * The unique constraint on (tenant_id, account_number) / (tenant_id, transaction_ref)
+ * The unique constraint on (tenant_id, customer_number) / (tenant_id, account_number) etc.
  * in the DDL provides a safety net — duplicate inserts fail at DB level.
  */
 public final class ReferenceGenerator {

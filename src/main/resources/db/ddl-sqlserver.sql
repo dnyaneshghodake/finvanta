@@ -62,7 +62,7 @@ CREATE INDEX idx_buscal_tenant_date ON business_calendar (tenant_id, business_da
 CREATE TABLE customers (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
-    customer_number VARCHAR(20)     NOT NULL,
+    customer_number VARCHAR(40)     NOT NULL,
     first_name      VARCHAR(100)    NOT NULL,
     last_name       VARCHAR(100)    NOT NULL,
     date_of_birth   DATE,

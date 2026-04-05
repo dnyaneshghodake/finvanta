@@ -18,7 +18,7 @@ import java.time.LocalDate;
 @NoArgsConstructor
 public class Customer extends BaseEntity {
 
-    @Column(name = "customer_number", nullable = false, length = 20)
+    @Column(name = "customer_number", nullable = false, length = 40)
     private String customerNumber;
 
     @Column(name = "first_name", nullable = false, length = 100)
