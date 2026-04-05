@@ -1,5 +1,6 @@
 package com.finvanta.domain.entity;
 
+import com.finvanta.domain.enums.DayStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -44,8 +45,9 @@ public class BusinessCalendar extends BaseEntity {
      * Day status per CBS lifecycle:
      *   NOT_OPENED → DAY_OPEN → EOD_RUNNING → DAY_CLOSED
      */
+    @Enumerated(EnumType.STRING)
     @Column(name = "day_status", nullable = false, length = 20)
-    private String dayStatus = "NOT_OPENED";
+    private DayStatus dayStatus = DayStatus.NOT_OPENED;
 
     @Column(name = "is_eod_complete", nullable = false)
     private boolean eodComplete = false;
@@ -70,14 +72,18 @@ public class BusinessCalendar extends BaseEntity {
     private LocalDateTime dayClosedAt;
 
     public boolean isDayOpen() {
-        return "DAY_OPEN".equals(dayStatus);
+        return dayStatus == DayStatus.DAY_OPEN;
     }
 
     public boolean isDayClosed() {
-        return "DAY_CLOSED".equals(dayStatus);
+        return dayStatus == DayStatus.DAY_CLOSED;
     }
 
     public boolean isNotOpened() {
-        return "NOT_OPENED".equals(dayStatus);
+        return dayStatus == DayStatus.NOT_OPENED;
+    }
+
+    public boolean isEodRunning() {
+        return dayStatus == DayStatus.EOD_RUNNING;
     }
 }

@@ -2,6 +2,7 @@ package com.finvanta.service;
 
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BusinessCalendar;
+import com.finvanta.domain.enums.DayStatus;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
@@ -108,7 +109,7 @@ public class BusinessDateService {
                 "Cannot open a holiday: " + businessDate);
         }
 
-        calendar.setDayStatus("DAY_OPEN");
+        calendar.setDayStatus(DayStatus.DAY_OPEN);
         calendar.setDayOpenedBy(currentUser);
         calendar.setDayOpenedAt(LocalDateTime.now());
         calendar.setUpdatedBy(currentUser);
@@ -140,7 +141,7 @@ public class BusinessDateService {
             .orElseThrow(() -> new BusinessException("DATE_NOT_IN_CALENDAR",
                 "Business date " + businessDate + " not found in calendar."));
 
-        if (!calendar.isDayOpen() && !"EOD_RUNNING".equals(calendar.getDayStatus())) {
+        if (!calendar.getDayStatus().canClose()) {
             throw new BusinessException("DAY_NOT_OPEN",
                 "Business date " + businessDate + " is not in a closeable state. Current: " + calendar.getDayStatus());
         }
@@ -150,7 +151,7 @@ public class BusinessDateService {
                 "Cannot close day " + businessDate + " — EOD has not completed successfully.");
         }
 
-        calendar.setDayStatus("DAY_CLOSED");
+        calendar.setDayStatus(DayStatus.DAY_CLOSED);
         calendar.setDayClosedBy(currentUser);
         calendar.setDayClosedAt(LocalDateTime.now());
         calendar.setLocked(false);
