@@ -2,7 +2,6 @@ package com.finvanta.service.impl;
 
 import com.finvanta.accounting.AccountingService;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
-import com.finvanta.accounting.GLConstants;
 import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.accounting.SuspenseService;
 import com.finvanta.audit.AuditService;
@@ -49,8 +48,8 @@ import java.util.List;
  * - Per-role transaction limits via {@link TransactionLimitService} (RBI internal controls)
  * - Idempotency key support on client-initiated transactions (Finacle UNIQUE.REF pattern)
  *
- * GL codes are resolved through product_master configuration. Falls back to
- * {@link GLConstants} when a product is not configured (backward compatible).
+ * GL codes are resolved through product_master configuration via {@link ProductGLResolver}.
+ * Falls back to default GL constants when a product is not configured (backward compatible).
  */
 @Service
 public class LoanAccountServiceImpl implements LoanAccountService {
@@ -118,6 +117,11 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Loan account already exists for application: " + applicationId);
         }
 
+        // CBS: Resolve product defaults from ProductMaster per Finacle PDDEF
+        // If product is configured, use product-level defaults for penal rate, currency, etc.
+        // If not configured, fall back to application-level or system defaults.
+        var product = glResolver.getProduct(application.getProductType());
+
         LoanAccount account = new LoanAccount();
         account.setTenantId(tenantId);
         account.setAccountNumber(ReferenceGenerator.generateAccountNumber(
@@ -126,10 +130,15 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setCustomer(application.getCustomer());
         account.setBranch(application.getBranch());
         account.setProductType(application.getProductType());
+        account.setCurrencyCode(product != null ? product.getCurrencyCode() : "INR");
         account.setSanctionedAmount(application.getApprovedAmount());
         account.setInterestRate(application.getInterestRate());
         account.setPenalRate(application.getPenalRate() != null
-            ? application.getPenalRate() : BigDecimal.valueOf(2)); // RBI default 2% penal
+            ? application.getPenalRate()
+            : (product != null && product.getDefaultPenalRate() != null
+                ? product.getDefaultPenalRate()
+                : BigDecimal.valueOf(2))); // RBI default 2% penal
+        account.setRepaymentFrequency(product != null ? product.getRepaymentFrequency() : "MONTHLY");
         account.setTenureMonths(application.getTenureMonths());
         account.setRemainingTenure(application.getTenureMonths());
         account.setCollateralReference(application.getCollateralReference());

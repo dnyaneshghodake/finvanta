@@ -2,7 +2,6 @@ package com.finvanta.batch;
 
 import com.finvanta.accounting.AccountingService;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
-import com.finvanta.accounting.GLConstants;
 import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.accounting.ReconciliationService;
 import com.finvanta.audit.AuditService;
