@@ -39,12 +39,9 @@
                         <label for="productType" class="form-label">Product Type *</label>
                         <select name="productType" id="productType" class="form-select" required>
                             <option value="">-- Select Product --</option>
-                            <option value="TERM_LOAN">Term Loan</option>
-                            <option value="HOME_LOAN">Home Loan</option>
-                            <option value="PERSONAL_LOAN">Personal Loan</option>
-                            <option value="VEHICLE_LOAN">Vehicle Loan</option>
-                            <option value="EDUCATION_LOAN">Education Loan</option>
-                            <option value="BUSINESS_LOAN">Business Loan</option>
+                            <c:forEach var="product" items="${products}">
+                                <option value="${product.productCode}"><c:out value="${product.productCode}" /> — <c:out value="${product.productName}" /></option>
+                            </c:forEach>
                         </select>
                     </div>
                     <div class="col-md-6">

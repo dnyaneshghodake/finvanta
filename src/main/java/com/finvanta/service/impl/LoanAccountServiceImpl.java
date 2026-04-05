@@ -1,8 +1,7 @@
 package com.finvanta.service.impl;
 
-import com.finvanta.accounting.AccountingService;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
-import com.finvanta.accounting.GLConstants;
+import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.accounting.SuspenseService;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.LoanAccount;
@@ -17,6 +16,9 @@ import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
+import com.finvanta.transaction.TransactionEngine;
+import com.finvanta.transaction.TransactionRequest;
+import com.finvanta.transaction.TransactionResult;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
@@ -43,8 +45,12 @@ import java.util.List;
  * - Income recognition stops on NPA accounts (RBI IRAC Master Circular)
  * - Pessimistic locking on account mutations to prevent concurrent modification
  * - Full audit trail via AuditService for every state change
+ * - Product-aware GL resolution via {@link ProductGLResolver} (Finacle PDDEF pattern)
+ * - Per-role transaction limits enforced by TransactionEngine (RBI internal controls)
+ * - Idempotency key support on client-initiated transactions (Finacle UNIQUE.REF pattern)
  *
- * All GL codes are centralized in {@link GLConstants} per Finacle guidelines.
+ * GL codes are resolved through product_master configuration via {@link ProductGLResolver}.
+ * Falls back to default GL constants when a product is not configured (backward compatible).
  */
 @Service
 public class LoanAccountServiceImpl implements LoanAccountService {
@@ -54,34 +60,37 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final LoanAccountRepository accountRepository;
     private final LoanApplicationRepository applicationRepository;
     private final LoanTransactionRepository transactionRepository;
-    private final AccountingService accountingService;
     private final InterestCalculationRule interestRule;
     private final NpaClassificationRule npaRule;
     private final AuditService auditService;
     private final SuspenseService suspenseService;
     private final LoanScheduleService scheduleService;
     private final BusinessDateService businessDateService;
+    private final ProductGLResolver glResolver;
+    private final TransactionEngine transactionEngine;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
                                    LoanApplicationRepository applicationRepository,
                                    LoanTransactionRepository transactionRepository,
-                                   AccountingService accountingService,
                                    InterestCalculationRule interestRule,
                                    NpaClassificationRule npaRule,
                                    AuditService auditService,
                                    SuspenseService suspenseService,
                                    LoanScheduleService scheduleService,
-                                   BusinessDateService businessDateService) {
+                                   BusinessDateService businessDateService,
+                                   ProductGLResolver glResolver,
+                                   TransactionEngine transactionEngine) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
-        this.accountingService = accountingService;
         this.interestRule = interestRule;
         this.npaRule = npaRule;
         this.auditService = auditService;
         this.suspenseService = suspenseService;
         this.scheduleService = scheduleService;
         this.businessDateService = businessDateService;
+        this.glResolver = glResolver;
+        this.transactionEngine = transactionEngine;
     }
 
     @Override
@@ -106,6 +115,11 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Loan account already exists for application: " + applicationId);
         }
 
+        // CBS: Resolve product defaults from ProductMaster per Finacle PDDEF
+        // If product is configured, use product-level defaults for penal rate, currency, etc.
+        // If not configured, fall back to application-level or system defaults.
+        var product = glResolver.getProduct(application.getProductType());
+
         LoanAccount account = new LoanAccount();
         account.setTenantId(tenantId);
         account.setAccountNumber(ReferenceGenerator.generateAccountNumber(
@@ -114,10 +128,15 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setCustomer(application.getCustomer());
         account.setBranch(application.getBranch());
         account.setProductType(application.getProductType());
+        account.setCurrencyCode(product != null ? product.getCurrencyCode() : "INR");
         account.setSanctionedAmount(application.getApprovedAmount());
         account.setInterestRate(application.getInterestRate());
         account.setPenalRate(application.getPenalRate() != null
-            ? application.getPenalRate() : BigDecimal.valueOf(2)); // RBI default 2% penal
+            ? application.getPenalRate()
+            : (product != null && product.getDefaultPenalRate() != null
+                ? product.getDefaultPenalRate()
+                : BigDecimal.valueOf(2))); // RBI default 2% penal
+        account.setRepaymentFrequency(product != null ? product.getRepaymentFrequency() : "MONTHLY");
         account.setTenureMonths(application.getTenureMonths());
         account.setRemainingTenure(application.getTenureMonths());
         account.setCollateralReference(application.getCollateralReference());
@@ -162,33 +181,45 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         BigDecimal disbursementAmount = account.getSanctionedAmount();
         LocalDate bizDate = businessDateService.getCurrentBusinessDate();
+        String productType = account.getProductType();
 
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
+        // TransactionEngine enforces: amount validation → business date → day status → branch →
+        // transaction limits → maker-checker → GL posting → voucher → audit trail
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.DEBIT, disbursementAmount,
+            new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.DEBIT, disbursementAmount,
                 "Loan disbursement - " + accountNumber),
-            new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.CREDIT, disbursementAmount,
+            new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.CREDIT, disbursementAmount,
                 "Bank credit for loan disbursement - " + accountNumber)
         );
 
-        var journalEntry = accountingService.postJournalEntry(
-            bizDate,
-            "Loan disbursement for account " + accountNumber,
-            "LOAN", accountNumber,
-            journalLines
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("LOAN")
+                .transactionType("DISBURSEMENT")
+                .accountReference(accountNumber)
+                .amount(disbursementAmount)
+                .valueDate(bizDate)
+                .branchCode(account.getBranch().getBranchCode())
+                .productType(productType)
+                .narration("Loan disbursement for account " + accountNumber)
+                .journalLines(journalLines)
+                .build()
         );
 
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.DISBURSEMENT);
         txn.setAmount(disbursementAmount);
         txn.setPrincipalComponent(disbursementAmount);
         txn.setValueDate(bizDate);
-        txn.setPostingDate(LocalDateTime.now());
+        txn.setPostingDate(txnResult.getPostingDate());
         txn.setBalanceAfter(disbursementAmount);
-        txn.setNarration("Loan disbursement");
-        txn.setJournalEntryId(journalEntry.getId());
+        txn.setNarration("Loan disbursement | Voucher: " + txnResult.getVoucherNumber());
+        txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy(currentUser);
         transactionRepository.save(txn);
 
@@ -211,11 +242,16 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         // CBS: Generate amortization schedule at disbursement per Finacle/Temenos standards
         scheduleService.generateSchedule(saved, saved.getDisbursementDate());
 
+        // NOTE: Audit trail for the financial posting is handled by TransactionEngine (Step 10).
+        // Module-level audit for the account state change is separate.
         auditService.logEvent("LoanAccount", saved.getId(), "DISBURSE",
             null, saved.getAccountNumber(), "LOAN_ACCOUNTS",
-            "Loan disbursed: " + disbursementAmount + ", schedule generated");
+            "Loan disbursed: " + disbursementAmount + ", schedule generated"
+                + " | Voucher: " + txnResult.getVoucherNumber()
+                + " | Journal: " + txnResult.getJournalRef());
 
-        log.info("Loan disbursed: accNo={}, amount={}, schedule generated", accountNumber, disbursementAmount);
+        log.info("Loan disbursed: accNo={}, amount={}, voucher={}, journal={}",
+            accountNumber, disbursementAmount, txnResult.getVoucherNumber(), txnResult.getJournalRef());
 
         return saved;
     }
@@ -257,32 +293,46 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             return null;
         }
 
+        String productType = account.getProductType();
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.DEBIT, accruedAmount,
+            new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT, accruedAmount,
                 "Interest accrual - " + accountNumber),
-            new JournalLineRequest(GLConstants.INTEREST_INCOME, DebitCredit.CREDIT, accruedAmount,
+            new JournalLineRequest(glResolver.getInterestIncomeGL(productType), DebitCredit.CREDIT, accruedAmount,
                 "Interest income accrual - " + accountNumber)
         );
 
-        var journalEntry = accountingService.postJournalEntry(
-            accrualDate,
-            "Interest accrual for " + accountNumber,
-            "LOAN", accountNumber,
-            journalLines
+        // CBS: EOD system operations route through TransactionEngine with systemGenerated(true).
+        // This ensures uniform voucher generation, audit trail, and business date validation
+        // while skipping user-level transaction limits and maker-checker gates.
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("LOAN")
+                .transactionType("INTEREST_ACCRUAL")
+                .accountReference(accountNumber)
+                .amount(accruedAmount)
+                .valueDate(accrualDate)
+                .branchCode(account.getBranch() != null ? account.getBranch().getBranchCode() : null)
+                .productType(productType)
+                .narration("Interest accrual for " + accountNumber)
+                .journalLines(journalLines)
+                .systemGenerated(true)
+                .initiatedBy("SYSTEM")
+                .build()
         );
 
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.INTEREST_ACCRUAL);
         txn.setAmount(accruedAmount);
         txn.setInterestComponent(accruedAmount);
         txn.setValueDate(accrualDate);
-        txn.setPostingDate(LocalDateTime.now());
+        txn.setPostingDate(txnResult.getPostingDate());
         txn.setBalanceAfter(account.getTotalOutstanding().add(accruedAmount));
-        txn.setNarration("Daily interest accrual");
-        txn.setJournalEntryId(journalEntry.getId());
+        txn.setNarration("Daily interest accrual | Voucher: " + txnResult.getVoucherNumber());
+        txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy("SYSTEM");
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
@@ -315,9 +365,13 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             return null;
         }
 
-        // Calculate from last accrual date or next EMI date (whichever is the overdue trigger)
-        LocalDate fromDate = account.getLastInterestAccrualDate() != null
-            ? account.getLastInterestAccrualDate()
+        // CBS: Use independent penal accrual date tracker.
+        // Regular interest accrual runs before penal in EOD and advances lastInterestAccrualDate
+        // to the business date. If we used that same field, days=0 and penal is never calculated.
+        // Per Finacle penal interest module, penal has its own accrual date lifecycle.
+        // Fallback to nextEmiDate (the overdue trigger date) if penal has never been accrued.
+        LocalDate fromDate = account.getLastPenalAccrualDate() != null
+            ? account.getLastPenalAccrualDate()
             : account.getNextEmiDate();
 
         if (fromDate == null || !businessDate.isAfter(fromDate)) {
@@ -330,37 +384,51 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             return null;
         }
 
-        // GL Entry: DR Interest Receivable (1002) / CR Penal Interest Income (4003)
+        // GL Entry: DR Interest Receivable / CR Penal Interest Income
+        String productType = account.getProductType();
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.DEBIT, penalAmount,
+            new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT, penalAmount,
                 "Penal interest accrual - " + accountNumber),
-            new JournalLineRequest(GLConstants.PENAL_INTEREST_INCOME, DebitCredit.CREDIT, penalAmount,
+            new JournalLineRequest(glResolver.getPenalIncomeGL(productType), DebitCredit.CREDIT, penalAmount,
                 "Penal interest income - " + accountNumber)
         );
 
-        var journalEntry = accountingService.postJournalEntry(
-            businessDate,
-            "RBI penal interest for overdue account " + accountNumber,
-            "LOAN", accountNumber,
-            journalLines
+        // CBS: EOD system operations route through TransactionEngine with systemGenerated(true).
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("LOAN")
+                .transactionType("PENALTY_CHARGE")
+                .accountReference(accountNumber)
+                .amount(penalAmount)
+                .valueDate(businessDate)
+                .branchCode(account.getBranch() != null ? account.getBranch().getBranchCode() : null)
+                .productType(productType)
+                .narration("RBI penal interest for overdue account " + accountNumber)
+                .journalLines(journalLines)
+                .systemGenerated(true)
+                .initiatedBy("SYSTEM")
+                .build()
         );
 
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.PENALTY_CHARGE);
         txn.setAmount(penalAmount);
         txn.setPenaltyComponent(penalAmount);
         txn.setValueDate(businessDate);
-        txn.setPostingDate(LocalDateTime.now());
+        txn.setPostingDate(txnResult.getPostingDate());
         txn.setBalanceAfter(account.getTotalOutstanding().add(penalAmount));
-        txn.setNarration("Penal interest: " + penalAmount + " on overdue principal " + account.getOverduePrincipal());
-        txn.setJournalEntryId(journalEntry.getId());
+        txn.setNarration("Penal interest: " + penalAmount + " on overdue principal " + account.getOverduePrincipal()
+            + " | Voucher: " + txnResult.getVoucherNumber());
+        txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy("SYSTEM");
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
         account.setPenalInterestAccrued(account.getPenalInterestAccrued().add(penalAmount));
+        account.setLastPenalAccrualDate(businessDate);
         account.setUpdatedBy("SYSTEM");
         accountRepository.save(account);
 
@@ -373,8 +441,38 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     @Override
     @Transactional
     public LoanTransaction processRepayment(String accountNumber, BigDecimal amount, LocalDate valueDate) {
+        return processRepayment(accountNumber, amount, valueDate, null);
+    }
+
+    /**
+     * CBS Repayment with idempotency key support per Finacle UNIQUE.REF pattern.
+     *
+     * If idempotencyKey is non-null and a transaction with that key already exists,
+     * the existing transaction is returned without re-processing. This prevents
+     * duplicate repayments on network retries (e.g., user double-clicks submit,
+     * or load balancer retries a timed-out request).
+     *
+     * @param accountNumber Loan account number
+     * @param amount        Repayment amount
+     * @param valueDate     CBS business date
+     * @param idempotencyKey Client-supplied unique key (null = no idempotency protection)
+     * @return Transaction record (existing if idempotent retry, new otherwise)
+     */
+    @Transactional
+    public LoanTransaction processRepayment(String accountNumber, BigDecimal amount,
+                                             LocalDate valueDate, String idempotencyKey) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
+
+        // CBS Idempotency: check for existing transaction with same key
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            var existing = transactionRepository.findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey);
+            if (existing.isPresent()) {
+                log.info("Idempotent repayment detected: key={}, existingRef={}",
+                    idempotencyKey, existing.get().getTransactionRef());
+                return existing.get();
+            }
+        }
 
         LoanAccount account = accountRepository.findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
@@ -396,24 +494,32 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         BigDecimal principalPaid = components[0];
         BigDecimal interestPaid = components[1];
 
-        // Build journal lines dynamically — only include non-zero components per CBS GL posting rules
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
+        String productType = account.getProductType();
         List<JournalLineRequest> journalLines = new java.util.ArrayList<>();
-        journalLines.add(new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, amount,
+        journalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.DEBIT, amount,
             "Loan repayment received - " + accountNumber));
         if (principalPaid.compareTo(BigDecimal.ZERO) > 0) {
-            journalLines.add(new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.CREDIT, principalPaid,
+            journalLines.add(new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.CREDIT, principalPaid,
                 "Principal repayment - " + accountNumber));
         }
         if (interestPaid.compareTo(BigDecimal.ZERO) > 0) {
-            journalLines.add(new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestPaid,
+            journalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.CREDIT, interestPaid,
                 "Interest repayment - " + accountNumber));
         }
 
-        var journalEntry = accountingService.postJournalEntry(
-            valueDate,
-            "Loan repayment for " + accountNumber,
-            "LOAN", accountNumber,
-            journalLines
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("LOAN")
+                .transactionType("REPAYMENT")
+                .accountReference(accountNumber)
+                .amount(amount)
+                .valueDate(valueDate)
+                .branchCode(account.getBranch().getBranchCode())
+                .productType(productType)
+                .narration("Loan repayment for " + accountNumber)
+                .journalLines(journalLines)
+                .build()
         );
 
         account.setOutstandingPrincipal(
@@ -436,23 +542,32 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             }
         }
 
-        // RBI IRAC: DPD resets only when all overdue EMIs are cleared.
-        // If outstanding principal is fully paid or remaining balance equals
-        // or is less than the scheduled outstanding, DPD can be reset.
-        // For simplicity: reset DPD when payment >= EMI amount (full EMI paid).
-        if (account.getEmiAmount() != null && amount.compareTo(account.getEmiAmount()) >= 0) {
-            account.setDaysPastDue(0);
-            account.setOverduePrincipal(BigDecimal.ZERO);
-            account.setOverdueInterest(BigDecimal.ZERO);
-        }
+        // RBI IRAC: DPD resets only when ALL overdue installments are cleared.
+        // Per RBI Master Circular on IRAC Norms: "An account should be treated as
+        // 'out of order' if the outstanding balance remains continuously in excess
+        // of the sanctioned limit/drawing power for 90 days."
+        //
+        // Use the amortization schedule as the source of truth: after FIFO payment
+        // allocation (done below via scheduleService), check if any installments
+        // are still overdue. DPD is recalculated from the oldest unpaid installment.
+        // The naive "payment >= 1 EMI → DPD=0" was incorrect for multi-EMI arrears.
+        //
+        // NOTE: DPD is also recalculated in EOD batch (updateDaysPastDue), so this
+        // is a best-effort intra-day update. EOD is the authoritative DPD calculation.
         account.setUpdatedBy(currentUser);
 
-        if (account.getRemainingTenure() != null && account.getRemainingTenure() > 0) {
-            account.setRemainingTenure(account.getRemainingTenure() - 1);
-        }
-
-        if (account.getNextEmiDate() != null) {
-            account.setNextEmiDate(account.getNextEmiDate().plusMonths(1));
+        // CBS: Remaining tenure and next EMI date advance only when a full EMI-equivalent
+        // payment is made. Partial payments (amount < EMI) should not advance the schedule.
+        // Per Finacle/Temenos loan repayment module, tenure decrement is tied to the
+        // installment schedule, not to individual payment events. Two partial payments
+        // in the same month should not decrement tenure twice.
+        if (account.getEmiAmount() != null && amount.compareTo(account.getEmiAmount()) >= 0) {
+            if (account.getRemainingTenure() != null && account.getRemainingTenure() > 0) {
+                account.setRemainingTenure(account.getRemainingTenure() - 1);
+            }
+            if (account.getNextEmiDate() != null) {
+                account.setNextEmiDate(account.getNextEmiDate().plusMonths(1));
+            }
         }
 
         // CBS: Loan closure only when all components are zero (principal + interest + penal)
@@ -463,17 +578,20 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.REPAYMENT_PRINCIPAL);
         txn.setAmount(amount);
         txn.setPrincipalComponent(principalPaid);
         txn.setInterestComponent(interestPaid);
         txn.setValueDate(valueDate);
-        txn.setPostingDate(LocalDateTime.now());
+        txn.setPostingDate(txnResult.getPostingDate());
         txn.setBalanceAfter(account.getTotalOutstanding());
-        txn.setNarration("EMI repayment - Principal: " + principalPaid + ", Interest: " + interestPaid);
-        txn.setJournalEntryId(journalEntry.getId());
+        txn.setNarration("EMI repayment - P:" + principalPaid + " I:" + interestPaid
+            + " | Voucher: " + txnResult.getVoucherNumber());
+        txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
+        txn.setIdempotencyKey(idempotencyKey);
         txn.setCreatedBy(currentUser);
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
@@ -486,12 +604,17 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             log.warn("Schedule update failed for repayment {}: {}", accountNumber, e.getMessage());
         }
 
+        // NOTE: Financial posting audit is handled by TransactionEngine (Step 10).
+        // Module-level audit for subledger state change:
         auditService.logEvent("LoanAccount", account.getId(), "REPAYMENT",
             null, savedTxn.getTransactionRef(), "LOAN_ACCOUNTS",
-            "Repayment: " + amount + " (P:" + principalPaid + " I:" + interestPaid + ")");
+            "Repayment: " + amount + " (P:" + principalPaid + " I:" + interestPaid + ")"
+                + " | Voucher: " + txnResult.getVoucherNumber()
+                + " | Journal: " + txnResult.getJournalRef());
 
-        log.info("Repayment processed: accNo={}, amount={}, principal={}, interest={}",
-            accountNumber, amount, principalPaid, interestPaid);
+        log.info("Repayment processed: accNo={}, amount={}, principal={}, interest={}, voucher={}, journal={}",
+            accountNumber, amount, principalPaid, interestPaid,
+            txnResult.getVoucherNumber(), txnResult.getJournalRef());
 
         return savedTxn;
     }
@@ -565,54 +688,88 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         }
 
         BigDecimal writeOffAmount = account.getOutstandingPrincipal();
+        BigDecimal interestReceivable = account.getOutstandingInterest()
+            .add(account.getAccruedInterest())
+            .add(account.getPenalInterestAccrued());
         BigDecimal provisionHeld = account.getProvisioningAmount();
+        String productType = account.getProductType();
 
-        // GL Entry 1: Write off the loan asset
-        // DR Write-Off Expense (5002) / CR Loan Asset (1001)
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
+        // Write-off is a compound posting (multiple balanced journals in one atomic transaction):
+        //   1. DR Write-Off Expense / CR Loan Asset (principal)
+        //   2. DR Write-Off Expense / CR Interest Receivable (interest — if any)
+        //   3. DR Provision NPA / CR Provision Expense (provision reversal — if any)
+        // TransactionEngine enforces: amount → business date → day status → branch →
+        // transaction limits (WRITE_OFF) → GL posting → voucher → audit trail
+        List<TransactionRequest.CompoundJournalGroup> journalGroups = new java.util.ArrayList<>();
+
         if (writeOffAmount.compareTo(BigDecimal.ZERO) > 0) {
-            List<JournalLineRequest> writeOffLines = List.of(
-                new JournalLineRequest(GLConstants.WRITE_OFF_EXPENSE, DebitCredit.DEBIT, writeOffAmount,
-                    "Loan write-off - " + accountNumber),
-                new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.CREDIT, writeOffAmount,
-                    "Write-off asset removal - " + accountNumber)
-            );
-            accountingService.postJournalEntry(
-                businessDate,
-                "RBI IRAC write-off for NPA account " + accountNumber,
-                "WRITE_OFF", accountNumber,
-                writeOffLines
-            );
+            journalGroups.add(new TransactionRequest.CompoundJournalGroup(
+                "RBI IRAC write-off principal for NPA account " + accountNumber,
+                List.of(
+                    new JournalLineRequest(glResolver.getWriteOffExpenseGL(productType), DebitCredit.DEBIT, writeOffAmount,
+                        "Loan write-off principal - " + accountNumber),
+                    new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.CREDIT, writeOffAmount,
+                        "Write-off principal asset removal - " + accountNumber)
+                )
+            ));
         }
 
-        // GL Entry 2: Reverse existing provisioning (no longer needed after write-off)
-        // DR Provision for NPA (1003) / CR Provision Expense (5001)
-        if (provisionHeld.compareTo(BigDecimal.ZERO) > 0) {
-            List<JournalLineRequest> provisionReversal = List.of(
-                new JournalLineRequest(GLConstants.PROVISION_NPA, DebitCredit.DEBIT, provisionHeld,
-                    "Provision reversal on write-off - " + accountNumber),
-                new JournalLineRequest(GLConstants.PROVISION_EXPENSE, DebitCredit.CREDIT, provisionHeld,
-                    "Provision expense release on write-off - " + accountNumber)
-            );
-            accountingService.postJournalEntry(
-                businessDate,
-                "Provision reversal on write-off for " + accountNumber,
-                "WRITE_OFF", accountNumber,
-                provisionReversal
-            );
+        if (interestReceivable.compareTo(BigDecimal.ZERO) > 0) {
+            journalGroups.add(new TransactionRequest.CompoundJournalGroup(
+                "RBI IRAC write-off interest for NPA account " + accountNumber,
+                List.of(
+                    new JournalLineRequest(glResolver.getWriteOffExpenseGL(productType), DebitCredit.DEBIT, interestReceivable,
+                        "Loan write-off interest - " + accountNumber),
+                    new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.CREDIT, interestReceivable,
+                        "Write-off interest receivable removal - " + accountNumber)
+                )
+            ));
         }
+
+        if (provisionHeld.compareTo(BigDecimal.ZERO) > 0) {
+            journalGroups.add(new TransactionRequest.CompoundJournalGroup(
+                "Provision reversal on write-off for " + accountNumber,
+                List.of(
+                    new JournalLineRequest(glResolver.getProvisionNpaGL(productType), DebitCredit.DEBIT, provisionHeld,
+                        "Provision reversal on write-off - " + accountNumber),
+                    new JournalLineRequest(glResolver.getProvisionExpenseGL(productType), DebitCredit.CREDIT, provisionHeld,
+                        "Provision expense release on write-off - " + accountNumber)
+                )
+            ));
+        }
+
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("WRITE_OFF")
+                .transactionType("WRITE_OFF")
+                .accountReference(accountNumber)
+                .amount(writeOffAmount.add(interestReceivable))
+                .valueDate(businessDate)
+                .branchCode(account.getBranch().getBranchCode())
+                .productType(productType)
+                .narration("RBI IRAC NPA write-off for " + accountNumber)
+                .compoundJournalGroups(journalGroups)
+                .build()
+        );
 
         // Record write-off transaction
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.WRITE_OFF);
-        txn.setAmount(writeOffAmount);
+        txn.setAmount(writeOffAmount.add(interestReceivable));
         txn.setPrincipalComponent(writeOffAmount);
+        txn.setInterestComponent(interestReceivable);
         txn.setValueDate(businessDate);
-        txn.setPostingDate(LocalDateTime.now());
+        txn.setPostingDate(txnResult.getPostingDate());
         txn.setBalanceAfter(BigDecimal.ZERO);
-        txn.setNarration("NPA write-off: principal=" + writeOffAmount + ", provision reversed=" + provisionHeld);
+        txn.setNarration("NPA write-off: principal=" + writeOffAmount
+            + ", interest=" + interestReceivable + ", provision reversed=" + provisionHeld
+            + " | Voucher: " + txnResult.getVoucherNumber());
+        txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy(currentUser);
         transactionRepository.save(txn);
 
@@ -629,10 +786,11 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         auditService.logEvent("LoanAccount", account.getId(), "WRITE_OFF",
             previousStatus.name(), LoanStatus.WRITTEN_OFF.name(), "LOAN_ACCOUNTS",
-            "NPA write-off: " + writeOffAmount + ", provision reversed: " + provisionHeld);
+            "NPA write-off: P=" + writeOffAmount + ", I=" + interestReceivable
+                + ", provision reversed: " + provisionHeld);
 
-        log.info("Loan written off: accNo={}, amount={}, provisionReversed={}",
-            accountNumber, writeOffAmount, provisionHeld);
+        log.info("Loan written off: accNo={}, principal={}, interest={}, provisionReversed={}",
+            accountNumber, writeOffAmount, interestReceivable, provisionHeld);
 
         return account;
     }
@@ -664,45 +822,69 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                     + "). For partial payment, use regular repayment.");
         }
 
+        // CBS: Reject overpayment — amount must exactly match total outstanding.
+        // Per RBI Fair Lending Code 2023 and Finacle foreclosure module:
+        // excess funds cannot be silently absorbed. If the customer pays more than
+        // totalOutstanding, the excess must be explicitly handled (refund or credit
+        // to operating account). For now, enforce exact match to prevent unaccounted
+        // funds. The controller pre-fills totalOutstanding as the default amount.
+        if (amount.compareTo(totalOutstanding) > 0) {
+            throw new BusinessException("PREPAYMENT_OVERPAYMENT",
+                "Prepayment amount (" + amount + ") exceeds total outstanding (" + totalOutstanding
+                    + "). Amount must exactly match outstanding balance.");
+        }
+
         BigDecimal principalDue = account.getOutstandingPrincipal();
         BigDecimal interestDue = account.getOutstandingInterest()
             .add(account.getAccruedInterest())
             .add(account.getPenalInterestAccrued());
 
-        // GL Entry: DR Bank Operations / CR Loan Asset + Interest Receivable
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
+        // TransactionEngine enforces: amount → business date → day status → branch →
+        // transaction limits (including PREPAYMENT) → maker-checker → GL posting → voucher → audit
+        String productType = account.getProductType();
         List<JournalLineRequest> journalLines = new java.util.ArrayList<>();
-        journalLines.add(new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, totalOutstanding,
+        journalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.DEBIT, totalOutstanding,
             "Loan prepayment/foreclosure - " + accountNumber));
         if (principalDue.compareTo(BigDecimal.ZERO) > 0) {
-            journalLines.add(new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.CREDIT, principalDue,
+            journalLines.add(new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.CREDIT, principalDue,
                 "Prepayment principal closure - " + accountNumber));
         }
         if (interestDue.compareTo(BigDecimal.ZERO) > 0) {
-            journalLines.add(new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestDue,
+            journalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.CREDIT, interestDue,
                 "Prepayment interest closure - " + accountNumber));
         }
 
-        var journalEntry = accountingService.postJournalEntry(
-            businessDate,
-            "Loan prepayment/foreclosure for " + accountNumber,
-            "LOAN", accountNumber,
-            journalLines
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("LOAN")
+                .transactionType("PREPAYMENT")
+                .accountReference(accountNumber)
+                .amount(totalOutstanding)
+                .valueDate(businessDate)
+                .branchCode(account.getBranch().getBranchCode())
+                .productType(productType)
+                .narration("Loan prepayment/foreclosure for " + accountNumber)
+                .journalLines(journalLines)
+                .build()
         );
 
         // Record prepayment transaction
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.PREPAYMENT);
         txn.setAmount(totalOutstanding);
         txn.setPrincipalComponent(principalDue);
         txn.setInterestComponent(interestDue);
         txn.setValueDate(businessDate);
-        txn.setPostingDate(LocalDateTime.now());
+        txn.setPostingDate(txnResult.getPostingDate());
         txn.setBalanceAfter(BigDecimal.ZERO);
-        txn.setNarration("Prepayment/Foreclosure: P=" + principalDue + ", I=" + interestDue);
-        txn.setJournalEntryId(journalEntry.getId());
+        txn.setNarration("Prepayment/Foreclosure: P=" + principalDue + ", I=" + interestDue
+            + " | Voucher: " + txnResult.getVoucherNumber());
+        txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy(currentUser);
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
@@ -752,38 +934,148 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Reversal reason is mandatory per CBS audit rules");
         }
 
-        LoanAccount account = original.getLoanAccount();
+        // CBS: Acquire pessimistic lock on the loan account to prevent concurrent mutations
+        // during balance restoration. Per Finacle TRAN_REVERSAL, account balances must be
+        // atomically restored to the pre-transaction state within the same DB transaction.
+        LoanAccount account = accountRepository.findAndLockByTenantIdAndAccountNumber(
+                tenantId, original.getLoanAccount().getAccountNumber())
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
+                "Loan account not found for transaction: " + transactionRef));
 
-        // Post contra journal entry — exact reverse of original GL lines
+        if (account.getStatus().isTerminal()) {
+            throw new BusinessException("ACCOUNT_TERMINAL",
+                "Cannot reverse transaction on " + account.getStatus() + " account");
+        }
+
+        // Post contra journal entry — exact reverse of original GL lines.
+        // Per Finacle TRAN_REVERSAL / Temenos REVERSAL.TRANSACTION, the reversal must
+        // mirror the original GL legs with swapped DR/CR. Each transaction type has
+        // different GL routing, so we must build reversal lines per type.
+        String productType = account.getProductType();
         BigDecimal amount = original.getAmount();
 
         List<JournalLineRequest> reversalLines = new java.util.ArrayList<>();
-        // Reverse the bank/cash side
-        reversalLines.add(new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.CREDIT, amount,
-            "REVERSAL: " + transactionRef + " - " + reason));
-        // Reverse the asset/receivable side
-        if (original.getPrincipalComponent().compareTo(BigDecimal.ZERO) > 0) {
-            reversalLines.add(new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.DEBIT,
-                original.getPrincipalComponent(),
-                "REVERSAL principal: " + transactionRef));
-        }
-        if (original.getInterestComponent().compareTo(BigDecimal.ZERO) > 0) {
-            reversalLines.add(new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.DEBIT,
-                original.getInterestComponent(),
-                "REVERSAL interest: " + transactionRef));
+
+        if (original.getTransactionType() == TransactionType.REPAYMENT_PRINCIPAL
+                || original.getTransactionType() == TransactionType.PREPAYMENT) {
+            // Original: DR Bank Ops / CR Loan Asset + Interest Receivable
+            // Reversal: CR Bank Ops / DR Loan Asset + Interest Receivable
+            reversalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.CREDIT, amount,
+                "REVERSAL: " + transactionRef + " - " + reason));
+            if (original.getPrincipalComponent().compareTo(BigDecimal.ZERO) > 0) {
+                reversalLines.add(new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.DEBIT,
+                    original.getPrincipalComponent(), "REVERSAL principal: " + transactionRef));
+            }
+            if (original.getInterestComponent().compareTo(BigDecimal.ZERO) > 0) {
+                reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT,
+                    original.getInterestComponent(), "REVERSAL interest: " + transactionRef));
+            }
+            if (original.getPenaltyComponent().compareTo(BigDecimal.ZERO) > 0) {
+                reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT,
+                    original.getPenaltyComponent(), "REVERSAL penalty: " + transactionRef));
+            }
+        } else if (original.getTransactionType() == TransactionType.DISBURSEMENT) {
+            // Original: DR Loan Asset / CR Bank Ops
+            // Reversal: CR Loan Asset / DR Bank Ops
+            reversalLines.add(new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.CREDIT, amount,
+                "REVERSAL disbursement asset: " + transactionRef));
+            reversalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.DEBIT, amount,
+                "REVERSAL disbursement bank: " + transactionRef + " - " + reason));
+        } else if (original.getTransactionType() == TransactionType.INTEREST_ACCRUAL) {
+            // Original: DR Interest Receivable / CR Interest Income
+            // Reversal: CR Interest Receivable / DR Interest Income
+            reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.CREDIT, amount,
+                "REVERSAL accrual receivable: " + transactionRef));
+            reversalLines.add(new JournalLineRequest(glResolver.getInterestIncomeGL(productType), DebitCredit.DEBIT, amount,
+                "REVERSAL accrual income: " + transactionRef + " - " + reason));
+        } else if (original.getTransactionType() == TransactionType.PENALTY_CHARGE) {
+            // Original: DR Interest Receivable / CR Penal Income
+            // Reversal: CR Interest Receivable / DR Penal Income
+            reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.CREDIT, amount,
+                "REVERSAL penal receivable: " + transactionRef));
+            reversalLines.add(new JournalLineRequest(glResolver.getPenalIncomeGL(productType), DebitCredit.DEBIT, amount,
+                "REVERSAL penal income: " + transactionRef + " - " + reason));
+        } else if (original.getTransactionType() == TransactionType.FEE_CHARGE) {
+            // Original: DR Bank Ops / CR Fee Income
+            // Reversal: CR Bank Ops / DR Fee Income
+            reversalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.CREDIT, amount,
+                "REVERSAL fee bank: " + transactionRef));
+            reversalLines.add(new JournalLineRequest(glResolver.getFeeIncomeGL(productType), DebitCredit.DEBIT, amount,
+                "REVERSAL fee income: " + transactionRef + " - " + reason));
+        } else {
+            // Fallback for unknown types — generic reversal (best effort)
+            log.warn("Reversal for unknown transaction type {}: using generic GL routing", original.getTransactionType());
+            reversalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.CREDIT, amount,
+                "REVERSAL: " + transactionRef + " - " + reason));
+            if (original.getPrincipalComponent().compareTo(BigDecimal.ZERO) > 0) {
+                reversalLines.add(new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.DEBIT,
+                    original.getPrincipalComponent(), "REVERSAL principal: " + transactionRef));
+            }
+            if (original.getInterestComponent().compareTo(BigDecimal.ZERO) > 0) {
+                reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT,
+                    original.getInterestComponent(), "REVERSAL interest: " + transactionRef));
+            }
         }
 
-        var journalEntry = accountingService.postJournalEntry(
-            businessDate,
-            "REVERSAL of " + transactionRef + ": " + reason,
-            "REVERSAL", account.getAccountNumber(),
-            reversalLines
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("REVERSAL")
+                .transactionType("REVERSAL")
+                .accountReference(account.getAccountNumber())
+                .amount(amount)
+                .valueDate(businessDate)
+                .branchCode(account.getBranch().getBranchCode())
+                .productType(productType)
+                .narration("REVERSAL of " + transactionRef + ": " + reason)
+                .journalLines(reversalLines)
+                .systemGenerated(false)
+                .build()
         );
 
-        // Create reversal transaction
+        // CBS: Restore account subsidiary ledger balances to pre-transaction state.
+        // Per Finacle TRAN_REVERSAL and Temenos REVERSAL.TRANSACTION, the account's
+        // running balance must be atomically restored. GL and subledger must stay in sync.
+        BigDecimal principalToRestore = original.getPrincipalComponent();
+        BigDecimal interestToRestore = original.getInterestComponent();
+        BigDecimal penaltyToRestore = original.getPenaltyComponent();
+
+        if (original.getTransactionType() == TransactionType.REPAYMENT_PRINCIPAL
+                || original.getTransactionType() == TransactionType.PREPAYMENT) {
+            // Repayment reversal: restore the amounts that were subtracted
+            account.setOutstandingPrincipal(
+                account.getOutstandingPrincipal().add(principalToRestore));
+            account.setOutstandingInterest(
+                account.getOutstandingInterest().add(interestToRestore));
+            account.setAccruedInterest(
+                account.getAccruedInterest().add(interestToRestore));
+            if (penaltyToRestore.compareTo(BigDecimal.ZERO) > 0) {
+                account.setPenalInterestAccrued(
+                    account.getPenalInterestAccrued().add(penaltyToRestore));
+            }
+        } else if (original.getTransactionType() == TransactionType.DISBURSEMENT) {
+            // Disbursement reversal: reduce the amounts that were added
+            account.setOutstandingPrincipal(
+                account.getOutstandingPrincipal().subtract(principalToRestore).max(BigDecimal.ZERO));
+            account.setDisbursedAmount(
+                account.getDisbursedAmount().subtract(principalToRestore).max(BigDecimal.ZERO));
+        } else if (original.getTransactionType() == TransactionType.INTEREST_ACCRUAL) {
+            // Interest accrual reversal: reduce the accrued amount
+            account.setAccruedInterest(
+                account.getAccruedInterest().subtract(interestToRestore).max(BigDecimal.ZERO));
+        } else if (original.getTransactionType() == TransactionType.PENALTY_CHARGE) {
+            // Penal interest reversal: reduce the penal accrued amount
+            account.setPenalInterestAccrued(
+                account.getPenalInterestAccrued().subtract(penaltyToRestore).max(BigDecimal.ZERO));
+        }
+
+        account.setUpdatedBy(currentUser);
+        accountRepository.save(account);
+
+        // Create reversal transaction — balanceAfter reflects RESTORED account state
         LoanTransaction reversal = new LoanTransaction();
         reversal.setTenantId(tenantId);
-        reversal.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        reversal.setTransactionRef(txnResult.getTransactionRef());
         reversal.setLoanAccount(account);
         reversal.setTransactionType(TransactionType.REVERSAL);
         reversal.setAmount(amount);
@@ -791,10 +1083,12 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         reversal.setInterestComponent(original.getInterestComponent());
         reversal.setPenaltyComponent(original.getPenaltyComponent());
         reversal.setValueDate(businessDate);
-        reversal.setPostingDate(LocalDateTime.now());
+        reversal.setPostingDate(txnResult.getPostingDate());
         reversal.setBalanceAfter(account.getTotalOutstanding());
-        reversal.setNarration("REVERSAL of " + transactionRef + ": " + reason);
-        reversal.setJournalEntryId(journalEntry.getId());
+        reversal.setNarration("REVERSAL of " + transactionRef + ": " + reason
+            + " | Voucher: " + txnResult.getVoucherNumber());
+        reversal.setJournalEntryId(txnResult.getJournalEntryId());
+        reversal.setVoucherNumber(txnResult.getVoucherNumber());
         reversal.setReversedByRef(transactionRef);
         reversal.setCreatedBy(currentUser);
         LoanTransaction savedReversal = transactionRepository.save(reversal);
@@ -808,10 +1102,11 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         auditService.logEvent("LoanTransaction", original.getId(), "REVERSAL",
             transactionRef, savedReversal.getTransactionRef(), "LOAN_ACCOUNTS",
             "Transaction reversed: " + transactionRef + " → " + savedReversal.getTransactionRef()
-                + ", reason: " + reason);
+                + ", reason: " + reason + ", P:" + principalToRestore
+                + " I:" + interestToRestore + " Pen:" + penaltyToRestore);
 
-        log.info("Transaction reversed: original={}, reversal={}, reason={}",
-            transactionRef, savedReversal.getTransactionRef(), reason);
+        log.info("Transaction reversed: original={}, reversal={}, reason={}, balanceRestored={}",
+            transactionRef, savedReversal.getTransactionRef(), reason, account.getTotalOutstanding());
 
         return savedReversal;
     }
@@ -837,41 +1132,53 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Fee amount must be positive");
         }
 
-        // GL Entry: DR Bank Operations (1100) — fee collected from borrower
-        //           CR Fee Income (4002) — recognized as income
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
+        // TransactionEngine enforces: amount → business date → day status → branch →
+        // transaction limits → maker-checker → GL posting → voucher → audit trail
+        String productType = account.getProductType();
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, feeAmount,
+            new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.DEBIT, feeAmount,
                 feeType + " - " + accountNumber),
-            new JournalLineRequest(GLConstants.FEE_INCOME, DebitCredit.CREDIT, feeAmount,
+            new JournalLineRequest(glResolver.getFeeIncomeGL(productType), DebitCredit.CREDIT, feeAmount,
                 feeType + " income - " + accountNumber)
         );
 
-        var journalEntry = accountingService.postJournalEntry(
-            businessDate,
-            feeType + " for " + accountNumber,
-            "LOAN", accountNumber,
-            journalLines
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("LOAN")
+                .transactionType("FEE_CHARGE")
+                .accountReference(accountNumber)
+                .amount(feeAmount)
+                .valueDate(businessDate)
+                .branchCode(account.getBranch().getBranchCode())
+                .productType(productType)
+                .narration(feeType + " for " + accountNumber)
+                .journalLines(journalLines)
+                .build()
         );
 
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.FEE_CHARGE);
         txn.setAmount(feeAmount);
         txn.setValueDate(businessDate);
-        txn.setPostingDate(LocalDateTime.now());
+        txn.setPostingDate(txnResult.getPostingDate());
         txn.setBalanceAfter(account.getTotalOutstanding());
-        txn.setNarration(feeType + ": " + feeAmount);
-        txn.setJournalEntryId(journalEntry.getId());
+        txn.setNarration(feeType + ": " + feeAmount + " | Voucher: " + txnResult.getVoucherNumber());
+        txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy(currentUser);
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
         auditService.logEvent("LoanAccount", account.getId(), "FEE_CHARGE",
             null, savedTxn.getTransactionRef(), "LOAN_ACCOUNTS",
-            feeType + ": " + feeAmount + " for " + accountNumber);
+            feeType + ": " + feeAmount + " for " + accountNumber
+                + " | Voucher: " + txnResult.getVoucherNumber());
 
-        log.info("Fee charged: accNo={}, type={}, amount={}", accountNumber, feeType, feeAmount);
+        log.info("Fee charged: accNo={}, type={}, amount={}, voucher={}",
+            accountNumber, feeType, feeAmount, txnResult.getVoucherNumber());
 
         return savedTxn;
     }

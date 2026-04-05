@@ -70,14 +70,29 @@ public class AccountingService {
                 "Journal entry must have at least 2 lines (double-entry)");
         }
 
+        // CBS Day Control: Day-status validation is enforced by TransactionEngine (Step 3)
+        // for all client-initiated transactions, and by BatchService.validateAndLockBusinessDate()
+        // for EOD-initiated postings. AccountingService does NOT duplicate this check to avoid
+        // divergent allowlists (the engine uses request.isSystemGenerated() while this layer
+        // previously used a hardcoded sourceModule allowlist — a security gap).
+        //
+        // Direct callers of AccountingService (EOD batch steps: accrual, provisioning,
+        // suspense, write-off) are already within the EOD_RUNNING lifecycle and have been
+        // validated by BatchService before reaching here.
+
         // CBS Batch Control: Find an OPEN batch for this business date.
         // Per Finacle/Temenos, all transactions must be tagged to a batch.
         // If no batch exists, the posting proceeds (for backward compatibility)
         // but logs a warning. In strict mode, this would throw an exception.
-        TransactionBatch activeBatch = null;
+        //
+        // NOTE: We only look up the batch ID here (no lock). The pessimistic lock
+        // is acquired later via findAndLockById() just before updating totals.
+        // This avoids holding the batch row lock during the entire journal posting
+        // while still preventing lost-update on the running totals.
+        Long activeBatchId = null;
         List<TransactionBatch> openBatches = batchRepository.findOpenBatches(tenantId, valueDate);
         if (!openBatches.isEmpty()) {
-            activeBatch = openBatches.get(0);
+            activeBatchId = openBatches.get(0).getId();
         } else {
             log.warn("No OPEN transaction batch for date {}. Posting without batch tag.", valueDate);
         }
@@ -141,10 +156,17 @@ public class AccountingService {
         // CBS: Post to immutable ledger (append-only with hash chain)
         ledgerService.postToLedger(savedEntry);
 
-        // CBS Batch Control: Update batch running totals for intra-day reconciliation
-        if (activeBatch != null) {
-            activeBatch.addTransaction(totalDebit, totalCredit);
-            batchRepository.save(activeBatch);
+        // CBS Batch Control: Update batch running totals for intra-day reconciliation.
+        // Acquire PESSIMISTIC_WRITE lock on the batch row to serialize concurrent
+        // total updates. Without this lock, two concurrent postings would both read
+        // the same totals, both increment, and one save would overwrite the other.
+        if (activeBatchId != null) {
+            TransactionBatch lockedBatch = batchRepository.findAndLockById(activeBatchId)
+                .orElse(null);
+            if (lockedBatch != null && lockedBatch.isOpen()) {
+                lockedBatch.addTransaction(totalDebit, totalCredit);
+                batchRepository.save(lockedBatch);
+            }
         }
 
         auditService.logEvent("JournalEntry", savedEntry.getId(), "POST",
