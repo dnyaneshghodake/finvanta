@@ -33,7 +33,7 @@
                     <c:forEach var="app" items="${applications}">
                         <tr>
                             <td><c:out value="${app.applicationNumber}" /></td>
-                            <td><c:out value="${app.customer.fullName}" /></td>
+                            <td><a href="${pageContext.request.contextPath}/customer/view/${app.customer.id}"><c:out value="${app.customer.fullName}" /></a></td>
                             <td><c:out value="${app.productType}" /></td>
                             <td class="amount"><fmt:formatNumber value="${app.requestedAmount}" type="number" maxFractionDigits="2" /></td>
                             <td><fmt:formatNumber value="${app.interestRate}" type="number" maxFractionDigits="2" />%</td>
@@ -72,7 +72,7 @@
                     <c:forEach var="app" items="${verifiedApplications}">
                         <tr>
                             <td><c:out value="${app.applicationNumber}" /></td>
-                            <td><c:out value="${app.customer.fullName}" /></td>
+                            <td><a href="${pageContext.request.contextPath}/customer/view/${app.customer.id}"><c:out value="${app.customer.fullName}" /></a></td>
                             <td><c:out value="${app.productType}" /></td>
                             <td class="amount"><fmt:formatNumber value="${app.requestedAmount}" type="number" maxFractionDigits="2" /></td>
                             <td><c:out value="${app.verifiedBy}" /></td>
@@ -113,7 +113,7 @@
                     <c:forEach var="app" items="${approvedApplications}">
                         <tr>
                             <td><c:out value="${app.applicationNumber}" /></td>
-                            <td><c:out value="${app.customer.fullName}" /></td>
+                            <td><a href="${pageContext.request.contextPath}/customer/view/${app.customer.id}"><c:out value="${app.customer.fullName}" /></a></td>
                             <td class="amount"><fmt:formatNumber value="${app.approvedAmount}" type="number" maxFractionDigits="2" /></td>
                             <td><c:out value="${app.approvedBy}" /></td>
                             <td><c:out value="${app.approvedDate}" /></td>

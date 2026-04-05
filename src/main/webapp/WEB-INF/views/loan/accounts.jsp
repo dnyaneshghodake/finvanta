@@ -30,8 +30,8 @@
                 <tbody>
                     <c:forEach var="acc" items="${accounts}">
                         <tr>
-                            <td><c:out value="${acc.accountNumber}" /></td>
-                            <td><c:out value="${acc.customer.fullName}" /></td>
+                            <td><a href="${pageContext.request.contextPath}/loan/account/${acc.accountNumber}"><c:out value="${acc.accountNumber}" /></a></td>
+                            <td><a href="${pageContext.request.contextPath}/customer/view/${acc.customer.id}"><c:out value="${acc.customer.fullName}" /></a></td>
                             <td><c:out value="${acc.productType}" /></td>
                             <td class="amount"><fmt:formatNumber value="${acc.sanctionedAmount}" type="number" maxFractionDigits="2" /></td>
                             <td class="amount"><fmt:formatNumber value="${acc.totalOutstanding}" type="number" maxFractionDigits="2" /></td>

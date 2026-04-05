@@ -1,4 +1,5 @@
 <%@ taglib prefix="c" uri="jakarta.tags.core" %>
+<%@ taglib prefix="fmt" uri="jakarta.tags.fmt" %>
 <c:set var="pageTitle" value="Customer Details" />
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>

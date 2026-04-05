@@ -3,6 +3,8 @@ package com.finvanta.controller;
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
+import com.finvanta.repository.LoanApplicationRepository;
+import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.util.TenantContext;
 import com.finvanta.util.SecurityUtil;
 import org.springframework.stereotype.Controller;
@@ -16,11 +18,17 @@ public class CustomerController {
 
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
+    private final LoanApplicationRepository applicationRepository;
+    private final LoanAccountRepository accountRepository;
 
     public CustomerController(CustomerRepository customerRepository,
-                               BranchRepository branchRepository) {
+                               BranchRepository branchRepository,
+                               LoanApplicationRepository applicationRepository,
+                               LoanAccountRepository accountRepository) {
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
+        this.applicationRepository = applicationRepository;
+        this.accountRepository = accountRepository;
     }
 
     @GetMapping("/list")
@@ -68,6 +76,10 @@ public class CustomerController {
             .orElseThrow(() -> new com.finvanta.util.BusinessException(
                 "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
         mav.addObject("customer", customer);
+        mav.addObject("loanApplications",
+            applicationRepository.findByTenantIdAndCustomerId(tenantId, id));
+        mav.addObject("loanAccounts",
+            accountRepository.findByTenantIdAndCustomerId(tenantId, id));
         return mav;
     }
 

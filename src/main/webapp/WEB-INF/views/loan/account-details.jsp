@@ -26,7 +26,9 @@
             <table class="table fv-table">
                 <tbody>
                 <tr><td class="fw-bold">Account Number</td><td><c:out value="${account.accountNumber}" /></td></tr>
-                <tr><td class="fw-bold">Customer</td><td><c:out value="${account.customer.fullName}" /></td></tr>
+                <tr><td class="fw-bold">Customer</td><td><a href="${pageContext.request.contextPath}/customer/view/${account.customer.id}"><c:out value="${account.customer.fullName}" /></a> (<c:out value="${account.customer.customerNumber}" />)</td></tr>
+                <tr><td class="fw-bold">Branch</td><td><c:out value="${account.branch.branchCode}" /> - <c:out value="${account.branch.branchName}" /></td></tr>
+                <tr><td class="fw-bold">Application</td><td><c:out value="${account.application.applicationNumber}" /></td></tr>
                 <tr><td class="fw-bold">Product Type</td><td><c:out value="${account.productType}" /></td></tr>
                 <tr><td class="fw-bold">Status</td><td>
                     <c:choose>

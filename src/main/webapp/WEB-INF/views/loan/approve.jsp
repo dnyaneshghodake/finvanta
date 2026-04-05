@@ -11,7 +11,7 @@
             <table class="table fv-table">
                 <tbody>
                 <tr><td class="fw-bold">Application No.</td><td><c:out value="${application.applicationNumber}" /></td></tr>
-                <tr><td class="fw-bold">Customer</td><td><c:out value="${application.customer.fullName}" /> (<c:out value="${application.customer.customerNumber}" />)</td></tr>
+                <tr><td class="fw-bold">Customer</td><td><a href="${pageContext.request.contextPath}/customer/view/${application.customer.id}"><c:out value="${application.customer.fullName}" /></a> (<c:out value="${application.customer.customerNumber}" />)</td></tr>
                 <tr><td class="fw-bold">Product Type</td><td><c:out value="${application.productType}" /></td></tr>
                 <tr><td class="fw-bold">Requested Amount</td><td class="amount"><fmt:formatNumber value="${application.requestedAmount}" type="number" maxFractionDigits="2" /> INR</td></tr>
                 <tr><td class="fw-bold">Interest Rate</td><td><fmt:formatNumber value="${application.interestRate}" type="number" maxFractionDigits="2" />% p.a.</td></tr>
