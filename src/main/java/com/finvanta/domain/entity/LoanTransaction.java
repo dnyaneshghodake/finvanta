@@ -1,0 +1,68 @@
+package com.finvanta.domain.entity;
+
+import com.finvanta.domain.enums.TransactionType;
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "loan_transactions", indexes = {
+    @Index(name = "idx_loantxn_tenant_account", columnList = "tenant_id, loan_account_id"),
+    @Index(name = "idx_loantxn_txnref", columnList = "tenant_id, transaction_ref", unique = true),
+    @Index(name = "idx_loantxn_value_date", columnList = "tenant_id, value_date"),
+    @Index(name = "idx_loantxn_type", columnList = "tenant_id, transaction_type")
+})
+@Getter
+@Setter
+@NoArgsConstructor
+public class LoanTransaction extends BaseEntity {
+
+    @Column(name = "transaction_ref", nullable = false, length = 40)
+    private String transactionRef;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "loan_account_id", nullable = false)
+    private LoanAccount loanAccount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "transaction_type", nullable = false, length = 30)
+    private TransactionType transactionType;
+
+    @Column(name = "amount", nullable = false, precision = 18, scale = 2)
+    private BigDecimal amount;
+
+    @Column(name = "principal_component", precision = 18, scale = 2)
+    private BigDecimal principalComponent = BigDecimal.ZERO;
+
+    @Column(name = "interest_component", precision = 18, scale = 2)
+    private BigDecimal interestComponent = BigDecimal.ZERO;
+
+    @Column(name = "penalty_component", precision = 18, scale = 2)
+    private BigDecimal penaltyComponent = BigDecimal.ZERO;
+
+    @Column(name = "value_date", nullable = false)
+    private LocalDate valueDate;
+
+    @Column(name = "posting_date", nullable = false)
+    private LocalDateTime postingDate;
+
+    @Column(name = "balance_after", nullable = false, precision = 18, scale = 2)
+    private BigDecimal balanceAfter;
+
+    @Column(name = "narration", length = 500)
+    private String narration;
+
+    @Column(name = "is_reversed", nullable = false)
+    private boolean reversed = false;
+
+    @Column(name = "reversed_by_ref", length = 40)
+    private String reversedByRef;
+
+    @Column(name = "journal_entry_id")
+    private Long journalEntryId;
+}
