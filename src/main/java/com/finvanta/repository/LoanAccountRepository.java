@@ -40,4 +40,6 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
 
     @Query("SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status = 'ACTIVE'")
     BigDecimal calculateTotalOutstandingPrincipal(@Param("tenantId") String tenantId);
+
+    long countByTenantIdAndStatus(String tenantId, LoanStatus status);
 }

@@ -19,4 +19,6 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     boolean existsByTenantIdAndCustomerNumber(String tenantId, String customerNumber);
 
     List<Customer> findByTenantIdAndKycVerifiedFalse(String tenantId);
+
+    long countByTenantIdAndActiveTrue(String tenantId);
 }

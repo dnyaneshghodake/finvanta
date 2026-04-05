@@ -70,4 +70,25 @@ public class CustomerController {
         mav.addObject("customer", customer);
         return mav;
     }
+
+    @PostMapping("/verify-kyc/{id}")
+    public String verifyKyc(@PathVariable Long id, RedirectAttributes redirectAttributes) {
+        String tenantId = TenantContext.getCurrentTenant();
+        try {
+            Customer customer = customerRepository.findById(id)
+                .filter(c -> c.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new com.finvanta.util.BusinessException(
+                    "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
+            customer.setKycVerified(true);
+            customer.setKycVerifiedDate(java.time.LocalDate.now());
+            customer.setKycVerifiedBy(SecurityUtil.getCurrentUsername());
+            customer.setUpdatedBy(SecurityUtil.getCurrentUsername());
+            customerRepository.save(customer);
+            redirectAttributes.addFlashAttribute("success",
+                "KYC verified for customer: " + customer.getCustomerNumber());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/customer/view/" + id;
+    }
 }

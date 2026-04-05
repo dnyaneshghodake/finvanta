@@ -18,4 +18,6 @@ public interface LoanApplicationRepository extends JpaRepository<LoanApplication
     List<LoanApplication> findByTenantIdAndCustomerId(String tenantId, Long customerId);
 
     boolean existsByTenantIdAndApplicationNumber(String tenantId, String applicationNumber);
+
+    long countByTenantIdAndStatus(String tenantId, ApplicationStatus status);
 }
