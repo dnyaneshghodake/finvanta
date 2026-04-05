@@ -63,16 +63,22 @@ public class DashboardController {
         mav.addObject("totalProvisioning", totalProvisioning);
 
         // RBI Key Ratios: Gross NPA % and Provision Coverage %
-        mav.addObject("grossNpaRatio",
-            totalOutstanding.compareTo(java.math.BigDecimal.ZERO) > 0
-                ? npaOutstanding.multiply(java.math.BigDecimal.valueOf(100))
-                    .divide(totalOutstanding, 2, java.math.RoundingMode.HALF_UP)
-                : java.math.BigDecimal.ZERO);
-        mav.addObject("provisionCoverage",
-            npaOutstanding.compareTo(java.math.BigDecimal.ZERO) > 0
-                ? totalProvisioning.multiply(java.math.BigDecimal.valueOf(100))
-                    .divide(npaOutstanding, 2, java.math.RoundingMode.HALF_UP)
-                : java.math.BigDecimal.ZERO);
+        // Per RBI regulatory reporting, Gross NPA Ratio = (NPA Outstanding / Total Outstanding) × 100
+        // Provision Coverage Ratio = (Total Provisioning / NPA Outstanding) × 100
+        // Coverage is capped at 100% for display — values above 100% indicate over-provisioning
+        // which can occur due to rounding or timing differences between provisioning and NPA cycles.
+        java.math.BigDecimal grossNpaRatio = totalOutstanding.compareTo(java.math.BigDecimal.ZERO) > 0
+            ? npaOutstanding.multiply(java.math.BigDecimal.valueOf(100))
+                .divide(totalOutstanding, 2, java.math.RoundingMode.HALF_UP)
+            : java.math.BigDecimal.ZERO;
+        mav.addObject("grossNpaRatio", grossNpaRatio);
+
+        java.math.BigDecimal provisionCoverage = npaOutstanding.compareTo(java.math.BigDecimal.ZERO) > 0
+            ? totalProvisioning.multiply(java.math.BigDecimal.valueOf(100))
+                .divide(npaOutstanding, 2, java.math.RoundingMode.HALF_UP)
+                .min(java.math.BigDecimal.valueOf(100))
+            : java.math.BigDecimal.ZERO;
+        mav.addObject("provisionCoverage", provisionCoverage);
 
         return mav;
     }
