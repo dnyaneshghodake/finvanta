@@ -3,20 +3,14 @@
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>
 
-<div class="main-content">
-    <div class="top-bar">
-        <h2>Branch Management</h2>
-        <div class="user-info">
-            <a href="${pageContext.request.contextPath}/branch/add" class="btn btn-primary btn-sm">+ Add Branch</a>
-        </div>
-    </div>
-    <div class="content-area">
-        <c:if test="${not empty success}">
-            <div class="alert alert-success"><c:out value="${success}" /></div>
-        </c:if>
-        <div class="card">
-            <h3>Branch List</h3>
-            <table>
+<div class="fv-main">
+    <c:if test="${not empty success}">
+        <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
+    </c:if>
+    <div class="fv-card">
+        <div class="card-header">Branch List <a href="${pageContext.request.contextPath}/branch/add" class="btn btn-sm btn-fv-primary float-end">+ Add Branch</a></div>
+        <div class="card-body">
+            <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
                         <th>Branch Code</th>
@@ -37,12 +31,13 @@
                             <td><c:out value="${branch.city}" /></td>
                             <td><c:out value="${branch.state}" /></td>
                             <td><c:out value="${branch.region}" /></td>
-                            <td><span class="badge badge-active">Active</span></td>
+                            <td><span class="fv-badge fv-badge-active">Active</span></td>
                         </tr>
                     </c:forEach>
                 </tbody>
             </table>
         </div>
     </div>
+</div>
 
 <%@ include file="../layout/footer.jsp" %>

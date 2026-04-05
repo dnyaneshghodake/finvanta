@@ -3,20 +3,14 @@
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>
 
-<div class="main-content">
-    <div class="top-bar">
-        <h2>Customer Management</h2>
-        <div class="user-info">
-            <a href="${pageContext.request.contextPath}/customer/add" class="btn btn-primary btn-sm">+ Add Customer</a>
-        </div>
-    </div>
-    <div class="content-area">
-        <c:if test="${not empty success}">
-            <div class="alert alert-success"><c:out value="${success}" /></div>
-        </c:if>
-        <div class="card">
-            <h3>Customer List</h3>
-            <table>
+<div class="fv-main">
+    <c:if test="${not empty success}">
+        <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
+    </c:if>
+    <div class="fv-card">
+        <div class="card-header">Customer List <a href="${pageContext.request.contextPath}/customer/add" class="btn btn-sm btn-fv-primary float-end">+ Add Customer</a></div>
+        <div class="card-body">
+            <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
                         <th>Customer No.</th>
@@ -38,14 +32,14 @@
                             <td><c:out value="${cust.mobileNumber}" /></td>
                             <td>
                                 <c:choose>
-                                    <c:when test="${cust.kycVerified}"><span class="badge badge-active">Verified</span></c:when>
-                                    <c:otherwise><span class="badge badge-rejected">Pending</span></c:otherwise>
+                                    <c:when test="${cust.kycVerified}"><span class="fv-badge fv-badge-active">Verified</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-rejected">Pending</span></c:otherwise>
                                 </c:choose>
                             </td>
                             <td><c:out value="${cust.cibilScore}" /></td>
                             <td><c:out value="${cust.branch.branchCode}" /></td>
                             <td>
-                                <a href="${pageContext.request.contextPath}/customer/view/${cust.id}" class="btn btn-primary btn-sm">View</a>
+                                <a href="${pageContext.request.contextPath}/customer/view/${cust.id}" class="btn btn-sm btn-fv-primary">View</a>
                             </td>
                         </tr>
                     </c:forEach>
@@ -53,5 +47,6 @@
             </table>
         </div>
     </div>
+</div>
 
 <%@ include file="../layout/footer.jsp" %>
