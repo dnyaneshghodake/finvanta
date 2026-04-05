@@ -157,12 +157,17 @@ public class TransactionEngine {
             throw new BusinessException("INVALID_AMOUNT",
                 "Transaction amount must be positive: " + request.getAmount());
         }
-        if (request.getAmount().scale() > 2) {
+        // CBS: Use stripTrailingZeros() before scale check to avoid false positives.
+        // BigDecimal("1000.000").scale()=3 but is logically 0 decimal places.
+        // BigDecimal("100.10").stripTrailingZeros().scale()=1, which is valid.
+        // Without this, amounts constructed from JSON/String with trailing zeros are rejected.
+        java.math.BigDecimal normalizedAmount = request.getAmount().stripTrailingZeros();
+        if (normalizedAmount.scale() > 2) {
             throw new BusinessException("INVALID_AMOUNT_PRECISION",
                 "Transaction amount cannot have more than 2 decimal places: "
-                    + request.getAmount() + " (scale=" + request.getAmount().scale() + ")");
+                    + request.getAmount() + " (scale=" + normalizedAmount.scale() + ")");
         }
-        if (request.getAmount().precision() - request.getAmount().scale() > 16) {
+        if (normalizedAmount.precision() - normalizedAmount.scale() > 16) {
             throw new BusinessException("INVALID_AMOUNT_OVERFLOW",
                 "Transaction amount exceeds CBS maximum (16 integer digits): "
                     + request.getAmount());
@@ -277,7 +282,7 @@ public class TransactionEngine {
             request.getTransactionType(),
             null, txnRef, request.getSourceModule(),
             "Transaction posted: " + request.getTransactionType()
-                + " ₹" + request.getAmount()
+                + " INR " + request.getAmount()
                 + " for " + request.getAccountReference()
                 + " | Journal: " + journalEntry.getJournalRef()
                 + " | Voucher: " + voucherNumber

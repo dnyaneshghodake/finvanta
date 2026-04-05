@@ -106,6 +106,11 @@ public class SequenceGeneratorService {
     /**
      * Convenience method: allocates next value and formats to fixed-width string.
      *
+     * NOTE: This method has its own REQUIRES_NEW transaction. The internal call to
+     * this.nextValue() is a self-invocation — Spring AOP proxy does NOT intercept it,
+     * so nextValue()'s @Transactional is ignored and it runs in THIS method's transaction.
+     * This is correct behavior: one REQUIRES_NEW transaction covers the entire operation.
+     *
      * @param sequenceName The sequence identifier
      * @param width Minimum width (zero-padded). E.g., width=6 → "000042"
      * @return Zero-padded sequence string

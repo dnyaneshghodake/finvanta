@@ -33,32 +33,34 @@ public final class SecurityUtil {
      * Returns the current user's CBS role for transaction limit resolution.
      * Extracts from Spring Security GrantedAuthority, stripping the "ROLE_" prefix.
      *
-     * Per CBS role hierarchy (most restrictive first for limit enforcement):
-     *   AUDITOR < MAKER < CHECKER < ADMIN
+     * Per CBS transactional role hierarchy (most restrictive first):
+     *   MAKER < CHECKER < ADMIN
+     *
+     * AUDITOR is excluded — it is a read-only audit role that should never initiate
+     * financial transactions. Including AUDITOR would cause the limit lookup to find
+     * no configured limits (AUDITOR has no transaction limits configured), which
+     * silently bypasses all limit checks via the "no limit configured" fallback path
+     * in TransactionLimitService.
      *
      * RBI Segregation of Duties Compliance:
-     * When a user has multiple roles (e.g., ROLE_MAKER + ROLE_ADMIN), the LOWEST-privilege
-     * role is returned. This ensures transaction limits are checked against the most
-     * restrictive role, enforcing the principle of least privilege per:
+     * When a user has multiple transactional roles (e.g., ROLE_MAKER + ROLE_ADMIN),
+     * the LOWEST-privilege transactional role is returned. This ensures transaction
+     * limits are checked against the most restrictive role, enforcing the principle
+     * of least privilege per:
      *   - RBI Master Direction on IT Governance (2023) Section 8.3
-     *   - RBI Guidelines on Internal Controls in Banks (segregation of duties)
      *   - Finacle TRAN_AUTH: "dual-role users are subject to the lower limit"
      *
-     * Rationale: If a user has both MAKER and ADMIN roles, they should be subject to
-     * MAKER limits when initiating transactions. ADMIN limits only apply when performing
-     * administrative functions. This prevents a MAKER from exploiting an incidental
-     * ADMIN role to bypass per-transaction limits.
-     *
-     * @return Lowest-privilege role string without "ROLE_" prefix, or null if no role found
+     * @return Lowest-privilege transactional role without "ROLE_" prefix, or null if no role found
      */
     public static String getCurrentUserRole() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || auth.getAuthorities() == null) {
             return null;
         }
-        // CBS role hierarchy: AUDITOR is most restrictive, ADMIN is least restrictive.
-        // Return the LOWEST-privilege role the user holds (principle of least privilege).
-        List<String> leastPrivilegeFirst = List.of("AUDITOR", "MAKER", "CHECKER", "ADMIN");
+        // CBS transactional role hierarchy: MAKER is most restrictive, ADMIN is least.
+        // AUDITOR is excluded — it is read-only and has no transaction limits configured.
+        // Returning AUDITOR would cause limit lookup to find nothing → bypass all limits.
+        List<String> leastPrivilegeFirst = List.of("MAKER", "CHECKER", "ADMIN");
         Set<String> userRoles = auth.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
             .filter(a -> a.startsWith("ROLE_"))
