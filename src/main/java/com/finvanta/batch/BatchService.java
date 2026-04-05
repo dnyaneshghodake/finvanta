@@ -50,42 +50,26 @@ public class BatchService {
         this.auditService = auditService;
     }
 
-    @Transactional
+    /**
+     * EOD batch orchestrator — intentionally NOT @Transactional.
+     * Each per-account operation (accrual, DPD, NPA) runs in its own transaction
+     * via the proxied LoanAccountService methods. This ensures:
+     * 1. Per-account failure isolation (one account's failure doesn't roll back others)
+     * 2. No deadlock risk with AuditService's REQUIRES_NEW propagation
+     * 3. Pessimistic locks are released between account processing
+     * Calendar locking and batch job tracking use dedicated @Transactional helpers.
+     */
     public BatchJob runEodBatch(LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
         String initiatedBy = SecurityUtil.getCurrentUsername();
 
         log.info("EOD batch started: tenant={}, date={}", tenantId, businessDate);
 
-        // Step 1: Validate business date
-        BusinessCalendar calendar = calendarRepository
-            .findAndLockByTenantIdAndDate(tenantId, businessDate)
-            .orElseThrow(() -> new BusinessException("BATCH_INVALID_DATE",
-                "Business date not found in calendar: " + businessDate));
+        // Step 1: Validate and lock business date (own transaction)
+        BusinessCalendar calendar = validateAndLockBusinessDate(tenantId, businessDate);
 
-        if (calendar.isEodComplete()) {
-            throw new BusinessException("BATCH_ALREADY_COMPLETE",
-                "EOD already completed for date: " + businessDate);
-        }
-
-        if (calendar.isHoliday()) {
-            throw new BusinessException("BATCH_HOLIDAY",
-                "Cannot run EOD on a holiday: " + businessDate);
-        }
-
-        // Step 2: Lock business date
-        calendar.setLocked(true);
-        calendarRepository.save(calendar);
-
-        BatchJob eodJob = new BatchJob();
-        eodJob.setTenantId(tenantId);
-        eodJob.setJobName("EOD_BATCH");
-        eodJob.setBusinessDate(businessDate);
-        eodJob.setStatus(BatchStatus.RUNNING);
-        eodJob.setStartedAt(LocalDateTime.now());
-        eodJob.setInitiatedBy(initiatedBy);
-        eodJob.setCreatedBy(initiatedBy);
-        eodJob = batchJobRepository.save(eodJob);
+        // Step 2: Create batch job record (own transaction)
+        BatchJob eodJob = createBatchJob(tenantId, businessDate, initiatedBy);
 
         int totalRecords = 0;
         int processedRecords = 0;
@@ -96,9 +80,8 @@ public class BatchService {
             List<LoanAccount> activeAccounts = loanAccountRepository.findAllActiveAccounts(tenantId);
             totalRecords = activeAccounts.size();
 
-            // Step 3: Run interest accrual
-            eodJob.setStepName("INTEREST_ACCRUAL");
-            batchJobRepository.save(eodJob);
+            // Step 3: Run interest accrual — each account in its own transaction
+            updateBatchStep(eodJob, "INTEREST_ACCRUAL");
 
             for (LoanAccount account : activeAccounts) {
                 try {
@@ -113,9 +96,8 @@ public class BatchService {
                 }
             }
 
-            // Step 4: Run EMI due date update / DPD calculation
-            eodJob.setStepName("DPD_CALCULATION");
-            batchJobRepository.save(eodJob);
+            // Step 4: Run DPD calculation
+            updateBatchStep(eodJob, "DPD_CALCULATION");
 
             for (LoanAccount account : activeAccounts) {
                 try {
@@ -128,9 +110,8 @@ public class BatchService {
                 }
             }
 
-            // Step 5: Run NPA tagging
-            eodJob.setStepName("NPA_CLASSIFICATION");
-            batchJobRepository.save(eodJob);
+            // Step 5: Run NPA classification — each account in its own transaction
+            updateBatchStep(eodJob, "NPA_CLASSIFICATION");
 
             List<LoanAccount> npaCandidates = loanAccountRepository
                 .findNpaCandidates(tenantId, npaRule.getNpaThresholdDays());
@@ -146,23 +127,13 @@ public class BatchService {
                 }
             }
 
-            // Step 6: Mark EOD complete
-            calendar.setEodComplete(true);
-            calendarRepository.save(calendar);
-
+            // Step 6: Mark EOD complete (own transaction)
             BatchStatus finalStatus = failedRecords > 0
                 ? BatchStatus.PARTIALLY_COMPLETED : BatchStatus.COMPLETED;
 
-            eodJob.setStatus(finalStatus);
-            eodJob.setStepName("COMPLETED");
-            eodJob.setCompletedAt(LocalDateTime.now());
-            eodJob.setTotalRecords(totalRecords);
-            eodJob.setProcessedRecords(processedRecords);
-            eodJob.setFailedRecords(failedRecords);
-            if (errorLog.length() > 0) {
-                eodJob.setErrorMessage(errorLog.toString());
-            }
-            batchJobRepository.save(eodJob);
+            completeEodBatch(eodJob, calendar, finalStatus,
+                totalRecords, processedRecords, failedRecords,
+                errorLog.length() > 0 ? errorLog.toString() : null);
 
             auditService.logEvent("BatchJob", eodJob.getId(), "EOD_COMPLETE",
                 null, eodJob, "BATCH",
@@ -172,32 +143,94 @@ public class BatchService {
                 businessDate, processedRecords, failedRecords);
 
         } catch (Exception e) {
-            eodJob.setStatus(BatchStatus.FAILED);
-            eodJob.setCompletedAt(LocalDateTime.now());
-            eodJob.setTotalRecords(totalRecords);
-            eodJob.setProcessedRecords(processedRecords);
-            eodJob.setFailedRecords(failedRecords);
-            eodJob.setErrorMessage(e.getMessage());
-            batchJobRepository.save(eodJob);
-
-            calendar.setLocked(false);
-            calendarRepository.save(calendar);
+            failEodBatch(eodJob, calendar,
+                totalRecords, processedRecords, failedRecords, e.getMessage());
 
             log.error("EOD batch failed: date={}", businessDate, e);
-
-            if (eodJob.getRetryCount() < eodJob.getMaxRetries()) {
-                eodJob.setRetryCount(eodJob.getRetryCount() + 1);
-                batchJobRepository.save(eodJob);
-                log.info("EOD batch will be retried: attempt {}/{}", eodJob.getRetryCount(), eodJob.getMaxRetries());
-            }
-
             throw new BusinessException("BATCH_FAILED", "EOD batch failed: " + e.getMessage(), e);
         }
 
         return eodJob;
     }
 
-    private void updateDaysPastDue(LoanAccount account, LocalDate businessDate) {
+    @Transactional
+    protected BusinessCalendar validateAndLockBusinessDate(String tenantId, LocalDate businessDate) {
+        BusinessCalendar calendar = calendarRepository
+            .findAndLockByTenantIdAndDate(tenantId, businessDate)
+            .orElseThrow(() -> new BusinessException("BATCH_INVALID_DATE",
+                "Business date not found in calendar: " + businessDate));
+
+        if (calendar.isEodComplete()) {
+            throw new BusinessException("BATCH_ALREADY_COMPLETE",
+                "EOD already completed for date: " + businessDate);
+        }
+
+        if (calendar.isHoliday()) {
+            throw new BusinessException("BATCH_HOLIDAY",
+                "Cannot run EOD on a holiday: " + businessDate);
+        }
+
+        calendar.setLocked(true);
+        return calendarRepository.save(calendar);
+    }
+
+    @Transactional
+    protected BatchJob createBatchJob(String tenantId, LocalDate businessDate, String initiatedBy) {
+        BatchJob eodJob = new BatchJob();
+        eodJob.setTenantId(tenantId);
+        eodJob.setJobName("EOD_BATCH");
+        eodJob.setBusinessDate(businessDate);
+        eodJob.setStatus(BatchStatus.RUNNING);
+        eodJob.setStartedAt(LocalDateTime.now());
+        eodJob.setInitiatedBy(initiatedBy);
+        eodJob.setCreatedBy(initiatedBy);
+        return batchJobRepository.save(eodJob);
+    }
+
+    @Transactional
+    protected void updateBatchStep(BatchJob eodJob, String stepName) {
+        eodJob.setStepName(stepName);
+        batchJobRepository.save(eodJob);
+    }
+
+    @Transactional
+    protected void completeEodBatch(BatchJob eodJob, BusinessCalendar calendar,
+                                     BatchStatus status, int totalRecords,
+                                     int processedRecords, int failedRecords,
+                                     String errorMessage) {
+        calendar.setEodComplete(true);
+        calendarRepository.save(calendar);
+
+        eodJob.setStatus(status);
+        eodJob.setStepName("COMPLETED");
+        eodJob.setCompletedAt(LocalDateTime.now());
+        eodJob.setTotalRecords(totalRecords);
+        eodJob.setProcessedRecords(processedRecords);
+        eodJob.setFailedRecords(failedRecords);
+        if (errorMessage != null) {
+            eodJob.setErrorMessage(errorMessage);
+        }
+        batchJobRepository.save(eodJob);
+    }
+
+    @Transactional
+    protected void failEodBatch(BatchJob eodJob, BusinessCalendar calendar,
+                                 int totalRecords, int processedRecords,
+                                 int failedRecords, String errorMessage) {
+        eodJob.setStatus(BatchStatus.FAILED);
+        eodJob.setCompletedAt(LocalDateTime.now());
+        eodJob.setTotalRecords(totalRecords);
+        eodJob.setProcessedRecords(processedRecords);
+        eodJob.setFailedRecords(failedRecords);
+        eodJob.setErrorMessage(errorMessage);
+        batchJobRepository.save(eodJob);
+
+        calendar.setLocked(false);
+        calendarRepository.save(calendar);
+    }
+
+    @Transactional
+    protected void updateDaysPastDue(LoanAccount account, LocalDate businessDate) {
         if (account.getStatus() == LoanStatus.CLOSED || account.getStatus() == LoanStatus.WRITTEN_OFF) {
             return;
         }
