@@ -40,15 +40,20 @@ CREATE TABLE branches (
 CREATE INDEX idx_branch_tenant_code ON branches (tenant_id, branch_code);
 CREATE INDEX idx_branch_tenant_active ON branches (tenant_id, is_active);
 
--- 3. BUSINESS CALENDAR
+-- 3. BUSINESS CALENDAR (Day Control — Finacle/Temenos pattern)
 CREATE TABLE business_calendar (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
     business_date   DATE            NOT NULL,
     is_holiday      BIT             NOT NULL DEFAULT 0,
     holiday_description VARCHAR(200),
+    day_status      VARCHAR(20)     NOT NULL DEFAULT 'NOT_OPENED',
     is_eod_complete BIT             NOT NULL DEFAULT 0,
     is_locked       BIT             NOT NULL DEFAULT 0,
+    day_opened_by   VARCHAR(100),
+    day_opened_at   DATETIME2,
+    day_closed_by   VARCHAR(100),
+    day_closed_at   DATETIME2,
     version         BIGINT          NOT NULL DEFAULT 0,
     created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
     updated_at      DATETIME2,
@@ -57,6 +62,7 @@ CREATE TABLE business_calendar (
     CONSTRAINT uq_buscal_tenant_date UNIQUE (tenant_id, business_date)
 );
 CREATE INDEX idx_buscal_tenant_date ON business_calendar (tenant_id, business_date);
+CREATE INDEX idx_buscal_day_status ON business_calendar (tenant_id, day_status);
 
 -- 4. CUSTOMERS
 CREATE TABLE customers (

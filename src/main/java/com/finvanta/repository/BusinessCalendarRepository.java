@@ -32,4 +32,8 @@ public interface BusinessCalendarRepository extends JpaRepository<BusinessCalend
     Optional<BusinessCalendar> findCurrentBusinessDate(@Param("tenantId") String tenantId);
 
     List<BusinessCalendar> findByTenantIdOrderByBusinessDateDesc(String tenantId);
+
+    /** CBS Day Control: Find the currently OPEN business day (only one allowed at a time) */
+    @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId AND bc.dayStatus = 'DAY_OPEN'")
+    Optional<BusinessCalendar> findOpenDay(@Param("tenantId") String tenantId);
 }
