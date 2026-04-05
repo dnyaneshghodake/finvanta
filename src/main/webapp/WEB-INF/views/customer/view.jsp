@@ -108,7 +108,14 @@
                             <td class="amount"><fmt:formatNumber value="${acc.sanctionedAmount}" type="number" maxFractionDigits="2" /></td>
                             <td class="amount"><fmt:formatNumber value="${acc.outstandingPrincipal}" type="number" maxFractionDigits="2" /></td>
                             <td><c:out value="${acc.daysPastDue}" /></td>
-                            <td><span class="fv-badge ${acc.status.npa ? 'fv-badge-npa' : 'fv-badge-active'}"><c:out value="${acc.status}" /></span></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${acc.status.npa}"><span class="fv-badge fv-badge-npa"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:when test="${acc.status.sma}"><span class="fv-badge fv-badge-pending"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:when test="${acc.status.terminal}"><span class="fv-badge fv-badge-closed"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-active"><c:out value="${acc.status}" /></span></c:otherwise>
+                                </c:choose>
+                            </td>
                         </tr>
                     </c:forEach>
                     <c:if test="${empty loanAccounts}">

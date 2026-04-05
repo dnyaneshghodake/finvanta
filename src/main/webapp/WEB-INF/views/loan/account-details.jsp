@@ -49,6 +49,14 @@
                 <tr><td class="fw-bold">Last Payment Date</td><td><c:out value="${account.lastPaymentDate}" /></td></tr>
                 <tr><td class="fw-bold">Risk Category</td><td><c:out value="${account.riskCategory}" default="--" /></td></tr>
                 <tr><td class="fw-bold">Collateral</td><td><c:out value="${account.collateralReference}" default="Unsecured" /></td></tr>
+                <tr><td class="fw-bold">Outstanding Interest</td><td class="amount"><fmt:formatNumber value="${account.outstandingInterest}" type="number" maxFractionDigits="2" /> INR</td></tr>
+                <tr><td class="fw-bold">Penal Interest Accrued</td><td class="amount"><fmt:formatNumber value="${account.penalInterestAccrued}" type="number" maxFractionDigits="2" /> INR</td></tr>
+                <tr><td class="fw-bold">Total Outstanding</td><td class="amount fw-bold"><fmt:formatNumber value="${account.totalOutstanding}" type="number" maxFractionDigits="2" /> INR</td></tr>
+                <tr><td class="fw-bold">Overdue Principal</td><td class="amount"><fmt:formatNumber value="${account.overduePrincipal}" type="number" maxFractionDigits="2" /> INR</td></tr>
+                <tr><td class="fw-bold">Overdue Interest</td><td class="amount"><fmt:formatNumber value="${account.overdueInterest}" type="number" maxFractionDigits="2" /> INR</td></tr>
+                <tr><td class="fw-bold">Last Accrual Date</td><td><c:out value="${account.lastInterestAccrualDate}" default="--" /></td></tr>
+                <tr><td class="fw-bold">NPA Date</td><td><c:out value="${account.npaDate}" default="--" /></td></tr>
+                <tr><td class="fw-bold">NPA Classification Date</td><td><c:out value="${account.npaClassificationDate}" default="--" /></td></tr>
                 <tr><td class="fw-bold">Provisioning</td><td class="amount"><fmt:formatNumber value="${account.provisioningAmount}" type="number" maxFractionDigits="2" /> INR</td></tr>
                 </tbody>
             </table>
@@ -68,7 +76,7 @@
         </div>
     </c:if>
 
-    <c:if test="${account.disbursedAmount.unscaledValue() > 0 and not account.status.closed}">
+    <c:if test="${account.disbursedAmount.unscaledValue() > 0 and not account.status.terminal}">
         <div class="fv-card">
             <div class="card-header">Process Repayment</div>
             <div class="card-body">
