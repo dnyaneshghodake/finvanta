@@ -315,7 +315,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         }
 
         if (account.getOutstandingPrincipal().compareTo(BigDecimal.ZERO) == 0
-                && account.getOutstandingInterest().compareTo(BigDecimal.ZERO) == 0) {
+                && account.getOutstandingInterest().compareTo(BigDecimal.ZERO) == 0
+                && account.getAccruedInterest().compareTo(BigDecimal.ZERO) == 0) {
             account.setStatus(LoanStatus.CLOSED);
             log.info("Loan account closed: accNo={}", accountNumber);
         }
