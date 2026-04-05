@@ -90,14 +90,6 @@ public class AccountingService {
      */
     public static void clearEngineToken() { ENGINE_TOKEN.remove(); }
 
-    /**
-     * Validates that the provided token matches the current engine context token.
-     * Returns true only if TransactionEngine set the token for this thread.
-     */
-    private static boolean isValidEngineContext(String token) {
-        return token != null && token.equals(ENGINE_TOKEN.get());
-    }
-
     // Legacy compatibility — retained for migration period only.
     // TODO: Remove after confirming no callers use the old API.
     /** @deprecated Use generateEngineToken()/clearEngineToken() instead */
