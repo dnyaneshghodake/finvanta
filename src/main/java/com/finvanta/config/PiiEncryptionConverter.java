@@ -82,8 +82,10 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
 
             return Base64.getEncoder().encodeToString(combined);
         } catch (Exception e) {
-            log.error("PII encryption failed — storing plaintext as fallback", e);
-            return attribute;
+            // Per RBI IT Governance Direction 2023: PII must NEVER be stored in plaintext.
+            // Fail the operation rather than silently persisting unencrypted data.
+            throw new RuntimeException("PII encryption failed — refusing to store plaintext. "
+                + "Check FINVANTA_PII_KEY configuration.", e);
         }
     }
 
@@ -94,6 +96,15 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
         }
         try {
             byte[] combined = Base64.getDecoder().decode(dbData);
+
+            // Minimum size: IV (12 bytes) + GCM tag (16 bytes) + at least 1 byte ciphertext = 29 bytes
+            // If decoded data is too short, it's plaintext that happens to be valid Base64
+            // (e.g., PAN "ABCDE1234F" decodes to 7 bytes — too short for IV extraction)
+            if (combined.length < GCM_IV_LENGTH + 16) {
+                log.debug("PII field too short for AES-GCM ({} bytes) — treating as plaintext: {}",
+                    combined.length, maskPii(dbData));
+                return dbData;
+            }
 
             // Extract IV and ciphertext
             ByteBuffer buffer = ByteBuffer.wrap(combined);
@@ -119,7 +130,23 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
 
     private SecretKeySpec getKeySpec() {
         String hexKey = System.getenv("FINVANTA_PII_KEY");
-        if (hexKey == null || hexKey.length() != 64) {
+
+        // If key is explicitly set but malformed — always fail (any environment)
+        if (hexKey != null && hexKey.length() != 64) {
+            throw new RuntimeException("FINVANTA_PII_KEY is set but invalid: expected 64 hex chars, got "
+                + hexKey.length() + " chars. Cannot encrypt PII data.");
+        }
+
+        if (hexKey == null) {
+            // Per RBI IT Governance Direction 2023: production systems MUST NOT use
+            // a hardcoded encryption key. The default key is for development/testing ONLY.
+            String profile = System.getenv("SPRING_PROFILES_ACTIVE");
+            if (profile != null && (profile.contains("prod") || profile.contains("staging"))) {
+                throw new RuntimeException("FINVANTA_PII_KEY environment variable is required in "
+                    + profile + " profile. Cannot use default dev key for PII encryption.");
+            }
+            log.warn("FINVANTA_PII_KEY not set — using default dev key. "
+                + "This is ONLY acceptable in development/test environments.");
             hexKey = DEFAULT_DEV_KEY;
         }
         byte[] keyBytes = hexStringToBytes(hexKey);

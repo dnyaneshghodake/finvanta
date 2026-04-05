@@ -29,6 +29,18 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     List<JournalEntry> findByTenantIdAndSourceModuleAndSourceRef(String tenantId, String sourceModule, String sourceRef);
 
     /**
+     * CBS Compound Journal Query: finds all journal entries for a specific account+module+date.
+     * Used by Transaction360 to retrieve compound journal groups (e.g., write-off with 3 legs)
+     * without over-matching journals from other business dates.
+     *
+     * Per Finacle TRAN_POSTING, compound journals share the same sourceModule, sourceRef,
+     * and valueDate. Filtering by date prevents returning unrelated journals for the same
+     * account from different business dates (e.g., accrual journals from prior days).
+     */
+    List<JournalEntry> findByTenantIdAndSourceModuleAndSourceRefAndValueDate(
+        String tenantId, String sourceModule, String sourceRef, LocalDate valueDate);
+
+    /**
      * CBS Reconciliation: Sum journal line amounts by GL code and debit/credit direction.
      * Used to compare journal totals against GL master balances.
      */

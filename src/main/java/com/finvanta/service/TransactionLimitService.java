@@ -55,6 +55,16 @@ public class TransactionLimitService {
      * @throws BusinessException if amount exceeds configured limit
      */
     public void validateTransactionLimit(BigDecimal amount, String transactionType) {
+        // CBS: Use business date for daily aggregate, not system date.
+        // In production, inject BusinessDateService. For now, fallback to system date.
+        validateTransactionLimit(amount, transactionType, LocalDate.now());
+    }
+
+    /**
+     * Validates with explicit business date for daily aggregate calculation.
+     * CBS business date may differ from system date (e.g., EOD runs after midnight).
+     */
+    public void validateTransactionLimit(BigDecimal amount, String transactionType, LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
         String role = SecurityUtil.getCurrentUserRole();
 
@@ -87,7 +97,7 @@ public class TransactionLimitService {
         if (limit.getDailyAggregateLimit() != null) {
             String username = SecurityUtil.getCurrentUsername();
             BigDecimal todayTotal = transactionRepository.sumDailyAmountByUser(
-                tenantId, username, LocalDate.now());
+                tenantId, username, businessDate);
             BigDecimal projectedTotal = todayTotal.add(amount);
 
             if (projectedTotal.compareTo(limit.getDailyAggregateLimit()) > 0) {

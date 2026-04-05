@@ -12,7 +12,7 @@ import java.util.List;
  * This is the universal input to the Transaction Engine. Every CBS module (Loan, Deposit,
  * Remittance, Trade Finance) builds a TransactionRequest and submits it to
  * {@link TransactionEngine#execute(TransactionRequest)}. The engine enforces the
- * 21-step validation chain in the correct order, regardless of which module initiated it.
+ * 10-step validation chain in the correct order, regardless of which module initiated it.
  *
  * Per Finacle/Temenos standards, a transaction request must declare:
  * - WHAT: amount, transaction type, journal lines (DR/CR legs)
@@ -71,6 +71,24 @@ public class TransactionRequest {
     private final String idempotencyKey;
     private final boolean systemGenerated;
 
+    /**
+     * CBS Compound Journal Groups per Finacle TRAN_POSTING multi-leg support.
+     *
+     * Some CBS operations require multiple balanced journal entries in a single
+     * atomic transaction. Example: NPA write-off posts 3 separate journals:
+     *   1. DR Write-Off Expense / CR Loan Asset (principal)
+     *   2. DR Write-Off Expense / CR Interest Receivable (interest)
+     *   3. DR Provision NPA / CR Provision Expense (provision reversal)
+     *
+     * Each group is a separate balanced journal entry (DR==CR validated independently).
+     * All groups share the same voucher, transaction ref, and audit trail.
+     *
+     * When compoundJournalGroups is non-null and non-empty, the engine posts each
+     * group as a separate journal entry. The primary journalLines field is ignored.
+     * When null/empty, the engine uses journalLines (single journal — backward compatible).
+     */
+    private final List<CompoundJournalGroup> compoundJournalGroups;
+
     private TransactionRequest(Builder builder) {
         this.amount = builder.amount;
         this.transactionType = builder.transactionType;
@@ -84,6 +102,7 @@ public class TransactionRequest {
         this.productType = builder.productType;
         this.idempotencyKey = builder.idempotencyKey;
         this.systemGenerated = builder.systemGenerated;
+        this.compoundJournalGroups = builder.compoundJournalGroups;
     }
 
     public BigDecimal getAmount() { return amount; }
@@ -98,6 +117,30 @@ public class TransactionRequest {
     public String getProductType() { return productType; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public boolean isSystemGenerated() { return systemGenerated; }
+    public List<CompoundJournalGroup> getCompoundJournalGroups() { return compoundJournalGroups; }
+
+    /** Returns true if this is a compound (multi-journal) transaction */
+    public boolean isCompound() {
+        return compoundJournalGroups != null && !compoundJournalGroups.isEmpty();
+    }
+
+    /**
+     * A single balanced journal entry within a compound transaction.
+     * Each group has its own narration and journal lines (DR==CR validated independently).
+     */
+    public record CompoundJournalGroup(
+        String narration,
+        List<JournalLineRequest> lines
+    ) {
+        public CompoundJournalGroup {
+            if (lines == null || lines.size() < 2) {
+                throw new IllegalArgumentException("Compound journal group must have at least 2 lines");
+            }
+            if (narration == null || narration.isBlank()) {
+                throw new IllegalArgumentException("Compound journal group narration is mandatory");
+            }
+        }
+    }
 
     public static Builder builder() { return new Builder(); }
 
@@ -114,6 +157,7 @@ public class TransactionRequest {
         private String productType;
         private String idempotencyKey;
         private boolean systemGenerated = false;
+        private List<CompoundJournalGroup> compoundJournalGroups;
 
         public Builder amount(BigDecimal amount) { this.amount = amount; return this; }
         public Builder transactionType(String transactionType) { this.transactionType = transactionType; return this; }
@@ -127,16 +171,24 @@ public class TransactionRequest {
         public Builder productType(String productType) { this.productType = productType; return this; }
         public Builder idempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; return this; }
         public Builder systemGenerated(boolean systemGenerated) { this.systemGenerated = systemGenerated; return this; }
+        public Builder compoundJournalGroups(List<CompoundJournalGroup> groups) { this.compoundJournalGroups = groups; return this; }
 
         public TransactionRequest build() {
             if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
                 throw new IllegalArgumentException("Transaction amount must be positive");
             }
-            if (journalLines == null || journalLines.size() < 2) {
+            boolean isCompound = compoundJournalGroups != null && !compoundJournalGroups.isEmpty();
+            if (!isCompound && (journalLines == null || journalLines.size() < 2)) {
                 throw new IllegalArgumentException("Transaction must have at least 2 journal lines (double-entry)");
             }
             if (sourceModule == null || sourceModule.isBlank()) {
                 throw new IllegalArgumentException("Source module is mandatory");
+            }
+            if (accountReference == null || accountReference.isBlank()) {
+                throw new IllegalArgumentException("Account reference is mandatory per CBS audit rules");
+            }
+            if (transactionType == null || transactionType.isBlank()) {
+                throw new IllegalArgumentException("Transaction type is mandatory");
             }
             if (valueDate == null) {
                 throw new IllegalArgumentException("Value date is mandatory");

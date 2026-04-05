@@ -40,6 +40,12 @@ public interface LoanTransactionRepository extends JpaRepository<LoanTransaction
         @Param("toDate") LocalDate toDate
     );
 
+    /** CBS Transaction 360: lookup by voucher number for branch-level reconciliation */
+    Optional<LoanTransaction> findByTenantIdAndVoucherNumber(String tenantId, String voucherNumber);
+
+    /** CBS Transaction 360: find transactions linked to a specific journal entry */
+    List<LoanTransaction> findByTenantIdAndJournalEntryId(String tenantId, Long journalEntryId);
+
     /**
      * CBS Idempotency lookup: find existing transaction by client-supplied key.
      * Per Finacle UNIQUE.REF pattern, if a transaction with this idempotency key

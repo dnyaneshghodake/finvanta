@@ -39,6 +39,7 @@ class LoanLifecycleIntegrationTest {
     @Autowired private LoanAccountService loanAccountService;
     @Autowired private LoanAccountRepository accountRepository;
     @Autowired private LoanApplicationRepository applicationRepository;
+    @Autowired private LoanTransactionRepository transactionRepository;
     @Autowired private CustomerRepository customerRepository;
     @Autowired private BranchRepository branchRepository;
     @Autowired private GLMasterRepository glMasterRepository;
@@ -96,12 +97,16 @@ class LoanLifecycleIntegrationTest {
         calendar.setCreatedBy("SYSTEM");
         calendarRepository.save(calendar);
 
-        // Also create next day for accrual tests
+        // Also create next day for accrual tests.
+        // Per CBS Day Control: only ONE day can be DAY_OPEN at a time per tenant.
+        // The next day starts as NOT_OPENED — the accrual test uses it via
+        // TransactionEngine with systemGenerated(true) which allows EOD_RUNNING,
+        // but the calendar entry must exist for business date validation (Step 2).
+        // We set it to DAY_OPEN only after closing the current day's operations.
         BusinessCalendar nextDay = new BusinessCalendar();
         nextDay.setTenantId(TENANT);
         nextDay.setBusinessDate(BIZ_DATE.plusDays(1));
-        nextDay.setDayStatus(DayStatus.DAY_OPEN);
-        nextDay.setDayOpenedBy("admin");
+        nextDay.setDayStatus(DayStatus.NOT_OPENED);
         nextDay.setCreatedBy("SYSTEM");
         calendarRepository.save(nextDay);
 
@@ -177,11 +182,33 @@ class LoanLifecycleIntegrationTest {
         assertEquals(0, new BigDecimal("1000000.00").compareTo(disbursed.getOutstandingPrincipal()));
         assertEquals(BIZ_DATE, disbursed.getDisbursementDate());
 
+        // CBS Transaction 360: Verify disbursement has voucher and journal linkage
+        var disbTxns = transactionRepository.findByTenantIdAndLoanAccountIdOrderByPostingDateDesc(
+            TENANT, disbursed.getId());
+        assertFalse(disbTxns.isEmpty(), "Disbursement transaction must exist");
+        LoanTransaction disbTxn = disbTxns.get(0);
+        assertNotNull(disbTxn.getVoucherNumber(), "Disbursement must have voucher number");
+        assertNotNull(disbTxn.getJournalEntryId(), "Disbursement must link to journal entry");
+        assertNotNull(disbTxn.getTransactionRef(), "Disbursement must have transaction ref");
+
         // Verify GL after disbursement
         GLMaster loanAssetGL = glMasterRepository.findByTenantIdAndGlCode(TENANT, "1001").orElseThrow();
         GLMaster bankOpsGL = glMasterRepository.findByTenantIdAndGlCode(TENANT, "1100").orElseThrow();
         assertEquals(0, new BigDecimal("1000000.00").compareTo(loanAssetGL.getDebitBalance()));
         assertEquals(0, new BigDecimal("1000000.00").compareTo(bankOpsGL.getCreditBalance()));
+
+        // --- CBS Day Control: Close day 1, open day 2 for accrual ---
+        // Per Finacle/Temenos lifecycle: NOT_OPENED → DAY_OPEN → EOD_RUNNING → DAY_CLOSED
+        // Only ONE day can be DAY_OPEN at a time per tenant.
+        BusinessCalendar day1 = calendarRepository.findByTenantIdAndBusinessDate(TENANT, BIZ_DATE).orElseThrow();
+        day1.setDayStatus(DayStatus.DAY_CLOSED);
+        day1.setEodComplete(true);
+        calendarRepository.save(day1);
+
+        BusinessCalendar day2 = calendarRepository.findByTenantIdAndBusinessDate(TENANT, BIZ_DATE.plusDays(1)).orElseThrow();
+        day2.setDayStatus(DayStatus.DAY_OPEN);
+        day2.setDayOpenedBy("admin");
+        calendarRepository.save(day2);
 
         // --- Interest Accrual (1 day) ---
         LocalDate accrualDate = BIZ_DATE.plusDays(1);
@@ -191,6 +218,11 @@ class LoanLifecycleIntegrationTest {
 
         // (1,000,000 × 10% / 365) × 1 = 273.97
         assertEquals(0, new BigDecimal("273.97").compareTo(accrualTxn.getAmount()));
+
+        // CBS: Verify voucher number is generated for every transaction (Transaction 360 view)
+        assertNotNull(accrualTxn.getVoucherNumber(), "Voucher number must be generated for accrual");
+        assertTrue(accrualTxn.getVoucherNumber().startsWith("VCH/"),
+            "Voucher must follow CBS format VCH/branch/date/seq");
 
         // Verify account balance
         LoanAccount afterAccrual = loanAccountService.getAccount(accNo);
@@ -202,6 +234,11 @@ class LoanLifecycleIntegrationTest {
         assertNotNull(repayTxn);
         assertTrue(repayTxn.getPrincipalComponent().compareTo(BigDecimal.ZERO) > 0);
         assertTrue(repayTxn.getInterestComponent().compareTo(BigDecimal.ZERO) > 0);
+
+        // CBS Transaction 360: Verify repayment has voucher
+        assertNotNull(repayTxn.getVoucherNumber(), "Repayment must have voucher number");
+        assertTrue(repayTxn.getVoucherNumber().startsWith("VCH/"),
+            "Repayment voucher must follow CBS format");
 
         // Principal should decrease
         LoanAccount afterRepay = loanAccountService.getAccount(accNo);

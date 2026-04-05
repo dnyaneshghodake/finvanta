@@ -6,6 +6,7 @@ import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.BranchRepository;
+import com.finvanta.service.SequenceGeneratorService;
 import com.finvanta.service.TransactionLimitService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
@@ -18,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * CBS Generic Transaction Engine per Finacle TRAN_POSTING / Temenos TRANSACTION framework.
@@ -65,25 +65,25 @@ public class TransactionEngine {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionEngine.class);
 
-    /** Voucher sequence — branch-prefixed, date-partitioned in production */
-    private static final AtomicLong VOUCHER_SEQ = new AtomicLong(1);
-
     private final AccountingService accountingService;
     private final TransactionLimitService limitService;
     private final BusinessCalendarRepository calendarRepository;
     private final BranchRepository branchRepository;
     private final AuditService auditService;
+    private final SequenceGeneratorService sequenceGenerator;
 
     public TransactionEngine(AccountingService accountingService,
                               TransactionLimitService limitService,
                               BusinessCalendarRepository calendarRepository,
                               BranchRepository branchRepository,
-                              AuditService auditService) {
+                              AuditService auditService,
+                              SequenceGeneratorService sequenceGenerator) {
         this.accountingService = accountingService;
         this.limitService = limitService;
         this.calendarRepository = calendarRepository;
         this.branchRepository = branchRepository;
         this.auditService = auditService;
+        this.sequenceGenerator = sequenceGenerator;
     }
 
     /**
@@ -149,11 +149,23 @@ public class TransactionEngine {
 
         // ================================================================
         // STEP 4: Amount Validation
-        // Already validated by TransactionRequest.Builder, but double-check
+        // Per RBI/Finacle standards: amount must be positive, within precision limits.
+        // CBS precision: max 18 digits total, 2 decimal places (DECIMAL(18,2)).
+        // Already validated by TransactionRequest.Builder, but defense-in-depth.
         // ================================================================
         if (request.getAmount() == null || request.getAmount().signum() <= 0) {
             throw new BusinessException("INVALID_AMOUNT",
                 "Transaction amount must be positive: " + request.getAmount());
+        }
+        if (request.getAmount().scale() > 2) {
+            throw new BusinessException("INVALID_AMOUNT_PRECISION",
+                "Transaction amount cannot have more than 2 decimal places: "
+                    + request.getAmount() + " (scale=" + request.getAmount().scale() + ")");
+        }
+        if (request.getAmount().precision() - request.getAmount().scale() > 16) {
+            throw new BusinessException("INVALID_AMOUNT_OVERFLOW",
+                "Transaction amount exceeds CBS maximum (16 integer digits): "
+                    + request.getAmount());
         }
 
         // ================================================================
@@ -170,10 +182,11 @@ public class TransactionEngine {
         // ================================================================
         // STEP 6: Transaction Limit Validation
         // Per-role per-transaction + daily aggregate (skip for system-generated)
+        // Uses CBS business date (not system date) for daily aggregate calculation
         // ================================================================
         if (!request.isSystemGenerated()) {
             limitService.validateTransactionLimit(
-                request.getAmount(), request.getTransactionType());
+                request.getAmount(), request.getTransactionType(), request.getValueDate());
         }
 
         // ================================================================
@@ -198,14 +211,52 @@ public class TransactionEngine {
         //   - GL balance update (pessimistic lock)
         //   - Immutable ledger posting (hash chain)
         //   - Batch running totals update (pessimistic lock)
+        //
+        // CBS Compound Posting (Finacle TRAN_POSTING multi-leg):
+        // When compoundJournalGroups is set, each group is posted as a separate
+        // balanced journal entry. All share the same voucher and transaction ref.
+        // The first journal entry is returned as the primary reference.
         // ================================================================
-        JournalEntry journalEntry = accountingService.postJournalEntry(
-            request.getValueDate(),
-            request.getNarration(),
-            request.getSourceModule(),
-            request.getAccountReference(),
-            request.getJournalLines()
-        );
+        JournalEntry journalEntry;
+        // CBS: Set engine context flag so AccountingService knows this call is
+        // from the validated TransactionEngine pipeline (defense-in-depth).
+        AccountingService.enterEngineContext();
+        try {
+            if (request.isCompound()) {
+                // CBS Compound Posting: each group is a separate balanced journal entry.
+                // All groups share the same voucher, transaction ref, and audit trail.
+                // The first journal entry is returned as the primary reference.
+                // All journal entries use the same sourceRef (account number) so they can
+                // be queried together via JournalEntryRepository.findByTenantIdAndSourceModuleAndSourceRef().
+                JournalEntry firstEntry = null;
+                for (TransactionRequest.CompoundJournalGroup group : request.getCompoundJournalGroups()) {
+                    JournalEntry entry = accountingService.postJournalEntry(
+                        request.getValueDate(),
+                        group.narration(),
+                        request.getSourceModule(),
+                        request.getAccountReference(),
+                        group.lines()
+                    );
+                    if (firstEntry == null) {
+                        firstEntry = entry;
+                    }
+                    log.debug("Compound journal group posted: ref={}, debit={}, credit={}",
+                        entry.getJournalRef(), entry.getTotalDebit(), entry.getTotalCredit());
+                }
+                journalEntry = firstEntry;
+            } else {
+                journalEntry = accountingService.postJournalEntry(
+                    request.getValueDate(),
+                    request.getNarration(),
+                    request.getSourceModule(),
+                    request.getAccountReference(),
+                    request.getJournalLines()
+                );
+            }
+        } finally {
+            // Always clear the engine context — prevents stale flag on thread reuse
+            AccountingService.exitEngineContext();
+        }
 
         // ================================================================
         // STEP 9: Voucher Generation
@@ -253,13 +304,21 @@ public class TransactionEngine {
      * Generates a voucher number per Finacle/Temenos convention.
      * Format: VCH/{branchCode}/{YYYYMMDD}/{sequence}
      *
-     * In production, this should use a DB sequence partitioned by branch+date.
-     * The current implementation uses an AtomicLong for single-JVM safety.
+     * Uses DB-backed sequence partitioned by branch+date via SequenceGeneratorService.
+     * This guarantees globally unique voucher numbers across:
+     *   - JVM restarts (sequence persisted in DB)
+     *   - Multiple JVM instances (pessimistic lock serializes allocation)
+     *   - Cluster/HA deployments (single source of truth)
+     *
+     * Per Finacle TRAN_POSTING: voucher numbers must be unique within a business day
+     * per branch. The sequence name "VOUCHER_{branch}_{date}" ensures daily reset
+     * semantics — each new business date starts a new sequence automatically.
      */
     private String generateVoucherNumber(String branchCode, LocalDate valueDate) {
         String branch = branchCode != null ? branchCode : "HQ";
         String dateStr = valueDate.toString().replace("-", "");
-        long seq = VOUCHER_SEQ.incrementAndGet();
-        return "VCH/" + branch + "/" + dateStr + "/" + String.format("%06d", seq);
+        String seqName = "VOUCHER_" + branch + "_" + dateStr;
+        String seq = sequenceGenerator.nextFormattedValue(seqName, 6);
+        return "VCH/" + branch + "/" + dateStr + "/" + seq;
     }
 }

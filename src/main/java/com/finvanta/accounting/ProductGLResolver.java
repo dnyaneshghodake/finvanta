@@ -3,12 +3,14 @@ package com.finvanta.accounting;
 import com.finvanta.domain.entity.ProductMaster;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.util.TenantContext;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * CBS Product-Aware GL Code Resolver per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
@@ -22,13 +24,16 @@ import java.util.concurrent.ConcurrentHashMap;
  * This enables gradual migration: existing loans with productType="TERM_LOAN"
  * continue to work via fallback, while new products get their own GL mapping.
  *
- * Performance: Uses a per-tenant in-memory cache to avoid repeated DB lookups.
+ * Performance: Uses Caffeine TTL-based cache to avoid repeated DB lookups.
  * A single repayment calls get*GL() 3 times; EOD batch calls it 100s of times.
  * Without cache: 3 DB queries per repayment, 1000s during EOD.
- * With cache: 1 DB query per product per JVM lifecycle (until evicted).
+ * With cache: 1 DB query per product per TTL window (15 minutes default).
  *
- * Cache eviction: Call {@link #evictCache()} when product_master is modified
- * (e.g., via admin UI). In production, use Spring @CacheEvict with Caffeine/Redis.
+ * Cache strategy:
+ * - TTL: 15 minutes — stale GL codes auto-refresh without JVM restart
+ * - Max size: 100 entries — bounded memory for multi-tenant deployments
+ * - Manual eviction: {@link #evictCache()} for immediate refresh after admin changes
+ * - Negative caching: unconfigured products cached as Optional.empty() to avoid DB misses
  *
  * Usage:
  *   String glCode = glResolver.getLoanAssetGL("TERM_LOAN");
@@ -42,20 +47,25 @@ public class ProductGLResolver {
     private final ProductMasterRepository productRepository;
 
     /**
-     * In-memory product cache: key = "tenantId:productCode", value = Optional<ProductMaster>.
-     * Optional.empty() is cached for unconfigured products to avoid repeated DB misses.
-     * Thread-safe via ConcurrentHashMap.
+     * Caffeine TTL-based product cache: key = "tenantId:productCode", value = Optional<ProductMaster>.
+     * - expireAfterWrite(15 min): stale GL codes auto-refresh without manual intervention
+     * - maximumSize(100): bounded memory — CBS typically has <20 products per tenant
+     * - Optional.empty() cached for unconfigured products to avoid repeated DB misses
      */
-    private final ConcurrentHashMap<String, Optional<ProductMaster>> productCache = new ConcurrentHashMap<>();
+    private final Cache<String, Optional<ProductMaster>> productCache = Caffeine.newBuilder()
+        .expireAfterWrite(15, TimeUnit.MINUTES)
+        .maximumSize(100)
+        .recordStats()
+        .build();
 
     public ProductGLResolver(ProductMasterRepository productRepository) {
         this.productRepository = productRepository;
     }
 
-    /** Evicts all cached products. Call when product_master is modified. */
+    /** Evicts all cached products. Call when product_master is modified via admin UI. */
     public void evictCache() {
-        productCache.clear();
-        log.info("ProductGLResolver cache evicted");
+        productCache.invalidateAll();
+        log.info("ProductGLResolver cache evicted (all entries invalidated)");
     }
 
     /** Resolves GL code for loan asset (principal outstanding) */
@@ -137,13 +147,14 @@ public class ProductGLResolver {
     }
 
     /**
-     * Cached product lookup. Caches both hits and misses (Optional.empty())
-     * to avoid repeated DB queries for unconfigured products.
+     * Cached product lookup using Caffeine's get() with loader.
+     * Caches both hits and misses (Optional.empty()) to avoid repeated DB queries.
+     * Entries auto-expire after 15 minutes per TTL configuration.
      */
     private Optional<ProductMaster> findCached(String productType) {
         String tenantId = TenantContext.getCurrentTenant();
         String cacheKey = tenantId + ":" + productType;
-        return productCache.computeIfAbsent(cacheKey, k ->
+        return productCache.get(cacheKey, k ->
             productRepository.findByTenantIdAndProductCode(tenantId, productType));
     }
 }

@@ -107,7 +107,7 @@
             </div>
         </div>
 
-        <!-- CBS Prepayment/Foreclosure — per RBI Fair Lending Code 2023 -->
+        <!-- CBS Prepayment/Foreclosure - per RBI Fair Lending Code 2023 -->
         <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <div class="fv-card">
             <div class="card-header">Prepayment / Foreclosure</div>
@@ -127,7 +127,7 @@
         </div>
         </c:if>
 
-        <!-- CBS Fee Charging — MAKER/ADMIN -->
+        <!-- CBS Fee Charging - MAKER/ADMIN -->
         <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <div class="fv-card">
             <div class="card-header">Charge Fee</div>
@@ -157,7 +157,7 @@
         </div>
         </c:if>
 
-        <!-- CBS Write-Off — ADMIN only, NPA accounts only -->
+        <!-- CBS Write-Off - ADMIN only, NPA accounts only -->
         <c:if test="${account.status.npa and pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <div class="fv-card">
             <div class="card-header text-danger">NPA Write-Off</div>
@@ -167,7 +167,7 @@
                 <p>Provisioning Held: <strong class="amount"><fmt:formatNumber value="${account.provisioningAmount}" type="number" maxFractionDigits="2" /> INR</strong></p>
                 <form method="post" action="${pageContext.request.contextPath}/loan/write-off/${account.accountNumber}">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                    <button type="submit" class="btn btn-danger" data-confirm="CONFIRM WRITE-OFF: This action is irreversible and will remove ₹${account.outstandingPrincipal} from the balance sheet.">Write Off Account</button>
+                    <button type="submit" class="btn btn-danger" data-confirm="CONFIRM WRITE-OFF: This action is irreversible and will remove INR ${account.outstandingPrincipal} from the balance sheet.">Write Off Account</button>
                 </form>
             </div>
         </div>
@@ -204,7 +204,7 @@
                             <td class="amount"><fmt:formatNumber value="${sched.interestAmount}" type="number" maxFractionDigits="2" /></td>
                             <td class="amount"><fmt:formatNumber value="${sched.closingBalance}" type="number" maxFractionDigits="2" /></td>
                             <td class="amount"><fmt:formatNumber value="${sched.paidAmount}" type="number" maxFractionDigits="2" /></td>
-                            <td><c:out value="${sched.paidDate}" default="—" /></td>
+                            <td><c:out value="${sched.paidDate}" default="--" /></td>
                             <td><c:if test="${sched.daysPastDue > 0}"><span class="fv-badge fv-badge-npa"><c:out value="${sched.daysPastDue}" /></span></c:if><c:if test="${sched.daysPastDue == 0}">0</c:if></td>
                             <td>
                                 <c:choose>
@@ -246,7 +246,7 @@
                 <tbody>
                     <c:forEach var="txn" items="${transactions}">
                         <tr class="${txn.reversed ? 'table-secondary text-decoration-line-through' : ''}">
-                            <td><c:out value="${txn.transactionRef}" /></td>
+                            <td><a href="${pageContext.request.contextPath}/txn360/${txn.transactionRef}" title="Transaction 360 View" class="font-monospace"><c:out value="${txn.transactionRef}" /></a></td>
                             <td><c:out value="${txn.transactionType}" /></td>
                             <td class="amount"><fmt:formatNumber value="${txn.amount}" type="number" maxFractionDigits="2" /></td>
                             <td class="amount"><fmt:formatNumber value="${txn.principalComponent}" type="number" maxFractionDigits="2" /></td>

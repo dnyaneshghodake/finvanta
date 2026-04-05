@@ -24,6 +24,9 @@
         <li><a href="${pageContext.request.contextPath}/loan/accounts" class="nav-link"><i class="bi bi-bank"></i><span class="nav-text">Active Accounts</span></a></li>
         </c:if>
 
+        <li class="nav-section">Transaction Inquiry</li>
+        <li><a href="${pageContext.request.contextPath}/txn360/search?q=" class="nav-link"><i class="bi bi-diagram-3"></i><span class="nav-text">Transaction 360</span></a></li>
+
         <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <li class="nav-section">Accounting</li>
         <li><a href="${pageContext.request.contextPath}/accounting/trial-balance" class="nav-link"><i class="bi bi-journal-bookmark"></i><span class="nav-text">Trial Balance</span></a></li>
