@@ -1,5 +1,6 @@
 package com.finvanta.domain.entity;
 
+import com.finvanta.config.PiiEncryptionConverter;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -30,10 +31,22 @@ public class Customer extends BaseEntity {
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
 
-    @Column(name = "pan_number", length = 10)
+    /**
+     * PAN number — encrypted at rest per RBI IT Governance Direction 2023.
+     * Column length expanded from 10 to 100 to accommodate Base64(IV+ciphertext).
+     * Application code sees plaintext; DB stores AES-256-GCM ciphertext.
+     */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "pan_number", length = 100)
     private String panNumber;
 
-    @Column(name = "aadhaar_number", length = 12)
+    /**
+     * Aadhaar number — encrypted at rest per RBI IT Governance Direction 2023.
+     * Column length expanded from 12 to 100 to accommodate Base64(IV+ciphertext).
+     * Per UIDAI guidelines, Aadhaar must never be stored in plaintext.
+     */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "aadhaar_number", length = 100)
     private String aadhaarNumber;
 
     @Column(name = "mobile_number", length = 15)

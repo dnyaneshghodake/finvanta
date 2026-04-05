@@ -72,8 +72,8 @@ CREATE TABLE customers (
     first_name      VARCHAR(100)    NOT NULL,
     last_name       VARCHAR(100)    NOT NULL,
     date_of_birth   DATE,
-    pan_number      VARCHAR(10),
-    aadhaar_number  VARCHAR(12),
+    pan_number      VARCHAR(100),    -- Expanded for AES-256-GCM ciphertext (RBI PII encryption)
+    aadhaar_number  VARCHAR(100),   -- Expanded for AES-256-GCM ciphertext (UIDAI/RBI mandate)
     mobile_number   VARCHAR(15),
     email           VARCHAR(200),
     address         VARCHAR(500),
@@ -269,6 +269,7 @@ CREATE TABLE loan_transactions (
     is_reversed     BIT             NOT NULL DEFAULT 0,
     reversed_by_ref VARCHAR(40),
     journal_entry_id BIGINT,
+    idempotency_key VARCHAR(100),   -- CBS idempotency: client-supplied key to prevent duplicate processing
     version         BIGINT          NOT NULL DEFAULT 0,
     created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
     updated_at      DATETIME2,
@@ -281,6 +282,10 @@ CREATE INDEX idx_loantxn_tenant_account ON loan_transactions (tenant_id, loan_ac
 CREATE INDEX idx_loantxn_txnref ON loan_transactions (tenant_id, transaction_ref);
 CREATE INDEX idx_loantxn_value_date ON loan_transactions (tenant_id, value_date);
 CREATE INDEX idx_loantxn_type ON loan_transactions (tenant_id, transaction_type);
+-- CBS Idempotency: unique filtered index on non-null idempotency keys
+-- Allows NULL (system txns) but enforces uniqueness on client-supplied keys
+CREATE UNIQUE INDEX uq_loantxn_idempotency ON loan_transactions (tenant_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 
 -- 10. GL MASTER
 CREATE TABLE gl_master (

@@ -39,4 +39,12 @@ public interface LoanTransactionRepository extends JpaRepository<LoanTransaction
         @Param("fromDate") LocalDate fromDate,
         @Param("toDate") LocalDate toDate
     );
+
+    /**
+     * CBS Idempotency lookup: find existing transaction by client-supplied key.
+     * Per Finacle UNIQUE.REF pattern, if a transaction with this idempotency key
+     * already exists, the original result is returned instead of creating a duplicate.
+     */
+    Optional<LoanTransaction> findByTenantIdAndIdempotencyKey(
+        String tenantId, String idempotencyKey);
 }
