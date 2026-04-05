@@ -163,6 +163,11 @@ public class ApprovalWorkflowService {
             existing.setActionedAt(LocalDateTime.now());
             existing.setUpdatedBy(resolvedBy);
             workflowRepository.save(existing);
+
+            auditService.logEvent("ApprovalWorkflow", existing.getId(), "RESOLVE",
+                ApprovalStatus.PENDING_APPROVAL.name(), existing, "WORKFLOW",
+                "Workflow auto-resolved for " + entityType + "/" + entityId + " by " + resolvedBy);
+
             log.info("Resolved pending workflow: entity={}/{}, action={}",
                 entityType, entityId, existing.getActionType());
         });

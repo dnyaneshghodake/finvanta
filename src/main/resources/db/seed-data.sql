@@ -83,6 +83,9 @@ VALUES ('DEFAULT', '4001', 'Interest Income - Loans', 'INCOME', 0.00, 0.00, 1, 0
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_by)
 VALUES ('DEFAULT', '4002', 'Fee Income', 'INCOME', 0.00, 0.00, 1, 0, 0, 'SYSTEM');
 
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_by)
+VALUES ('DEFAULT', '4003', 'Penal Interest Income', 'INCOME', 0.00, 0.00, 1, 0, 0, 'SYSTEM');
+
 -- Expenses
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_by)
 VALUES ('DEFAULT', '5000', 'Expenses', 'EXPENSE', 0.00, 0.00, 1, 1, 0, 'SYSTEM');
