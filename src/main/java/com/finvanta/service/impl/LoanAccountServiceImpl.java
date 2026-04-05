@@ -95,6 +95,12 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Application must be in APPROVED state. Current: " + application.getStatus());
         }
 
+        // CBS idempotency: prevent duplicate account creation for the same application
+        if (accountRepository.existsByTenantIdAndApplicationId(tenantId, applicationId)) {
+            throw new BusinessException("ACCOUNT_ALREADY_EXISTS",
+                "Loan account already exists for application: " + applicationId);
+        }
+
         LoanAccount account = new LoanAccount();
         account.setTenantId(tenantId);
         account.setAccountNumber(ReferenceGenerator.generateAccountNumber(
@@ -292,9 +298,9 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
                 "Loan account not found: " + accountNumber));
 
-        if (account.getStatus() == LoanStatus.CLOSED) {
+        if (account.getStatus() == LoanStatus.CLOSED || account.getStatus() == LoanStatus.WRITTEN_OFF) {
             throw new BusinessException("ACCOUNT_CLOSED",
-                "Cannot process repayment on closed account");
+                "Cannot process repayment on " + account.getStatus() + " account");
         }
 
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -354,9 +360,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             account.setNextEmiDate(account.getNextEmiDate().plusMonths(1));
         }
 
-        if (account.getOutstandingPrincipal().compareTo(BigDecimal.ZERO) == 0
-                && account.getOutstandingInterest().compareTo(BigDecimal.ZERO) == 0
-                && account.getAccruedInterest().compareTo(BigDecimal.ZERO) == 0) {
+        // CBS: Loan closure only when all components are zero (principal + interest + penal)
+        if (account.getTotalOutstanding().compareTo(BigDecimal.ZERO) == 0) {
             account.setStatus(LoanStatus.CLOSED);
             log.info("Loan account closed: accNo={}", accountNumber);
         }
