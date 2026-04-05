@@ -1,11 +1,13 @@
 package com.finvanta.accounting;
 
 import com.finvanta.audit.AuditService;
+import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.domain.entity.JournalEntryLine;
 import com.finvanta.domain.entity.TransactionBatch;
 import com.finvanta.domain.enums.DebitCredit;
+import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.JournalEntryRepository;
 import com.finvanta.repository.TransactionBatchRepository;
@@ -46,17 +48,20 @@ public class AccountingService {
     private final AuditService auditService;
     private final LedgerService ledgerService;
     private final TransactionBatchRepository batchRepository;
+    private final BusinessCalendarRepository calendarRepository;
 
     public AccountingService(JournalEntryRepository journalEntryRepository,
                              GLMasterRepository glMasterRepository,
                              AuditService auditService,
                              LedgerService ledgerService,
-                             TransactionBatchRepository batchRepository) {
+                             TransactionBatchRepository batchRepository,
+                             BusinessCalendarRepository calendarRepository) {
         this.journalEntryRepository = journalEntryRepository;
         this.glMasterRepository = glMasterRepository;
         this.auditService = auditService;
         this.ledgerService = ledgerService;
         this.batchRepository = batchRepository;
+        this.calendarRepository = calendarRepository;
     }
 
     @Transactional
@@ -68,6 +73,35 @@ public class AccountingService {
         if (lines == null || lines.size() < 2) {
             throw new BusinessException("ACCOUNTING_INVALID_ENTRY",
                 "Journal entry must have at least 2 lines (double-entry)");
+        }
+
+        // CBS Day Control: Validate that the business day allows transactions.
+        // Per Finacle/Temenos, financial postings are only allowed when day status
+        // is DAY_OPEN. During EOD_RUNNING, NOT_OPENED, or DAY_CLOSED, all new
+        // postings must be rejected. EOD-generated postings (PROVISIONING, SUSPENSE,
+        // SYSTEM batches) are allowed during EOD_RUNNING as they are part of the
+        // batch process itself.
+        BusinessCalendar calendar = calendarRepository
+            .findByTenantIdAndBusinessDate(tenantId, valueDate).orElse(null);
+        if (calendar != null) {
+            // EOD system postings are allowed during EOD_RUNNING.
+            // LOAN module is included because interest accrual and penal interest
+            // are posted by the EOD batch engine with sourceModule="LOAN".
+            boolean isEodSystemPosting = "PROVISIONING".equals(sourceModule)
+                || "SUSPENSE".equals(sourceModule)
+                || "WRITE_OFF".equals(sourceModule)
+                || "LOAN".equals(sourceModule)
+                || "REVERSAL".equals(sourceModule);
+            if (!calendar.getDayStatus().isTransactionAllowed() && !calendar.isEodRunning()) {
+                throw new BusinessException("DAY_NOT_OPEN",
+                    "Cannot post transactions — business date " + valueDate
+                        + " is in " + calendar.getDayStatus() + " state");
+            }
+            if (calendar.isEodRunning() && !isEodSystemPosting) {
+                throw new BusinessException("EOD_IN_PROGRESS",
+                    "Cannot post transactions during EOD processing for date " + valueDate
+                        + ". Wait for EOD to complete.");
+            }
         }
 
         // CBS Batch Control: Find an OPEN batch for this business date.

@@ -113,14 +113,12 @@ public class BatchService {
         log.info("EOD batch started: tenant={}, date={}", tenantId, businessDate);
 
         // Step 0: Validate all intra-day transaction batches are closed.
-        // Per Finacle/Temenos, EOD cannot start if any batch is still OPEN.
-        // This ensures all intra-day transactions are finalized before EOD processing.
-        try {
-            transactionBatchService.validateAllBatchesClosed(businessDate);
-        } catch (BusinessException e) {
-            log.warn("Transaction batch validation: {}", e.getMessage());
-            // Non-blocking: if no batches exist for the date, proceed with EOD
-        }
+        // Per Finacle/Temenos, EOD MUST NOT start if any batch is still OPEN.
+        // This is a hard prerequisite — not a soft warning.
+        // validateAllBatchesClosed() only throws when openCount > 0 (batches still OPEN).
+        // When no batches exist for the date, openCount == 0 and no exception is thrown,
+        // so EOD proceeds normally for dates with no intra-day batch activity.
+        transactionBatchService.validateAllBatchesClosed(businessDate);
 
         // Step 1: Validate and lock business date (own transaction via proxy)
         BusinessCalendar calendar = self.validateAndLockBusinessDate(tenantId, businessDate);

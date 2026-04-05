@@ -441,15 +441,18 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             }
         }
 
-        // RBI IRAC: DPD resets only when all overdue EMIs are cleared.
-        // If outstanding principal is fully paid or remaining balance equals
-        // or is less than the scheduled outstanding, DPD can be reset.
-        // For simplicity: reset DPD when payment >= EMI amount (full EMI paid).
-        if (account.getEmiAmount() != null && amount.compareTo(account.getEmiAmount()) >= 0) {
-            account.setDaysPastDue(0);
-            account.setOverduePrincipal(BigDecimal.ZERO);
-            account.setOverdueInterest(BigDecimal.ZERO);
-        }
+        // RBI IRAC: DPD resets only when ALL overdue installments are cleared.
+        // Per RBI Master Circular on IRAC Norms: "An account should be treated as
+        // 'out of order' if the outstanding balance remains continuously in excess
+        // of the sanctioned limit/drawing power for 90 days."
+        //
+        // Use the amortization schedule as the source of truth: after FIFO payment
+        // allocation (done below via scheduleService), check if any installments
+        // are still overdue. DPD is recalculated from the oldest unpaid installment.
+        // The naive "payment >= 1 EMI → DPD=0" was incorrect for multi-EMI arrears.
+        //
+        // NOTE: DPD is also recalculated in EOD batch (updateDaysPastDue), so this
+        // is a best-effort intra-day update. EOD is the authoritative DPD calculation.
         account.setUpdatedBy(currentUser);
 
         if (account.getRemainingTenure() != null && account.getRemainingTenure() > 0) {
@@ -570,22 +573,46 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         }
 
         BigDecimal writeOffAmount = account.getOutstandingPrincipal();
+        BigDecimal interestReceivable = account.getOutstandingInterest()
+            .add(account.getAccruedInterest())
+            .add(account.getPenalInterestAccrued());
         BigDecimal provisionHeld = account.getProvisioningAmount();
 
-        // GL Entry 1: Write off the loan asset
+        // GL Entry 1: Write off the loan asset (principal component)
         // DR Write-Off Expense (5002) / CR Loan Asset (1001)
         if (writeOffAmount.compareTo(BigDecimal.ZERO) > 0) {
             List<JournalLineRequest> writeOffLines = List.of(
                 new JournalLineRequest(GLConstants.WRITE_OFF_EXPENSE, DebitCredit.DEBIT, writeOffAmount,
-                    "Loan write-off - " + accountNumber),
+                    "Loan write-off principal - " + accountNumber),
                 new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.CREDIT, writeOffAmount,
-                    "Write-off asset removal - " + accountNumber)
+                    "Write-off principal asset removal - " + accountNumber)
             );
             accountingService.postJournalEntry(
                 businessDate,
-                "RBI IRAC write-off for NPA account " + accountNumber,
+                "RBI IRAC write-off principal for NPA account " + accountNumber,
                 "WRITE_OFF", accountNumber,
                 writeOffLines
+            );
+        }
+
+        // GL Entry 1b: Write off the interest receivable (interest component)
+        // Per RBI IRAC, interest receivable on NPA accounts must also be removed
+        // from the balance sheet on write-off. Without this, GL 1002 (Interest
+        // Receivable) retains a balance with no corresponding asset — a permanent
+        // GL-subledger mismatch that would fail any RBI audit.
+        // DR Write-Off Expense (5002) / CR Interest Receivable (1002)
+        if (interestReceivable.compareTo(BigDecimal.ZERO) > 0) {
+            List<JournalLineRequest> interestWriteOffLines = List.of(
+                new JournalLineRequest(GLConstants.WRITE_OFF_EXPENSE, DebitCredit.DEBIT, interestReceivable,
+                    "Loan write-off interest - " + accountNumber),
+                new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestReceivable,
+                    "Write-off interest receivable removal - " + accountNumber)
+            );
+            accountingService.postJournalEntry(
+                businessDate,
+                "RBI IRAC write-off interest for NPA account " + accountNumber,
+                "WRITE_OFF", accountNumber,
+                interestWriteOffLines
             );
         }
 
@@ -612,12 +639,14 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.WRITE_OFF);
-        txn.setAmount(writeOffAmount);
+        txn.setAmount(writeOffAmount.add(interestReceivable));
         txn.setPrincipalComponent(writeOffAmount);
+        txn.setInterestComponent(interestReceivable);
         txn.setValueDate(businessDate);
         txn.setPostingDate(LocalDateTime.now());
         txn.setBalanceAfter(BigDecimal.ZERO);
-        txn.setNarration("NPA write-off: principal=" + writeOffAmount + ", provision reversed=" + provisionHeld);
+        txn.setNarration("NPA write-off: principal=" + writeOffAmount
+            + ", interest=" + interestReceivable + ", provision reversed=" + provisionHeld);
         txn.setCreatedBy(currentUser);
         transactionRepository.save(txn);
 
@@ -634,10 +663,11 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         auditService.logEvent("LoanAccount", account.getId(), "WRITE_OFF",
             previousStatus.name(), LoanStatus.WRITTEN_OFF.name(), "LOAN_ACCOUNTS",
-            "NPA write-off: " + writeOffAmount + ", provision reversed: " + provisionHeld);
+            "NPA write-off: P=" + writeOffAmount + ", I=" + interestReceivable
+                + ", provision reversed: " + provisionHeld);
 
-        log.info("Loan written off: accNo={}, amount={}, provisionReversed={}",
-            accountNumber, writeOffAmount, provisionHeld);
+        log.info("Loan written off: accNo={}, principal={}, interest={}, provisionReversed={}",
+            accountNumber, writeOffAmount, interestReceivable, provisionHeld);
 
         return account;
     }
