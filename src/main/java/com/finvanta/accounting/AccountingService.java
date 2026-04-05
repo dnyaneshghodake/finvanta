@@ -42,13 +42,16 @@ public class AccountingService {
     private final JournalEntryRepository journalEntryRepository;
     private final GLMasterRepository glMasterRepository;
     private final AuditService auditService;
+    private final LedgerService ledgerService;
 
     public AccountingService(JournalEntryRepository journalEntryRepository,
                              GLMasterRepository glMasterRepository,
-                             AuditService auditService) {
+                             AuditService auditService,
+                             LedgerService ledgerService) {
         this.journalEntryRepository = journalEntryRepository;
         this.glMasterRepository = glMasterRepository;
         this.auditService = auditService;
+        this.ledgerService = ledgerService;
     }
 
     @Transactional
@@ -117,6 +120,9 @@ public class AccountingService {
         JournalEntry savedEntry = journalEntryRepository.save(entry);
 
         updateGLBalances(tenantId, lines);
+
+        // CBS: Post to immutable ledger (append-only with hash chain)
+        ledgerService.postToLedger(savedEntry);
 
         auditService.logEvent("JournalEntry", savedEntry.getId(), "POST",
             null, savedEntry.getJournalRef(), "ACCOUNTING",

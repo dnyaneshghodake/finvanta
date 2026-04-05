@@ -350,7 +350,36 @@ CREATE TABLE journal_entry_lines (
 CREATE INDEX idx_jeline_journal ON journal_entry_lines (journal_entry_id);
 CREATE INDEX idx_jeline_gl ON journal_entry_lines (tenant_id, gl_code);
 
--- 11. APPROVAL WORKFLOWS
+-- 11. LEDGER ENTRIES (Append-only immutable financial ledger — RBI audit grade)
+CREATE TABLE ledger_entries (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    ledger_sequence BIGINT          NOT NULL,
+    journal_entry_id BIGINT         NOT NULL,
+    journal_ref     VARCHAR(40)     NOT NULL,
+    gl_code         VARCHAR(20)     NOT NULL,
+    gl_name         VARCHAR(200),
+    account_reference VARCHAR(40),
+    business_date   DATE            NOT NULL,
+    value_date      DATE            NOT NULL,
+    debit_amount    DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
+    credit_amount   DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
+    running_balance DECIMAL(18,2),
+    module_code     VARCHAR(50),
+    narration       VARCHAR(500),
+    hash_value      VARCHAR(64)     NOT NULL,
+    previous_hash   VARCHAR(64)     NOT NULL,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    created_by      VARCHAR(100)
+);
+-- No @Version column — ledger entries are immutable (no updates allowed)
+-- No UPDATE or DELETE triggers should be allowed (same pattern as audit_logs)
+CREATE INDEX idx_ledger_tenant_seq ON ledger_entries (tenant_id, ledger_sequence);
+CREATE INDEX idx_ledger_tenant_gl ON ledger_entries (tenant_id, gl_code, business_date);
+CREATE INDEX idx_ledger_tenant_date ON ledger_entries (tenant_id, business_date);
+CREATE INDEX idx_ledger_journal ON ledger_entries (tenant_id, journal_entry_id);
+
+-- 12. APPROVAL WORKFLOWS
 CREATE TABLE approval_workflows (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
