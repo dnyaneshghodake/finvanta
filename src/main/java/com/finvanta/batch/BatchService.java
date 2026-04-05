@@ -26,6 +26,21 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
+/**
+ * CBS End-of-Day (EOD) Batch Processing Service.
+ *
+ * Per Finacle/Temenos EOD framework, the batch runs the following steps sequentially:
+ *   1. Business date validation and calendar locking
+ *   2. Interest accrual (Actual/365 per RBI circular)
+ *   3. DPD (Days Past Due) calculation
+ *   4. NPA classification (RBI IRAC: SMA-0/1/2 → NPA Sub-Standard/Doubtful/Loss)
+ *   5. Provisioning calculation (RBI IRAC: 0.40% Standard → 100% Loss)
+ *   6. GL balance validation (trial balance integrity check)
+ *   7. Day close and calendar unlock
+ *
+ * Each account is processed in its own transaction for failure isolation.
+ * Per-account failures do not roll back other accounts (PARTIALLY_COMPLETED status).
+ */
 @Service
 public class BatchService {
 

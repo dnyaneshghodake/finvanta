@@ -15,6 +15,22 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * CBS Maker-Checker Approval Workflow Service.
+ *
+ * Per RBI guidelines on internal controls and Finacle/Temenos authorization framework:
+ * - All financial transactions require dual authorization (Maker-Checker)
+ * - Maker (initiator) and Checker (approver) must be different users
+ * - Self-approval is explicitly blocked with WORKFLOW_SELF_APPROVAL error
+ * - Every workflow state change is recorded in the immutable audit trail
+ *
+ * Workflow lifecycle:
+ *   Maker initiates → PENDING_APPROVAL → Checker approves/rejects → APPROVED/REJECTED
+ *
+ * For loan origination, the pipeline is:
+ *   VERIFY workflow (Maker → Checker1) → APPROVE workflow (Checker1 → Checker2)
+ *   Verifier and Approver must be different per RBI Fair Practices Code.
+ */
 @Service
 public class ApprovalWorkflowService {
 

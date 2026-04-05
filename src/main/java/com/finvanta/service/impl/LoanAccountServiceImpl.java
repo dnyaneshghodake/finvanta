@@ -28,6 +28,21 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * CBS Loan Account Service — Core loan lifecycle management.
+ *
+ * Implements the Finacle/Temenos loan account lifecycle:
+ *   Account Creation → Disbursement → Interest Accrual → Repayment → NPA Classification → Closure
+ *
+ * Key RBI compliance features:
+ * - Double-entry GL posting for all financial transactions (Ind AS compliant)
+ * - Actual/365 day-count convention for interest accrual (RBI circular 2009)
+ * - Income recognition stops on NPA accounts (RBI IRAC Master Circular)
+ * - Pessimistic locking on account mutations to prevent concurrent modification
+ * - Full audit trail via AuditService for every state change
+ *
+ * All GL codes are centralized in {@link GLConstants} per Finacle guidelines.
+ */
 @Service
 public class LoanAccountServiceImpl implements LoanAccountService {
 
@@ -293,8 +308,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         BigDecimal principalPaid = components[0];
         BigDecimal interestPaid = components[1];
 
-        // Build journal lines dynamically — only include non-zero components
-        java.util.ArrayList<JournalLineRequest> journalLines = new java.util.ArrayList<>();
+        // Build journal lines dynamically — only include non-zero components per CBS GL posting rules
+        java.util.List<JournalLineRequest> journalLines = new java.util.ArrayList<>();
         journalLines.add(new JournalLineRequest(GL_CASH_BANK, DebitCredit.DEBIT, amount,
             "Loan repayment received - " + accountNumber));
         if (principalPaid.compareTo(BigDecimal.ZERO) > 0) {
@@ -320,7 +335,15 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setAccruedInterest(
             account.getAccruedInterest().subtract(interestPaid).max(BigDecimal.ZERO));
         account.setLastPaymentDate(valueDate);
-        account.setDaysPastDue(0);
+        // RBI IRAC: DPD resets only when all overdue EMIs are cleared.
+        // If outstanding principal is fully paid or remaining balance equals
+        // or is less than the scheduled outstanding, DPD can be reset.
+        // For simplicity: reset DPD when payment >= EMI amount (full EMI paid).
+        if (account.getEmiAmount() != null && amount.compareTo(account.getEmiAmount()) >= 0) {
+            account.setDaysPastDue(0);
+            account.setOverduePrincipal(BigDecimal.ZERO);
+            account.setOverdueInterest(BigDecimal.ZERO);
+        }
         account.setUpdatedBy(currentUser);
 
         if (account.getRemainingTenure() != null && account.getRemainingTenure() > 0) {

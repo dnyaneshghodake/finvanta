@@ -17,6 +17,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/login", "/error", "/WEB-INF/**", "/resources/**", "/css/**", "/js/**", "/fonts/**", "/img/**", "/h2-console/**").permitAll()
                 .requestMatchers("/admin/**").hasRole("ADMIN")
+                .requestMatchers("/customer/verify-kyc/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/workflow/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/audit/**").hasAnyRole("AUDITOR", "ADMIN")
                 .anyRequest().authenticated()

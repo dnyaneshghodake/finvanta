@@ -22,6 +22,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * CBS General Ledger (GL) and Journal Entry Service.
+ *
+ * Per Finacle/Temenos accounting engine standards:
+ * - All financial postings use double-entry bookkeeping (DR total == CR total)
+ * - GL balances are updated atomically with pessimistic locking
+ * - Journal entries are immutable once posted (reversal creates a new entry)
+ * - Trial balance validation ensures GL integrity (Assets + Expenses = Liabilities + Income + Equity)
+ *
+ * Chart of Accounts follows Indian Banking Standard (see {@link GLConstants}):
+ *   1xxx = Assets, 2xxx = Liabilities, 3xxx = Equity, 4xxx = Income, 5xxx = Expenses
+ */
 @Service
 public class AccountingService {
 
