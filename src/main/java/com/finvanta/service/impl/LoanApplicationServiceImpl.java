@@ -208,6 +208,14 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
+        // RBI Fair Practices Code 2023: Rejection reason is mandatory and must be
+        // communicated to the borrower. Empty reasons violate regulatory requirements.
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException("REJECTION_REASON_REQUIRED",
+                "Rejection reason is mandatory per RBI Fair Practices Code. "
+                    + "Banks must communicate specific reasons for loan rejection.");
+        }
+
         LoanApplication app = applicationRepository.findById(applicationId)
             .filter(a -> a.getTenantId().equals(tenantId))
             .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND",

@@ -284,7 +284,7 @@ public class LoanController {
             accountService.chargeFee(accountNumber, feeAmount, feeType,
                 businessDateService.getCurrentBusinessDate());
             redirectAttributes.addFlashAttribute("success",
-                feeType + " charged: ₹" + feeAmount);
+                feeType + " charged: INR " + feeAmount);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }

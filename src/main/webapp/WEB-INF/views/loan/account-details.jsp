@@ -77,7 +77,7 @@
         </div>
     </div>
 
-    <c:if test="${account.disbursedAmount.unscaledValue() == 0}">
+    <c:if test="${account.disbursedAmount.signum() == 0}">
         <div class="fv-card">
             <div class="card-header">Disbursement</div>
             <div class="card-body">
@@ -90,7 +90,7 @@
         </div>
     </c:if>
 
-    <c:if test="${account.disbursedAmount.unscaledValue() > 0 and not account.status.terminal}">
+    <c:if test="${account.disbursedAmount.signum() > 0 and not account.status.terminal}">
         <div class="fv-card">
             <div class="card-header">Process Repayment</div>
             <div class="card-body">

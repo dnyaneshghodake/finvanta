@@ -40,7 +40,7 @@
                         <select name="productType" id="productType" class="form-select" required>
                             <option value="">-- Select Product --</option>
                             <c:forEach var="product" items="${products}">
-                                <option value="${product.productCode}"><c:out value="${product.productCode}" /> — <c:out value="${product.productName}" /></option>
+                                <option value="${product.productCode}"><c:out value="${product.productCode}" /> - <c:out value="${product.productName}" /></option>
                             </c:forEach>
                         </select>
                     </div>

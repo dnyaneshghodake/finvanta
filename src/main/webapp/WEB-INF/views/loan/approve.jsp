@@ -49,8 +49,8 @@
             <hr class="my-3" />
             <form method="post" action="${pageContext.request.contextPath}/loan/reject/${application.id}" class="fv-form">
                 <div class="mb-3">
-                    <label for="reason" class="form-label">Rejection Reason</label>
-                    <textarea name="reason" id="reason" class="form-control" rows="2" placeholder="Enter reason for rejection"></textarea>
+                    <label for="reason" class="form-label">Rejection Reason *</label>
+                    <textarea name="reason" id="reason" class="form-control" rows="2" required placeholder="Mandatory per RBI Fair Practices Code"></textarea>
                 </div>
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                 <button type="submit" class="btn btn-danger" data-confirm="Are you sure you want to reject this application?">Reject Application</button>

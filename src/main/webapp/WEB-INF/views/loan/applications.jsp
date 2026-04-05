@@ -80,9 +80,10 @@
                             <td>
                                 <a href="${pageContext.request.contextPath}/loan/approve/${app.id}" class="btn btn-sm btn-fv-primary">Approve</a>
                                 <form method="post" action="${pageContext.request.contextPath}/loan/reject/${app.id}" class="d-inline">
-                                    <input type="hidden" name="reason" value="Not meeting criteria" />
+                                    <input type="hidden" name="reason" value="" id="rejectReason_${app.id}" />
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                    <button type="submit" class="btn btn-sm btn-danger" data-confirm="Reject this application?">Reject</button>
+                                    <button type="submit" class="btn btn-sm btn-danger"
+                                        onclick="var r=prompt('Rejection reason (mandatory per RBI Fair Practices Code):'); if(!r||!r.trim()){alert('Rejection reason is mandatory.');return false;} document.getElementById('rejectReason_${app.id}').value=r; return confirm('Reject this application?');">Reject</button>
                                 </form>
                             </td>
                         </tr>
