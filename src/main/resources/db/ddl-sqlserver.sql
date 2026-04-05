@@ -182,7 +182,37 @@ CREATE INDEX idx_loacc_status ON loan_accounts (tenant_id, status);
 CREATE INDEX idx_loacc_customer ON loan_accounts (tenant_id, customer_id);
 CREATE INDEX idx_loacc_npa ON loan_accounts (tenant_id, status, days_past_due);
 
--- 7. LOAN TRANSACTIONS (no cascade delete - financial data)
+-- 7. LOAN SCHEDULES (Amortization — generated at disbursement)
+CREATE TABLE loan_schedules (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    loan_account_id BIGINT          NOT NULL,
+    installment_number INT          NOT NULL,
+    due_date        DATE            NOT NULL,
+    emi_amount      DECIMAL(18,2)   NOT NULL,
+    principal_amount DECIMAL(18,2)  NOT NULL,
+    interest_amount DECIMAL(18,2)   NOT NULL,
+    closing_balance DECIMAL(18,2)   NOT NULL,
+    paid_amount     DECIMAL(18,2)   DEFAULT 0.00,
+    paid_principal  DECIMAL(18,2)   DEFAULT 0.00,
+    paid_interest   DECIMAL(18,2)   DEFAULT 0.00,
+    paid_date       DATE,
+    status          VARCHAR(20)     NOT NULL DEFAULT 'SCHEDULED',
+    penalty_amount  DECIMAL(18,2)   DEFAULT 0.00,
+    business_date   DATE            NOT NULL,
+    days_past_due   INT             DEFAULT 0,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT fk_loansched_account FOREIGN KEY (loan_account_id) REFERENCES loan_accounts(id)
+);
+CREATE INDEX idx_loansched_tenant_account ON loan_schedules (tenant_id, loan_account_id);
+CREATE INDEX idx_loansched_due_date ON loan_schedules (tenant_id, due_date);
+CREATE INDEX idx_loansched_status ON loan_schedules (tenant_id, loan_account_id, status);
+
+-- 8. LOAN TRANSACTIONS (no cascade delete - financial data)
 CREATE TABLE loan_transactions (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,

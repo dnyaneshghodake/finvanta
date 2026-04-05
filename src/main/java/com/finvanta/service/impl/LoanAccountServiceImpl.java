@@ -62,6 +62,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final InterestCalculationRule interestRule;
     private final NpaClassificationRule npaRule;
     private final AuditService auditService;
+    private final com.finvanta.service.LoanScheduleService scheduleService;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
                                    LoanApplicationRepository applicationRepository,
@@ -69,7 +70,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    AccountingService accountingService,
                                    InterestCalculationRule interestRule,
                                    NpaClassificationRule npaRule,
-                                   AuditService auditService) {
+                                   AuditService auditService,
+                                   com.finvanta.service.LoanScheduleService scheduleService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
@@ -77,6 +79,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.interestRule = interestRule;
         this.npaRule = npaRule;
         this.auditService = auditService;
+        this.scheduleService = scheduleService;
     }
 
     @Override
@@ -202,11 +205,14 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         application.setUpdatedBy(currentUser);
         applicationRepository.save(application);
 
+        // CBS: Generate amortization schedule at disbursement per Finacle/Temenos standards
+        scheduleService.generateSchedule(saved, saved.getDisbursementDate());
+
         auditService.logEvent("LoanAccount", saved.getId(), "DISBURSE",
             null, saved.getAccountNumber(), "LOAN_ACCOUNTS",
-            "Loan disbursed: " + disbursementAmount);
+            "Loan disbursed: " + disbursementAmount + ", schedule generated");
 
-        log.info("Loan disbursed: accNo={}, amount={}", accountNumber, disbursementAmount);
+        log.info("Loan disbursed: accNo={}, amount={}, schedule generated", accountNumber, disbursementAmount);
 
         return saved;
     }

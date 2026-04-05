@@ -94,6 +94,54 @@
         </div>
     </c:if>
 
+    <!-- CBS Amortization Schedule -->
+    <c:if test="${not empty schedule}">
+    <div class="fv-card">
+        <div class="card-header">Amortization Schedule (${schedule.size()} installments)</div>
+        <div class="card-body">
+            <table class="table fv-table fv-datatable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Due Date</th>
+                        <th class="text-end">EMI</th>
+                        <th class="text-end">Principal</th>
+                        <th class="text-end">Interest</th>
+                        <th class="text-end">Closing Bal.</th>
+                        <th class="text-end">Paid</th>
+                        <th>Paid Date</th>
+                        <th>DPD</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="sched" items="${schedule}">
+                        <tr>
+                            <td><c:out value="${sched.installmentNumber}" /></td>
+                            <td><c:out value="${sched.dueDate}" /></td>
+                            <td class="amount"><fmt:formatNumber value="${sched.emiAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${sched.principalAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${sched.interestAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${sched.closingBalance}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${sched.paidAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td><c:out value="${sched.paidDate}" default="—" /></td>
+                            <td><c:if test="${sched.daysPastDue > 0}"><span class="fv-badge fv-badge-npa"><c:out value="${sched.daysPastDue}" /></span></c:if><c:if test="${sched.daysPastDue == 0}">0</c:if></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${sched.status == 'PAID'}"><span class="fv-badge fv-badge-active">PAID</span></c:when>
+                                    <c:when test="${sched.status == 'OVERDUE'}"><span class="fv-badge fv-badge-npa">OVERDUE</span></c:when>
+                                    <c:when test="${sched.status == 'PARTIALLY_PAID'}"><span class="fv-badge fv-badge-pending">PARTIAL</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-approved">SCHEDULED</span></c:otherwise>
+                                </c:choose>
+                            </td>
+                        </tr>
+                    </c:forEach>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    </c:if>
+
     <div class="fv-card">
         <div class="card-header">Transaction History</div>
         <div class="card-body">
