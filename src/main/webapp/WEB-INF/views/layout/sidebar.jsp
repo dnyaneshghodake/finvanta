@@ -32,6 +32,7 @@
 
         <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <li class="nav-section">EOD / Batch</li>
+        <li><a href="${pageContext.request.contextPath}/batch/txn/list" class="nav-link"><i class="bi bi-cash-stack"></i><span class="nav-text">Transaction Batches</span></a></li>
         <li><a href="${pageContext.request.contextPath}/batch/eod" class="nav-link"><i class="bi bi-gear-wide-connected"></i><span class="nav-text">EOD Processing</span></a></li>
         </c:if>
 

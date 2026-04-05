@@ -212,7 +212,39 @@ CREATE INDEX idx_loansched_tenant_account ON loan_schedules (tenant_id, loan_acc
 CREATE INDEX idx_loansched_due_date ON loan_schedules (tenant_id, due_date);
 CREATE INDEX idx_loansched_status ON loan_schedules (tenant_id, loan_account_id, status);
 
--- 8. LOAN TRANSACTIONS (no cascade delete - financial data)
+-- 8. TRANSACTION BATCHES (Enterprise batch control — Finacle/Temenos pattern)
+CREATE TABLE transaction_batches (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    branch_id       BIGINT,
+    business_date   DATE            NOT NULL,
+    batch_name      VARCHAR(50)     NOT NULL,
+    batch_type      VARCHAR(20)     NOT NULL,
+    status          VARCHAR(20)     NOT NULL DEFAULT 'OPEN',
+    opened_by       VARCHAR(100)    NOT NULL,
+    opened_at       DATETIME2       NOT NULL,
+    closed_by       VARCHAR(100),
+    closed_at       DATETIME2,
+    total_transactions INT          NOT NULL DEFAULT 0,
+    total_debit     DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
+    total_credit    DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
+    maker_id        VARCHAR(100),
+    checker_id      VARCHAR(100),
+    approval_status VARCHAR(20),
+    remarks         VARCHAR(500),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_txnbatch_tenant_date_name UNIQUE (tenant_id, business_date, batch_name),
+    CONSTRAINT fk_txnbatch_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX idx_txnbatch_tenant_date ON transaction_batches (tenant_id, business_date);
+CREATE INDEX idx_txnbatch_tenant_date_status ON transaction_batches (tenant_id, business_date, status);
+CREATE INDEX idx_txnbatch_branch ON transaction_batches (tenant_id, branch_id, business_date);
+
+-- 9. LOAN TRANSACTIONS (no cascade delete - financial data)
 CREATE TABLE loan_transactions (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
