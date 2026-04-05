@@ -3,6 +3,7 @@ package com.finvanta.service.impl;
 import com.finvanta.accounting.AccountingService;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
+import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.accounting.SuspenseService;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.LoanAccount;
@@ -17,6 +18,7 @@ import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
+import com.finvanta.service.TransactionLimitService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
@@ -43,8 +45,12 @@ import java.util.List;
  * - Income recognition stops on NPA accounts (RBI IRAC Master Circular)
  * - Pessimistic locking on account mutations to prevent concurrent modification
  * - Full audit trail via AuditService for every state change
+ * - Product-aware GL resolution via {@link ProductGLResolver} (Finacle PDDEF pattern)
+ * - Per-role transaction limits via {@link TransactionLimitService} (RBI internal controls)
+ * - Idempotency key support on client-initiated transactions (Finacle UNIQUE.REF pattern)
  *
- * All GL codes are centralized in {@link GLConstants} per Finacle guidelines.
+ * GL codes are resolved through product_master configuration. Falls back to
+ * {@link GLConstants} when a product is not configured (backward compatible).
  */
 @Service
 public class LoanAccountServiceImpl implements LoanAccountService {
@@ -61,6 +67,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final SuspenseService suspenseService;
     private final LoanScheduleService scheduleService;
     private final BusinessDateService businessDateService;
+    private final ProductGLResolver glResolver;
+    private final TransactionLimitService limitService;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
                                    LoanApplicationRepository applicationRepository,
@@ -71,7 +79,9 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    AuditService auditService,
                                    SuspenseService suspenseService,
                                    LoanScheduleService scheduleService,
-                                   BusinessDateService businessDateService) {
+                                   BusinessDateService businessDateService,
+                                   ProductGLResolver glResolver,
+                                   TransactionLimitService limitService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
@@ -82,6 +92,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.suspenseService = suspenseService;
         this.scheduleService = scheduleService;
         this.businessDateService = businessDateService;
+        this.glResolver = glResolver;
+        this.limitService = limitService;
     }
 
     @Override
@@ -162,11 +174,16 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         BigDecimal disbursementAmount = account.getSanctionedAmount();
         LocalDate bizDate = businessDateService.getCurrentBusinessDate();
+        String productType = account.getProductType();
 
+        // CBS: Transaction limit validation before disbursement
+        limitService.validateTransactionLimit(disbursementAmount, "DISBURSEMENT");
+
+        // CBS: GL codes resolved through product definition per Finacle PDDEF
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.DEBIT, disbursementAmount,
+            new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.DEBIT, disbursementAmount,
                 "Loan disbursement - " + accountNumber),
-            new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.CREDIT, disbursementAmount,
+            new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.CREDIT, disbursementAmount,
                 "Bank credit for loan disbursement - " + accountNumber)
         );
 
@@ -257,10 +274,11 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             return null;
         }
 
+        String productType = account.getProductType();
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.DEBIT, accruedAmount,
+            new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT, accruedAmount,
                 "Interest accrual - " + accountNumber),
-            new JournalLineRequest(GLConstants.INTEREST_INCOME, DebitCredit.CREDIT, accruedAmount,
+            new JournalLineRequest(glResolver.getInterestIncomeGL(productType), DebitCredit.CREDIT, accruedAmount,
                 "Interest income accrual - " + accountNumber)
         );
 
@@ -334,11 +352,12 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             return null;
         }
 
-        // GL Entry: DR Interest Receivable (1002) / CR Penal Interest Income (4003)
+        // GL Entry: DR Interest Receivable / CR Penal Interest Income
+        String productType = account.getProductType();
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.DEBIT, penalAmount,
+            new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT, penalAmount,
                 "Penal interest accrual - " + accountNumber),
-            new JournalLineRequest(GLConstants.PENAL_INTEREST_INCOME, DebitCredit.CREDIT, penalAmount,
+            new JournalLineRequest(glResolver.getPenalIncomeGL(productType), DebitCredit.CREDIT, penalAmount,
                 "Penal interest income - " + accountNumber)
         );
 
@@ -425,22 +444,26 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Repayment amount must be positive");
         }
 
+        // CBS: Transaction limit validation before repayment
+        limitService.validateTransactionLimit(amount, "REPAYMENT");
+
         BigDecimal[] components = interestRule.splitEmiComponents(
             amount, account.getOutstandingPrincipal(), account.getInterestRate()
         );
         BigDecimal principalPaid = components[0];
         BigDecimal interestPaid = components[1];
 
-        // Build journal lines dynamically — only include non-zero components per CBS GL posting rules
+        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        String productType = account.getProductType();
         List<JournalLineRequest> journalLines = new java.util.ArrayList<>();
-        journalLines.add(new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, amount,
+        journalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.DEBIT, amount,
             "Loan repayment received - " + accountNumber));
         if (principalPaid.compareTo(BigDecimal.ZERO) > 0) {
-            journalLines.add(new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.CREDIT, principalPaid,
+            journalLines.add(new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.CREDIT, principalPaid,
                 "Principal repayment - " + accountNumber));
         }
         if (interestPaid.compareTo(BigDecimal.ZERO) > 0) {
-            journalLines.add(new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestPaid,
+            journalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.CREDIT, interestPaid,
                 "Interest repayment - " + accountNumber));
         }
 
@@ -608,14 +631,17 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             .add(account.getAccruedInterest())
             .add(account.getPenalInterestAccrued());
         BigDecimal provisionHeld = account.getProvisioningAmount();
+        String productType = account.getProductType();
+
+        // CBS: Transaction limit validation before write-off
+        limitService.validateTransactionLimit(writeOffAmount.add(interestReceivable), "WRITE_OFF");
 
         // GL Entry 1: Write off the loan asset (principal component)
-        // DR Write-Off Expense (5002) / CR Loan Asset (1001)
         if (writeOffAmount.compareTo(BigDecimal.ZERO) > 0) {
             List<JournalLineRequest> writeOffLines = List.of(
-                new JournalLineRequest(GLConstants.WRITE_OFF_EXPENSE, DebitCredit.DEBIT, writeOffAmount,
+                new JournalLineRequest(glResolver.getWriteOffExpenseGL(productType), DebitCredit.DEBIT, writeOffAmount,
                     "Loan write-off principal - " + accountNumber),
-                new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.CREDIT, writeOffAmount,
+                new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.CREDIT, writeOffAmount,
                     "Write-off principal asset removal - " + accountNumber)
             );
             accountingService.postJournalEntry(
@@ -627,16 +653,11 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         }
 
         // GL Entry 1b: Write off the interest receivable (interest component)
-        // Per RBI IRAC, interest receivable on NPA accounts must also be removed
-        // from the balance sheet on write-off. Without this, GL 1002 (Interest
-        // Receivable) retains a balance with no corresponding asset — a permanent
-        // GL-subledger mismatch that would fail any RBI audit.
-        // DR Write-Off Expense (5002) / CR Interest Receivable (1002)
         if (interestReceivable.compareTo(BigDecimal.ZERO) > 0) {
             List<JournalLineRequest> interestWriteOffLines = List.of(
-                new JournalLineRequest(GLConstants.WRITE_OFF_EXPENSE, DebitCredit.DEBIT, interestReceivable,
+                new JournalLineRequest(glResolver.getWriteOffExpenseGL(productType), DebitCredit.DEBIT, interestReceivable,
                     "Loan write-off interest - " + accountNumber),
-                new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestReceivable,
+                new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.CREDIT, interestReceivable,
                     "Write-off interest receivable removal - " + accountNumber)
             );
             accountingService.postJournalEntry(
@@ -648,12 +669,11 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         }
 
         // GL Entry 2: Reverse existing provisioning (no longer needed after write-off)
-        // DR Provision for NPA (1003) / CR Provision Expense (5001)
         if (provisionHeld.compareTo(BigDecimal.ZERO) > 0) {
             List<JournalLineRequest> provisionReversal = List.of(
-                new JournalLineRequest(GLConstants.PROVISION_NPA, DebitCredit.DEBIT, provisionHeld,
+                new JournalLineRequest(glResolver.getProvisionNpaGL(productType), DebitCredit.DEBIT, provisionHeld,
                     "Provision reversal on write-off - " + accountNumber),
-                new JournalLineRequest(GLConstants.PROVISION_EXPENSE, DebitCredit.CREDIT, provisionHeld,
+                new JournalLineRequest(glResolver.getProvisionExpenseGL(productType), DebitCredit.CREDIT, provisionHeld,
                     "Provision expense release on write-off - " + accountNumber)
             );
             accountingService.postJournalEntry(
@@ -742,21 +762,25 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                     + "). Amount must exactly match outstanding balance.");
         }
 
+        // CBS: Transaction limit validation before prepayment
+        limitService.validateTransactionLimit(totalOutstanding, "PREPAYMENT");
+
         BigDecimal principalDue = account.getOutstandingPrincipal();
         BigDecimal interestDue = account.getOutstandingInterest()
             .add(account.getAccruedInterest())
             .add(account.getPenalInterestAccrued());
 
-        // GL Entry: DR Bank Operations / CR Loan Asset + Interest Receivable
+        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        String productType = account.getProductType();
         List<JournalLineRequest> journalLines = new java.util.ArrayList<>();
-        journalLines.add(new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, totalOutstanding,
+        journalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.DEBIT, totalOutstanding,
             "Loan prepayment/foreclosure - " + accountNumber));
         if (principalDue.compareTo(BigDecimal.ZERO) > 0) {
-            journalLines.add(new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.CREDIT, principalDue,
+            journalLines.add(new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.CREDIT, principalDue,
                 "Prepayment principal closure - " + accountNumber));
         }
         if (interestDue.compareTo(BigDecimal.ZERO) > 0) {
-            journalLines.add(new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestDue,
+            journalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.CREDIT, interestDue,
                 "Prepayment interest closure - " + accountNumber));
         }
 
@@ -844,25 +868,27 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         }
 
         // Post contra journal entry — exact reverse of original GL lines
+        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        String productType = account.getProductType();
         BigDecimal amount = original.getAmount();
 
         List<JournalLineRequest> reversalLines = new java.util.ArrayList<>();
         // Reverse the bank/cash side
-        reversalLines.add(new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.CREDIT, amount,
+        reversalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.CREDIT, amount,
             "REVERSAL: " + transactionRef + " - " + reason));
         // Reverse the asset/receivable side
         if (original.getPrincipalComponent().compareTo(BigDecimal.ZERO) > 0) {
-            reversalLines.add(new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.DEBIT,
+            reversalLines.add(new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.DEBIT,
                 original.getPrincipalComponent(),
                 "REVERSAL principal: " + transactionRef));
         }
         if (original.getInterestComponent().compareTo(BigDecimal.ZERO) > 0) {
-            reversalLines.add(new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.DEBIT,
+            reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT,
                 original.getInterestComponent(),
                 "REVERSAL interest: " + transactionRef));
         }
         if (original.getPenaltyComponent().compareTo(BigDecimal.ZERO) > 0) {
-            reversalLines.add(new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.DEBIT,
+            reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT,
                 original.getPenaltyComponent(),
                 "REVERSAL penalty: " + transactionRef));
         }
@@ -971,12 +997,15 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Fee amount must be positive");
         }
 
-        // GL Entry: DR Bank Operations (1100) — fee collected from borrower
-        //           CR Fee Income (4002) — recognized as income
+        // CBS: Transaction limit validation before fee charge
+        limitService.validateTransactionLimit(feeAmount, "FEE_CHARGE");
+
+        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        String productType = account.getProductType();
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, feeAmount,
+            new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.DEBIT, feeAmount,
                 feeType + " - " + accountNumber),
-            new JournalLineRequest(GLConstants.FEE_INCOME, DebitCredit.CREDIT, feeAmount,
+            new JournalLineRequest(glResolver.getFeeIncomeGL(productType), DebitCredit.CREDIT, feeAmount,
                 feeType + " income - " + accountNumber)
         );
 
