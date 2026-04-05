@@ -52,10 +52,10 @@
                 </div>
                 <div class="col-md-6">
                     <table class="table fv-table mb-0">
-                        <tr><td class="fw-bold" style="width:200px">Voucher Number</td><td class="font-monospace"><c:out value="${transaction.voucherNumber}" default="—" /></td></tr>
-                        <tr><td class="fw-bold">Journal Entry ID</td><td><c:out value="${transaction.journalEntryId}" default="—" /></td></tr>
+                        <tr><td class="fw-bold" style="width:200px">Voucher Number</td><td class="font-monospace"><c:out value="${transaction.voucherNumber}" default="--" /></td></tr>
+                        <tr><td class="fw-bold">Journal Entry ID</td><td><c:out value="${transaction.journalEntryId}" default="--" /></td></tr>
                         <tr><td class="fw-bold">Balance After</td><td class="amount"><fmt:formatNumber value="${transaction.balanceAfter}" type="number" maxFractionDigits="2" /></td></tr>
-                        <tr><td class="fw-bold">Idempotency Key</td><td class="font-monospace small"><c:out value="${transaction.idempotencyKey}" default="—" /></td></tr>
+                        <tr><td class="fw-bold">Idempotency Key</td><td class="font-monospace small"><c:out value="${transaction.idempotencyKey}" default="--" /></td></tr>
                         <tr><td class="fw-bold">Narration</td><td><c:out value="${transaction.narration}" /></td></tr>
                         <c:if test="${transaction.reversed}">
                         <tr><td class="fw-bold text-danger">Reversed By</td><td class="font-monospace"><c:out value="${transaction.reversedByRef}" /></td></tr>
@@ -110,7 +110,7 @@
                 <div class="col-md-6">
                     <table class="table fv-table mb-0">
                         <tr><td class="fw-bold" style="width:200px">Customer</td><td><a href="${pageContext.request.contextPath}/customer/view/${customer.id}"><c:out value="${customer.firstName}" /> <c:out value="${customer.lastName}" /></a> (<c:out value="${customer.customerNumber}" />)</td></tr>
-                        <tr><td class="fw-bold">Branch</td><td><a href="${pageContext.request.contextPath}/branch/view/${branch.id}"><c:out value="${branch.branchCode}" /> — <c:out value="${branch.branchName}" /></a></td></tr>
+                        <tr><td class="fw-bold">Branch</td><td><a href="${pageContext.request.contextPath}/branch/view/${branch.id}"><c:out value="${branch.branchCode}" /> - <c:out value="${branch.branchName}" /></a></td></tr>
                         <tr><td class="fw-bold">Currency</td><td><c:out value="${account.currencyCode}" /></td></tr>
                         <tr><td class="fw-bold">DPD</td><td><c:out value="${account.daysPastDue}" /></td></tr>
                     </table>
@@ -122,7 +122,7 @@
     <!-- GL Posting -->
     <c:if test="${not empty journal}">
     <div class="fv-card mb-3">
-        <div class="card-header">GL Posting — Journal: <span class="font-monospace"><c:out value="${journal.journalRef}" /></span>
+        <div class="card-header">GL Posting - Journal: <span class="font-monospace"><c:out value="${journal.journalRef}" /></span>
             <c:if test="${not empty compoundJournals}"><span class="fv-badge fv-badge-pending ms-2">Compound (${compoundJournals.size()} journals)</span></c:if>
         </div>
         <div class="card-body">
@@ -233,8 +233,8 @@
                 <a href="${pageContext.request.contextPath}/txn360/${originalTransaction.transactionRef}" class="font-monospace">
                     <c:out value="${originalTransaction.transactionRef}" />
                 </a>
-                — <c:out value="${originalTransaction.transactionType}" />
-                — <fmt:formatNumber value="${originalTransaction.amount}" type="number" maxFractionDigits="2" /> INR
+                - <c:out value="${originalTransaction.transactionType}" />
+                - <fmt:formatNumber value="${originalTransaction.amount}" type="number" maxFractionDigits="2" /> INR
             </p>
         </div>
     </div>
