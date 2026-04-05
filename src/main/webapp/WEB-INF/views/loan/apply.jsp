@@ -64,6 +64,27 @@
                     </div>
                 </div>
 
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label for="penalRate" class="form-label">Penal Rate (% p.a.)</label>
+                        <input type="number" name="penalRate" id="penalRate" class="form-control" min="0" max="24" step="0.25" placeholder="e.g., 2.00" />
+                    </div>
+                    <div class="col-md-4">
+                        <label for="riskCategory" class="form-label">Risk Category</label>
+                        <select name="riskCategory" id="riskCategory" class="form-select">
+                            <option value="">-- Auto --</option>
+                            <option value="LOW">Low</option>
+                            <option value="MEDIUM">Medium</option>
+                            <option value="HIGH">High</option>
+                            <option value="VERY_HIGH">Very High</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="collateralReference" class="form-label">Collateral Reference</label>
+                        <input type="text" name="collateralReference" id="collateralReference" class="form-control" placeholder="e.g., PROP-MUM-001" />
+                    </div>
+                </div>
+
                 <div class="mb-3">
                     <label for="purpose" class="form-label">Purpose</label>
                     <textarea name="purpose" id="purpose" class="form-control" rows="3" placeholder="Purpose of the loan"></textarea>

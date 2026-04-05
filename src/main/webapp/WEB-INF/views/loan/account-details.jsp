@@ -18,6 +18,7 @@
         <div class="col"><div class="fv-stat-card stat-warning"><div class="stat-value amount"><fmt:formatNumber value="${account.accruedInterest}" type="number" maxFractionDigits="2" /></div><div class="stat-label">Accrued Int.</div></div></div>
         <div class="col"><div class="fv-stat-card"><div class="stat-value amount"><fmt:formatNumber value="${account.emiAmount}" type="number" maxFractionDigits="2" /></div><div class="stat-label">EMI</div></div></div>
         <div class="col"><div class="fv-stat-card ${account.daysPastDue > 90 ? 'stat-danger' : ''}"><div class="stat-value"><c:out value="${account.daysPastDue}" /></div><div class="stat-label">DPD</div></div></div>
+        <div class="col"><div class="fv-stat-card stat-danger"><div class="stat-value amount"><fmt:formatNumber value="${account.provisioningAmount}" type="number" maxFractionDigits="2" /></div><div class="stat-label">Provisioning</div></div></div>
     </div>
 
     <div class="fv-card">
@@ -39,11 +40,16 @@
                     </c:choose>
                 </td></tr>
                 <tr><td class="fw-bold">Interest Rate</td><td><fmt:formatNumber value="${account.interestRate}" maxFractionDigits="2" />% p.a.</td></tr>
+                <tr><td class="fw-bold">Penal Rate</td><td><fmt:formatNumber value="${account.penalRate}" maxFractionDigits="2" />% p.a.</td></tr>
+                <tr><td class="fw-bold">Repayment Frequency</td><td><c:out value="${account.repaymentFrequency}" /></td></tr>
                 <tr><td class="fw-bold">Tenure</td><td><c:out value="${account.tenureMonths}" /> months (Remaining: <c:out value="${account.remainingTenure}" />)</td></tr>
                 <tr><td class="fw-bold">Disbursement Date</td><td><c:out value="${account.disbursementDate}" /></td></tr>
                 <tr><td class="fw-bold">Maturity Date</td><td><c:out value="${account.maturityDate}" /></td></tr>
                 <tr><td class="fw-bold">Next EMI Date</td><td><c:out value="${account.nextEmiDate}" /></td></tr>
                 <tr><td class="fw-bold">Last Payment Date</td><td><c:out value="${account.lastPaymentDate}" /></td></tr>
+                <tr><td class="fw-bold">Risk Category</td><td><c:out value="${account.riskCategory}" default="--" /></td></tr>
+                <tr><td class="fw-bold">Collateral</td><td><c:out value="${account.collateralReference}" default="Unsecured" /></td></tr>
+                <tr><td class="fw-bold">Provisioning</td><td class="amount"><fmt:formatNumber value="${account.provisioningAmount}" type="number" maxFractionDigits="2" /> INR</td></tr>
                 </tbody>
             </table>
         </div>

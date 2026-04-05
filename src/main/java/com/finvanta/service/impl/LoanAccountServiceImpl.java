@@ -90,8 +90,13 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setProductType(application.getProductType());
         account.setSanctionedAmount(application.getApprovedAmount());
         account.setInterestRate(application.getInterestRate());
+        account.setPenalRate(application.getPenalRate() != null
+            ? application.getPenalRate() : BigDecimal.valueOf(2)); // RBI default 2% penal
         account.setTenureMonths(application.getTenureMonths());
         account.setRemainingTenure(application.getTenureMonths());
+        account.setCollateralReference(application.getCollateralReference());
+        account.setRiskCategory(application.getRiskCategory() != null
+            ? application.getRiskCategory() : "MEDIUM");
         account.setStatus(LoanStatus.ACTIVE);
         account.setCreatedBy(currentUser);
 
