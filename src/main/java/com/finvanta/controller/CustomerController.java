@@ -1,17 +1,27 @@
 package com.finvanta.controller;
 
+import com.finvanta.audit.AuditService;
+import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.repository.LoanAccountRepository;
+import com.finvanta.util.BusinessException;
+import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.TenantContext;
 import com.finvanta.util.SecurityUtil;
 import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+/**
+ * CBS Customer Information File (CIF) Controller.
+ * Per Finacle/Temenos, CIF is the master record for all customer interactions.
+ * Supports: Create (auto-number), View, Edit, KYC Verify, Deactivate.
+ */
 @Controller
 @RequestMapping("/customer")
 public class CustomerController {
@@ -20,15 +30,18 @@ public class CustomerController {
     private final BranchRepository branchRepository;
     private final LoanApplicationRepository applicationRepository;
     private final LoanAccountRepository accountRepository;
+    private final AuditService auditService;
 
     public CustomerController(CustomerRepository customerRepository,
                                BranchRepository branchRepository,
                                LoanApplicationRepository applicationRepository,
-                               LoanAccountRepository accountRepository) {
+                               LoanAccountRepository accountRepository,
+                               AuditService auditService) {
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.applicationRepository = applicationRepository;
         this.accountRepository = accountRepository;
+        this.auditService = auditService;
     }
 
     @GetMapping("/list")

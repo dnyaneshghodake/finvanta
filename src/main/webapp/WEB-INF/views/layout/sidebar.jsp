@@ -35,10 +35,15 @@
         <li><a href="${pageContext.request.contextPath}/batch/eod" class="nav-link"><i class="bi bi-gear-wide-connected"></i><span class="nav-text">EOD Processing</span></a></li>
         </c:if>
 
-        <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
-        <li class="nav-section">Admin</li>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">Customer &amp; Branch</li>
         <li><a href="${pageContext.request.contextPath}/customer/list" class="nav-link"><i class="bi bi-people"></i><span class="nav-text">Customers</span></a></li>
         <li><a href="${pageContext.request.contextPath}/branch/list" class="nav-link"><i class="bi bi-building"></i><span class="nav-text">Branches</span></a></li>
+        </c:if>
+
+        <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">Administration</li>
+        <li><a href="${pageContext.request.contextPath}/calendar/list" class="nav-link"><i class="bi bi-calendar-check"></i><span class="nav-text">Business Calendar</span></a></li>
         </c:if>
 
         <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
