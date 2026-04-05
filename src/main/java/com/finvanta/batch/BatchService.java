@@ -411,7 +411,7 @@ public class BatchService {
             String productType = fresh.getProductType();
             String action = delta.compareTo(BigDecimal.ZERO) > 0 ? "charge" : "release";
             try {
-                java.util.List<JournalLineRequest> lines = java.util.List.of(
+                List<JournalLineRequest> lines = List.of(
                     new JournalLineRequest(glResolver.getProvisionExpenseGL(productType), expenseSide, absDelta,
                         "Provisioning " + action + " - " + fresh.getAccountNumber()),
                     new JournalLineRequest(glResolver.getProvisionNpaGL(productType), provisionSide, absDelta,
