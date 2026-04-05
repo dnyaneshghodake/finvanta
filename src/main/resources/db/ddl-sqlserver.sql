@@ -1,0 +1,391 @@
+-- ============================================================
+-- Finvanta CBS - SQL Server DDL
+-- Tier-1 Core Banking System - RBI Compliant
+-- ============================================================
+
+-- 1. TENANTS
+CREATE TABLE tenants (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_code     VARCHAR(20)     NOT NULL,
+    tenant_name     VARCHAR(200)    NOT NULL,
+    license_type    VARCHAR(50),
+    is_active       BIT             NOT NULL DEFAULT 1,
+    db_schema       VARCHAR(100),
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    created_by      VARCHAR(100),
+    CONSTRAINT uq_tenant_code UNIQUE (tenant_code)
+);
+CREATE INDEX idx_tenant_code ON tenants (tenant_code);
+
+-- 2. BRANCHES
+CREATE TABLE branches (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    branch_code     VARCHAR(20)     NOT NULL,
+    branch_name     VARCHAR(200)    NOT NULL,
+    ifsc_code       VARCHAR(11),
+    address         VARCHAR(500),
+    city            VARCHAR(100),
+    state           VARCHAR(100),
+    pin_code        VARCHAR(6),
+    is_active       BIT             NOT NULL DEFAULT 1,
+    region          VARCHAR(100),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_branch_tenant_code UNIQUE (tenant_id, branch_code)
+);
+CREATE INDEX idx_branch_tenant_code ON branches (tenant_id, branch_code);
+CREATE INDEX idx_branch_tenant_active ON branches (tenant_id, is_active);
+
+-- 3. BUSINESS CALENDAR
+CREATE TABLE business_calendar (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    business_date   DATE            NOT NULL,
+    is_holiday      BIT             NOT NULL DEFAULT 0,
+    holiday_description VARCHAR(200),
+    is_eod_complete BIT             NOT NULL DEFAULT 0,
+    is_locked       BIT             NOT NULL DEFAULT 0,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_buscal_tenant_date UNIQUE (tenant_id, business_date)
+);
+CREATE INDEX idx_buscal_tenant_date ON business_calendar (tenant_id, business_date);
+
+-- 4. CUSTOMERS
+CREATE TABLE customers (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    customer_number VARCHAR(20)     NOT NULL,
+    first_name      VARCHAR(100)    NOT NULL,
+    last_name       VARCHAR(100)    NOT NULL,
+    date_of_birth   DATE,
+    pan_number      VARCHAR(10),
+    aadhaar_number  VARCHAR(12),
+    mobile_number   VARCHAR(15),
+    email           VARCHAR(200),
+    address         VARCHAR(500),
+    city            VARCHAR(100),
+    state           VARCHAR(100),
+    pin_code        VARCHAR(6),
+    kyc_verified    BIT             NOT NULL DEFAULT 0,
+    kyc_verified_date DATE,
+    kyc_verified_by VARCHAR(100),
+    cibil_score     INT,
+    customer_type   VARCHAR(20),
+    is_active       BIT             NOT NULL DEFAULT 1,
+    branch_id       BIGINT          NOT NULL,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_cust_tenant_custno UNIQUE (tenant_id, customer_number),
+    CONSTRAINT fk_cust_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX idx_cust_tenant_custno ON customers (tenant_id, customer_number);
+CREATE INDEX idx_cust_pan ON customers (tenant_id, pan_number);
+CREATE INDEX idx_cust_aadhaar ON customers (tenant_id, aadhaar_number);
+
+-- 5. LOAN APPLICATIONS
+CREATE TABLE loan_applications (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    application_number VARCHAR(30)  NOT NULL,
+    customer_id     BIGINT          NOT NULL,
+    branch_id       BIGINT          NOT NULL,
+    product_type    VARCHAR(50)     NOT NULL,
+    requested_amount DECIMAL(18,2)  NOT NULL,
+    approved_amount DECIMAL(18,2),
+    interest_rate   DECIMAL(8,4)    NOT NULL,
+    tenure_months   INT             NOT NULL,
+    purpose         VARCHAR(500),
+    status          VARCHAR(30)     NOT NULL DEFAULT 'DRAFT',
+    application_date DATE,
+    verified_by     VARCHAR(100),
+    verified_date   DATE,
+    approved_by     VARCHAR(100),
+    approved_date   DATE,
+    rejected_by     VARCHAR(100),
+    rejected_date   DATE,
+    rejection_reason VARCHAR(500),
+    remarks         VARCHAR(1000),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_loanapp_tenant_appno UNIQUE (tenant_id, application_number),
+    CONSTRAINT fk_loanapp_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+    CONSTRAINT fk_loanapp_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX idx_loanapp_tenant_appno ON loan_applications (tenant_id, application_number);
+CREATE INDEX idx_loanapp_status ON loan_applications (tenant_id, status);
+CREATE INDEX idx_loanapp_customer ON loan_applications (tenant_id, customer_id);
+
+-- 6. LOAN ACCOUNTS
+CREATE TABLE loan_accounts (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    account_number  VARCHAR(20)     NOT NULL,
+    application_id  BIGINT          NOT NULL,
+    customer_id     BIGINT          NOT NULL,
+    branch_id       BIGINT          NOT NULL,
+    product_type    VARCHAR(50)     NOT NULL,
+    sanctioned_amount DECIMAL(18,2) NOT NULL,
+    disbursed_amount DECIMAL(18,2)  NOT NULL DEFAULT 0.00,
+    outstanding_principal DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    outstanding_interest DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    accrued_interest DECIMAL(18,2)  NOT NULL DEFAULT 0.00,
+    overdue_principal DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    overdue_interest DECIMAL(18,2)  NOT NULL DEFAULT 0.00,
+    interest_rate   DECIMAL(8,4)    NOT NULL,
+    emi_amount      DECIMAL(18,2),
+    tenure_months   INT             NOT NULL,
+    remaining_tenure INT,
+    disbursement_date DATE,
+    maturity_date   DATE,
+    next_emi_date   DATE,
+    last_payment_date DATE,
+    last_interest_accrual_date DATE,
+    status          VARCHAR(30)     NOT NULL DEFAULT 'ACTIVE',
+    days_past_due   INT             NOT NULL DEFAULT 0,
+    npa_date        DATE,
+    npa_classification_date DATE,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_loacc_tenant_accno UNIQUE (tenant_id, account_number),
+    CONSTRAINT fk_loacc_application FOREIGN KEY (application_id) REFERENCES loan_applications(id),
+    CONSTRAINT fk_loacc_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+    CONSTRAINT fk_loacc_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX idx_loacc_tenant_accno ON loan_accounts (tenant_id, account_number);
+CREATE INDEX idx_loacc_status ON loan_accounts (tenant_id, status);
+CREATE INDEX idx_loacc_customer ON loan_accounts (tenant_id, customer_id);
+CREATE INDEX idx_loacc_npa ON loan_accounts (tenant_id, status, days_past_due);
+
+-- 7. LOAN TRANSACTIONS (no cascade delete - financial data)
+CREATE TABLE loan_transactions (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    transaction_ref VARCHAR(40)     NOT NULL,
+    loan_account_id BIGINT          NOT NULL,
+    transaction_type VARCHAR(30)    NOT NULL,
+    amount          DECIMAL(18,2)   NOT NULL,
+    principal_component DECIMAL(18,2) DEFAULT 0.00,
+    interest_component DECIMAL(18,2) DEFAULT 0.00,
+    penalty_component DECIMAL(18,2) DEFAULT 0.00,
+    value_date      DATE            NOT NULL,
+    posting_date    DATETIME2       NOT NULL,
+    balance_after   DECIMAL(18,2)   NOT NULL,
+    narration       VARCHAR(500),
+    is_reversed     BIT             NOT NULL DEFAULT 0,
+    reversed_by_ref VARCHAR(40),
+    journal_entry_id BIGINT,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_loantxn_ref UNIQUE (tenant_id, transaction_ref),
+    CONSTRAINT fk_loantxn_account FOREIGN KEY (loan_account_id) REFERENCES loan_accounts(id)
+);
+CREATE INDEX idx_loantxn_tenant_account ON loan_transactions (tenant_id, loan_account_id);
+CREATE INDEX idx_loantxn_txnref ON loan_transactions (tenant_id, transaction_ref);
+CREATE INDEX idx_loantxn_value_date ON loan_transactions (tenant_id, value_date);
+CREATE INDEX idx_loantxn_type ON loan_transactions (tenant_id, transaction_type);
+
+-- 8. GL MASTER
+CREATE TABLE gl_master (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    gl_code         VARCHAR(20)     NOT NULL,
+    gl_name         VARCHAR(200)    NOT NULL,
+    account_type    VARCHAR(20)     NOT NULL,
+    debit_balance   DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
+    credit_balance  DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
+    is_active       BIT             NOT NULL DEFAULT 1,
+    is_header_account BIT           NOT NULL DEFAULT 0,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_gl_tenant_code UNIQUE (tenant_id, gl_code)
+);
+CREATE INDEX idx_gl_tenant_code ON gl_master (tenant_id, gl_code);
+CREATE INDEX idx_gl_tenant_active ON gl_master (tenant_id, is_active);
+
+-- 9. JOURNAL ENTRIES
+CREATE TABLE journal_entries (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    journal_ref     VARCHAR(40)     NOT NULL,
+    value_date      DATE            NOT NULL,
+    posting_date    DATETIME2       NOT NULL,
+    narration       VARCHAR(500),
+    total_debit     DECIMAL(18,2)   NOT NULL,
+    total_credit    DECIMAL(18,2)   NOT NULL,
+    source_module   VARCHAR(50),
+    source_ref      VARCHAR(100),
+    is_reversed     BIT             NOT NULL DEFAULT 0,
+    is_posted       BIT             NOT NULL DEFAULT 0,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_journal_ref UNIQUE (tenant_id, journal_ref)
+);
+CREATE INDEX idx_journal_tenant_ref ON journal_entries (tenant_id, journal_ref);
+CREATE INDEX idx_journal_value_date ON journal_entries (tenant_id, value_date);
+CREATE INDEX idx_journal_posting_date ON journal_entries (tenant_id, posting_date);
+
+-- 10. JOURNAL ENTRY LINES
+CREATE TABLE journal_entry_lines (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    journal_entry_id BIGINT         NOT NULL,
+    gl_code         VARCHAR(20)     NOT NULL,
+    gl_name         VARCHAR(200),
+    debit_credit    VARCHAR(10)     NOT NULL,
+    amount          DECIMAL(18,2)   NOT NULL,
+    narration       VARCHAR(500),
+    line_number     INT             NOT NULL,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT fk_jeline_journal FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id)
+);
+CREATE INDEX idx_jeline_journal ON journal_entry_lines (journal_entry_id);
+CREATE INDEX idx_jeline_gl ON journal_entry_lines (tenant_id, gl_code);
+
+-- 11. APPROVAL WORKFLOW
+CREATE TABLE approval_workflow (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    entity_type     VARCHAR(50)     NOT NULL,
+    entity_id       BIGINT          NOT NULL,
+    action_type     VARCHAR(50)     NOT NULL,
+    status          VARCHAR(30)     NOT NULL DEFAULT 'PENDING_APPROVAL',
+    maker_user_id   VARCHAR(100)    NOT NULL,
+    checker_user_id VARCHAR(100),
+    maker_remarks   VARCHAR(1000),
+    checker_remarks VARCHAR(1000),
+    submitted_at    DATETIME2       NOT NULL,
+    actioned_at     DATETIME2,
+    payload_snapshot NVARCHAR(MAX),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100)
+);
+CREATE INDEX idx_wf_entity ON approval_workflow (tenant_id, entity_type, entity_id);
+CREATE INDEX idx_wf_status ON approval_workflow (tenant_id, status);
+CREATE INDEX idx_wf_checker ON approval_workflow (tenant_id, checker_user_id);
+
+-- 12. AUDIT LOG (append-only, no updates, no deletes)
+CREATE TABLE audit_log (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    entity_type     VARCHAR(50)     NOT NULL,
+    entity_id       BIGINT          NOT NULL,
+    action          VARCHAR(50)     NOT NULL,
+    before_snapshot NVARCHAR(MAX),
+    after_snapshot  NVARCHAR(MAX),
+    performed_by    VARCHAR(100)    NOT NULL,
+    ip_address      VARCHAR(45),
+    event_timestamp DATETIME2       NOT NULL,
+    hash            VARCHAR(64)     NOT NULL,
+    previous_hash   VARCHAR(64)     NOT NULL,
+    module          VARCHAR(50),
+    description     VARCHAR(500)
+);
+-- No @Version column - audit logs are immutable
+-- No UPDATE or DELETE triggers should be allowed
+CREATE INDEX idx_audit_entity ON audit_log (tenant_id, entity_type, entity_id);
+CREATE INDEX idx_audit_timestamp ON audit_log (tenant_id, event_timestamp);
+CREATE INDEX idx_audit_user ON audit_log (tenant_id, performed_by);
+
+-- 13. BATCH JOBS
+CREATE TABLE batch_jobs (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    job_name        VARCHAR(100)    NOT NULL,
+    business_date   DATE            NOT NULL,
+    status          VARCHAR(30)     NOT NULL DEFAULT 'PENDING',
+    started_at      DATETIME2,
+    completed_at    DATETIME2,
+    total_records   INT             DEFAULT 0,
+    processed_records INT           DEFAULT 0,
+    failed_records  INT             DEFAULT 0,
+    error_message   NVARCHAR(MAX),
+    retry_count     INT             NOT NULL DEFAULT 0,
+    max_retries     INT             NOT NULL DEFAULT 3,
+    step_name       VARCHAR(100),
+    initiated_by    VARCHAR(100),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100)
+);
+CREATE INDEX idx_batch_tenant_date ON batch_jobs (tenant_id, business_date);
+CREATE INDEX idx_batch_status ON batch_jobs (tenant_id, status);
+
+-- 14. APP USERS
+CREATE TABLE app_users (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    username        VARCHAR(50)     NOT NULL,
+    password_hash   VARCHAR(200)    NOT NULL,
+    full_name       VARCHAR(200)    NOT NULL,
+    email           VARCHAR(200),
+    role            VARCHAR(20)     NOT NULL,
+    is_active       BIT             NOT NULL DEFAULT 1,
+    is_locked       BIT             NOT NULL DEFAULT 0,
+    failed_login_attempts INT       NOT NULL DEFAULT 0,
+    branch_id       BIGINT,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_user_tenant_username UNIQUE (tenant_id, username),
+    CONSTRAINT fk_user_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX idx_user_tenant_username ON app_users (tenant_id, username);
+
+-- ============================================================
+-- PROTECT AUDIT LOG FROM MODIFICATIONS
+-- ============================================================
+GO
+CREATE TRIGGER trg_audit_no_update ON audit_log
+INSTEAD OF UPDATE
+AS
+BEGIN
+    RAISERROR ('Audit log records cannot be updated - immutability enforced', 16, 1);
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+CREATE TRIGGER trg_audit_no_delete ON audit_log
+INSTEAD OF DELETE
+AS
+BEGIN
+    RAISERROR ('Audit log records cannot be deleted - immutability enforced', 16, 1);
+    ROLLBACK TRANSACTION;
+END;
+GO
