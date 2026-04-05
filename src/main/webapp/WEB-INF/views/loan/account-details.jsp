@@ -127,7 +127,7 @@
         </div>
         </c:if>
 
-        <!-- CBS Fee Charging — MAKER/ADMIN -->
+        <!-- CBS Fee Charging - MAKER/ADMIN -->
         <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <div class="fv-card">
             <div class="card-header">Charge Fee</div>
@@ -157,7 +157,7 @@
         </div>
         </c:if>
 
-        <!-- CBS Write-Off — ADMIN only, NPA accounts only -->
+        <!-- CBS Write-Off - ADMIN only, NPA accounts only -->
         <c:if test="${account.status.npa and pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <div class="fv-card">
             <div class="card-header text-danger">NPA Write-Off</div>
