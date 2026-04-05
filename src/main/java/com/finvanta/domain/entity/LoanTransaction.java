@@ -71,6 +71,26 @@ public class LoanTransaction extends BaseEntity {
     @Column(name = "is_reversed", nullable = false)
     private boolean reversed = false;
 
+    /**
+     * CBS Reversal Cross-Reference per Finacle TRAN_REVERSAL / Temenos REVERSAL.TRANSACTION.
+     *
+     * This field is BIDIRECTIONAL — its meaning depends on the transaction's state:
+     *
+     * 1. On the ORIGINAL transaction (reversed=true):
+     *    → Points to the REVERSAL transaction ref that cancelled this transaction.
+     *    → Example: Original TXN001 reversed by TXN002 → TXN001.reversedByRef = "TXN002"
+     *
+     * 2. On the REVERSAL transaction (reversed=false, transactionType=REVERSAL):
+     *    → Points to the ORIGINAL transaction ref that this reversal cancels.
+     *    → Example: Reversal TXN002 cancels TXN001 → TXN002.reversedByRef = "TXN001"
+     *
+     * Disambiguation rule (used by Transaction360Service):
+     *    if (txn.isReversed() && reversedByRef != null)  → reversedByRef = reversal ref
+     *    if (!txn.isReversed() && reversedByRef != null)  → reversedByRef = original ref
+     *
+     * Per CBS audit standards: both the original and reversal must be cross-linked
+     * for complete audit trail. Neither is ever deleted (immutable financial records).
+     */
     @Column(name = "reversed_by_ref", length = 40)
     private String reversedByRef;
 
