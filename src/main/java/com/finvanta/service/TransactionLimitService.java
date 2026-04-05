@@ -87,7 +87,7 @@ public class TransactionLimitService {
         if (limit.getPerTransactionLimit() != null
                 && amount.compareTo(limit.getPerTransactionLimit()) > 0) {
             throw new BusinessException("TRANSACTION_LIMIT_EXCEEDED",
-                "Transaction amount ₹" + amount + " exceeds per-transaction limit of ₹"
+                "Transaction amount INR " + amount + " exceeds per-transaction limit of INR "
                     + limit.getPerTransactionLimit() + " for role " + role
                     + ". Requires higher authority approval.");
         }
@@ -102,8 +102,8 @@ public class TransactionLimitService {
 
             if (projectedTotal.compareTo(limit.getDailyAggregateLimit()) > 0) {
                 throw new BusinessException("DAILY_LIMIT_EXCEEDED",
-                    "Daily aggregate ₹" + projectedTotal + " (existing ₹" + todayTotal
-                        + " + this ₹" + amount + ") exceeds daily limit of ₹"
+                    "Daily aggregate INR " + projectedTotal + " (existing INR " + todayTotal
+                        + " + this INR " + amount + ") exceeds daily limit of INR "
                         + limit.getDailyAggregateLimit() + " for role " + role + ".");
             }
         }
