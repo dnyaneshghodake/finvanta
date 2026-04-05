@@ -20,7 +20,7 @@ import java.time.LocalDate;
 @NoArgsConstructor
 public class LoanApplication extends BaseEntity {
 
-    @Column(name = "application_number", nullable = false, length = 30)
+    @Column(name = "application_number", nullable = false, length = 40)
     private String applicationNumber;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -79,4 +79,16 @@ public class LoanApplication extends BaseEntity {
 
     @Column(name = "remarks", length = 1000)
     private String remarks;
+
+    /** Collateral reference for secured loan products */
+    @Column(name = "collateral_reference", length = 100)
+    private String collateralReference;
+
+    /** RBI risk classification: LOW, MEDIUM, HIGH, VERY_HIGH */
+    @Column(name = "risk_category", length = 20)
+    private String riskCategory;
+
+    /** RBI Fair Lending: Penal rate (% p.a.) applied on overdue EMIs */
+    @Column(name = "penal_rate", precision = 8, scale = 4)
+    private BigDecimal penalRate;
 }

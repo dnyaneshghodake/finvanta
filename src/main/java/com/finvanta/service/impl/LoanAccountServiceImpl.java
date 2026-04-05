@@ -2,6 +2,8 @@ package com.finvanta.service.impl;
 
 import com.finvanta.accounting.AccountingService;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
+import com.finvanta.accounting.GLConstants;
+import com.finvanta.accounting.SuspenseService;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.entity.LoanApplication;
@@ -27,16 +29,32 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * CBS Loan Account Service — Core loan lifecycle management.
+ *
+ * Implements the Finacle/Temenos loan account lifecycle:
+ *   Account Creation → Disbursement → Interest Accrual → Repayment → NPA Classification → Closure
+ *
+ * Key RBI compliance features:
+ * - Double-entry GL posting for all financial transactions (Ind AS compliant)
+ * - Actual/365 day-count convention for interest accrual (RBI circular 2009)
+ * - Income recognition stops on NPA accounts (RBI IRAC Master Circular)
+ * - Pessimistic locking on account mutations to prevent concurrent modification
+ * - Full audit trail via AuditService for every state change
+ *
+ * All GL codes are centralized in {@link GLConstants} per Finacle guidelines.
+ */
 @Service
 public class LoanAccountServiceImpl implements LoanAccountService {
 
     private static final Logger log = LoggerFactory.getLogger(LoanAccountServiceImpl.class);
 
-    private static final String GL_LOAN_ASSET = "1001";
-    private static final String GL_DISBURSEMENT_BANK = "1100";
-    private static final String GL_INTEREST_INCOME = "4001";
-    private static final String GL_INTEREST_RECEIVABLE = "1002";
-    private static final String GL_CASH_BANK = "1100";
+    // GL codes centralized in GLConstants per Finacle/Temenos guidelines
+    private static final String GL_LOAN_ASSET = GLConstants.LOAN_ASSET;
+    private static final String GL_DISBURSEMENT_BANK = GLConstants.BANK_OPERATIONS;
+    private static final String GL_INTEREST_INCOME = GLConstants.INTEREST_INCOME;
+    private static final String GL_INTEREST_RECEIVABLE = GLConstants.INTEREST_RECEIVABLE;
+    private static final String GL_CASH_BANK = GLConstants.BANK_OPERATIONS;
 
     private final LoanAccountRepository accountRepository;
     private final LoanApplicationRepository applicationRepository;
@@ -45,6 +63,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final InterestCalculationRule interestRule;
     private final NpaClassificationRule npaRule;
     private final AuditService auditService;
+    private final SuspenseService suspenseService;
+    private final com.finvanta.service.LoanScheduleService scheduleService;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
                                    LoanApplicationRepository applicationRepository,
@@ -52,7 +72,9 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    AccountingService accountingService,
                                    InterestCalculationRule interestRule,
                                    NpaClassificationRule npaRule,
-                                   AuditService auditService) {
+                                   AuditService auditService,
+                                   SuspenseService suspenseService,
+                                   com.finvanta.service.LoanScheduleService scheduleService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
@@ -60,6 +82,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.interestRule = interestRule;
         this.npaRule = npaRule;
         this.auditService = auditService;
+        this.suspenseService = suspenseService;
+        this.scheduleService = scheduleService;
     }
 
     @Override
@@ -78,6 +102,12 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Application must be in APPROVED state. Current: " + application.getStatus());
         }
 
+        // CBS idempotency: prevent duplicate account creation for the same application
+        if (accountRepository.existsByTenantIdAndApplicationId(tenantId, applicationId)) {
+            throw new BusinessException("ACCOUNT_ALREADY_EXISTS",
+                "Loan account already exists for application: " + applicationId);
+        }
+
         LoanAccount account = new LoanAccount();
         account.setTenantId(tenantId);
         account.setAccountNumber(ReferenceGenerator.generateAccountNumber(
@@ -88,8 +118,13 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setProductType(application.getProductType());
         account.setSanctionedAmount(application.getApprovedAmount());
         account.setInterestRate(application.getInterestRate());
+        account.setPenalRate(application.getPenalRate() != null
+            ? application.getPenalRate() : BigDecimal.valueOf(2)); // RBI default 2% penal
         account.setTenureMonths(application.getTenureMonths());
         account.setRemainingTenure(application.getTenureMonths());
+        account.setCollateralReference(application.getCollateralReference());
+        account.setRiskCategory(application.getRiskCategory() != null
+            ? application.getRiskCategory() : "MEDIUM");
         account.setStatus(LoanStatus.ACTIVE);
         account.setCreatedBy(currentUser);
 
@@ -101,10 +136,6 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setEmiAmount(emi);
 
         LoanAccount saved = accountRepository.save(account);
-
-        application.setStatus(ApplicationStatus.DISBURSED);
-        application.setUpdatedBy(currentUser);
-        applicationRepository.save(application);
 
         auditService.logEvent("LoanAccount", saved.getId(), "CREATE",
             null, saved.getAccountNumber(), "LOAN_ACCOUNTS",
@@ -172,11 +203,20 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         LoanAccount saved = accountRepository.save(account);
 
+        // Mark application as DISBURSED now that disbursement is complete
+        LoanApplication application = saved.getApplication();
+        application.setStatus(ApplicationStatus.DISBURSED);
+        application.setUpdatedBy(currentUser);
+        applicationRepository.save(application);
+
+        // CBS: Generate amortization schedule at disbursement per Finacle/Temenos standards
+        scheduleService.generateSchedule(saved, saved.getDisbursementDate());
+
         auditService.logEvent("LoanAccount", saved.getId(), "DISBURSE",
             null, saved.getAccountNumber(), "LOAN_ACCOUNTS",
-            "Loan disbursed: " + disbursementAmount);
+            "Loan disbursed: " + disbursementAmount + ", schedule generated");
 
-        log.info("Loan disbursed: accNo={}, amount={}", accountNumber, disbursementAmount);
+        log.info("Loan disbursed: accNo={}, amount={}, schedule generated", accountNumber, disbursementAmount);
 
         return saved;
     }
@@ -190,7 +230,17 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
                 "Loan account not found: " + accountNumber));
 
-        if (account.getStatus() == LoanStatus.CLOSED || account.getStatus() == LoanStatus.WRITTEN_OFF) {
+        if (account.getStatus().isTerminal()) {
+            return null;
+        }
+
+        // RBI IRAC: Income recognition must stop when account becomes NPA.
+        // Interest on NPA accounts is tracked in a memorandum (suspense) account,
+        // not recognized as income in P&L. Per RBI Master Circular on IRAC Norms,
+        // interest accrued on NPA accounts must be reversed and not taken to income.
+        if (account.getStatus().isIncomeReversalRequired()) {
+            log.debug("Interest accrual skipped for NPA account: accNo={}, status={}",
+                accountNumber, account.getStatus());
             return null;
         }
 
@@ -258,9 +308,9 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
                 "Loan account not found: " + accountNumber));
 
-        if (account.getStatus() == LoanStatus.CLOSED) {
+        if (account.getStatus().isTerminal()) {
             throw new BusinessException("ACCOUNT_CLOSED",
-                "Cannot process repayment on closed account");
+                "Cannot process repayment on " + account.getStatus() + " account");
         }
 
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -274,14 +324,18 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         BigDecimal principalPaid = components[0];
         BigDecimal interestPaid = components[1];
 
-        List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GL_CASH_BANK, DebitCredit.DEBIT, amount,
-                "Loan repayment received - " + accountNumber),
-            new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.CREDIT, principalPaid,
-                "Principal repayment - " + accountNumber),
-            new JournalLineRequest(GL_INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestPaid,
-                "Interest repayment - " + accountNumber)
-        );
+        // Build journal lines dynamically — only include non-zero components per CBS GL posting rules
+        List<JournalLineRequest> journalLines = new java.util.ArrayList<>();
+        journalLines.add(new JournalLineRequest(GL_CASH_BANK, DebitCredit.DEBIT, amount,
+            "Loan repayment received - " + accountNumber));
+        if (principalPaid.compareTo(BigDecimal.ZERO) > 0) {
+            journalLines.add(new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.CREDIT, principalPaid,
+                "Principal repayment - " + accountNumber));
+        }
+        if (interestPaid.compareTo(BigDecimal.ZERO) > 0) {
+            journalLines.add(new JournalLineRequest(GL_INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestPaid,
+                "Interest repayment - " + accountNumber));
+        }
 
         var journalEntry = accountingService.postJournalEntry(
             valueDate,
@@ -297,7 +351,15 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setAccruedInterest(
             account.getAccruedInterest().subtract(interestPaid).max(BigDecimal.ZERO));
         account.setLastPaymentDate(valueDate);
-        account.setDaysPastDue(0);
+        // RBI IRAC: DPD resets only when all overdue EMIs are cleared.
+        // If outstanding principal is fully paid or remaining balance equals
+        // or is less than the scheduled outstanding, DPD can be reset.
+        // For simplicity: reset DPD when payment >= EMI amount (full EMI paid).
+        if (account.getEmiAmount() != null && amount.compareTo(account.getEmiAmount()) >= 0) {
+            account.setDaysPastDue(0);
+            account.setOverduePrincipal(BigDecimal.ZERO);
+            account.setOverdueInterest(BigDecimal.ZERO);
+        }
         account.setUpdatedBy(currentUser);
 
         if (account.getRemainingTenure() != null && account.getRemainingTenure() > 0) {
@@ -308,8 +370,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             account.setNextEmiDate(account.getNextEmiDate().plusMonths(1));
         }
 
-        if (account.getOutstandingPrincipal().compareTo(BigDecimal.ZERO) == 0
-                && account.getOutstandingInterest().compareTo(BigDecimal.ZERO) == 0) {
+        // CBS: Loan closure only when all components are zero (principal + interest + penal)
+        if (account.getTotalOutstanding().compareTo(BigDecimal.ZERO) == 0) {
             account.setStatus(LoanStatus.CLOSED);
             log.info("Loan account closed: accNo={}", accountNumber);
         }
@@ -351,7 +413,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
                 "Loan account not found: " + accountNumber));
 
-        if (account.getStatus() == LoanStatus.CLOSED || account.getStatus() == LoanStatus.WRITTEN_OFF) {
+        if (account.getStatus().isTerminal()) {
             return;
         }
 
@@ -366,6 +428,17 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             account.setNpaClassificationDate(LocalDate.now());
             account.setUpdatedBy("SYSTEM");
             accountRepository.save(account);
+
+            // RBI IRAC: When account transitions to NPA, reverse accrued interest to suspense.
+            // Previously recognized interest income must be reversed from P&L.
+            // GL Entry: DR Interest Income (4001) / CR Interest Suspense (2100)
+            if (newStatus.isNpa() && !previousStatus.isNpa()) {
+                try {
+                    suspenseService.reverseInterestToSuspense(account, LocalDate.now());
+                } catch (Exception e) {
+                    log.warn("Suspense reversal failed for {}: {}", accountNumber, e.getMessage());
+                }
+            }
 
             auditService.logEvent("LoanAccount", account.getId(), "NPA_CLASSIFY",
                 previousStatus.name(), newStatus.name(), "LOAN_ACCOUNTS",

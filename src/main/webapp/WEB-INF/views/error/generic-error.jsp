@@ -3,17 +3,14 @@
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>
 
-<div class="main-content">
-    <div class="top-bar">
-        <h2>System Error</h2>
-        <div class="user-info"></div>
-    </div>
-    <div class="content-area">
-        <div class="card" style="border-left: 4px solid #c62828;">
-            <h3 style="color: #c62828;">Unexpected Error</h3>
+<div class="fv-main">
+    <div class="fv-card">
+        <div class="card-header text-danger"><i class="bi bi-exclamation-octagon"></i> System Error</div>
+        <div class="card-body">
             <p><c:out value="${errorMessage}" /></p>
-            <a href="${pageContext.request.contextPath}/dashboard" class="btn btn-primary" style="margin-top: 16px;">Go to Dashboard</a>
+            <a href="${pageContext.request.contextPath}/dashboard" class="btn btn-fv-primary mt-3">Go to Dashboard</a>
         </div>
     </div>
+</div>
 
 <%@ include file="../layout/footer.jsp" %>

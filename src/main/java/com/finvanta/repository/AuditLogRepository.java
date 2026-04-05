@@ -17,7 +17,12 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     );
 
     @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId ORDER BY al.eventTimestamp DESC")
-    List<AuditLog> findRecentAuditLogs(@Param("tenantId") String tenantId);
+    List<AuditLog> findRecentAuditLogsPaged(@Param("tenantId") String tenantId,
+                                             org.springframework.data.domain.Pageable pageable);
+
+    default List<AuditLog> findRecentAuditLogs(String tenantId) {
+        return findRecentAuditLogsPaged(tenantId, org.springframework.data.domain.PageRequest.of(0, 500));
+    }
 
     default Optional<AuditLog> findLatestByTenantId(String tenantId) {
         List<AuditLog> logs = findTopByTenantIdOrderByIdDesc(tenantId);

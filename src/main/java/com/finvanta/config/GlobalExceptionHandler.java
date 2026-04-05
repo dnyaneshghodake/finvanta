@@ -52,6 +52,15 @@ public class GlobalExceptionHandler {
         return mav;
     }
 
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.NOT_FOUND)
+    @org.springframework.web.bind.annotation.ResponseBody
+    public String handleNoResourceFound(org.springframework.web.servlet.resource.NoResourceFoundException ex) {
+        // Suppress favicon.ico and other missing static resource noise
+        log.debug("Static resource not found: {}", ex.getMessage());
+        return "";
+    }
+
     @ExceptionHandler(Exception.class)
     public ModelAndView handleGenericException(Exception ex) {
         log.error("Unexpected error: {}", ex.getMessage(), ex);

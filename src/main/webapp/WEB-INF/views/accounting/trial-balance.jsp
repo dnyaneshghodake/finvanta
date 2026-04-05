@@ -4,45 +4,44 @@
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>
 
-<div class="main-content">
-    <div class="top-bar">
-        <h2>Trial Balance</h2>
-        <div class="user-info">
-            <span>Balance Status:
-                <c:choose>
-                    <c:when test="${trialBalance.isBalanced}">
-                        <span style="color: #4caf50; font-weight: bold;">BALANCED</span>
-                    </c:when>
-                    <c:otherwise>
-                        <span style="color: #f44336; font-weight: bold;">IMBALANCED</span>
-                    </c:otherwise>
-                </c:choose>
-            </span>
-        </div>
-    </div>
-    <div class="content-area">
-        <div class="stats-grid">
-            <div class="stat-card">
+<div class="fv-main">
+    <!-- Balance Status -->
+    <div class="row g-3 mb-3">
+        <div class="col">
+            <div class="fv-stat-card">
+                <div class="stat-icon"><i class="bi bi-arrow-up-right"></i></div>
                 <div class="stat-value amount"><fmt:formatNumber value="${trialBalance.totalDebit}" type="number" maxFractionDigits="2" /></div>
                 <div class="stat-label">Total Debits</div>
             </div>
-            <div class="stat-card">
+        </div>
+        <div class="col">
+            <div class="fv-stat-card">
+                <div class="stat-icon"><i class="bi bi-arrow-down-left"></i></div>
                 <div class="stat-value amount"><fmt:formatNumber value="${trialBalance.totalCredit}" type="number" maxFractionDigits="2" /></div>
                 <div class="stat-label">Total Credits</div>
             </div>
         </div>
+        <div class="col">
+            <div class="fv-stat-card ${trialBalance.isBalanced ? 'stat-success' : 'stat-danger'}">
+                <div class="stat-icon"><i class="bi bi-check-circle"></i></div>
+                <div class="stat-value"><c:choose><c:when test="${trialBalance.isBalanced}">BALANCED</c:when><c:otherwise>IMBALANCED</c:otherwise></c:choose></div>
+                <div class="stat-label">Balance Status</div>
+            </div>
+        </div>
+    </div>
 
-        <div class="card">
-            <h3>GL Account Balances</h3>
-            <table>
+    <div class="fv-card">
+        <div class="card-header">GL Account Balances</div>
+        <div class="card-body">
+            <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
                         <th>GL Code</th>
                         <th>GL Name</th>
                         <th>Account Type</th>
-                        <th class="text-right">Debit Balance</th>
-                        <th class="text-right">Credit Balance</th>
-                        <th class="text-right">Net Balance</th>
+                        <th class="text-end">Debit Balance</th>
+                        <th class="text-end">Credit Balance</th>
+                        <th class="text-end">Net Balance</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -51,24 +50,23 @@
                             <td><c:out value="${entry.value.glCode}" /></td>
                             <td><c:out value="${entry.value.glName}" /></td>
                             <td><c:out value="${entry.value.accountType}" /></td>
-                            <td class="text-right amount"><fmt:formatNumber value="${entry.value.debitBalance}" type="number" maxFractionDigits="2" /></td>
-                            <td class="text-right amount"><fmt:formatNumber value="${entry.value.creditBalance}" type="number" maxFractionDigits="2" /></td>
-                            <td class="text-right amount" style="font-weight: bold;"><fmt:formatNumber value="${entry.value.netBalance}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${entry.value.debitBalance}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${entry.value.creditBalance}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount fw-bold"><fmt:formatNumber value="${entry.value.netBalance}" type="number" maxFractionDigits="2" /></td>
                         </tr>
                     </c:forEach>
                 </tbody>
                 <tfoot>
-                    <tr style="font-weight: bold; background: #e8eaf6;">
+                    <tr class="fw-bold table-light">
                         <td colspan="3">TOTAL</td>
-                        <td class="text-right amount"><fmt:formatNumber value="${trialBalance.totalDebit}" type="number" maxFractionDigits="2" /></td>
-                        <td class="text-right amount"><fmt:formatNumber value="${trialBalance.totalCredit}" type="number" maxFractionDigits="2" /></td>
-                        <td class="text-right amount">
-                            <fmt:formatNumber value="${trialBalance.totalDebit - trialBalance.totalCredit}" type="number" maxFractionDigits="2" />
-                        </td>
+                        <td class="amount"><fmt:formatNumber value="${trialBalance.totalDebit}" type="number" maxFractionDigits="2" /></td>
+                        <td class="amount"><fmt:formatNumber value="${trialBalance.totalCredit}" type="number" maxFractionDigits="2" /></td>
+                        <td class="amount"><fmt:formatNumber value="${trialBalance.totalDebit - trialBalance.totalCredit}" type="number" maxFractionDigits="2" /></td>
                     </tr>
                 </tfoot>
             </table>
         </div>
     </div>
+</div>
 
 <%@ include file="../layout/footer.jsp" %>

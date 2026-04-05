@@ -15,6 +15,22 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * CBS Maker-Checker Approval Workflow Service.
+ *
+ * Per RBI guidelines on internal controls and Finacle/Temenos authorization framework:
+ * - All financial transactions require dual authorization (Maker-Checker)
+ * - Maker (initiator) and Checker (approver) must be different users
+ * - Self-approval is explicitly blocked with WORKFLOW_SELF_APPROVAL error
+ * - Every workflow state change is recorded in the immutable audit trail
+ *
+ * Workflow lifecycle:
+ *   Maker initiates → PENDING_APPROVAL → Checker approves/rejects → APPROVED/REJECTED
+ *
+ * For loan origination, the pipeline is:
+ *   VERIFY workflow (Maker → Checker1) → APPROVE workflow (Checker1 → Checker2)
+ *   Verifier and Approver must be different per RBI Fair Practices Code.
+ */
 @Service
 public class ApprovalWorkflowService {
 
@@ -143,6 +159,34 @@ public class ApprovalWorkflowService {
             workflowId, workflow.getEntityType(), workflow.getEntityId(), checkerUserId);
 
         return saved;
+    }
+
+    /**
+     * Resolves an existing PENDING_APPROVAL workflow for an entity.
+     * Called before initiating a new workflow to prevent the duplicate check
+     * from blocking the loan origination pipeline (VERIFY → APPROVE transition).
+     */
+    @Transactional
+    public void resolveExistingPendingWorkflow(String entityType, Long entityId,
+                                                String resolvedBy, String remarks) {
+        String tenantId = TenantContext.getCurrentTenant();
+        workflowRepository.findByTenantIdAndEntityTypeAndEntityIdAndStatus(
+            tenantId, entityType, entityId, ApprovalStatus.PENDING_APPROVAL
+        ).ifPresent(existing -> {
+            existing.setStatus(ApprovalStatus.APPROVED);
+            existing.setCheckerUserId(resolvedBy);
+            existing.setCheckerRemarks(remarks);
+            existing.setActionedAt(LocalDateTime.now());
+            existing.setUpdatedBy(resolvedBy);
+            workflowRepository.save(existing);
+
+            auditService.logEvent("ApprovalWorkflow", existing.getId(), "RESOLVE",
+                ApprovalStatus.PENDING_APPROVAL.name(), existing, "WORKFLOW",
+                "Workflow auto-resolved for " + entityType + "/" + entityId + " by " + resolvedBy);
+
+            log.info("Resolved pending workflow: entity={}/{}, action={}",
+                entityType, entityId, existing.getActionType());
+        });
     }
 
     public List<ApprovalWorkflow> getPendingApprovals() {

@@ -3,18 +3,15 @@
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>
 
-<div class="main-content">
-    <div class="top-bar">
-        <h2>Error</h2>
-        <div class="user-info"></div>
-    </div>
-    <div class="content-area">
-        <div class="card" style="border-left: 4px solid #c62828;">
-            <h3 style="color: #c62828;">Business Error</h3>
+<div class="fv-main">
+    <div class="fv-card">
+        <div class="card-header text-danger"><i class="bi bi-exclamation-triangle"></i> Business Error</div>
+        <div class="card-body">
             <p><strong>Error Code:</strong> <c:out value="${errorCode}" /></p>
-            <p style="margin-top: 8px;"><c:out value="${errorMessage}" /></p>
-            <a href="javascript:history.back()" class="btn btn-primary" style="margin-top: 16px;">Go Back</a>
+            <p class="mt-2"><c:out value="${errorMessage}" /></p>
+            <a href="javascript:history.back()" class="btn btn-fv-primary mt-3">Go Back</a>
         </div>
     </div>
+</div>
 
 <%@ include file="../layout/footer.jsp" %>

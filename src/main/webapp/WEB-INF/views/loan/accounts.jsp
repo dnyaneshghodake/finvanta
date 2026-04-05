@@ -4,30 +4,24 @@
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>
 
-<div class="main-content">
-    <div class="top-bar">
-        <h2>Loan Accounts</h2>
-        <div class="user-info">
-            <span><c:out value="${pageContext.request.userPrincipal.name}" /></span>
-        </div>
-    </div>
-    <div class="content-area">
-        <c:if test="${not empty success}">
-            <div class="alert alert-success"><c:out value="${success}" /></div>
-        </c:if>
+<div class="fv-main">
+    <c:if test="${not empty success}">
+        <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
+    </c:if>
 
-        <div class="card">
-            <h3>Active Loan Accounts</h3>
-            <table>
+    <div class="fv-card">
+        <div class="card-header">Active Loan Accounts</div>
+        <div class="card-body">
+            <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
                         <th>Account No.</th>
                         <th>Customer</th>
                         <th>Product</th>
-                        <th class="text-right">Sanctioned</th>
-                        <th class="text-right">Outstanding</th>
+                        <th class="text-end">Sanctioned</th>
+                        <th class="text-end">Outstanding</th>
                         <th>Rate</th>
-                        <th>EMI</th>
+                        <th class="text-end">EMI</th>
                         <th>DPD</th>
                         <th>Status</th>
                         <th>Actions</th>
@@ -36,32 +30,41 @@
                 <tbody>
                     <c:forEach var="acc" items="${accounts}">
                         <tr>
-                            <td><c:out value="${acc.accountNumber}" /></td>
-                            <td><c:out value="${acc.customer.fullName}" /></td>
+                            <td><a href="${pageContext.request.contextPath}/loan/account/${acc.accountNumber}"><c:out value="${acc.accountNumber}" /></a></td>
+                            <td><a href="${pageContext.request.contextPath}/customer/view/${acc.customer.id}"><c:out value="${acc.customer.fullName}" /></a></td>
                             <td><c:out value="${acc.productType}" /></td>
-                            <td class="text-right amount"><fmt:formatNumber value="${acc.sanctionedAmount}" type="number" maxFractionDigits="2" /></td>
-                            <td class="text-right amount"><fmt:formatNumber value="${acc.totalOutstanding}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${acc.sanctionedAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${acc.totalOutstanding}" type="number" maxFractionDigits="2" /></td>
                             <td><fmt:formatNumber value="${acc.interestRate}" maxFractionDigits="2" />%</td>
                             <td class="amount"><fmt:formatNumber value="${acc.emiAmount}" type="number" maxFractionDigits="2" /></td>
-                            <td style="color: ${acc.daysPastDue > 90 ? '#c62828' : (acc.daysPastDue > 0 ? '#ef6c00' : '#333')}; font-weight: bold;">
-                                <c:out value="${acc.daysPastDue}" />
+                            <td>
+                                <c:choose>
+                                    <c:when test="${acc.daysPastDue > 90}"><span class="fv-badge fv-badge-npa"><c:out value="${acc.daysPastDue}" /></span></c:when>
+                                    <c:when test="${acc.daysPastDue > 0}"><span class="fv-badge fv-badge-pending"><c:out value="${acc.daysPastDue}" /></span></c:when>
+                                    <c:otherwise><c:out value="${acc.daysPastDue}" /></c:otherwise>
+                                </c:choose>
                             </td>
                             <td>
-                                <span class="badge ${acc.status.npa() ? 'badge-npa' : 'badge-active'}">
-                                    <c:out value="${acc.status}" />
-                                </span>
+                                <c:choose>
+                                    <c:when test="${acc.status.npa}"><span class="fv-badge fv-badge-npa"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:when test="${acc.status.sma}"><span class="fv-badge fv-badge-pending"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:when test="${acc.status.terminal}"><span class="fv-badge fv-badge-closed"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:when test="${acc.status == 'RESTRUCTURED'}"><span class="fv-badge fv-badge-pending"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-active"><c:out value="${acc.status}" /></span></c:otherwise>
+                                </c:choose>
                             </td>
                             <td>
-                                <a href="${pageContext.request.contextPath}/loan/account/${acc.accountNumber}" class="btn btn-primary btn-sm">View</a>
+                                <a href="${pageContext.request.contextPath}/loan/account/${acc.accountNumber}" class="btn btn-sm btn-fv-primary">View</a>
                             </td>
                         </tr>
                     </c:forEach>
                     <c:if test="${empty accounts}">
-                        <tr><td colspan="10" style="text-align: center; color: #999;">No active accounts</td></tr>
+                        <tr><td colspan="10" class="text-center text-muted">No active accounts</td></tr>
                     </c:if>
                 </tbody>
             </table>
         </div>
     </div>
+</div>
 
 <%@ include file="../layout/footer.jsp" %>

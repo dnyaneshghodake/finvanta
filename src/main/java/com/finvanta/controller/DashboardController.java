@@ -1,5 +1,6 @@
 package com.finvanta.controller;
 
+import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.domain.enums.ApplicationStatus;
@@ -15,13 +16,16 @@ public class DashboardController {
 
     private final LoanApplicationRepository applicationRepository;
     private final LoanAccountRepository accountRepository;
+    private final CustomerRepository customerRepository;
     private final ApprovalWorkflowService workflowService;
 
     public DashboardController(LoanApplicationRepository applicationRepository,
                                 LoanAccountRepository accountRepository,
+                                CustomerRepository customerRepository,
                                 ApprovalWorkflowService workflowService) {
         this.applicationRepository = applicationRepository;
         this.accountRepository = accountRepository;
+        this.customerRepository = customerRepository;
         this.workflowService = workflowService;
     }
 
@@ -30,14 +34,24 @@ public class DashboardController {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("dashboard/index");
 
+        mav.addObject("totalCustomers",
+            customerRepository.countByTenantIdAndActiveTrue(tenantId));
         mav.addObject("pendingApplications",
-            applicationRepository.findByTenantIdAndStatus(tenantId, ApplicationStatus.SUBMITTED).size());
+            applicationRepository.countByTenantIdAndStatus(tenantId, ApplicationStatus.SUBMITTED));
         mav.addObject("activeLoans",
-            accountRepository.findByTenantIdAndStatus(tenantId, LoanStatus.ACTIVE).size());
+            accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.ACTIVE)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_0)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_1)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_2)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.RESTRUCTURED));
+        mav.addObject("smaAccounts",
+            accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_0)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_1)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_2));
         mav.addObject("npaAccounts",
-            accountRepository.findByTenantIdAndStatus(tenantId, LoanStatus.NPA_SUBSTANDARD).size()
-            + accountRepository.findByTenantIdAndStatus(tenantId, LoanStatus.NPA_DOUBTFUL).size()
-            + accountRepository.findByTenantIdAndStatus(tenantId, LoanStatus.NPA_LOSS).size());
+            accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.NPA_SUBSTANDARD)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.NPA_DOUBTFUL)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.NPA_LOSS));
         mav.addObject("pendingApprovals",
             workflowService.getPendingApprovals().size());
         mav.addObject("totalOutstanding",

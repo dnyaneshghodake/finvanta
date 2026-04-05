@@ -1,0 +1,28 @@
+/* Bootstrap Icons 1.11 Subset — Finvanta CBS Offline Build */
+/* CSS-only icons using Unicode symbols — no font files required */
+.bi{display:inline-block;font-style:normal;font-weight:normal;font-size:inherit;line-height:1;vertical-align:-.125em}
+.bi::before{display:inline-block;font-family:'Segoe UI Symbol','Apple Color Emoji',sans-serif}
+.bi-speedometer2::before{content:"\2699"}
+.bi-plus-circle::before{content:"\2295"}
+.bi-file-earmark-text::before{content:"\1F4C4"}
+.bi-clipboard-check::before{content:"\2611"}
+.bi-check2-square::before{content:"\2705"}
+.bi-bank::before{content:"\1F3E6"}
+.bi-journal-bookmark::before{content:"\1F4D2"}
+.bi-journal-text::before{content:"\1F4D3"}
+.bi-gear-wide-connected::before{content:"\2699"}
+.bi-hourglass-split::before{content:"\231B"}
+.bi-people::before{content:"\1F465"}
+.bi-building::before{content:"\1F3E2"}
+.bi-shield-lock::before{content:"\1F512"}
+.bi-exclamation-triangle::before{content:"\26A0"}
+.bi-exclamation-circle::before{content:"\2757"}
+.bi-exclamation-octagon::before{content:"\26D4"}
+.bi-currency-rupee::before{content:"\20B9"}
+.bi-cash-stack::before{content:"\1F4B0"}
+.bi-percent::before{content:"\0025"}
+.bi-calendar-check::before{content:"\1F4C5"}
+.bi-clock-history::before{content:"\1F552"}
+.bi-arrow-up-right::before{content:"\2197"}
+.bi-arrow-down-left::before{content:"\2199"}
+.bi-check-circle::before{content:"\2714"}

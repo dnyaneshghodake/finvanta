@@ -17,6 +17,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+    defer-datasource-initialization: true
     show-sql: false
     properties:
       hibernate:
@@ -31,6 +32,10 @@ spring:
     view:
       prefix: /WEB-INF/views/
       suffix: .jsp
+  web:
+    resources:
+      add-mappings: true
+      static-locations: classpath:/static/
 
   jackson:
     serialization:
@@ -47,6 +52,8 @@ logging:
   level:
     root: INFO
     com.finvanta: DEBUG
+    org.springframework.security: WARN
+    org.springframework.web: WARN
     org.hibernate.SQL: WARN
     org.hibernate.type.descriptor.sql.BasicBinder: WARN
   pattern:
@@ -62,7 +69,7 @@ spring:
   datasource:
     url: jdbc:sqlserver://localhost:1433;databaseName=finvanta;encrypt=true;trustServerCertificate=true
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
-    username: ${DB_USERNAME:finvanta_user}
+    username: ${DB_USERNAME:sa}
     password: ${DB_PASSWORD:}
 
   jpa:

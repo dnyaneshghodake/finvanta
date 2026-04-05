@@ -3,59 +3,30 @@
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>
 
-<div class="main-content">
-    <div class="top-bar">
-        <h2>Add Branch</h2>
-        <div class="user-info">
-            <a href="${pageContext.request.contextPath}/branch/list">Back</a>
-        </div>
-    </div>
-    <div class="content-area">
-        <div class="card">
-            <h3>Branch Details</h3>
-            <form method="post" action="${pageContext.request.contextPath}/branch/add">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Branch Code *</label>
-                        <input type="text" name="branchCode" required maxlength="20" />
-                    </div>
-                    <div class="form-group">
-                        <label>Branch Name *</label>
-                        <input type="text" name="branchName" required />
-                    </div>
+<div class="fv-main">
+    <div class="fv-card">
+        <div class="card-header">Branch Details <a href="${pageContext.request.contextPath}/branch/list" class="btn btn-sm btn-outline-secondary float-end">Back</a></div>
+        <div class="card-body">
+            <form method="post" action="${pageContext.request.contextPath}/branch/add" class="fv-form">
+                <div class="row mb-3">
+                    <div class="col-md-6"><label class="form-label">Branch Code *</label><input type="text" name="branchCode" class="form-control" required maxlength="20" /></div>
+                    <div class="col-md-6"><label class="form-label">Branch Name *</label><input type="text" name="branchName" class="form-control" required /></div>
                 </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>IFSC Code</label>
-                        <input type="text" name="ifscCode" maxlength="11" />
-                    </div>
-                    <div class="form-group">
-                        <label>Region</label>
-                        <input type="text" name="region" />
-                    </div>
+                <div class="row mb-3">
+                    <div class="col-md-6"><label class="form-label">IFSC Code</label><input type="text" name="ifscCode" class="form-control" maxlength="11" /></div>
+                    <div class="col-md-6"><label class="form-label">Region</label><input type="text" name="region" class="form-control" /></div>
                 </div>
-                <div class="form-group">
-                    <label>Address</label>
-                    <textarea name="address" rows="2"></textarea>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>City</label>
-                        <input type="text" name="city" />
-                    </div>
-                    <div class="form-group">
-                        <label>State</label>
-                        <input type="text" name="state" />
-                    </div>
-                    <div class="form-group">
-                        <label>PIN Code</label>
-                        <input type="text" name="pinCode" maxlength="6" />
-                    </div>
+                <div class="mb-3"><label class="form-label">Address</label><textarea name="address" class="form-control" rows="2"></textarea></div>
+                <div class="row mb-3">
+                    <div class="col-md-4"><label class="form-label">City</label><input type="text" name="city" class="form-control" /></div>
+                    <div class="col-md-4"><label class="form-label">State</label><input type="text" name="state" class="form-control" /></div>
+                    <div class="col-md-4"><label class="form-label">PIN Code</label><input type="text" name="pinCode" class="form-control" maxlength="6" /></div>
                 </div>
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                <button type="submit" class="btn btn-primary" style="margin-top: 12px;">Add Branch</button>
+                <button type="submit" class="btn btn-fv-primary mt-2">Add Branch</button>
             </form>
         </div>
     </div>
+</div>
 
 <%@ include file="../layout/footer.jsp" %>

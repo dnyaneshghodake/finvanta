@@ -8,6 +8,7 @@ import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanApplicationService;
+import com.finvanta.service.LoanScheduleService;
 import com.finvanta.util.TenantContext;
 import jakarta.validation.Valid;
 import org.springframework.stereotype.Controller;
@@ -25,17 +26,20 @@ public class LoanController {
 
     private final LoanApplicationService applicationService;
     private final LoanAccountService accountService;
+    private final LoanScheduleService scheduleService;
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
     private final LoanTransactionRepository transactionRepository;
 
     public LoanController(LoanApplicationService applicationService,
                            LoanAccountService accountService,
+                           LoanScheduleService scheduleService,
                            CustomerRepository customerRepository,
                            BranchRepository branchRepository,
                            LoanTransactionRepository transactionRepository) {
         this.applicationService = applicationService;
         this.accountService = accountService;
+        this.scheduleService = scheduleService;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.transactionRepository = transactionRepository;
@@ -52,23 +56,27 @@ public class LoanController {
     }
 
     @PostMapping("/apply")
-    public String submitApplication(@Valid @ModelAttribute("application") LoanApplication application,
-                                     @RequestParam Long customerId,
-                                     @RequestParam Long branchId,
-                                     BindingResult result,
-                                     RedirectAttributes redirectAttributes) {
+    public ModelAndView submitApplication(@Valid @ModelAttribute("application") LoanApplication application,
+                                          BindingResult result,
+                                          @RequestParam Long customerId,
+                                          @RequestParam Long branchId,
+                                          RedirectAttributes redirectAttributes) {
         if (result.hasErrors()) {
-            return "loan/apply";
+            String tenantId = TenantContext.getCurrentTenant();
+            ModelAndView mav = new ModelAndView("loan/apply");
+            mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
+            mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+            return mav;
         }
 
         try {
             LoanApplication saved = applicationService.createApplication(application, customerId, branchId);
             redirectAttributes.addFlashAttribute("success",
                 "Application created: " + saved.getApplicationNumber());
-            return "redirect:/loan/applications";
+            return new ModelAndView("redirect:/loan/applications");
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
-            return "redirect:/loan/apply";
+            return new ModelAndView("redirect:/loan/apply");
         }
     }
 
@@ -152,6 +160,7 @@ public class LoanController {
         mav.addObject("account", account);
         mav.addObject("transactions",
             transactionRepository.findByTenantIdAndLoanAccountIdOrderByPostingDateDesc(tenantId, account.getId()));
+        mav.addObject("schedule", scheduleService.getSchedule(account.getId()));
         return mav;
     }
 
