@@ -36,6 +36,14 @@ public class BatchService {
     private final NpaClassificationRule npaRule;
     private final AuditService auditService;
 
+    /**
+     * Self-reference to invoke @Transactional methods through the Spring proxy.
+     * Without this, internal calls bypass the proxy and @Transactional has no effect.
+     */
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired
+    private BatchService self;
+
     public BatchService(BatchJobRepository batchJobRepository,
                         BusinessCalendarRepository calendarRepository,
                         LoanAccountRepository loanAccountRepository,
@@ -65,11 +73,11 @@ public class BatchService {
 
         log.info("EOD batch started: tenant={}, date={}", tenantId, businessDate);
 
-        // Step 1: Validate and lock business date (own transaction)
-        BusinessCalendar calendar = validateAndLockBusinessDate(tenantId, businessDate);
+        // Step 1: Validate and lock business date (own transaction via proxy)
+        BusinessCalendar calendar = self.validateAndLockBusinessDate(tenantId, businessDate);
 
-        // Step 2: Create batch job record (own transaction)
-        BatchJob eodJob = createBatchJob(tenantId, businessDate, initiatedBy);
+        // Step 2: Create batch job record (own transaction via proxy)
+        BatchJob eodJob = self.createBatchJob(tenantId, businessDate, initiatedBy);
 
         int totalRecords = 0;
         int processedRecords = 0;
@@ -81,7 +89,7 @@ public class BatchService {
             totalRecords = activeAccounts.size();
 
             // Step 3: Run interest accrual — each account in its own transaction
-            updateBatchStep(eodJob, "INTEREST_ACCRUAL");
+            self.updateBatchStep(eodJob, "INTEREST_ACCRUAL");
 
             for (LoanAccount account : activeAccounts) {
                 try {
@@ -97,11 +105,11 @@ public class BatchService {
             }
 
             // Step 4: Run DPD calculation
-            updateBatchStep(eodJob, "DPD_CALCULATION");
+            self.updateBatchStep(eodJob, "DPD_CALCULATION");
 
             for (LoanAccount account : activeAccounts) {
                 try {
-                    updateDaysPastDue(account, businessDate);
+                    self.updateDaysPastDue(account, businessDate);
                 } catch (Exception e) {
                     errorLog.append("DPD update failed for ")
                         .append(account.getAccountNumber()).append(": ")
@@ -111,7 +119,7 @@ public class BatchService {
             }
 
             // Step 5: Run NPA classification — each account in its own transaction
-            updateBatchStep(eodJob, "NPA_CLASSIFICATION");
+            self.updateBatchStep(eodJob, "NPA_CLASSIFICATION");
 
             List<LoanAccount> npaCandidates = loanAccountRepository
                 .findNpaCandidates(tenantId, npaRule.getNpaThresholdDays());
@@ -131,7 +139,7 @@ public class BatchService {
             BatchStatus finalStatus = failedRecords > 0
                 ? BatchStatus.PARTIALLY_COMPLETED : BatchStatus.COMPLETED;
 
-            completeEodBatch(eodJob, calendar, finalStatus,
+            self.completeEodBatch(eodJob, calendar, finalStatus,
                 totalRecords, processedRecords, failedRecords,
                 errorLog.length() > 0 ? errorLog.toString() : null);
 
@@ -143,7 +151,7 @@ public class BatchService {
                 businessDate, processedRecords, failedRecords);
 
         } catch (Exception e) {
-            failEodBatch(eodJob, calendar,
+            self.failEodBatch(eodJob, calendar,
                 totalRecords, processedRecords, failedRecords, e.getMessage());
 
             log.error("EOD batch failed: date={}", businessDate, e);
