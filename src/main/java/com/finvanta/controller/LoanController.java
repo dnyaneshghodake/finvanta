@@ -6,6 +6,7 @@ import com.finvanta.domain.enums.ApplicationStatus;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanTransactionRepository;
+import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanApplicationService;
@@ -31,6 +32,7 @@ public class LoanController {
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
     private final LoanTransactionRepository transactionRepository;
+    private final ProductMasterRepository productRepository;
 
     public LoanController(LoanApplicationService applicationService,
                            LoanAccountService accountService,
@@ -38,7 +40,8 @@ public class LoanController {
                            BusinessDateService businessDateService,
                            CustomerRepository customerRepository,
                            BranchRepository branchRepository,
-                           LoanTransactionRepository transactionRepository) {
+                           LoanTransactionRepository transactionRepository,
+                           ProductMasterRepository productRepository) {
         this.applicationService = applicationService;
         this.accountService = accountService;
         this.scheduleService = scheduleService;
@@ -46,6 +49,7 @@ public class LoanController {
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.transactionRepository = transactionRepository;
+        this.productRepository = productRepository;
     }
 
     @GetMapping("/apply")
@@ -55,6 +59,7 @@ public class LoanController {
         mav.addObject("application", new LoanApplication());
         mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
         mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+        mav.addObject("products", productRepository.findActiveProducts(tenantId));
         return mav;
     }
 
@@ -69,6 +74,7 @@ public class LoanController {
             ModelAndView mav = new ModelAndView("loan/apply");
             mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
             mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+            mav.addObject("products", productRepository.findActiveProducts(tenantId));
             return mav;
         }
 
@@ -164,6 +170,11 @@ public class LoanController {
         mav.addObject("transactions",
             transactionRepository.findByTenantIdAndLoanAccountIdOrderByPostingDateDesc(tenantId, account.getId()));
         mav.addObject("schedule", scheduleService.getSchedule(account.getId()));
+
+        // Cross-module linkage: resolve product ID for "View GL Config" link
+        productRepository.findByTenantIdAndProductCode(tenantId, account.getProductType())
+            .ifPresent(p -> mav.addObject("productId", p.getId()));
+
         return mav;
     }
 

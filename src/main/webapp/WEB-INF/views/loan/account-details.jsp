@@ -22,7 +22,14 @@
     </div>
 
     <div class="fv-card">
-        <div class="card-header">Account Information <a href="${pageContext.request.contextPath}/loan/accounts" class="btn btn-sm btn-outline-secondary float-end">Back</a></div>
+        <div class="card-header">Account Information
+            <div class="float-end">
+                <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                    <a href="${pageContext.request.contextPath}/audit/logs?entityType=LoanAccount&entityId=${account.id}" class="btn btn-sm btn-outline-info me-1">Audit Trail</a>
+                </c:if>
+                <a href="${pageContext.request.contextPath}/loan/accounts" class="btn btn-sm btn-outline-secondary">Back</a>
+            </div>
+        </div>
         <div class="card-body">
             <table class="table fv-table">
                 <tbody>
@@ -30,7 +37,11 @@
                 <tr><td class="fw-bold">Customer</td><td><a href="${pageContext.request.contextPath}/customer/view/${account.customer.id}"><c:out value="${account.customer.fullName}" /></a> (<c:out value="${account.customer.customerNumber}" />)</td></tr>
                 <tr><td class="fw-bold">Branch</td><td><c:out value="${account.branch.branchCode}" /> - <c:out value="${account.branch.branchName}" /></td></tr>
                 <tr><td class="fw-bold">Application</td><td><c:out value="${account.application.applicationNumber}" /></td></tr>
-                <tr><td class="fw-bold">Product Type</td><td><c:out value="${account.productType}" /></td></tr>
+                <tr><td class="fw-bold">Product Type</td><td><c:out value="${account.productType}" />
+                    <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN') && not empty productId}">
+                        <a href="${pageContext.request.contextPath}/admin/products/${productId}" class="btn btn-sm btn-outline-secondary ms-2">View GL Config</a>
+                    </c:if>
+                </td></tr>
                 <tr><td class="fw-bold">Currency</td><td><c:out value="${account.currencyCode}" /></td></tr>
                 <tr><td class="fw-bold">Status</td><td>
                     <c:choose>
