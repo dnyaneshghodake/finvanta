@@ -104,6 +104,8 @@
                         <th>App No.</th>
                         <th>Customer</th>
                         <th class="text-end">Approved Amount</th>
+                        <th>Rate</th>
+                        <th>Tenure</th>
                         <th>Approved By</th>
                         <th>Date</th>
                         <th>Actions</th>
@@ -115,6 +117,8 @@
                             <td><c:out value="${app.applicationNumber}" /></td>
                             <td><a href="${pageContext.request.contextPath}/customer/view/${app.customer.id}"><c:out value="${app.customer.fullName}" /></a></td>
                             <td class="amount"><fmt:formatNumber value="${app.approvedAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td><fmt:formatNumber value="${app.interestRate}" type="number" maxFractionDigits="2" />%</td>
+                            <td><c:out value="${app.tenureMonths}" /> mo</td>
                             <td><c:out value="${app.approvedBy}" /></td>
                             <td><c:out value="${app.approvedDate}" /></td>
                             <td>
@@ -126,7 +130,7 @@
                         </tr>
                     </c:forEach>
                     <c:if test="${empty approvedApplications}">
-                        <tr><td colspan="6" class="text-center text-muted">No approved applications</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted">No approved applications</td></tr>
                     </c:if>
                 </tbody>
             </table>

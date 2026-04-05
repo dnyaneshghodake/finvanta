@@ -39,7 +39,15 @@ public class DashboardController {
         mav.addObject("pendingApplications",
             applicationRepository.countByTenantIdAndStatus(tenantId, ApplicationStatus.SUBMITTED));
         mav.addObject("activeLoans",
-            accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.ACTIVE));
+            accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.ACTIVE)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_0)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_1)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_2)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.RESTRUCTURED));
+        mav.addObject("smaAccounts",
+            accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_0)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_1)
+            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_2));
         mav.addObject("npaAccounts",
             accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.NPA_SUBSTANDARD)
             + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.NPA_DOUBTFUL)
