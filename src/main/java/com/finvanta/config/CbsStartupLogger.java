@@ -18,9 +18,9 @@ import org.springframework.stereotype.Component;
  * for dev; production deployments must use {bcrypt}.
  */
 @Component
-public class PasswordHashGenerator implements CommandLineRunner {
+public class CbsStartupLogger implements CommandLineRunner {
 
-    private static final Logger log = LoggerFactory.getLogger(PasswordHashGenerator.class);
+    private static final Logger log = LoggerFactory.getLogger(CbsStartupLogger.class);
 
     @Override
     public void run(String... args) {
