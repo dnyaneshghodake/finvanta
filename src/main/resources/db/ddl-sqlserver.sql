@@ -182,7 +182,7 @@ CREATE INDEX idx_loanapp_tenant_appno ON loan_applications (tenant_id, applicati
 CREATE INDEX idx_loanapp_status ON loan_applications (tenant_id, status);
 CREATE INDEX idx_loanapp_customer ON loan_applications (tenant_id, customer_id);
 
--- 6. LOAN ACCOUNTS
+-- 7. LOAN ACCOUNTS
 CREATE TABLE loan_accounts (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -234,7 +234,7 @@ CREATE INDEX idx_loacc_status ON loan_accounts (tenant_id, status);
 CREATE INDEX idx_loacc_customer ON loan_accounts (tenant_id, customer_id);
 CREATE INDEX idx_loacc_npa ON loan_accounts (tenant_id, status, days_past_due);
 
--- 7. LOAN SCHEDULES (Amortization — generated at disbursement)
+-- 8. LOAN SCHEDULES (Amortization — generated at disbursement)
 CREATE TABLE loan_schedules (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -264,7 +264,7 @@ CREATE INDEX idx_loansched_tenant_account ON loan_schedules (tenant_id, loan_acc
 CREATE INDEX idx_loansched_due_date ON loan_schedules (tenant_id, due_date);
 CREATE INDEX idx_loansched_status ON loan_schedules (tenant_id, loan_account_id, status);
 
--- 8. TRANSACTION BATCHES (Enterprise batch control — Finacle/Temenos pattern)
+-- 9. TRANSACTION BATCHES (Enterprise batch control — Finacle/Temenos pattern)
 CREATE TABLE transaction_batches (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -296,7 +296,7 @@ CREATE INDEX idx_txnbatch_tenant_date ON transaction_batches (tenant_id, busines
 CREATE INDEX idx_txnbatch_tenant_date_status ON transaction_batches (tenant_id, business_date, status);
 CREATE INDEX idx_txnbatch_branch ON transaction_batches (tenant_id, branch_id, business_date);
 
--- 9. LOAN TRANSACTIONS (no cascade delete — financial data)
+-- 10. LOAN TRANSACTIONS (no cascade delete — financial data)
 CREATE TABLE loan_transactions (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -328,12 +328,14 @@ CREATE INDEX idx_loantxn_tenant_account ON loan_transactions (tenant_id, loan_ac
 CREATE INDEX idx_loantxn_txnref ON loan_transactions (tenant_id, transaction_ref);
 CREATE INDEX idx_loantxn_value_date ON loan_transactions (tenant_id, value_date);
 CREATE INDEX idx_loantxn_type ON loan_transactions (tenant_id, transaction_type);
+-- CBS Voucher Reconciliation: index for branch-level daily voucher register queries
+CREATE INDEX idx_loantxn_voucher ON loan_transactions (tenant_id, voucher_number);
 -- CBS Idempotency: unique filtered index on non-null idempotency keys
 -- Allows NULL (system txns) but enforces uniqueness on client-supplied keys
 CREATE UNIQUE INDEX uq_loantxn_idempotency ON loan_transactions (tenant_id, idempotency_key)
     WHERE idempotency_key IS NOT NULL;
 
--- 10. GL MASTER
+-- 11. GL MASTER
 CREATE TABLE gl_master (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -356,7 +358,7 @@ CREATE TABLE gl_master (
 CREATE INDEX idx_gl_tenant_code ON gl_master (tenant_id, gl_code);
 CREATE INDEX idx_gl_tenant_active ON gl_master (tenant_id, is_active);
 
--- 11. JOURNAL ENTRIES
+-- 12. JOURNAL ENTRIES
 CREATE TABLE journal_entries (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -381,7 +383,7 @@ CREATE INDEX idx_journal_tenant_ref ON journal_entries (tenant_id, journal_ref);
 CREATE INDEX idx_journal_value_date ON journal_entries (tenant_id, value_date);
 CREATE INDEX idx_journal_posting_date ON journal_entries (tenant_id, posting_date);
 
--- 12. JOURNAL ENTRY LINES
+-- 13. JOURNAL ENTRY LINES
 CREATE TABLE journal_entry_lines (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -402,7 +404,7 @@ CREATE TABLE journal_entry_lines (
 CREATE INDEX idx_jeline_journal ON journal_entry_lines (journal_entry_id);
 CREATE INDEX idx_jeline_gl ON journal_entry_lines (tenant_id, gl_code);
 
--- 13. LEDGER ENTRIES (Append-only immutable financial ledger — RBI audit grade)
+-- 14. LEDGER ENTRIES (Append-only immutable financial ledger — RBI audit grade)
 CREATE TABLE ledger_entries (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -432,7 +434,7 @@ CREATE INDEX idx_ledger_tenant_gl ON ledger_entries (tenant_id, gl_code, busines
 CREATE INDEX idx_ledger_tenant_date ON ledger_entries (tenant_id, business_date);
 CREATE INDEX idx_ledger_journal ON ledger_entries (tenant_id, journal_entry_id);
 
--- 14. APPROVAL WORKFLOWS
+-- 15. APPROVAL WORKFLOWS
 CREATE TABLE approval_workflows (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -457,7 +459,7 @@ CREATE INDEX idx_wf_entity ON approval_workflows (tenant_id, entity_type, entity
 CREATE INDEX idx_wf_status ON approval_workflows (tenant_id, status);
 CREATE INDEX idx_wf_checker ON approval_workflows (tenant_id, checker_user_id);
 
--- 15. AUDIT LOGS (append-only, no updates, no deletes)
+-- 16. AUDIT LOGS (append-only, no updates, no deletes)
 CREATE TABLE audit_logs (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
