@@ -16,6 +16,7 @@ import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
+import com.finvanta.service.LoanScheduleService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
@@ -50,13 +51,6 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
     private static final Logger log = LoggerFactory.getLogger(LoanAccountServiceImpl.class);
 
-    // GL codes centralized in GLConstants per Finacle/Temenos guidelines
-    private static final String GL_LOAN_ASSET = GLConstants.LOAN_ASSET;
-    private static final String GL_DISBURSEMENT_BANK = GLConstants.BANK_OPERATIONS;
-    private static final String GL_INTEREST_INCOME = GLConstants.INTEREST_INCOME;
-    private static final String GL_INTEREST_RECEIVABLE = GLConstants.INTEREST_RECEIVABLE;
-    private static final String GL_CASH_BANK = GLConstants.BANK_OPERATIONS;
-
     private final LoanAccountRepository accountRepository;
     private final LoanApplicationRepository applicationRepository;
     private final LoanTransactionRepository transactionRepository;
@@ -65,7 +59,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final NpaClassificationRule npaRule;
     private final AuditService auditService;
     private final SuspenseService suspenseService;
-    private final com.finvanta.service.LoanScheduleService scheduleService;
+    private final LoanScheduleService scheduleService;
     private final BusinessDateService businessDateService;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
@@ -76,7 +70,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    NpaClassificationRule npaRule,
                                    AuditService auditService,
                                    SuspenseService suspenseService,
-                                   com.finvanta.service.LoanScheduleService scheduleService,
+                                   LoanScheduleService scheduleService,
                                    BusinessDateService businessDateService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
@@ -170,9 +164,9 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         LocalDate bizDate = businessDateService.getCurrentBusinessDate();
 
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.DEBIT, disbursementAmount,
+            new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.DEBIT, disbursementAmount,
                 "Loan disbursement - " + accountNumber),
-            new JournalLineRequest(GL_DISBURSEMENT_BANK, DebitCredit.CREDIT, disbursementAmount,
+            new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.CREDIT, disbursementAmount,
                 "Bank credit for loan disbursement - " + accountNumber)
         );
 
@@ -264,9 +258,9 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         }
 
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GL_INTEREST_RECEIVABLE, DebitCredit.DEBIT, accruedAmount,
+            new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.DEBIT, accruedAmount,
                 "Interest accrual - " + accountNumber),
-            new JournalLineRequest(GL_INTEREST_INCOME, DebitCredit.CREDIT, accruedAmount,
+            new JournalLineRequest(GLConstants.INTEREST_INCOME, DebitCredit.CREDIT, accruedAmount,
                 "Interest income accrual - " + accountNumber)
         );
 
@@ -338,7 +332,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         // GL Entry: DR Interest Receivable (1002) / CR Penal Interest Income (4003)
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GL_INTEREST_RECEIVABLE, DebitCredit.DEBIT, penalAmount,
+            new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.DEBIT, penalAmount,
                 "Penal interest accrual - " + accountNumber),
             new JournalLineRequest(GLConstants.PENAL_INTEREST_INCOME, DebitCredit.CREDIT, penalAmount,
                 "Penal interest income - " + accountNumber)
@@ -404,14 +398,14 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         // Build journal lines dynamically — only include non-zero components per CBS GL posting rules
         List<JournalLineRequest> journalLines = new java.util.ArrayList<>();
-        journalLines.add(new JournalLineRequest(GL_CASH_BANK, DebitCredit.DEBIT, amount,
+        journalLines.add(new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, amount,
             "Loan repayment received - " + accountNumber));
         if (principalPaid.compareTo(BigDecimal.ZERO) > 0) {
-            journalLines.add(new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.CREDIT, principalPaid,
+            journalLines.add(new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.CREDIT, principalPaid,
                 "Principal repayment - " + accountNumber));
         }
         if (interestPaid.compareTo(BigDecimal.ZERO) > 0) {
-            journalLines.add(new JournalLineRequest(GL_INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestPaid,
+            journalLines.add(new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestPaid,
                 "Interest repayment - " + accountNumber));
         }
 
@@ -579,7 +573,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             List<JournalLineRequest> writeOffLines = List.of(
                 new JournalLineRequest(GLConstants.WRITE_OFF_EXPENSE, DebitCredit.DEBIT, writeOffAmount,
                     "Loan write-off - " + accountNumber),
-                new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.CREDIT, writeOffAmount,
+                new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.CREDIT, writeOffAmount,
                     "Write-off asset removal - " + accountNumber)
             );
             accountingService.postJournalEntry(
@@ -677,14 +671,14 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         // GL Entry: DR Bank Operations / CR Loan Asset + Interest Receivable
         List<JournalLineRequest> journalLines = new java.util.ArrayList<>();
-        journalLines.add(new JournalLineRequest(GL_CASH_BANK, DebitCredit.DEBIT, totalOutstanding,
+        journalLines.add(new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, totalOutstanding,
             "Loan prepayment/foreclosure - " + accountNumber));
         if (principalDue.compareTo(BigDecimal.ZERO) > 0) {
-            journalLines.add(new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.CREDIT, principalDue,
+            journalLines.add(new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.CREDIT, principalDue,
                 "Prepayment principal closure - " + accountNumber));
         }
         if (interestDue.compareTo(BigDecimal.ZERO) > 0) {
-            journalLines.add(new JournalLineRequest(GL_INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestDue,
+            journalLines.add(new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.CREDIT, interestDue,
                 "Prepayment interest closure - " + accountNumber));
         }
 
@@ -761,22 +755,20 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         LoanAccount account = original.getLoanAccount();
 
         // Post contra journal entry — exact reverse of original GL lines
-        // The original journal entry's debit becomes credit and vice versa
-        var originalJournal = original.getJournalEntryId();
         BigDecimal amount = original.getAmount();
 
         List<JournalLineRequest> reversalLines = new java.util.ArrayList<>();
         // Reverse the bank/cash side
-        reversalLines.add(new JournalLineRequest(GL_CASH_BANK, DebitCredit.CREDIT, amount,
+        reversalLines.add(new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.CREDIT, amount,
             "REVERSAL: " + transactionRef + " - " + reason));
         // Reverse the asset/receivable side
         if (original.getPrincipalComponent().compareTo(BigDecimal.ZERO) > 0) {
-            reversalLines.add(new JournalLineRequest(GL_LOAN_ASSET, DebitCredit.DEBIT,
+            reversalLines.add(new JournalLineRequest(GLConstants.LOAN_ASSET, DebitCredit.DEBIT,
                 original.getPrincipalComponent(),
                 "REVERSAL principal: " + transactionRef));
         }
         if (original.getInterestComponent().compareTo(BigDecimal.ZERO) > 0) {
-            reversalLines.add(new JournalLineRequest(GL_INTEREST_RECEIVABLE, DebitCredit.DEBIT,
+            reversalLines.add(new JournalLineRequest(GLConstants.INTEREST_RECEIVABLE, DebitCredit.DEBIT,
                 original.getInterestComponent(),
                 "REVERSAL interest: " + transactionRef));
         }
@@ -848,7 +840,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         // GL Entry: DR Bank Operations (1100) — fee collected from borrower
         //           CR Fee Income (4002) — recognized as income
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(GL_CASH_BANK, DebitCredit.DEBIT, feeAmount,
+            new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, feeAmount,
                 feeType + " - " + accountNumber),
             new JournalLineRequest(GLConstants.FEE_INCOME, DebitCredit.CREDIT, feeAmount,
                 feeType + " income - " + accountNumber)

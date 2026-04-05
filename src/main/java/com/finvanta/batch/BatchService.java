@@ -17,6 +17,8 @@ import com.finvanta.repository.BatchJobRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.LoanAccountService;
+import com.finvanta.service.LoanScheduleService;
+import com.finvanta.service.TransactionBatchService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
@@ -60,8 +62,8 @@ public class BatchService {
     private final AuditService auditService;
     private final ReconciliationService reconciliationService;
     private final AccountingService accountingService;
-    private final com.finvanta.service.LoanScheduleService scheduleService;
-    private final com.finvanta.service.TransactionBatchService transactionBatchService;
+    private final LoanScheduleService scheduleService;
+    private final TransactionBatchService transactionBatchService;
 
     /**
      * Self-reference to invoke @Transactional methods through the Spring proxy.
