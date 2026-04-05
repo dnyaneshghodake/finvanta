@@ -43,7 +43,7 @@ public class JournalEntry extends BaseEntity {
     @Column(name = "source_module", length = 50)
     private String sourceModule;
 
-    @Column(name = "source_ref", length = 50)
+    @Column(name = "source_ref", length = 100)
     private String sourceRef;
 
     @Column(name = "is_reversed", nullable = false)

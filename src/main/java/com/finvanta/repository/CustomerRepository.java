@@ -21,4 +21,6 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     List<Customer> findByTenantIdAndKycVerifiedFalse(String tenantId);
 
     long countByTenantIdAndActiveTrue(String tenantId);
+
+    List<Customer> findByTenantIdAndBranchIdAndActiveTrue(String tenantId, Long branchId);
 }

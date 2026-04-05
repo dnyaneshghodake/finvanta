@@ -20,18 +20,20 @@
                         <th>State</th>
                         <th>Region</th>
                         <th>Status</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     <c:forEach var="branch" items="${branches}">
                         <tr>
-                            <td><c:out value="${branch.branchCode}" /></td>
+                            <td><a href="${pageContext.request.contextPath}/branch/view/${branch.id}"><c:out value="${branch.branchCode}" /></a></td>
                             <td><c:out value="${branch.branchName}" /></td>
                             <td><c:out value="${branch.ifscCode}" /></td>
                             <td><c:out value="${branch.city}" /></td>
                             <td><c:out value="${branch.state}" /></td>
                             <td><c:out value="${branch.region}" /></td>
                             <td><span class="fv-badge fv-badge-active">Active</span></td>
+                            <td><a href="${pageContext.request.contextPath}/branch/view/${branch.id}" class="btn btn-sm btn-fv-primary">View</a></td>
                         </tr>
                     </c:forEach>
                 </tbody>

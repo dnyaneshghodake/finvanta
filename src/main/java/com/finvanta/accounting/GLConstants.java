@@ -40,7 +40,27 @@ public final class GLConstants {
     /** Fee Income */
     public static final String FEE_INCOME = "4002";
     /** Penal Interest Income */
-    public static final String PENAL_INTEREST_INCOME = "4001";
+    public static final String PENAL_INTEREST_INCOME = "4003";
+
+    // --- SUSPENSE GL Codes (RBI IRAC — NPA Interest Management) ---
+    /**
+     * Interest Suspense — tracks interest accrued on NPA accounts.
+     * Per RBI IRAC Master Circular, interest on NPA accounts must NOT be
+     * recognized as income in P&L. It is parked in this suspense account
+     * until actually received from the borrower.
+     *
+     * When loan becomes NPA:
+     *   DR Interest Income (4001) — reverse previously recognized income
+     *   CR Interest Suspense (2100) — park in suspense
+     *
+     * When NPA interest is actually collected:
+     *   DR Interest Suspense (2100) — release from suspense
+     *   CR Interest Income (4001) — recognize as income
+     */
+    public static final String INTEREST_SUSPENSE = "2100";
+
+    /** Sundry Suspense — general suspense for unreconciled items */
+    public static final String SUNDRY_SUSPENSE = "2101";
 
     // --- EXPENSE GL Codes ---
     /** Provision Expense — P&L charge for NPA provisioning */

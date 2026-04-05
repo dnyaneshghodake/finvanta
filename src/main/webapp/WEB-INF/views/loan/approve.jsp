@@ -12,10 +12,15 @@
                 <tbody>
                 <tr><td class="fw-bold">Application No.</td><td><c:out value="${application.applicationNumber}" /></td></tr>
                 <tr><td class="fw-bold">Customer</td><td><a href="${pageContext.request.contextPath}/customer/view/${application.customer.id}"><c:out value="${application.customer.fullName}" /></a> (<c:out value="${application.customer.customerNumber}" />)</td></tr>
+                <tr><td class="fw-bold">Branch</td><td><c:out value="${application.branch.branchCode}" /> - <c:out value="${application.branch.branchName}" /></td></tr>
                 <tr><td class="fw-bold">Product Type</td><td><c:out value="${application.productType}" /></td></tr>
                 <tr><td class="fw-bold">Requested Amount</td><td class="amount"><fmt:formatNumber value="${application.requestedAmount}" type="number" maxFractionDigits="2" /> INR</td></tr>
                 <tr><td class="fw-bold">Interest Rate</td><td><fmt:formatNumber value="${application.interestRate}" type="number" maxFractionDigits="2" />% p.a.</td></tr>
+                <tr><td class="fw-bold">Penal Rate</td><td><c:out value="${application.penalRate}" default="--" />% p.a.</td></tr>
                 <tr><td class="fw-bold">Tenure</td><td><c:out value="${application.tenureMonths}" /> months</td></tr>
+                <tr><td class="fw-bold">Purpose</td><td><c:out value="${application.purpose}" default="--" /></td></tr>
+                <tr><td class="fw-bold">Risk Category</td><td><c:out value="${application.riskCategory}" default="--" /></td></tr>
+                <tr><td class="fw-bold">Collateral</td><td><c:out value="${application.collateralReference}" default="Unsecured" /></td></tr>
                 <tr><td class="fw-bold">KYC Status</td><td>
                     <c:choose>
                         <c:when test="${application.customer.kycVerified}"><span class="fv-badge fv-badge-active">Verified</span></c:when>

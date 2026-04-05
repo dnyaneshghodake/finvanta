@@ -70,7 +70,7 @@ spring:
     url: jdbc:sqlserver://localhost:1433;databaseName=finvanta;encrypt=true;trustServerCertificate=true
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
     username: ${DB_USERNAME:sa}
-    password: ${DB_PASSWORD:sqlserver#123}
+    password: ${DB_PASSWORD:}
 
   jpa:
     hibernate:

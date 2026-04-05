@@ -33,6 +33,13 @@
             </div>
         </div>
         <div class="col">
+            <div class="fv-stat-card stat-warning">
+                <div class="stat-icon"><i class="bi bi-exclamation-circle"></i></div>
+                <div class="stat-value"><c:out value="${smaAccounts}" default="0" /></div>
+                <div class="stat-label">SMA Accounts</div>
+            </div>
+        </div>
+        <div class="col">
             <div class="fv-stat-card stat-danger">
                 <div class="stat-icon"><i class="bi bi-exclamation-triangle"></i></div>
                 <div class="stat-value"><c:out value="${npaAccounts}" default="0" /></div>

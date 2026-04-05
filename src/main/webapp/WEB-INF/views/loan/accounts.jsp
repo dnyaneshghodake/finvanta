@@ -45,9 +45,13 @@
                                 </c:choose>
                             </td>
                             <td>
-                                <span class="fv-badge ${acc.status.npa ? 'fv-badge-npa' : 'fv-badge-active'}">
-                                    <c:out value="${acc.status}" />
-                                </span>
+                                <c:choose>
+                                    <c:when test="${acc.status.npa}"><span class="fv-badge fv-badge-npa"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:when test="${acc.status.sma}"><span class="fv-badge fv-badge-pending"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:when test="${acc.status.terminal}"><span class="fv-badge fv-badge-closed"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:when test="${acc.status == 'RESTRUCTURED'}"><span class="fv-badge fv-badge-pending"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-active"><c:out value="${acc.status}" /></span></c:otherwise>
+                                </c:choose>
                             </td>
                             <td>
                                 <a href="${pageContext.request.contextPath}/loan/account/${acc.accountNumber}" class="btn btn-sm btn-fv-primary">View</a>

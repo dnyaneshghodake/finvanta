@@ -29,17 +29,22 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
 
     List<LoanAccount> findByTenantIdAndCustomerId(String tenantId, Long customerId);
 
-    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status = 'ACTIVE' AND la.daysPastDue >= :threshold")
+    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF') AND la.daysPastDue >= :threshold")
     List<LoanAccount> findNpaCandidates(
         @Param("tenantId") String tenantId,
         @Param("threshold") int threshold
     );
 
-    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status = 'ACTIVE'")
+    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
     List<LoanAccount> findAllActiveAccounts(@Param("tenantId") String tenantId);
 
-    @Query("SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status = 'ACTIVE'")
+    @Query("SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
     BigDecimal calculateTotalOutstandingPrincipal(@Param("tenantId") String tenantId);
 
     long countByTenantIdAndStatus(String tenantId, LoanStatus status);
+
+    boolean existsByTenantIdAndApplicationId(String tenantId, Long applicationId);
+
+    @Query("SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.branch.id = :branchId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
+    java.math.BigDecimal calculateTotalOutstandingByBranch(@Param("tenantId") String tenantId, @Param("branchId") Long branchId);
 }
