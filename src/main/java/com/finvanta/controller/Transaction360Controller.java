@@ -79,18 +79,28 @@ public class Transaction360Controller {
      * (forward slash is needed for voucher format VCH/branch/date/seq).
      */
     @GetMapping("/search")
-    public String smartSearch(@RequestParam String q) {
+    public ModelAndView smartSearch(@RequestParam(defaultValue = "") String q) {
         String trimmed = q.trim();
+        // Empty query — show the search form (no redirect loop)
+        if (trimmed.isEmpty()) {
+            ModelAndView mav = new ModelAndView("txn360/view");
+            mav.addObject("lookupType", "Search");
+            mav.addObject("lookupValue", "");
+            return mav;
+        }
         // CBS: Sanitize input to prevent path traversal / CRLF injection
         if (!trimmed.matches("[A-Za-z0-9/_-]+")) {
-            return "redirect:/txn360/search";
+            ModelAndView mav = new ModelAndView("txn360/view");
+            mav.addObject("lookupType", "Search");
+            mav.addObject("lookupValue", "");
+            return mav;
         }
         if (trimmed.startsWith("VCH")) {
-            return "redirect:/txn360/voucher/" + trimmed;
+            return new ModelAndView("redirect:/txn360/voucher/" + trimmed);
         } else if (trimmed.startsWith("JRN")) {
-            return "redirect:/txn360/journal/" + trimmed;
+            return new ModelAndView("redirect:/txn360/journal/" + trimmed);
         } else {
-            return "redirect:/txn360/" + trimmed;
+            return new ModelAndView("redirect:/txn360/" + trimmed);
         }
     }
 }

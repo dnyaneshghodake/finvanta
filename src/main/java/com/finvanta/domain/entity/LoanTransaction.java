@@ -16,7 +16,8 @@ import java.time.LocalDateTime;
         @Index(name = "idx_loantxn_tenant_account", columnList = "tenant_id, loan_account_id"),
         @Index(name = "idx_loantxn_txnref", columnList = "tenant_id, transaction_ref", unique = true),
         @Index(name = "idx_loantxn_value_date", columnList = "tenant_id, value_date"),
-        @Index(name = "idx_loantxn_type", columnList = "tenant_id, transaction_type")
+        @Index(name = "idx_loantxn_type", columnList = "tenant_id, transaction_type"),
+        @Index(name = "idx_loantxn_voucher", columnList = "tenant_id, voucher_number")
     }
     // CBS Idempotency: unique constraint on (tenant_id, idempotency_key) for non-null keys.
     // NOT enforced via JPA @UniqueConstraint because H2 (used in tests) treats NULL as a
