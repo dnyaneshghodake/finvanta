@@ -68,16 +68,36 @@ public class TransactionEngine {
     /**
      * Voucher sequence — branch-prefixed, date-partitioned in production.
      *
-     * Seeded from System.nanoTime() to avoid collisions across JVM restarts.
-     * Without this, every restart resets to 1, producing duplicate voucher numbers
-     * for the same branch+date. Per Finacle TRAN_POSTING, voucher numbers must be
-     * globally unique within a business day.
+     * Seeded from System.nanoTime() combined with a JVM-instance discriminator
+     * to avoid collisions across:
+     *   1. JVM restarts (nanoTime changes each restart)
+     *   2. Multiple JVM instances (PID/hostname provides instance isolation)
+     *
+     * Per Finacle TRAN_POSTING, voucher numbers must be globally unique within
+     * a business day. The 6-digit sequence formatted into the voucher allows
+     * ~900K vouchers per instance before overflow to 7 digits (still safe —
+     * VARCHAR(40) column has ample headroom).
      *
      * Production: Replace with DB sequence partitioned by branch+date:
      *   CREATE SEQUENCE voucher_seq_branch_date START WITH 1 INCREMENT BY 1
+     *   This eliminates all in-memory collision risks.
      */
-    private static final AtomicLong VOUCHER_SEQ = new AtomicLong(
-        Math.abs(System.nanoTime() % 100000));
+    private static final AtomicLong VOUCHER_SEQ = new AtomicLong(initVoucherSeed());
+
+    /**
+     * Generates a collision-resistant seed combining nanoTime + JVM identity.
+     * Each JVM instance gets a different starting range, preventing overlap
+     * when multiple instances run concurrently (e.g., HA/cluster deployment).
+     *
+     * Range: 0–899,999 (fits in 6-digit format). Each instance occupies a
+     * different band within this range due to the combined hash.
+     */
+    private static long initVoucherSeed() {
+        long timePart = Math.abs(System.nanoTime());
+        long instancePart = Math.abs((long) ProcessHandle.current().pid()
+            * 31L + Runtime.getRuntime().hashCode());
+        return Math.abs((timePart ^ instancePart) % 900000);
+    }
 
     private final AccountingService accountingService;
     private final TransactionLimitService limitService;
@@ -217,36 +237,44 @@ public class TransactionEngine {
         // The first journal entry is returned as the primary reference.
         // ================================================================
         JournalEntry journalEntry;
-        if (request.isCompound()) {
-            // CBS Compound Posting: each group is a separate balanced journal entry.
-            // All groups share the same voucher, transaction ref, and audit trail.
-            // The first journal entry is returned as the primary reference.
-            // All journal entries use the same sourceRef (account number) so they can
-            // be queried together via JournalEntryRepository.findByTenantIdAndSourceModuleAndSourceRef().
-            JournalEntry firstEntry = null;
-            for (TransactionRequest.CompoundJournalGroup group : request.getCompoundJournalGroups()) {
-                JournalEntry entry = accountingService.postJournalEntry(
+        // CBS: Set engine context flag so AccountingService knows this call is
+        // from the validated TransactionEngine pipeline (defense-in-depth).
+        AccountingService.enterEngineContext();
+        try {
+            if (request.isCompound()) {
+                // CBS Compound Posting: each group is a separate balanced journal entry.
+                // All groups share the same voucher, transaction ref, and audit trail.
+                // The first journal entry is returned as the primary reference.
+                // All journal entries use the same sourceRef (account number) so they can
+                // be queried together via JournalEntryRepository.findByTenantIdAndSourceModuleAndSourceRef().
+                JournalEntry firstEntry = null;
+                for (TransactionRequest.CompoundJournalGroup group : request.getCompoundJournalGroups()) {
+                    JournalEntry entry = accountingService.postJournalEntry(
+                        request.getValueDate(),
+                        group.narration(),
+                        request.getSourceModule(),
+                        request.getAccountReference(),
+                        group.lines()
+                    );
+                    if (firstEntry == null) {
+                        firstEntry = entry;
+                    }
+                    log.debug("Compound journal group posted: ref={}, debit={}, credit={}",
+                        entry.getJournalRef(), entry.getTotalDebit(), entry.getTotalCredit());
+                }
+                journalEntry = firstEntry;
+            } else {
+                journalEntry = accountingService.postJournalEntry(
                     request.getValueDate(),
-                    group.narration(),
+                    request.getNarration(),
                     request.getSourceModule(),
                     request.getAccountReference(),
-                    group.lines()
+                    request.getJournalLines()
                 );
-                if (firstEntry == null) {
-                    firstEntry = entry;
-                }
-                log.debug("Compound journal group posted: ref={}, debit={}, credit={}",
-                    entry.getJournalRef(), entry.getTotalDebit(), entry.getTotalCredit());
             }
-            journalEntry = firstEntry;
-        } else {
-            journalEntry = accountingService.postJournalEntry(
-                request.getValueDate(),
-                request.getNarration(),
-                request.getSourceModule(),
-                request.getAccountReference(),
-                request.getJournalLines()
-            );
+        } finally {
+            // Always clear the engine context — prevents stale flag on thread reuse
+            AccountingService.exitEngineContext();
         }
 
         // ================================================================

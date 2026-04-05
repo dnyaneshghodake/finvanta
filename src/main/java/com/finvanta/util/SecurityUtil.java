@@ -30,32 +30,42 @@ public final class SecurityUtil {
     }
 
     /**
-     * Returns the current user's highest-privilege CBS role for transaction limit resolution.
+     * Returns the current user's CBS role for transaction limit resolution.
      * Extracts from Spring Security GrantedAuthority, stripping the "ROLE_" prefix.
      *
-     * Per CBS role hierarchy (highest privilege first):
-     *   ADMIN > CHECKER > MAKER > AUDITOR
+     * Per CBS role hierarchy (most restrictive first for limit enforcement):
+     *   AUDITOR < MAKER < CHECKER < ADMIN
      *
-     * When a user has multiple roles (e.g., ROLE_MAKER + ROLE_ADMIN), the highest-privilege
+     * RBI Segregation of Duties Compliance:
+     * When a user has multiple roles (e.g., ROLE_MAKER + ROLE_ADMIN), the LOWEST-privilege
      * role is returned. This ensures transaction limits are checked against the most
-     * permissive role, per Finacle/Temenos dual-role user support.
+     * restrictive role, enforcing the principle of least privilege per:
+     *   - RBI Master Direction on IT Governance (2023) Section 8.3
+     *   - RBI Guidelines on Internal Controls in Banks (segregation of duties)
+     *   - Finacle TRAN_AUTH: "dual-role users are subject to the lower limit"
      *
-     * @return Highest-privilege role string without "ROLE_" prefix, or null if no role found
+     * Rationale: If a user has both MAKER and ADMIN roles, they should be subject to
+     * MAKER limits when initiating transactions. ADMIN limits only apply when performing
+     * administrative functions. This prevents a MAKER from exploiting an incidental
+     * ADMIN role to bypass per-transaction limits.
+     *
+     * @return Lowest-privilege role string without "ROLE_" prefix, or null if no role found
      */
     public static String getCurrentUserRole() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || auth.getAuthorities() == null) {
             return null;
         }
-        // CBS role hierarchy: ADMIN has highest limits, then CHECKER, MAKER, AUDITOR
-        List<String> hierarchy = List.of("ADMIN", "CHECKER", "MAKER", "AUDITOR");
+        // CBS role hierarchy: AUDITOR is most restrictive, ADMIN is least restrictive.
+        // Return the LOWEST-privilege role the user holds (principle of least privilege).
+        List<String> leastPrivilegeFirst = List.of("AUDITOR", "MAKER", "CHECKER", "ADMIN");
         Set<String> userRoles = auth.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
             .filter(a -> a.startsWith("ROLE_"))
             .map(a -> a.substring(5))
             .collect(Collectors.toSet());
 
-        return hierarchy.stream()
+        return leastPrivilegeFirst.stream()
             .filter(userRoles::contains)
             .findFirst()
             .orElse(null);

@@ -47,6 +47,29 @@ public class AccountingService {
     private final LedgerService ledgerService;
     private final TransactionBatchRepository batchRepository;
 
+    /**
+     * Thread-local flag set by TransactionEngine before calling postJournalEntry().
+     * Prevents direct calls to AccountingService that bypass the 10-step validation chain.
+     *
+     * Per Finacle/Temenos architecture: the GL posting layer (AccountingService) must ONLY
+     * be invoked through the transaction engine. Direct calls would skip:
+     *   - Day status validation (Step 3)
+     *   - Transaction limit validation (Step 6)
+     *   - Maker-checker gate (Step 7)
+     *   - Voucher generation (Step 9)
+     *   - Audit trail (Step 10)
+     *
+     * This is a defense-in-depth measure. The primary enforcement is architectural
+     * (all modules call TransactionEngine), but this flag catches accidental direct calls.
+     */
+    private static final ThreadLocal<Boolean> ENGINE_CONTEXT = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+    /** Called by TransactionEngine before GL posting. Package-adjacent trust boundary. */
+    public static void enterEngineContext() { ENGINE_CONTEXT.set(Boolean.TRUE); }
+
+    /** Called by TransactionEngine after GL posting (in finally block). */
+    public static void exitEngineContext() { ENGINE_CONTEXT.remove(); }
+
     public AccountingService(JournalEntryRepository journalEntryRepository,
                              GLMasterRepository glMasterRepository,
                              AuditService auditService,
@@ -64,6 +87,17 @@ public class AccountingService {
                                           String sourceModule, String sourceRef,
                                           List<JournalLineRequest> lines) {
         String tenantId = TenantContext.getCurrentTenant();
+
+        // CBS Defense-in-Depth: Verify this call originates from TransactionEngine.
+        // Direct calls bypass day control, transaction limits, voucher generation, and audit.
+        // Log a warning (not throw) to avoid breaking existing EOD flows during migration.
+        // TODO: Upgrade to hard-fail after confirming all callers route through TransactionEngine.
+        if (!Boolean.TRUE.equals(ENGINE_CONTEXT.get())) {
+            log.warn("SECURITY: AccountingService.postJournalEntry() called outside TransactionEngine context. "
+                + "Module={}, sourceRef={}. This bypasses CBS validation chain (Steps 3-10). "
+                + "All financial postings MUST route through TransactionEngine.execute().",
+                sourceModule, sourceRef);
+        }
 
         if (lines == null || lines.size() < 2) {
             throw new BusinessException("ACCOUNTING_INVALID_ENTRY",
