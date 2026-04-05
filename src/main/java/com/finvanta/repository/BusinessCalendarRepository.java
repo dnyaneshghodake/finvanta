@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -29,4 +30,6 @@ public interface BusinessCalendarRepository extends JpaRepository<BusinessCalend
     @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId AND bc.businessDate = " +
            "(SELECT MAX(bc2.businessDate) FROM BusinessCalendar bc2 WHERE bc2.tenantId = :tenantId AND bc2.eodComplete = false AND bc2.holiday = false)")
     Optional<BusinessCalendar> findCurrentBusinessDate(@Param("tenantId") String tenantId);
+
+    List<BusinessCalendar> findByTenantIdOrderByBusinessDateDesc(String tenantId);
 }

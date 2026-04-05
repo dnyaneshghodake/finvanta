@@ -6,7 +6,6 @@ import com.finvanta.domain.entity.BatchJob;
 import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.BatchStatus;
-import com.finvanta.domain.enums.LoanStatus;
 import com.finvanta.domain.rules.NpaClassificationRule;
 import com.finvanta.domain.rules.ProvisioningRule;
 import com.finvanta.repository.BatchJobRepository;
