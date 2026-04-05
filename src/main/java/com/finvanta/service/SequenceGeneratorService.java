@@ -3,9 +3,10 @@ package com.finvanta.service;
 import com.finvanta.domain.entity.DbSequence;
 import com.finvanta.repository.DbSequenceRepository;
 import com.finvanta.util.TenantContext;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,8 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
  *   5. Lock is released when the enclosing transaction commits
  *
  * Lazy initialization: If the sequence row doesn't exist, it is created with
- * currentValue=0 and then incremented to 1. This avoids requiring manual
- * pre-creation of sequence rows for every branch+date combination.
+ * currentValue=0 via native SQL MERGE (upsert), then locked and incremented.
+ * The MERGE is idempotent — concurrent first-use threads both execute MERGE
+ * safely, with one inserting and the other becoming a no-op.
  *
  * Transaction propagation: REQUIRES_NEW ensures the sequence allocation commits
  * independently of the caller's transaction. This prevents sequence gaps when
@@ -41,6 +43,9 @@ public class SequenceGeneratorService {
     private static final Logger log = LoggerFactory.getLogger(SequenceGeneratorService.class);
 
     private final DbSequenceRepository sequenceRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public SequenceGeneratorService(DbSequenceRepository sequenceRepository) {
         this.sequenceRepository = sequenceRepository;
@@ -66,27 +71,28 @@ public class SequenceGeneratorService {
             .orElse(null);
 
         if (seq == null) {
-            // Lazy init: create the sequence row on first use.
-            // Race condition: two threads may both find null and attempt to insert.
-            // The UNIQUE constraint (tenant_id, sequence_name) ensures only one succeeds.
-            // On duplicate key, catch and re-acquire the lock on the winning row.
-            try {
-                seq = new DbSequence();
-                seq.setTenantId(tenantId);
-                seq.setSequenceName(sequenceName);
-                seq.setCurrentValue(0);
-                seq = sequenceRepository.saveAndFlush(seq);
-            } catch (DataIntegrityViolationException e) {
-                // Another thread created the row first — this is expected under concurrency.
-                log.debug("Sequence row already exists (concurrent init): name={}, tenant={}", sequenceName, tenantId);
-            }
+            // Lazy init: ensure the sequence row exists using native SQL MERGE (upsert).
+            // This is idempotent and safe under concurrent first-use:
+            //   - Thread A and B both find null and both execute MERGE
+            //   - One inserts, the other matches and does nothing
+            //   - No DataIntegrityViolationException, no poisoned persistence context
+            //
+            // H2 and SQL Server both support MERGE syntax.
+            entityManager.createNativeQuery(
+                "MERGE INTO db_sequences AS target "
+                + "USING (SELECT :tenantId AS tenant_id, :seqName AS sequence_name) AS source "
+                + "ON target.tenant_id = source.tenant_id AND target.sequence_name = source.sequence_name "
+                + "WHEN NOT MATCHED THEN INSERT (tenant_id, sequence_name, current_value, version) "
+                + "VALUES (:tenantId, :seqName, 0, 0);")
+                .setParameter("tenantId", tenantId)
+                .setParameter("seqName", sequenceName)
+                .executeUpdate();
 
-            // Re-acquire with lock (the save above may not hold the lock in all DBs,
-            // and on duplicate key the entity is detached)
+            // Now lock the row — guaranteed to exist after MERGE
             seq = sequenceRepository
                 .findAndLockByTenantIdAndSequenceName(tenantId, sequenceName)
                 .orElseThrow(() -> new IllegalStateException(
-                    "Failed to lock newly created sequence: " + sequenceName));
+                    "Failed to lock sequence after MERGE: " + sequenceName));
         }
 
         long nextVal = seq.getCurrentValue() + 1;

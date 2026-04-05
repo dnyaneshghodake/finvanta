@@ -62,7 +62,12 @@ public class DbSequence {
     @Column(name = "current_value", nullable = false)
     private long currentValue = 0;
 
-    @Version
+    /**
+     * Row version for DDL compatibility. Not used for optimistic locking —
+     * this entity relies exclusively on PESSIMISTIC_WRITE via the repository.
+     * The @Version annotation is intentionally omitted to avoid spurious
+     * OptimisticLockException on top of the pessimistic lock.
+     */
     @Column(name = "version", nullable = false)
     private long version = 0;
 }

@@ -51,6 +51,18 @@ public class Transaction360Controller {
         // Extract everything after /txn360/voucher/
         String voucherNumber = fullPath.substring(
             (contextPath + "/txn360/voucher/").length());
+
+        // CBS: Validate extracted voucher number to prevent path traversal.
+        // Voucher format: VCH/{branchCode}/{YYYYMMDD}/{sequence}
+        // Only alphanumeric, forward slashes, and hyphens are valid.
+        if (voucherNumber.isEmpty() || !voucherNumber.matches("[A-Za-z0-9/_-]+")
+                || voucherNumber.contains("..")) {
+            ModelAndView mav = new ModelAndView("txn360/view");
+            mav.addObject("lookupType", "Voucher");
+            mav.addObject("lookupValue", "");
+            return mav;
+        }
+
         ModelAndView mav = new ModelAndView("txn360/view");
         mav.addAllObjects(transaction360Service.getByVoucher(voucherNumber));
         mav.addObject("lookupType", "Voucher");
