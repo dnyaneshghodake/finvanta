@@ -18,6 +18,9 @@ import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
 import com.finvanta.service.TransactionLimitService;
+import com.finvanta.transaction.TransactionEngine;
+import com.finvanta.transaction.TransactionRequest;
+import com.finvanta.transaction.TransactionResult;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
@@ -68,6 +71,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final BusinessDateService businessDateService;
     private final ProductGLResolver glResolver;
     private final TransactionLimitService limitService;
+    private final TransactionEngine transactionEngine;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
                                    LoanApplicationRepository applicationRepository,
@@ -80,7 +84,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    LoanScheduleService scheduleService,
                                    BusinessDateService businessDateService,
                                    ProductGLResolver glResolver,
-                                   TransactionLimitService limitService) {
+                                   TransactionLimitService limitService,
+                                   TransactionEngine transactionEngine) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
@@ -93,6 +98,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.businessDateService = businessDateService;
         this.glResolver = glResolver;
         this.limitService = limitService;
+        this.transactionEngine = transactionEngine;
     }
 
     @Override
@@ -185,10 +191,9 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         LocalDate bizDate = businessDateService.getCurrentBusinessDate();
         String productType = account.getProductType();
 
-        // CBS: Transaction limit validation before disbursement
-        limitService.validateTransactionLimit(disbursementAmount, "DISBURSEMENT");
-
-        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
+        // TransactionEngine enforces: amount validation → business date → day status → branch →
+        // transaction limits → maker-checker → GL posting → voucher → audit trail
         List<JournalLineRequest> journalLines = List.of(
             new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.DEBIT, disbursementAmount,
                 "Loan disbursement - " + accountNumber),
@@ -196,25 +201,32 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Bank credit for loan disbursement - " + accountNumber)
         );
 
-        var journalEntry = accountingService.postJournalEntry(
-            bizDate,
-            "Loan disbursement for account " + accountNumber,
-            "LOAN", accountNumber,
-            journalLines
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("LOAN")
+                .transactionType("DISBURSEMENT")
+                .accountReference(accountNumber)
+                .amount(disbursementAmount)
+                .valueDate(bizDate)
+                .branchCode(account.getBranch().getBranchCode())
+                .productType(productType)
+                .narration("Loan disbursement for account " + accountNumber)
+                .journalLines(journalLines)
+                .build()
         );
 
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.DISBURSEMENT);
         txn.setAmount(disbursementAmount);
         txn.setPrincipalComponent(disbursementAmount);
         txn.setValueDate(bizDate);
-        txn.setPostingDate(LocalDateTime.now());
+        txn.setPostingDate(txnResult.getPostingDate());
         txn.setBalanceAfter(disbursementAmount);
-        txn.setNarration("Loan disbursement");
-        txn.setJournalEntryId(journalEntry.getId());
+        txn.setNarration("Loan disbursement | Voucher: " + txnResult.getVoucherNumber());
+        txn.setJournalEntryId(txnResult.getJournalEntryId());
         txn.setCreatedBy(currentUser);
         transactionRepository.save(txn);
 
@@ -237,11 +249,16 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         // CBS: Generate amortization schedule at disbursement per Finacle/Temenos standards
         scheduleService.generateSchedule(saved, saved.getDisbursementDate());
 
+        // NOTE: Audit trail for the financial posting is handled by TransactionEngine (Step 10).
+        // Module-level audit for the account state change is separate.
         auditService.logEvent("LoanAccount", saved.getId(), "DISBURSE",
             null, saved.getAccountNumber(), "LOAN_ACCOUNTS",
-            "Loan disbursed: " + disbursementAmount + ", schedule generated");
+            "Loan disbursed: " + disbursementAmount + ", schedule generated"
+                + " | Voucher: " + txnResult.getVoucherNumber()
+                + " | Journal: " + txnResult.getJournalRef());
 
-        log.info("Loan disbursed: accNo={}, amount={}, schedule generated", accountNumber, disbursementAmount);
+        log.info("Loan disbursed: accNo={}, amount={}, voucher={}, journal={}",
+            accountNumber, disbursementAmount, txnResult.getVoucherNumber(), txnResult.getJournalRef());
 
         return saved;
     }
@@ -453,16 +470,13 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Repayment amount must be positive");
         }
 
-        // CBS: Transaction limit validation before repayment
-        limitService.validateTransactionLimit(amount, "REPAYMENT");
-
         BigDecimal[] components = interestRule.splitEmiComponents(
             amount, account.getOutstandingPrincipal(), account.getInterestRate()
         );
         BigDecimal principalPaid = components[0];
         BigDecimal interestPaid = components[1];
 
-        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
         String productType = account.getProductType();
         List<JournalLineRequest> journalLines = new java.util.ArrayList<>();
         journalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.DEBIT, amount,
@@ -476,11 +490,18 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Interest repayment - " + accountNumber));
         }
 
-        var journalEntry = accountingService.postJournalEntry(
-            valueDate,
-            "Loan repayment for " + accountNumber,
-            "LOAN", accountNumber,
-            journalLines
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("LOAN")
+                .transactionType("REPAYMENT")
+                .accountReference(accountNumber)
+                .amount(amount)
+                .valueDate(valueDate)
+                .branchCode(account.getBranch().getBranchCode())
+                .productType(productType)
+                .narration("Loan repayment for " + accountNumber)
+                .journalLines(journalLines)
+                .build()
         );
 
         account.setOutstandingPrincipal(
@@ -533,17 +554,18 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.REPAYMENT_PRINCIPAL);
         txn.setAmount(amount);
         txn.setPrincipalComponent(principalPaid);
         txn.setInterestComponent(interestPaid);
         txn.setValueDate(valueDate);
-        txn.setPostingDate(LocalDateTime.now());
+        txn.setPostingDate(txnResult.getPostingDate());
         txn.setBalanceAfter(account.getTotalOutstanding());
-        txn.setNarration("EMI repayment - Principal: " + principalPaid + ", Interest: " + interestPaid);
-        txn.setJournalEntryId(journalEntry.getId());
+        txn.setNarration("EMI repayment - P:" + principalPaid + " I:" + interestPaid
+            + " | Voucher: " + txnResult.getVoucherNumber());
+        txn.setJournalEntryId(txnResult.getJournalEntryId());
         txn.setIdempotencyKey(idempotencyKey);
         txn.setCreatedBy(currentUser);
         LoanTransaction savedTxn = transactionRepository.save(txn);
@@ -557,12 +579,17 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             log.warn("Schedule update failed for repayment {}: {}", accountNumber, e.getMessage());
         }
 
+        // NOTE: Financial posting audit is handled by TransactionEngine (Step 10).
+        // Module-level audit for subledger state change:
         auditService.logEvent("LoanAccount", account.getId(), "REPAYMENT",
             null, savedTxn.getTransactionRef(), "LOAN_ACCOUNTS",
-            "Repayment: " + amount + " (P:" + principalPaid + " I:" + interestPaid + ")");
+            "Repayment: " + amount + " (P:" + principalPaid + " I:" + interestPaid + ")"
+                + " | Voucher: " + txnResult.getVoucherNumber()
+                + " | Journal: " + txnResult.getJournalRef());
 
-        log.info("Repayment processed: accNo={}, amount={}, principal={}, interest={}",
-            accountNumber, amount, principalPaid, interestPaid);
+        log.info("Repayment processed: accNo={}, amount={}, principal={}, interest={}, voucher={}, journal={}",
+            accountNumber, amount, principalPaid, interestPaid,
+            txnResult.getVoucherNumber(), txnResult.getJournalRef());
 
         return savedTxn;
     }
