@@ -50,8 +50,14 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /**
+     * Uses DelegatingPasswordEncoder (Spring Security standard).
+     * Supports {bcrypt}, {noop}, {scrypt}, {argon2} prefixes.
+     * Seed data uses {bcrypt} hashes. Production passwords must always be {bcrypt}.
+     */
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
+        return org.springframework.security.crypto.factory.PasswordEncoderFactories
+            .createDelegatingPasswordEncoder();
     }
 }

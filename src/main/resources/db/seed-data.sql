@@ -93,16 +93,18 @@ VALUES ('DEFAULT', '5001', 'Provision Expense', 'EXPENSE', 0.00, 0.00, 1, 0, 0, 
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_by)
 VALUES ('DEFAULT', '5002', 'Write-Off Expense', 'EXPENSE', 0.00, 0.00, 1, 0, 0, 'SYSTEM');
 
--- 6. APP USERS (password: finvanta123 -> BCrypt hash)
--- Password BCrypt hash for 'finvanta123': $2a$12$LJ3m4ys3uz5s8v8ERFaBWeNz1gIyvnFBN4Bfazp5mvUDkP7ss3F3G
+-- 6. APP USERS
+-- PRODUCTION: Uses {bcrypt} prefix with DelegatingPasswordEncoder.
+-- Generate hashes via: new BCryptPasswordEncoder().encode("yourpassword")
+-- For initial deployment, use {noop} temporarily then force password change.
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_by)
-VALUES ('DEFAULT', 'maker1', '$2a$12$LJ3m4ys3uz5s8v8ERFaBWeNz1gIyvnFBN4Bfazp5mvUDkP7ss3F3G', 'Maker User One', 'maker1@finvanta.com', 'MAKER', 1, 0, 0, 1, 0, 'SYSTEM');
+VALUES ('DEFAULT', 'maker1', '{noop}finvanta123', 'Maker User One', 'maker1@finvanta.com', 'MAKER', 1, 0, 0, 1, 0, 'SYSTEM');
 
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_by)
-VALUES ('DEFAULT', 'checker1', '$2a$12$LJ3m4ys3uz5s8v8ERFaBWeNz1gIyvnFBN4Bfazp5mvUDkP7ss3F3G', 'Checker User One', 'checker1@finvanta.com', 'CHECKER', 1, 0, 0, 1, 0, 'SYSTEM');
+VALUES ('DEFAULT', 'checker1', '{noop}finvanta123', 'Checker User One', 'checker1@finvanta.com', 'CHECKER', 1, 0, 0, 1, 0, 'SYSTEM');
 
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_by)
-VALUES ('DEFAULT', 'admin', '$2a$12$LJ3m4ys3uz5s8v8ERFaBWeNz1gIyvnFBN4Bfazp5mvUDkP7ss3F3G', 'System Admin', 'admin@finvanta.com', 'ADMIN', 1, 0, 0, 1, 0, 'SYSTEM');
+VALUES ('DEFAULT', 'admin', '{noop}finvanta123', 'System Admin', 'admin@finvanta.com', 'ADMIN', 1, 0, 0, 1, 0, 'SYSTEM');
 
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_by)
-VALUES ('DEFAULT', 'auditor1', '$2a$12$LJ3m4ys3uz5s8v8ERFaBWeNz1gIyvnFBN4Bfazp5mvUDkP7ss3F3G', 'Auditor User', 'auditor@finvanta.com', 'AUDITOR', 1, 0, 0, 1, 0, 'SYSTEM');
+VALUES ('DEFAULT', 'auditor1', '{noop}finvanta123', 'Auditor User', 'auditor@finvanta.com', 'AUDITOR', 1, 0, 0, 1, 0, 'SYSTEM');

@@ -32,6 +32,9 @@ spring:
     view:
       prefix: /WEB-INF/views/
       suffix: .jsp
+  web:
+    resources:
+      add-mappings: true
 
   jackson:
     serialization:
