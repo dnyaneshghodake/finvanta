@@ -11,7 +11,6 @@ import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.BatchStatus;
 import com.finvanta.domain.enums.DayStatus;
 import com.finvanta.domain.enums.DebitCredit;
-import com.finvanta.domain.rules.NpaClassificationRule;
 import com.finvanta.domain.rules.ProvisioningRule;
 import com.finvanta.repository.BatchJobRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
@@ -57,7 +56,6 @@ public class BatchService {
     private final BusinessCalendarRepository calendarRepository;
     private final LoanAccountRepository loanAccountRepository;
     private final LoanAccountService loanAccountService;
-    private final NpaClassificationRule npaRule;
     private final ProvisioningRule provisioningRule;
     private final AuditService auditService;
     private final ReconciliationService reconciliationService;
@@ -78,19 +76,17 @@ public class BatchService {
                         BusinessCalendarRepository calendarRepository,
                         LoanAccountRepository loanAccountRepository,
                         LoanAccountService loanAccountService,
-                        NpaClassificationRule npaRule,
                         ProvisioningRule provisioningRule,
                         AuditService auditService,
                         ReconciliationService reconciliationService,
                         AccountingService accountingService,
-                        com.finvanta.service.LoanScheduleService scheduleService,
-                        com.finvanta.service.TransactionBatchService transactionBatchService,
+                        LoanScheduleService scheduleService,
+                        TransactionBatchService transactionBatchService,
                         ProductGLResolver glResolver) {
         this.batchJobRepository = batchJobRepository;
         this.calendarRepository = calendarRepository;
         this.loanAccountRepository = loanAccountRepository;
         this.loanAccountService = loanAccountService;
-        this.npaRule = npaRule;
         this.provisioningRule = provisioningRule;
         this.auditService = auditService;
         this.reconciliationService = reconciliationService;
