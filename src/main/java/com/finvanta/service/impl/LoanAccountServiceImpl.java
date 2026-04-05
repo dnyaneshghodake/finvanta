@@ -1108,7 +1108,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         auditService.logEvent("LoanTransaction", original.getId(), "REVERSAL",
             transactionRef, savedReversal.getTransactionRef(), "LOAN_ACCOUNTS",
-            "Transaction reversed: " + transactionRef + " → " + savedReversal.getTransactionRef()
+            "Transaction reversed: " + transactionRef + " -> " + savedReversal.getTransactionRef()
                 + ", reason: " + reason + ", P:" + principalToRestore
                 + " I:" + interestToRestore + " Pen:" + penaltyToRestore);
 
