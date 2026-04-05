@@ -122,6 +122,24 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
     private SecretKeySpec getKeySpec() {
         String hexKey = System.getenv("FINVANTA_PII_KEY");
         if (hexKey == null || hexKey.length() != 64) {
+            // Per RBI IT Governance Direction 2023: production systems MUST NOT use
+            // a hardcoded encryption key. The default key is for development/testing ONLY.
+            // In production, set FINVANTA_PII_KEY environment variable (64 hex chars = 256-bit AES key).
+            //
+            // Check if we're in a production-like environment by looking for common indicators.
+            // If FINVANTA_PII_KEY is explicitly set but malformed, always fail.
+            String profile = System.getenv("SPRING_PROFILES_ACTIVE");
+            if (hexKey != null && hexKey.length() != 64) {
+                // Key was explicitly set but is malformed — this is always an error
+                throw new RuntimeException("FINVANTA_PII_KEY is set but invalid: expected 64 hex chars, got "
+                    + hexKey.length() + " chars. Cannot encrypt PII data.");
+            }
+            if (profile != null && (profile.contains("prod") || profile.contains("staging"))) {
+                throw new RuntimeException("FINVANTA_PII_KEY environment variable is required in "
+                    + profile + " profile. Cannot use default dev key for PII encryption.");
+            }
+            log.warn("FINVANTA_PII_KEY not set — using default dev key. "
+                + "This is ONLY acceptable in development/test environments.");
             hexKey = DEFAULT_DEV_KEY;
         }
         byte[] keyBytes = hexStringToBytes(hexKey);

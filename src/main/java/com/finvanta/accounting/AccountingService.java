@@ -1,7 +1,6 @@
 package com.finvanta.accounting;
 
 import com.finvanta.audit.AuditService;
-import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.domain.entity.JournalEntryLine;
@@ -75,34 +74,15 @@ public class AccountingService {
                 "Journal entry must have at least 2 lines (double-entry)");
         }
 
-        // CBS Day Control: Validate that the business day allows transactions.
-        // Per Finacle/Temenos, financial postings are only allowed when day status
-        // is DAY_OPEN. During EOD_RUNNING, NOT_OPENED, or DAY_CLOSED, all new
-        // postings must be rejected. EOD-generated postings (PROVISIONING, SUSPENSE,
-        // SYSTEM batches) are allowed during EOD_RUNNING as they are part of the
-        // batch process itself.
-        BusinessCalendar calendar = calendarRepository
-            .findByTenantIdAndBusinessDate(tenantId, valueDate).orElse(null);
-        if (calendar != null) {
-            // EOD system postings are allowed during EOD_RUNNING.
-            // LOAN module is included because interest accrual and penal interest
-            // are posted by the EOD batch engine with sourceModule="LOAN".
-            boolean isEodSystemPosting = "PROVISIONING".equals(sourceModule)
-                || "SUSPENSE".equals(sourceModule)
-                || "WRITE_OFF".equals(sourceModule)
-                || "LOAN".equals(sourceModule)
-                || "REVERSAL".equals(sourceModule);
-            if (!calendar.getDayStatus().isTransactionAllowed() && !calendar.isEodRunning()) {
-                throw new BusinessException("DAY_NOT_OPEN",
-                    "Cannot post transactions — business date " + valueDate
-                        + " is in " + calendar.getDayStatus() + " state");
-            }
-            if (calendar.isEodRunning() && !isEodSystemPosting) {
-                throw new BusinessException("EOD_IN_PROGRESS",
-                    "Cannot post transactions during EOD processing for date " + valueDate
-                        + ". Wait for EOD to complete.");
-            }
-        }
+        // CBS Day Control: Day-status validation is enforced by TransactionEngine (Step 3)
+        // for all client-initiated transactions, and by BatchService.validateAndLockBusinessDate()
+        // for EOD-initiated postings. AccountingService does NOT duplicate this check to avoid
+        // divergent allowlists (the engine uses request.isSystemGenerated() while this layer
+        // previously used a hardcoded sourceModule allowlist — a security gap).
+        //
+        // Direct callers of AccountingService (EOD batch steps: accrual, provisioning,
+        // suspense, write-off) are already within the EOD_RUNNING lifecycle and have been
+        // validated by BatchService before reaching here.
 
         // CBS Batch Control: Find an OPEN batch for this business date.
         // Per Finacle/Temenos, all transactions must be tagged to a batch.

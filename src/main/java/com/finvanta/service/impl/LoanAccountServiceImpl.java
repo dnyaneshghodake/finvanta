@@ -538,12 +538,18 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         // is a best-effort intra-day update. EOD is the authoritative DPD calculation.
         account.setUpdatedBy(currentUser);
 
-        if (account.getRemainingTenure() != null && account.getRemainingTenure() > 0) {
-            account.setRemainingTenure(account.getRemainingTenure() - 1);
-        }
-
-        if (account.getNextEmiDate() != null) {
-            account.setNextEmiDate(account.getNextEmiDate().plusMonths(1));
+        // CBS: Remaining tenure and next EMI date advance only when a full EMI-equivalent
+        // payment is made. Partial payments (amount < EMI) should not advance the schedule.
+        // Per Finacle/Temenos loan repayment module, tenure decrement is tied to the
+        // installment schedule, not to individual payment events. Two partial payments
+        // in the same month should not decrement tenure twice.
+        if (account.getEmiAmount() != null && amount.compareTo(account.getEmiAmount()) >= 0) {
+            if (account.getRemainingTenure() != null && account.getRemainingTenure() > 0) {
+                account.setRemainingTenure(account.getRemainingTenure() - 1);
+            }
+            if (account.getNextEmiDate() != null) {
+                account.setNextEmiDate(account.getNextEmiDate().plusMonths(1));
+            }
         }
 
         // CBS: Loan closure only when all components are zero (principal + interest + penal)
@@ -903,30 +909,74 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Cannot reverse transaction on " + account.getStatus() + " account");
         }
 
-        // Post contra journal entry — exact reverse of original GL lines
-        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        // Post contra journal entry — exact reverse of original GL lines.
+        // Per Finacle TRAN_REVERSAL / Temenos REVERSAL.TRANSACTION, the reversal must
+        // mirror the original GL legs with swapped DR/CR. Each transaction type has
+        // different GL routing, so we must build reversal lines per type.
         String productType = account.getProductType();
         BigDecimal amount = original.getAmount();
 
         List<JournalLineRequest> reversalLines = new java.util.ArrayList<>();
-        // Reverse the bank/cash side
-        reversalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.CREDIT, amount,
-            "REVERSAL: " + transactionRef + " - " + reason));
-        // Reverse the asset/receivable side
-        if (original.getPrincipalComponent().compareTo(BigDecimal.ZERO) > 0) {
-            reversalLines.add(new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.DEBIT,
-                original.getPrincipalComponent(),
-                "REVERSAL principal: " + transactionRef));
-        }
-        if (original.getInterestComponent().compareTo(BigDecimal.ZERO) > 0) {
-            reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT,
-                original.getInterestComponent(),
-                "REVERSAL interest: " + transactionRef));
-        }
-        if (original.getPenaltyComponent().compareTo(BigDecimal.ZERO) > 0) {
-            reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT,
-                original.getPenaltyComponent(),
-                "REVERSAL penalty: " + transactionRef));
+
+        if (original.getTransactionType() == TransactionType.REPAYMENT_PRINCIPAL
+                || original.getTransactionType() == TransactionType.PREPAYMENT) {
+            // Original: DR Bank Ops / CR Loan Asset + Interest Receivable
+            // Reversal: CR Bank Ops / DR Loan Asset + Interest Receivable
+            reversalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.CREDIT, amount,
+                "REVERSAL: " + transactionRef + " - " + reason));
+            if (original.getPrincipalComponent().compareTo(BigDecimal.ZERO) > 0) {
+                reversalLines.add(new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.DEBIT,
+                    original.getPrincipalComponent(), "REVERSAL principal: " + transactionRef));
+            }
+            if (original.getInterestComponent().compareTo(BigDecimal.ZERO) > 0) {
+                reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT,
+                    original.getInterestComponent(), "REVERSAL interest: " + transactionRef));
+            }
+            if (original.getPenaltyComponent().compareTo(BigDecimal.ZERO) > 0) {
+                reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT,
+                    original.getPenaltyComponent(), "REVERSAL penalty: " + transactionRef));
+            }
+        } else if (original.getTransactionType() == TransactionType.DISBURSEMENT) {
+            // Original: DR Loan Asset / CR Bank Ops
+            // Reversal: CR Loan Asset / DR Bank Ops
+            reversalLines.add(new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.CREDIT, amount,
+                "REVERSAL disbursement asset: " + transactionRef));
+            reversalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.DEBIT, amount,
+                "REVERSAL disbursement bank: " + transactionRef + " - " + reason));
+        } else if (original.getTransactionType() == TransactionType.INTEREST_ACCRUAL) {
+            // Original: DR Interest Receivable / CR Interest Income
+            // Reversal: CR Interest Receivable / DR Interest Income
+            reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.CREDIT, amount,
+                "REVERSAL accrual receivable: " + transactionRef));
+            reversalLines.add(new JournalLineRequest(glResolver.getInterestIncomeGL(productType), DebitCredit.DEBIT, amount,
+                "REVERSAL accrual income: " + transactionRef + " - " + reason));
+        } else if (original.getTransactionType() == TransactionType.PENALTY_CHARGE) {
+            // Original: DR Interest Receivable / CR Penal Income
+            // Reversal: CR Interest Receivable / DR Penal Income
+            reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.CREDIT, amount,
+                "REVERSAL penal receivable: " + transactionRef));
+            reversalLines.add(new JournalLineRequest(glResolver.getPenalIncomeGL(productType), DebitCredit.DEBIT, amount,
+                "REVERSAL penal income: " + transactionRef + " - " + reason));
+        } else if (original.getTransactionType() == TransactionType.FEE_CHARGE) {
+            // Original: DR Bank Ops / CR Fee Income
+            // Reversal: CR Bank Ops / DR Fee Income
+            reversalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.CREDIT, amount,
+                "REVERSAL fee bank: " + transactionRef));
+            reversalLines.add(new JournalLineRequest(glResolver.getFeeIncomeGL(productType), DebitCredit.DEBIT, amount,
+                "REVERSAL fee income: " + transactionRef + " - " + reason));
+        } else {
+            // Fallback for unknown types — generic reversal (best effort)
+            log.warn("Reversal for unknown transaction type {}: using generic GL routing", original.getTransactionType());
+            reversalLines.add(new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.CREDIT, amount,
+                "REVERSAL: " + transactionRef + " - " + reason));
+            if (original.getPrincipalComponent().compareTo(BigDecimal.ZERO) > 0) {
+                reversalLines.add(new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.DEBIT,
+                    original.getPrincipalComponent(), "REVERSAL principal: " + transactionRef));
+            }
+            if (original.getInterestComponent().compareTo(BigDecimal.ZERO) > 0) {
+                reversalLines.add(new JournalLineRequest(glResolver.getInterestReceivableGL(productType), DebitCredit.DEBIT,
+                    original.getInterestComponent(), "REVERSAL interest: " + transactionRef));
+            }
         }
 
         var journalEntry = accountingService.postJournalEntry(

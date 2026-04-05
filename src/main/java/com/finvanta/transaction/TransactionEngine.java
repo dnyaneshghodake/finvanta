@@ -65,8 +65,19 @@ public class TransactionEngine {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionEngine.class);
 
-    /** Voucher sequence — branch-prefixed, date-partitioned in production */
-    private static final AtomicLong VOUCHER_SEQ = new AtomicLong(1);
+    /**
+     * Voucher sequence — branch-prefixed, date-partitioned in production.
+     *
+     * Seeded from System.nanoTime() to avoid collisions across JVM restarts.
+     * Without this, every restart resets to 1, producing duplicate voucher numbers
+     * for the same branch+date. Per Finacle TRAN_POSTING, voucher numbers must be
+     * globally unique within a business day.
+     *
+     * Production: Replace with DB sequence partitioned by branch+date:
+     *   CREATE SEQUENCE voucher_seq_branch_date START WITH 1 INCREMENT BY 1
+     */
+    private static final AtomicLong VOUCHER_SEQ = new AtomicLong(
+        Math.abs(System.nanoTime() % 100000));
 
     private final AccountingService accountingService;
     private final TransactionLimitService limitService;
@@ -170,10 +181,11 @@ public class TransactionEngine {
         // ================================================================
         // STEP 6: Transaction Limit Validation
         // Per-role per-transaction + daily aggregate (skip for system-generated)
+        // Uses CBS business date (not system date) for daily aggregate calculation
         // ================================================================
         if (!request.isSystemGenerated()) {
             limitService.validateTransactionLimit(
-                request.getAmount(), request.getTransactionType());
+                request.getAmount(), request.getTransactionType(), request.getValueDate());
         }
 
         // ================================================================
