@@ -528,7 +528,18 @@ CREATE TABLE transaction_limits (
 );
 CREATE INDEX idx_txnlimit_tenant_role ON transaction_limits (tenant_id, role, transaction_type);
 
--- 19. APP USERS
+-- 19. DB SEQUENCES (Finacle SEQ_MASTER / Temenos EB.SEQUENCE — portable sequence generator)
+CREATE TABLE db_sequences (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    sequence_name   VARCHAR(100)    NOT NULL,
+    current_value   BIGINT          NOT NULL DEFAULT 0,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    CONSTRAINT uq_dbseq_tenant_name UNIQUE (tenant_id, sequence_name)
+);
+CREATE INDEX idx_dbseq_tenant_name ON db_sequences (tenant_id, sequence_name);
+
+-- 20. APP USERS
 CREATE TABLE app_users (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,

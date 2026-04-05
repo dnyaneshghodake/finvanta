@@ -6,6 +6,7 @@ import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.BranchRepository;
+import com.finvanta.service.SequenceGeneratorService;
 import com.finvanta.service.TransactionLimitService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
@@ -18,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * CBS Generic Transaction Engine per Finacle TRAN_POSTING / Temenos TRANSACTION framework.
@@ -65,56 +65,25 @@ public class TransactionEngine {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionEngine.class);
 
-    /**
-     * Voucher sequence — branch-prefixed, date-partitioned in production.
-     *
-     * Seeded from System.nanoTime() combined with a JVM-instance discriminator
-     * to avoid collisions across:
-     *   1. JVM restarts (nanoTime changes each restart)
-     *   2. Multiple JVM instances (PID/hostname provides instance isolation)
-     *
-     * Per Finacle TRAN_POSTING, voucher numbers must be globally unique within
-     * a business day. The 6-digit sequence formatted into the voucher allows
-     * ~900K vouchers per instance before overflow to 7 digits (still safe —
-     * VARCHAR(40) column has ample headroom).
-     *
-     * Production: Replace with DB sequence partitioned by branch+date:
-     *   CREATE SEQUENCE voucher_seq_branch_date START WITH 1 INCREMENT BY 1
-     *   This eliminates all in-memory collision risks.
-     */
-    private static final AtomicLong VOUCHER_SEQ = new AtomicLong(initVoucherSeed());
-
-    /**
-     * Generates a collision-resistant seed combining nanoTime + JVM identity.
-     * Each JVM instance gets a different starting range, preventing overlap
-     * when multiple instances run concurrently (e.g., HA/cluster deployment).
-     *
-     * Range: 0–899,999 (fits in 6-digit format). Each instance occupies a
-     * different band within this range due to the combined hash.
-     */
-    private static long initVoucherSeed() {
-        long timePart = Math.abs(System.nanoTime());
-        long instancePart = Math.abs((long) ProcessHandle.current().pid()
-            * 31L + Runtime.getRuntime().hashCode());
-        return Math.abs((timePart ^ instancePart) % 900000);
-    }
-
     private final AccountingService accountingService;
     private final TransactionLimitService limitService;
     private final BusinessCalendarRepository calendarRepository;
     private final BranchRepository branchRepository;
     private final AuditService auditService;
+    private final SequenceGeneratorService sequenceGenerator;
 
     public TransactionEngine(AccountingService accountingService,
                               TransactionLimitService limitService,
                               BusinessCalendarRepository calendarRepository,
                               BranchRepository branchRepository,
-                              AuditService auditService) {
+                              AuditService auditService,
+                              SequenceGeneratorService sequenceGenerator) {
         this.accountingService = accountingService;
         this.limitService = limitService;
         this.calendarRepository = calendarRepository;
         this.branchRepository = branchRepository;
         this.auditService = auditService;
+        this.sequenceGenerator = sequenceGenerator;
     }
 
     /**
@@ -335,13 +304,21 @@ public class TransactionEngine {
      * Generates a voucher number per Finacle/Temenos convention.
      * Format: VCH/{branchCode}/{YYYYMMDD}/{sequence}
      *
-     * In production, this should use a DB sequence partitioned by branch+date.
-     * The current implementation uses an AtomicLong for single-JVM safety.
+     * Uses DB-backed sequence partitioned by branch+date via SequenceGeneratorService.
+     * This guarantees globally unique voucher numbers across:
+     *   - JVM restarts (sequence persisted in DB)
+     *   - Multiple JVM instances (pessimistic lock serializes allocation)
+     *   - Cluster/HA deployments (single source of truth)
+     *
+     * Per Finacle TRAN_POSTING: voucher numbers must be unique within a business day
+     * per branch. The sequence name "VOUCHER_{branch}_{date}" ensures daily reset
+     * semantics — each new business date starts a new sequence automatically.
      */
     private String generateVoucherNumber(String branchCode, LocalDate valueDate) {
         String branch = branchCode != null ? branchCode : "HQ";
         String dateStr = valueDate.toString().replace("-", "");
-        long seq = VOUCHER_SEQ.incrementAndGet();
-        return "VCH/" + branch + "/" + dateStr + "/" + String.format("%06d", seq);
+        String seqName = "VOUCHER_" + branch + "_" + dateStr;
+        String seq = sequenceGenerator.nextFormattedValue(seqName, 6);
+        return "VCH/" + branch + "/" + dateStr + "/" + seq;
     }
 }
