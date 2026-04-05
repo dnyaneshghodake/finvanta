@@ -63,8 +63,9 @@
                             <td>
                                 <c:choose>
                                     <c:when test="${job.status == 'COMPLETED'}"><span class="fv-badge fv-badge-active"><c:out value="${job.status}" /></span></c:when>
+                                    <c:when test="${job.status == 'PARTIALLY_COMPLETED'}"><span class="fv-badge fv-badge-pending"><c:out value="${job.status}" /></span></c:when>
                                     <c:when test="${job.status == 'FAILED'}"><span class="fv-badge fv-badge-rejected"><c:out value="${job.status}" /></span></c:when>
-                                    <c:when test="${job.status == 'RUNNING'}"><span class="fv-badge fv-badge-pending"><c:out value="${job.status}" /></span></c:when>
+                                    <c:when test="${job.status == 'RUNNING'}"><span class="fv-badge fv-badge-approved"><c:out value="${job.status}" /></span></c:when>
                                     <c:otherwise><span class="fv-badge"><c:out value="${job.status}" /></span></c:otherwise>
                                 </c:choose>
                             </td>

@@ -33,6 +33,13 @@
             </div>
         </div>
         <div class="col">
+            <div class="fv-stat-card stat-warning">
+                <div class="stat-icon"><i class="bi bi-exclamation-circle"></i></div>
+                <div class="stat-value"><c:out value="${smaAccounts}" default="0" /></div>
+                <div class="stat-label">SMA Accounts</div>
+            </div>
+        </div>
+        <div class="col">
             <div class="fv-stat-card stat-danger">
                 <div class="stat-icon"><i class="bi bi-exclamation-triangle"></i></div>
                 <div class="stat-value"><c:out value="${npaAccounts}" default="0" /></div>
@@ -56,6 +63,44 @@
             </div>
         </div>
     </div>
+
+    <!-- RBI Key Financial Ratios -->
+    <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+    <div class="row g-3 mb-3">
+        <div class="col">
+            <div class="fv-stat-card stat-danger">
+                <div class="stat-icon"><i class="bi bi-graph-down-arrow"></i></div>
+                <div class="stat-value amount">
+                    <fmt:formatNumber value="${npaOutstanding}" type="currency" currencySymbol="" maxFractionDigits="0" />
+                </div>
+                <div class="stat-label">NPA Outstanding (INR)</div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="fv-stat-card">
+                <div class="stat-icon"><i class="bi bi-shield-check"></i></div>
+                <div class="stat-value amount">
+                    <fmt:formatNumber value="${totalProvisioning}" type="currency" currencySymbol="" maxFractionDigits="0" />
+                </div>
+                <div class="stat-label">Total Provisioning (INR)</div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="fv-stat-card ${grossNpaRatio > 5 ? 'stat-danger' : grossNpaRatio > 2 ? 'stat-warning' : 'stat-success'}">
+                <div class="stat-icon"><i class="bi bi-percent"></i></div>
+                <div class="stat-value"><fmt:formatNumber value="${grossNpaRatio}" maxFractionDigits="2" />%</div>
+                <div class="stat-label">Gross NPA Ratio</div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="fv-stat-card ${provisionCoverage >= 70 ? 'stat-success' : provisionCoverage >= 50 ? 'stat-warning' : 'stat-danger'}">
+                <div class="stat-icon"><i class="bi bi-shield-fill-check"></i></div>
+                <div class="stat-value"><fmt:formatNumber value="${provisionCoverage}" maxFractionDigits="2" />%</div>
+                <div class="stat-label">Provision Coverage</div>
+            </div>
+        </div>
+    </div>
+    </c:if>
 
     <!-- Quick Actions (role-gated per CBS guidelines) -->
     <div class="fv-card">

@@ -49,6 +49,14 @@
                 <tr><td class="fw-bold">Last Payment Date</td><td><c:out value="${account.lastPaymentDate}" /></td></tr>
                 <tr><td class="fw-bold">Risk Category</td><td><c:out value="${account.riskCategory}" default="--" /></td></tr>
                 <tr><td class="fw-bold">Collateral</td><td><c:out value="${account.collateralReference}" default="Unsecured" /></td></tr>
+                <tr><td class="fw-bold">Outstanding Interest</td><td class="amount"><fmt:formatNumber value="${account.outstandingInterest}" type="number" maxFractionDigits="2" /> INR</td></tr>
+                <tr><td class="fw-bold">Penal Interest Accrued</td><td class="amount"><fmt:formatNumber value="${account.penalInterestAccrued}" type="number" maxFractionDigits="2" /> INR</td></tr>
+                <tr><td class="fw-bold">Total Outstanding</td><td class="amount fw-bold"><fmt:formatNumber value="${account.totalOutstanding}" type="number" maxFractionDigits="2" /> INR</td></tr>
+                <tr><td class="fw-bold">Overdue Principal</td><td class="amount"><fmt:formatNumber value="${account.overduePrincipal}" type="number" maxFractionDigits="2" /> INR</td></tr>
+                <tr><td class="fw-bold">Overdue Interest</td><td class="amount"><fmt:formatNumber value="${account.overdueInterest}" type="number" maxFractionDigits="2" /> INR</td></tr>
+                <tr><td class="fw-bold">Last Accrual Date</td><td><c:out value="${account.lastInterestAccrualDate}" default="--" /></td></tr>
+                <tr><td class="fw-bold">NPA Date</td><td><c:out value="${account.npaDate}" default="--" /></td></tr>
+                <tr><td class="fw-bold">NPA Classification Date</td><td><c:out value="${account.npaClassificationDate}" default="--" /></td></tr>
                 <tr><td class="fw-bold">Provisioning</td><td class="amount"><fmt:formatNumber value="${account.provisioningAmount}" type="number" maxFractionDigits="2" /> INR</td></tr>
                 </tbody>
             </table>
@@ -68,7 +76,7 @@
         </div>
     </c:if>
 
-    <c:if test="${account.disbursedAmount.unscaledValue() > 0 and not account.status.closed}">
+    <c:if test="${account.disbursedAmount.unscaledValue() > 0 and not account.status.terminal}">
         <div class="fv-card">
             <div class="card-header">Process Repayment</div>
             <div class="card-body">
@@ -84,6 +92,90 @@
                 </form>
             </div>
         </div>
+
+        <!-- CBS Prepayment/Foreclosure — per RBI Fair Lending Code 2023 -->
+        <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <div class="fv-card">
+            <div class="card-header">Prepayment / Foreclosure</div>
+            <div class="card-body">
+                <p class="text-muted">Pay off total outstanding to close the loan early. Per RBI Fair Lending Code 2023, no prepayment penalty on floating rate loans.</p>
+                <form method="post" action="${pageContext.request.contextPath}/loan/prepayment/${account.accountNumber}" class="fv-form">
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Total Outstanding (INR)</label>
+                            <input type="number" name="amount" class="form-control" step="0.01" min="1" required value="${account.totalOutstanding}" />
+                        </div>
+                    </div>
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-warning" data-confirm="Confirm prepayment/foreclosure? This will close the loan.">Prepay / Foreclose</button>
+                </form>
+            </div>
+        </div>
+        </c:if>
+
+        <!-- CBS Write-Off — ADMIN only, NPA accounts only -->
+        <c:if test="${account.status.npa and pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <div class="fv-card">
+            <div class="card-header text-danger">NPA Write-Off</div>
+            <div class="card-body">
+                <p class="text-danger">Write off this NPA account. This removes the loan asset from the balance sheet and is <strong>irreversible</strong>.</p>
+                <p>Outstanding Principal: <strong class="amount"><fmt:formatNumber value="${account.outstandingPrincipal}" type="number" maxFractionDigits="2" /> INR</strong></p>
+                <p>Provisioning Held: <strong class="amount"><fmt:formatNumber value="${account.provisioningAmount}" type="number" maxFractionDigits="2" /> INR</strong></p>
+                <form method="post" action="${pageContext.request.contextPath}/loan/write-off/${account.accountNumber}">
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-danger" data-confirm="CONFIRM WRITE-OFF: This action is irreversible and will remove ₹${account.outstandingPrincipal} from the balance sheet.">Write Off Account</button>
+                </form>
+            </div>
+        </div>
+        </c:if>
+    </c:if>
+
+    <!-- CBS Amortization Schedule -->
+    <c:if test="${not empty schedule}">
+    <div class="fv-card">
+        <div class="card-header">Amortization Schedule (${schedule.size()} installments)</div>
+        <div class="card-body">
+            <table class="table fv-table fv-datatable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Due Date</th>
+                        <th class="text-end">EMI</th>
+                        <th class="text-end">Principal</th>
+                        <th class="text-end">Interest</th>
+                        <th class="text-end">Closing Bal.</th>
+                        <th class="text-end">Paid</th>
+                        <th>Paid Date</th>
+                        <th>DPD</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="sched" items="${schedule}">
+                        <tr>
+                            <td><c:out value="${sched.installmentNumber}" /></td>
+                            <td><c:out value="${sched.dueDate}" /></td>
+                            <td class="amount"><fmt:formatNumber value="${sched.emiAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${sched.principalAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${sched.interestAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${sched.closingBalance}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${sched.paidAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td><c:out value="${sched.paidDate}" default="—" /></td>
+                            <td><c:if test="${sched.daysPastDue > 0}"><span class="fv-badge fv-badge-npa"><c:out value="${sched.daysPastDue}" /></span></c:if><c:if test="${sched.daysPastDue == 0}">0</c:if></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${sched.status == 'PAID'}"><span class="fv-badge fv-badge-active">PAID</span></c:when>
+                                    <c:when test="${sched.status == 'OVERDUE'}"><span class="fv-badge fv-badge-npa">OVERDUE</span></c:when>
+                                    <c:when test="${sched.status == 'PARTIALLY_PAID'}"><span class="fv-badge fv-badge-pending">PARTIAL</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-approved">SCHEDULED</span></c:otherwise>
+                                </c:choose>
+                            </td>
+                        </tr>
+                    </c:forEach>
+                </tbody>
+            </table>
+        </div>
+    </div>
     </c:if>
 
     <div class="fv-card">

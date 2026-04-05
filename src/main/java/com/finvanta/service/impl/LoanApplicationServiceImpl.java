@@ -9,6 +9,7 @@ import com.finvanta.domain.rules.LoanEligibilityRule;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanApplicationRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanApplicationService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
@@ -34,19 +35,22 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
     private final LoanEligibilityRule eligibilityRule;
     private final ApprovalWorkflowService workflowService;
     private final AuditService auditService;
+    private final BusinessDateService businessDateService;
 
     public LoanApplicationServiceImpl(LoanApplicationRepository applicationRepository,
                                        CustomerRepository customerRepository,
                                        BranchRepository branchRepository,
                                        LoanEligibilityRule eligibilityRule,
                                        ApprovalWorkflowService workflowService,
-                                       AuditService auditService) {
+                                       AuditService auditService,
+                                       BusinessDateService businessDateService) {
         this.applicationRepository = applicationRepository;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.eligibilityRule = eligibilityRule;
         this.workflowService = workflowService;
         this.auditService = auditService;
+        this.businessDateService = businessDateService;
     }
 
     @Override
@@ -72,7 +76,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         application.setBranch(branch);
         application.setApplicationNumber(ReferenceGenerator.generateApplicationNumber(branch.getBranchCode()));
         application.setStatus(ApplicationStatus.SUBMITTED);
-        application.setApplicationDate(LocalDate.now());
+        application.setApplicationDate(businessDateService.getCurrentBusinessDate());
         application.setCreatedBy(currentUser);
 
         LoanApplication saved = applicationRepository.save(application);
@@ -118,7 +122,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         ApplicationStatus previousStatus = app.getStatus();
         app.setStatus(ApplicationStatus.VERIFIED);
         app.setVerifiedBy(currentUser);
-        app.setVerifiedDate(LocalDate.now());
+        app.setVerifiedDate(businessDateService.getCurrentBusinessDate());
         app.setRemarks(remarks);
         app.setUpdatedBy(currentUser);
 
@@ -177,11 +181,16 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         app.setStatus(ApplicationStatus.APPROVED);
         app.setApprovedAmount(app.getRequestedAmount());
         app.setApprovedBy(currentUser);
-        app.setApprovedDate(LocalDate.now());
+        app.setApprovedDate(businessDateService.getCurrentBusinessDate());
         app.setRemarks(remarks);
         app.setUpdatedBy(currentUser);
 
         LoanApplication saved = applicationRepository.save(app);
+
+        // Resolve the APPROVE workflow — verifyApplication initiated it, approval completes it.
+        // Without this, the workflow stays in PENDING_APPROVAL forever.
+        workflowService.resolveExistingPendingWorkflow(
+            "LoanApplication", saved.getId(), currentUser, "Approved: " + remarks);
 
         auditService.logEvent("LoanApplication", saved.getId(), "APPROVE",
             previousStatus.name(), saved.getStatus().name(), "LOAN_ORIGINATION",
@@ -213,7 +222,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         ApplicationStatus previousStatus = app.getStatus();
         app.setStatus(ApplicationStatus.REJECTED);
         app.setRejectedBy(currentUser);
-        app.setRejectedDate(LocalDate.now());
+        app.setRejectedDate(businessDateService.getCurrentBusinessDate());
         app.setRejectionReason(reason);
         app.setUpdatedBy(currentUser);
 

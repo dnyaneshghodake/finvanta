@@ -52,7 +52,7 @@ public class AuditLog {
     @Column(name = "hash", nullable = false, length = 64)
     private String hash;
 
-    @Column(name = "previous_hash", length = 64)
+    @Column(name = "previous_hash", nullable = false, length = 64)
     private String previousHash;
 
     @Column(name = "module", length = 50)

@@ -20,6 +20,20 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * CBS Immutable Audit Trail Service.
+ *
+ * Per RBI guidelines on IT governance and Finacle/Temenos audit standards:
+ * - Every financial and administrative action is logged with before/after state
+ * - Audit records are append-only (immutable) — no updates or deletes allowed
+ * - Hash chain (SHA-256) ensures tamper detection (blockchain-style integrity)
+ * - Each record links to the previous via previousHash → GENESIS chain
+ * - Uses REQUIRES_NEW transaction propagation to ensure audit persistence
+ *   even if the parent transaction rolls back
+ *
+ * Captures: entity type, entity ID, action, user, IP address, timestamp,
+ * before/after JSON snapshots, and cryptographic hash chain.
+ */
 @Service
 public class AuditService {
 
@@ -93,11 +107,13 @@ public class AuditService {
             }
         }
 
-        // Verify the oldest record in the chain links to GENESIS
-        AuditLog oldest = logs.get(logs.size() - 1);
-        if (!"GENESIS".equals(oldest.getPreviousHash())) {
-            log.error("Audit chain integrity violation: oldest record id={} does not link to GENESIS", oldest.getId());
-            return false;
+        // Only verify GENESIS link if we have the complete chain (fewer records than page size)
+        if (logs.size() < 500) {
+            AuditLog oldest = logs.get(logs.size() - 1);
+            if (!"GENESIS".equals(oldest.getPreviousHash())) {
+                log.error("Audit chain integrity violation: oldest record id={} does not link to GENESIS", oldest.getId());
+                return false;
+            }
         }
 
         return true;

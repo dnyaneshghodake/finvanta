@@ -6,8 +6,10 @@ import com.finvanta.domain.enums.ApplicationStatus;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanTransactionRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanApplicationService;
+import com.finvanta.service.LoanScheduleService;
 import com.finvanta.util.TenantContext;
 import jakarta.validation.Valid;
 import org.springframework.stereotype.Controller;
@@ -17,7 +19,6 @@ import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 
 @Controller
 @RequestMapping("/loan")
@@ -25,17 +26,23 @@ public class LoanController {
 
     private final LoanApplicationService applicationService;
     private final LoanAccountService accountService;
+    private final LoanScheduleService scheduleService;
+    private final BusinessDateService businessDateService;
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
     private final LoanTransactionRepository transactionRepository;
 
     public LoanController(LoanApplicationService applicationService,
                            LoanAccountService accountService,
+                           LoanScheduleService scheduleService,
+                           BusinessDateService businessDateService,
                            CustomerRepository customerRepository,
                            BranchRepository branchRepository,
                            LoanTransactionRepository transactionRepository) {
         this.applicationService = applicationService;
         this.accountService = accountService;
+        this.scheduleService = scheduleService;
+        this.businessDateService = businessDateService;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.transactionRepository = transactionRepository;
@@ -156,6 +163,7 @@ public class LoanController {
         mav.addObject("account", account);
         mav.addObject("transactions",
             transactionRepository.findByTenantIdAndLoanAccountIdOrderByPostingDateDesc(tenantId, account.getId()));
+        mav.addObject("schedule", scheduleService.getSchedule(account.getId()));
         return mav;
     }
 
@@ -176,8 +184,40 @@ public class LoanController {
                                     @RequestParam BigDecimal amount,
                                     RedirectAttributes redirectAttributes) {
         try {
-            accountService.processRepayment(accountNumber, amount, LocalDate.now());
+            accountService.processRepayment(accountNumber, amount,
+                businessDateService.getCurrentBusinessDate());
             redirectAttributes.addFlashAttribute("success", "Repayment processed successfully");
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
+    /** CBS Prepayment/Foreclosure — MAKER/ADMIN. Pays off total outstanding and closes loan. */
+    @PostMapping("/prepayment/{accountNumber}")
+    public String processPrepayment(@PathVariable String accountNumber,
+                                     @RequestParam BigDecimal amount,
+                                     RedirectAttributes redirectAttributes) {
+        try {
+            accountService.processPrepayment(accountNumber, amount,
+                businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success",
+                "Loan prepaid/foreclosed successfully: " + accountNumber);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
+    /** CBS Write-Off — ADMIN only (enforced in SecurityConfig). NPA accounts only. */
+    @PostMapping("/write-off/{accountNumber}")
+    public String writeOffAccount(@PathVariable String accountNumber,
+                                   RedirectAttributes redirectAttributes) {
+        try {
+            accountService.writeOffAccount(accountNumber,
+                businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success",
+                "Loan written off successfully: " + accountNumber);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }

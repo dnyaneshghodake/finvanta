@@ -28,17 +28,31 @@
         <li class="nav-section">Accounting</li>
         <li><a href="${pageContext.request.contextPath}/accounting/trial-balance" class="nav-link"><i class="bi bi-journal-bookmark"></i><span class="nav-text">Trial Balance</span></a></li>
         <li><a href="${pageContext.request.contextPath}/accounting/journal-entries" class="nav-link"><i class="bi bi-journal-text"></i><span class="nav-text">Journal Entries</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/reconciliation/report" class="nav-link"><i class="bi bi-arrow-up-right"></i><span class="nav-text">GL Reconciliation</span></a></li>
+        </c:if>
+
+        <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">Reports</li>
+        <li><a href="${pageContext.request.contextPath}/reports/dpd" class="nav-link"><i class="bi bi-clock-history"></i><span class="nav-text">DPD Report</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/reports/irac" class="nav-link"><i class="bi bi-exclamation-triangle"></i><span class="nav-text">IRAC Report</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/reports/provision" class="nav-link"><i class="bi bi-percent"></i><span class="nav-text">Provision Report</span></a></li>
         </c:if>
 
         <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <li class="nav-section">EOD / Batch</li>
+        <li><a href="${pageContext.request.contextPath}/batch/txn/list" class="nav-link"><i class="bi bi-cash-stack"></i><span class="nav-text">Transaction Batches</span></a></li>
         <li><a href="${pageContext.request.contextPath}/batch/eod" class="nav-link"><i class="bi bi-gear-wide-connected"></i><span class="nav-text">EOD Processing</span></a></li>
         </c:if>
 
-        <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
-        <li class="nav-section">Admin</li>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">Customer &amp; Branch</li>
         <li><a href="${pageContext.request.contextPath}/customer/list" class="nav-link"><i class="bi bi-people"></i><span class="nav-text">Customers</span></a></li>
         <li><a href="${pageContext.request.contextPath}/branch/list" class="nav-link"><i class="bi bi-building"></i><span class="nav-text">Branches</span></a></li>
+        </c:if>
+
+        <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">Administration</li>
+        <li><a href="${pageContext.request.contextPath}/calendar/list" class="nav-link"><i class="bi bi-calendar-check"></i><span class="nav-text">Business Calendar</span></a></li>
         </c:if>
 
         <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
