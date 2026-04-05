@@ -7,6 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * CBS Product-Aware GL Code Resolver per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
  *
@@ -19,6 +22,14 @@ import org.springframework.stereotype.Service;
  * This enables gradual migration: existing loans with productType="TERM_LOAN"
  * continue to work via fallback, while new products get their own GL mapping.
  *
+ * Performance: Uses a per-tenant in-memory cache to avoid repeated DB lookups.
+ * A single repayment calls get*GL() 3 times; EOD batch calls it 100s of times.
+ * Without cache: 3 DB queries per repayment, 1000s during EOD.
+ * With cache: 1 DB query per product per JVM lifecycle (until evicted).
+ *
+ * Cache eviction: Call {@link #evictCache()} when product_master is modified
+ * (e.g., via admin UI). In production, use Spring @CacheEvict with Caffeine/Redis.
+ *
  * Usage:
  *   String glCode = glResolver.getLoanAssetGL("TERM_LOAN");
  *   // Returns product_master.gl_loan_asset if configured, else GLConstants.LOAN_ASSET
@@ -30,8 +41,21 @@ public class ProductGLResolver {
 
     private final ProductMasterRepository productRepository;
 
+    /**
+     * In-memory product cache: key = "tenantId:productCode", value = Optional<ProductMaster>.
+     * Optional.empty() is cached for unconfigured products to avoid repeated DB misses.
+     * Thread-safe via ConcurrentHashMap.
+     */
+    private final ConcurrentHashMap<String, Optional<ProductMaster>> productCache = new ConcurrentHashMap<>();
+
     public ProductGLResolver(ProductMasterRepository productRepository) {
         this.productRepository = productRepository;
+    }
+
+    /** Evicts all cached products. Call when product_master is modified. */
+    public void evictCache() {
+        productCache.clear();
+        log.info("ProductGLResolver cache evicted");
     }
 
     /** Resolves GL code for loan asset (principal outstanding) */
@@ -87,15 +111,16 @@ public class ProductGLResolver {
     /**
      * Returns the full ProductMaster for a product type, or null if not configured.
      * Used for product-level validation (amount limits, tenure limits, etc.)
+     * Result is cached to avoid repeated DB lookups.
      */
     public ProductMaster getProduct(String productType) {
         if (productType == null) return null;
-        String tenantId = TenantContext.getCurrentTenant();
-        return productRepository.findByTenantIdAndProductCode(tenantId, productType).orElse(null);
+        return findCached(productType).orElse(null);
     }
 
     /**
      * Core GL resolution: product-specific → fallback to constant.
+     * Uses cached product lookup to avoid DB round-trip on every GL resolution.
      */
     private String resolveGL(String productType,
                               java.util.function.Function<ProductMaster, String> glExtractor,
@@ -103,12 +128,22 @@ public class ProductGLResolver {
         if (productType == null) {
             return fallback;
         }
-        String tenantId = TenantContext.getCurrentTenant();
-        return productRepository.findByTenantIdAndProductCode(tenantId, productType)
+        return findCached(productType)
             .map(glExtractor)
             .orElseGet(() -> {
                 log.debug("Product '{}' not in product_master — using default GL: {}", productType, fallback);
                 return fallback;
             });
+    }
+
+    /**
+     * Cached product lookup. Caches both hits and misses (Optional.empty())
+     * to avoid repeated DB queries for unconfigured products.
+     */
+    private Optional<ProductMaster> findCached(String productType) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String cacheKey = tenantId + ":" + productType;
+        return productCache.computeIfAbsent(cacheKey, k ->
+            productRepository.findByTenantIdAndProductCode(tenantId, productType));
     }
 }
