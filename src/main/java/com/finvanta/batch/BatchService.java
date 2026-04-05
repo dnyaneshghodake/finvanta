@@ -1,9 +1,10 @@
 package com.finvanta.batch;
 
-import com.finvanta.accounting.AccountingService;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.accounting.ReconciliationService;
+import com.finvanta.transaction.TransactionEngine;
+import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BatchJob;
 import com.finvanta.domain.entity.BusinessCalendar;
@@ -59,7 +60,7 @@ public class BatchService {
     private final ProvisioningRule provisioningRule;
     private final AuditService auditService;
     private final ReconciliationService reconciliationService;
-    private final AccountingService accountingService;
+    private final TransactionEngine transactionEngine;
     private final LoanScheduleService scheduleService;
     private final TransactionBatchService transactionBatchService;
     private final ProductGLResolver glResolver;
@@ -79,7 +80,7 @@ public class BatchService {
                         ProvisioningRule provisioningRule,
                         AuditService auditService,
                         ReconciliationService reconciliationService,
-                        AccountingService accountingService,
+                        TransactionEngine transactionEngine,
                         LoanScheduleService scheduleService,
                         TransactionBatchService transactionBatchService,
                         ProductGLResolver glResolver) {
@@ -90,7 +91,7 @@ public class BatchService {
         this.provisioningRule = provisioningRule;
         this.auditService = auditService;
         this.reconciliationService = reconciliationService;
-        this.accountingService = accountingService;
+        this.transactionEngine = transactionEngine;
         this.scheduleService = scheduleService;
         this.transactionBatchService = transactionBatchService;
         this.glResolver = glResolver;
@@ -407,7 +408,7 @@ public class BatchService {
             DebitCredit provisionSide = delta.compareTo(BigDecimal.ZERO) > 0
                 ? DebitCredit.CREDIT : DebitCredit.DEBIT;
 
-            // CBS: GL codes resolved through product definition per Finacle PDDEF
+            // CBS: ALL financial postings go through TransactionEngine with systemGenerated(true).
             String productType = fresh.getProductType();
             String action = delta.compareTo(BigDecimal.ZERO) > 0 ? "charge" : "release";
             try {
@@ -417,11 +418,20 @@ public class BatchService {
                     new JournalLineRequest(glResolver.getProvisionNpaGL(productType), provisionSide, absDelta,
                         "Loan loss provision - " + fresh.getAccountNumber())
                 );
-                accountingService.postJournalEntry(
-                    businessDate,
-                    "RBI IRAC provisioning " + action + " for " + fresh.getAccountNumber(),
-                    "PROVISIONING", fresh.getAccountNumber(),
-                    lines
+                transactionEngine.execute(
+                    TransactionRequest.builder()
+                        .sourceModule("PROVISIONING")
+                        .transactionType("PROVISIONING_" + action.toUpperCase())
+                        .accountReference(fresh.getAccountNumber())
+                        .amount(absDelta)
+                        .valueDate(businessDate)
+                        .branchCode(fresh.getBranch() != null ? fresh.getBranch().getBranchCode() : null)
+                        .productType(productType)
+                        .narration("RBI IRAC provisioning " + action + " for " + fresh.getAccountNumber())
+                        .journalLines(lines)
+                        .systemGenerated(true)
+                        .initiatedBy("SYSTEM")
+                        .build()
                 );
             } catch (Exception e) {
                 log.warn("Provisioning GL posting failed for {}: {}", fresh.getAccountNumber(), e.getMessage());

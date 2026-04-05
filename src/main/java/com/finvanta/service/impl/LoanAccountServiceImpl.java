@@ -1,6 +1,5 @@
 package com.finvanta.service.impl;
 
-import com.finvanta.accounting.AccountingService;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.accounting.SuspenseService;
@@ -17,7 +16,6 @@ import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
-import com.finvanta.service.TransactionLimitService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
@@ -48,7 +46,7 @@ import java.util.List;
  * - Pessimistic locking on account mutations to prevent concurrent modification
  * - Full audit trail via AuditService for every state change
  * - Product-aware GL resolution via {@link ProductGLResolver} (Finacle PDDEF pattern)
- * - Per-role transaction limits via {@link TransactionLimitService} (RBI internal controls)
+ * - Per-role transaction limits enforced by TransactionEngine (RBI internal controls)
  * - Idempotency key support on client-initiated transactions (Finacle UNIQUE.REF pattern)
  *
  * GL codes are resolved through product_master configuration via {@link ProductGLResolver}.
@@ -62,7 +60,6 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final LoanAccountRepository accountRepository;
     private final LoanApplicationRepository applicationRepository;
     private final LoanTransactionRepository transactionRepository;
-    private final AccountingService accountingService;
     private final InterestCalculationRule interestRule;
     private final NpaClassificationRule npaRule;
     private final AuditService auditService;
@@ -70,13 +67,11 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final LoanScheduleService scheduleService;
     private final BusinessDateService businessDateService;
     private final ProductGLResolver glResolver;
-    private final TransactionLimitService limitService;
     private final TransactionEngine transactionEngine;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
                                    LoanApplicationRepository applicationRepository,
                                    LoanTransactionRepository transactionRepository,
-                                   AccountingService accountingService,
                                    InterestCalculationRule interestRule,
                                    NpaClassificationRule npaRule,
                                    AuditService auditService,
@@ -84,12 +79,10 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    LoanScheduleService scheduleService,
                                    BusinessDateService businessDateService,
                                    ProductGLResolver glResolver,
-                                   TransactionLimitService limitService,
                                    TransactionEngine transactionEngine) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
-        this.accountingService = accountingService;
         this.interestRule = interestRule;
         this.npaRule = npaRule;
         this.auditService = auditService;
@@ -97,7 +90,6 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.scheduleService = scheduleService;
         this.businessDateService = businessDateService;
         this.glResolver = glResolver;
-        this.limitService = limitService;
         this.transactionEngine = transactionEngine;
     }
 
