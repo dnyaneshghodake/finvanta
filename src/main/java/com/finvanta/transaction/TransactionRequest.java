@@ -12,7 +12,7 @@ import java.util.List;
  * This is the universal input to the Transaction Engine. Every CBS module (Loan, Deposit,
  * Remittance, Trade Finance) builds a TransactionRequest and submits it to
  * {@link TransactionEngine#execute(TransactionRequest)}. The engine enforces the
- * 21-step validation chain in the correct order, regardless of which module initiated it.
+ * 10-step validation chain in the correct order, regardless of which module initiated it.
  *
  * Per Finacle/Temenos standards, a transaction request must declare:
  * - WHAT: amount, transaction type, journal lines (DR/CR legs)
@@ -183,6 +183,12 @@ public class TransactionRequest {
             }
             if (sourceModule == null || sourceModule.isBlank()) {
                 throw new IllegalArgumentException("Source module is mandatory");
+            }
+            if (accountReference == null || accountReference.isBlank()) {
+                throw new IllegalArgumentException("Account reference is mandatory per CBS audit rules");
+            }
+            if (transactionType == null || transactionType.isBlank()) {
+                throw new IllegalArgumentException("Transaction type is mandatory");
             }
             if (valueDate == null) {
                 throw new IllegalArgumentException("Value date is mandatory");

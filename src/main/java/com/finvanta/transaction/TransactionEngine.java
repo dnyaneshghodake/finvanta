@@ -180,11 +180,23 @@ public class TransactionEngine {
 
         // ================================================================
         // STEP 4: Amount Validation
-        // Already validated by TransactionRequest.Builder, but double-check
+        // Per RBI/Finacle standards: amount must be positive, within precision limits.
+        // CBS precision: max 18 digits total, 2 decimal places (DECIMAL(18,2)).
+        // Already validated by TransactionRequest.Builder, but defense-in-depth.
         // ================================================================
         if (request.getAmount() == null || request.getAmount().signum() <= 0) {
             throw new BusinessException("INVALID_AMOUNT",
                 "Transaction amount must be positive: " + request.getAmount());
+        }
+        if (request.getAmount().scale() > 2) {
+            throw new BusinessException("INVALID_AMOUNT_PRECISION",
+                "Transaction amount cannot have more than 2 decimal places: "
+                    + request.getAmount() + " (scale=" + request.getAmount().scale() + ")");
+        }
+        if (request.getAmount().precision() - request.getAmount().scale() > 16) {
+            throw new BusinessException("INVALID_AMOUNT_OVERFLOW",
+                "Transaction amount exceeds CBS maximum (16 integer digits): "
+                    + request.getAmount());
         }
 
         // ================================================================
