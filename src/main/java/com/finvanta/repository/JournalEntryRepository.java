@@ -1,6 +1,7 @@
 package com.finvanta.repository;
 
 import com.finvanta.domain.entity.JournalEntry;
+import com.finvanta.domain.enums.DebitCredit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -38,5 +39,5 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     java.math.BigDecimal sumJournalLinesByGlCode(
         @Param("tenantId") String tenantId,
         @Param("glCode") String glCode,
-        @Param("debitCredit") String debitCredit);
+        @Param("debitCredit") DebitCredit debitCredit);
 }

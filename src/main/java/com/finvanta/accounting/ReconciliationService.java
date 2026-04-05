@@ -91,9 +91,9 @@ public class ReconciliationService {
         // Check 2: Per-GL journal integrity
         for (GLMaster gl : glAccounts) {
             BigDecimal journalDebit = journalEntryRepository.sumJournalLinesByGlCode(
-                tenantId, gl.getGlCode(), DebitCredit.DEBIT.name());
+                tenantId, gl.getGlCode(), DebitCredit.DEBIT);
             BigDecimal journalCredit = journalEntryRepository.sumJournalLinesByGlCode(
-                tenantId, gl.getGlCode(), DebitCredit.CREDIT.name());
+                tenantId, gl.getGlCode(), DebitCredit.CREDIT);
 
             if (journalDebit == null) journalDebit = BigDecimal.ZERO;
             if (journalCredit == null) journalCredit = BigDecimal.ZERO;
