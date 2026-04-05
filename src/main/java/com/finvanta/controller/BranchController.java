@@ -74,7 +74,7 @@ public class BranchController {
         return "redirect:/branch/list";
     }
 
-    /** CBS Branch View — shows branch details with customer and account cross-links */
+    /** CBS Branch View — shows branch details with customer, account, and portfolio cross-links */
     @GetMapping("/view/{id}")
     public ModelAndView viewBranch(@PathVariable Long id) {
         String tenantId = TenantContext.getCurrentTenant();
@@ -88,6 +88,21 @@ public class BranchController {
             customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, id));
         mav.addObject("totalOutstanding",
             accountRepository.calculateTotalOutstandingByBranch(tenantId, id));
+
+        // CBS Branch Portfolio: loan accounts at this branch with cross-links
+        var branchAccounts = accountRepository.findByTenantIdAndBranchId(tenantId, id);
+        mav.addObject("loanAccounts", branchAccounts);
+
+        // CBS Branch NPA Summary: count by status for branch-level risk view
+        long npaCount = branchAccounts.stream()
+            .filter(a -> a.getStatus().isNpa()).count();
+        long smaCount = branchAccounts.stream()
+            .filter(a -> a.getStatus().isSma()).count();
+        mav.addObject("npaCount", npaCount);
+        mav.addObject("smaCount", smaCount);
+        mav.addObject("activeCount", branchAccounts.stream()
+            .filter(a -> !a.getStatus().isTerminal()).count());
+
         return mav;
     }
 

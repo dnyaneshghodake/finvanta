@@ -72,8 +72,8 @@ CREATE TABLE customers (
     first_name      VARCHAR(100)    NOT NULL,
     last_name       VARCHAR(100)    NOT NULL,
     date_of_birth   DATE,
-    pan_number      VARCHAR(10),
-    aadhaar_number  VARCHAR(12),
+    pan_number      VARCHAR(100),    -- Expanded for AES-256-GCM ciphertext (RBI PII encryption)
+    aadhaar_number  VARCHAR(100),   -- Expanded for AES-256-GCM ciphertext (UIDAI/RBI mandate)
     mobile_number   VARCHAR(15),
     email           VARCHAR(200),
     address         VARCHAR(500),
@@ -99,7 +99,51 @@ CREATE INDEX idx_cust_tenant_custno ON customers (tenant_id, customer_number);
 CREATE INDEX idx_cust_pan ON customers (tenant_id, pan_number);
 CREATE INDEX idx_cust_aadhaar ON customers (tenant_id, aadhaar_number);
 
--- 5. LOAN APPLICATIONS
+-- 5. PRODUCT MASTER (Finacle PDDEF / Temenos AA.PRODUCT.CATALOG)
+CREATE TABLE product_master (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    product_code    VARCHAR(50)     NOT NULL,
+    product_name    VARCHAR(200)    NOT NULL,
+    product_category VARCHAR(50)    NOT NULL,
+    description     VARCHAR(500),
+    currency_code   VARCHAR(3)      NOT NULL DEFAULT 'INR',
+    interest_method VARCHAR(30)     NOT NULL DEFAULT 'ACTUAL_365',
+    interest_type   VARCHAR(20)     NOT NULL DEFAULT 'FIXED',
+    min_interest_rate DECIMAL(8,4),
+    max_interest_rate DECIMAL(8,4),
+    default_penal_rate DECIMAL(8,4) DEFAULT 2.0000,
+    min_loan_amount DECIMAL(18,2),
+    max_loan_amount DECIMAL(18,2),
+    min_tenure_months INT,
+    max_tenure_months INT,
+    repayment_frequency VARCHAR(20) NOT NULL DEFAULT 'MONTHLY',
+    -- GL Code Mapping (Product → GL)
+    gl_loan_asset       VARCHAR(20) NOT NULL,
+    gl_interest_receivable VARCHAR(20) NOT NULL,
+    gl_bank_operations  VARCHAR(20) NOT NULL,
+    gl_interest_income  VARCHAR(20) NOT NULL,
+    gl_fee_income       VARCHAR(20) NOT NULL,
+    gl_penal_income     VARCHAR(20) NOT NULL,
+    gl_provision_expense VARCHAR(20) NOT NULL,
+    gl_provision_npa    VARCHAR(20) NOT NULL,
+    gl_write_off_expense VARCHAR(20) NOT NULL,
+    gl_interest_suspense VARCHAR(20) NOT NULL,
+    is_active       BIT             NOT NULL DEFAULT 1,
+    repayment_allocation VARCHAR(30) NOT NULL DEFAULT 'INTEREST_FIRST',
+    prepayment_penalty_applicable BIT NOT NULL DEFAULT 0,
+    processing_fee_pct DECIMAL(8,4) DEFAULT 0.0000,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_product_tenant_code UNIQUE (tenant_id, product_code)
+);
+CREATE INDEX idx_product_tenant_code ON product_master (tenant_id, product_code);
+CREATE INDEX idx_product_tenant_active ON product_master (tenant_id, is_active);
+
+-- 6. LOAN APPLICATIONS
 CREATE TABLE loan_applications (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -147,6 +191,7 @@ CREATE TABLE loan_accounts (
     customer_id     BIGINT          NOT NULL,
     branch_id       BIGINT          NOT NULL,
     product_type    VARCHAR(50)     NOT NULL,
+    currency_code   VARCHAR(3)      NOT NULL DEFAULT 'INR',  -- ISO 4217 currency code
     sanctioned_amount DECIMAL(18,2) NOT NULL,
     disbursed_amount DECIMAL(18,2)  NOT NULL DEFAULT 0.00,
     outstanding_principal DECIMAL(18,2) NOT NULL DEFAULT 0.00,
@@ -171,6 +216,7 @@ CREATE TABLE loan_accounts (
     npa_classification_date DATE,
     provisioning_amount DECIMAL(18,2) DEFAULT 0.00,
     penal_interest_accrued DECIMAL(18,2) DEFAULT 0.00,
+    last_penal_accrual_date DATE,
     collateral_reference VARCHAR(100),
     risk_category   VARCHAR(20),
     version         BIGINT          NOT NULL DEFAULT 0,
@@ -268,6 +314,7 @@ CREATE TABLE loan_transactions (
     is_reversed     BIT             NOT NULL DEFAULT 0,
     reversed_by_ref VARCHAR(40),
     journal_entry_id BIGINT,
+    idempotency_key VARCHAR(100),   -- CBS idempotency: client-supplied key to prevent duplicate processing
     version         BIGINT          NOT NULL DEFAULT 0,
     created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
     updated_at      DATETIME2,
@@ -280,6 +327,10 @@ CREATE INDEX idx_loantxn_tenant_account ON loan_transactions (tenant_id, loan_ac
 CREATE INDEX idx_loantxn_txnref ON loan_transactions (tenant_id, transaction_ref);
 CREATE INDEX idx_loantxn_value_date ON loan_transactions (tenant_id, value_date);
 CREATE INDEX idx_loantxn_type ON loan_transactions (tenant_id, transaction_type);
+-- CBS Idempotency: unique filtered index on non-null idempotency keys
+-- Allows NULL (system txns) but enforces uniqueness on client-supplied keys
+CREATE UNIQUE INDEX uq_loantxn_idempotency ON loan_transactions (tenant_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 
 -- 10. GL MASTER
 CREATE TABLE gl_master (
@@ -374,7 +425,8 @@ CREATE TABLE ledger_entries (
 );
 -- No @Version column — ledger entries are immutable (no updates allowed)
 -- No UPDATE or DELETE triggers should be allowed (same pattern as audit_logs)
-CREATE INDEX idx_ledger_tenant_seq ON ledger_entries (tenant_id, ledger_sequence);
+-- UNIQUE constraint on (tenant_id, ledger_sequence) — DB-level safety net for hash chain integrity
+CREATE UNIQUE INDEX uq_ledger_tenant_seq ON ledger_entries (tenant_id, ledger_sequence);
 CREATE INDEX idx_ledger_tenant_gl ON ledger_entries (tenant_id, gl_code, business_date);
 CREATE INDEX idx_ledger_tenant_date ON ledger_entries (tenant_id, business_date);
 CREATE INDEX idx_ledger_journal ON ledger_entries (tenant_id, journal_entry_id);
@@ -453,7 +505,27 @@ CREATE TABLE batch_jobs (
 CREATE INDEX idx_batch_tenant_date ON batch_jobs (tenant_id, business_date);
 CREATE INDEX idx_batch_status ON batch_jobs (tenant_id, status);
 
--- 17. APP USERS
+-- 17. TRANSACTION LIMITS (CBS Internal Controls — per-role amount limits)
+CREATE TABLE transaction_limits (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    role            VARCHAR(20)     NOT NULL,
+    transaction_type VARCHAR(30)    NOT NULL,
+    per_transaction_limit DECIMAL(18,2),
+    daily_aggregate_limit DECIMAL(18,2),
+    branch_id       BIGINT,
+    is_active       BIT             NOT NULL DEFAULT 1,
+    description     VARCHAR(500),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT fk_txnlimit_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX idx_txnlimit_tenant_role ON transaction_limits (tenant_id, role, transaction_type);
+
+-- 18. APP USERS
 CREATE TABLE app_users (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -494,6 +566,28 @@ INSTEAD OF DELETE
 AS
 BEGIN
     RAISERROR ('Audit log records cannot be deleted - immutability enforced', 16, 1);
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+-- ============================================================
+-- PROTECT LEDGER ENTRIES FROM MODIFICATIONS (RBI audit grade)
+-- ============================================================
+GO
+CREATE TRIGGER trg_ledger_no_update ON ledger_entries
+INSTEAD OF UPDATE
+AS
+BEGIN
+    RAISERROR ('Ledger entries cannot be updated - immutability enforced per RBI audit requirements', 16, 1);
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+CREATE TRIGGER trg_ledger_no_delete ON ledger_entries
+INSTEAD OF DELETE
+AS
+BEGIN
+    RAISERROR ('Ledger entries cannot be deleted - immutability enforced per RBI audit requirements', 16, 1);
     ROLLBACK TRANSACTION;
 END;
 GO

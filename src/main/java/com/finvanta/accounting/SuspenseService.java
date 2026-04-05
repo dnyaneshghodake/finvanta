@@ -3,9 +3,6 @@ package com.finvanta.accounting;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.DebitCredit;
-import com.finvanta.repository.LoanAccountRepository;
-import com.finvanta.util.BusinessException;
-import com.finvanta.util.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -48,15 +45,15 @@ public class SuspenseService {
     private static final Logger log = LoggerFactory.getLogger(SuspenseService.class);
 
     private final AccountingService accountingService;
-    private final LoanAccountRepository loanAccountRepository;
     private final AuditService auditService;
+    private final ProductGLResolver glResolver;
 
     public SuspenseService(AccountingService accountingService,
-                            LoanAccountRepository loanAccountRepository,
-                            AuditService auditService) {
+                            AuditService auditService,
+                            ProductGLResolver glResolver) {
         this.accountingService = accountingService;
-        this.loanAccountRepository = loanAccountRepository;
         this.auditService = auditService;
+        this.glResolver = glResolver;
     }
 
     /**
@@ -66,7 +63,12 @@ public class SuspenseService {
      * Per RBI IRAC: "Interest accrued and credited to income account in the past
      * periods which has not been realized should be reversed."
      *
-     * @param account The loan account that just became NPA
+     * IMPORTANT: This method modifies account.accruedInterest on the passed entity reference
+     * but does NOT save the account. The caller (classifyNPA) is responsible for saving
+     * to avoid the double-save overwrite problem where two saves in the same transaction
+     * with different field modifications cause one to overwrite the other.
+     *
+     * @param account The loan account that just became NPA (modified in-place, not saved)
      * @param businessDate CBS business date
      */
     @Transactional
@@ -79,12 +81,14 @@ public class SuspenseService {
         }
 
         // Post GL entry: reverse interest from P&L to suspense
+        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        String productType = account.getProductType();
         List<AccountingService.JournalLineRequest> lines = List.of(
             new AccountingService.JournalLineRequest(
-                GLConstants.INTEREST_INCOME, DebitCredit.DEBIT, accruedInterest,
+                glResolver.getInterestIncomeGL(productType), DebitCredit.DEBIT, accruedInterest,
                 "NPA income reversal - " + account.getAccountNumber()),
             new AccountingService.JournalLineRequest(
-                GLConstants.INTEREST_SUSPENSE, DebitCredit.CREDIT, accruedInterest,
+                glResolver.getInterestSuspenseGL(productType), DebitCredit.CREDIT, accruedInterest,
                 "Interest to suspense - " + account.getAccountNumber())
         );
 
@@ -95,12 +99,11 @@ public class SuspenseService {
             lines
         );
 
-        // Update account: move accrued interest to suspense tracking
-        // The accruedInterest on the account represents what was recognized in P&L
-        // After reversal, it's in suspense — tracked but not in P&L
+        // Update account in-place: move accrued interest to suspense tracking.
+        // The accruedInterest on the account represents what was recognized in P&L.
+        // After reversal, it's in suspense — tracked but not in P&L.
+        // NOTE: Do NOT save here — caller (classifyNPA) saves after all modifications.
         account.setAccruedInterest(BigDecimal.ZERO);
-        account.setUpdatedBy("SYSTEM");
-        loanAccountRepository.save(account);
 
         auditService.logEvent("LoanAccount", account.getId(), "SUSPENSE_REVERSAL",
             accruedInterest.toString(), "0", "SUSPENSE",
@@ -126,12 +129,14 @@ public class SuspenseService {
         }
 
         // Post GL entry: release from suspense to income
+        // CBS: GL codes resolved through product definition per Finacle PDDEF
+        String productType = account.getProductType();
         List<AccountingService.JournalLineRequest> lines = List.of(
             new AccountingService.JournalLineRequest(
-                GLConstants.INTEREST_SUSPENSE, DebitCredit.DEBIT, interestCollected,
+                glResolver.getInterestSuspenseGL(productType), DebitCredit.DEBIT, interestCollected,
                 "Suspense release - " + account.getAccountNumber()),
             new AccountingService.JournalLineRequest(
-                GLConstants.INTEREST_INCOME, DebitCredit.CREDIT, interestCollected,
+                glResolver.getInterestIncomeGL(productType), DebitCredit.CREDIT, interestCollected,
                 "NPA interest collected - " + account.getAccountNumber())
         );
 

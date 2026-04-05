@@ -59,6 +59,17 @@ VALUES ('DEFAULT', 'CUST002', 'Priya', 'Patel', '1990-07-22', 'FGHIJ5678K', '234
 INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, cibil_score, customer_type, is_active, branch_id, version, created_at, created_by)
 VALUES ('DEFAULT', 'CUST003', 'Arun', 'Kumar', '1978-11-05', 'KLMNO9012P', '345678901234', '9876543212', 'arun.kumar@email.com', '789 Brigade Road', 'Bangalore', 'Karnataka', '560002', false, 580, 'INDIVIDUAL', true, 3, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
+-- Product Master (Finacle PDDEF / Temenos AA.PRODUCT.CATALOG)
+-- Per CBS standards: GL codes are configured per product, not hardcoded.
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, version, created_at, created_by)
+VALUES ('DEFAULT', 'TERM_LOAN', 'Term Loan - Unsecured', 'TERM_LOAN', 'Standard unsecured term loan for salaried individuals', 'INR', 'ACTUAL_365', 'FIXED', 8.0000, 24.0000, 2.0000, 50000.00, 5000000.00, 6, 84, 'MONTHLY', '1001', '1002', '1100', '4001', '4002', '4003', '5001', '1003', '5002', '2100', true, 'INTEREST_FIRST', false, 1.0000, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, version, created_at, created_by)
+VALUES ('DEFAULT', 'HOME_LOAN', 'Home Loan - Secured', 'TERM_LOAN', 'Housing finance for residential property purchase', 'INR', 'ACTUAL_365', 'FLOATING', 6.5000, 12.0000, 2.0000, 500000.00, 50000000.00, 12, 360, 'MONTHLY', '1001', '1002', '1100', '4001', '4002', '4003', '5001', '1003', '5002', '2100', true, 'INTEREST_FIRST', false, 0.5000, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, version, created_at, created_by)
+VALUES ('DEFAULT', 'GOLD_LOAN', 'Gold Loan - Secured', 'DEMAND_LOAN', 'Loan against gold ornaments with bullet repayment', 'INR', 'ACTUAL_365', 'FIXED', 7.0000, 15.0000, 2.0000, 10000.00, 2500000.00, 3, 12, 'BULLET', '1001', '1002', '1100', '4001', '4002', '4003', '5001', '1003', '5002', '2100', true, 'INTEREST_FIRST', true, 0.2500, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
 -- GL Master (Chart of Accounts)
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '1000', 'Assets', 'ASSET', 0.00, 0.00, true, true, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '1001', 'Loan Portfolio - Term Loans', 'ASSET', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
@@ -114,3 +125,20 @@ VALUES ('DEFAULT', 'admin', '{noop}finvanta123', 'Vikram Joshi (Branch Manager)'
 -- Auditor (Internal Audit)
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
 VALUES ('DEFAULT', 'auditor1', '{noop}finvanta123', 'Meera Kulkarni (Internal Auditor)', 'auditor@finvanta.com', 'AUDITOR', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Transaction Limits (CBS Internal Controls — per-role amount limits)
+-- Per RBI guidelines: every financial transaction must be validated against configured limits
+-- MAKER: ₹10L per transaction, ₹50L daily aggregate
+-- CHECKER: ₹50L per transaction, ₹2Cr daily aggregate
+-- ADMIN: ₹5Cr per transaction, ₹20Cr daily aggregate
+INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
+VALUES ('DEFAULT', 'MAKER', 'ALL', 1000000.00, 5000000.00, true, 'Maker default limit: ₹10L per txn, ₹50L daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
+VALUES ('DEFAULT', 'CHECKER', 'ALL', 5000000.00, 20000000.00, true, 'Checker default limit: ₹50L per txn, ₹2Cr daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
+VALUES ('DEFAULT', 'ADMIN', 'ALL', 50000000.00, 200000000.00, true, 'Admin default limit: ₹5Cr per txn, ₹20Cr daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
+VALUES ('DEFAULT', 'MAKER', 'WRITE_OFF', 0.00, 0.00, true, 'Makers cannot perform write-offs (enforced via limit=0)', 0, CURRENT_TIMESTAMP, 'SYSTEM');

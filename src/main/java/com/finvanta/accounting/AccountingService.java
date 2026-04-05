@@ -1,12 +1,16 @@
 package com.finvanta.accounting;
 
 import com.finvanta.audit.AuditService;
+import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.domain.entity.JournalEntryLine;
+import com.finvanta.domain.entity.TransactionBatch;
 import com.finvanta.domain.enums.DebitCredit;
+import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.JournalEntryRepository;
+import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.TenantContext;
@@ -43,15 +47,21 @@ public class AccountingService {
     private final GLMasterRepository glMasterRepository;
     private final AuditService auditService;
     private final LedgerService ledgerService;
+    private final TransactionBatchRepository batchRepository;
+    private final BusinessCalendarRepository calendarRepository;
 
     public AccountingService(JournalEntryRepository journalEntryRepository,
                              GLMasterRepository glMasterRepository,
                              AuditService auditService,
-                             LedgerService ledgerService) {
+                             LedgerService ledgerService,
+                             TransactionBatchRepository batchRepository,
+                             BusinessCalendarRepository calendarRepository) {
         this.journalEntryRepository = journalEntryRepository;
         this.glMasterRepository = glMasterRepository;
         this.auditService = auditService;
         this.ledgerService = ledgerService;
+        this.batchRepository = batchRepository;
+        this.calendarRepository = calendarRepository;
     }
 
     @Transactional
@@ -63,6 +73,52 @@ public class AccountingService {
         if (lines == null || lines.size() < 2) {
             throw new BusinessException("ACCOUNTING_INVALID_ENTRY",
                 "Journal entry must have at least 2 lines (double-entry)");
+        }
+
+        // CBS Day Control: Validate that the business day allows transactions.
+        // Per Finacle/Temenos, financial postings are only allowed when day status
+        // is DAY_OPEN. During EOD_RUNNING, NOT_OPENED, or DAY_CLOSED, all new
+        // postings must be rejected. EOD-generated postings (PROVISIONING, SUSPENSE,
+        // SYSTEM batches) are allowed during EOD_RUNNING as they are part of the
+        // batch process itself.
+        BusinessCalendar calendar = calendarRepository
+            .findByTenantIdAndBusinessDate(tenantId, valueDate).orElse(null);
+        if (calendar != null) {
+            // EOD system postings are allowed during EOD_RUNNING.
+            // LOAN module is included because interest accrual and penal interest
+            // are posted by the EOD batch engine with sourceModule="LOAN".
+            boolean isEodSystemPosting = "PROVISIONING".equals(sourceModule)
+                || "SUSPENSE".equals(sourceModule)
+                || "WRITE_OFF".equals(sourceModule)
+                || "LOAN".equals(sourceModule)
+                || "REVERSAL".equals(sourceModule);
+            if (!calendar.getDayStatus().isTransactionAllowed() && !calendar.isEodRunning()) {
+                throw new BusinessException("DAY_NOT_OPEN",
+                    "Cannot post transactions — business date " + valueDate
+                        + " is in " + calendar.getDayStatus() + " state");
+            }
+            if (calendar.isEodRunning() && !isEodSystemPosting) {
+                throw new BusinessException("EOD_IN_PROGRESS",
+                    "Cannot post transactions during EOD processing for date " + valueDate
+                        + ". Wait for EOD to complete.");
+            }
+        }
+
+        // CBS Batch Control: Find an OPEN batch for this business date.
+        // Per Finacle/Temenos, all transactions must be tagged to a batch.
+        // If no batch exists, the posting proceeds (for backward compatibility)
+        // but logs a warning. In strict mode, this would throw an exception.
+        //
+        // NOTE: We only look up the batch ID here (no lock). The pessimistic lock
+        // is acquired later via findAndLockById() just before updating totals.
+        // This avoids holding the batch row lock during the entire journal posting
+        // while still preventing lost-update on the running totals.
+        Long activeBatchId = null;
+        List<TransactionBatch> openBatches = batchRepository.findOpenBatches(tenantId, valueDate);
+        if (!openBatches.isEmpty()) {
+            activeBatchId = openBatches.get(0).getId();
+        } else {
+            log.warn("No OPEN transaction batch for date {}. Posting without batch tag.", valueDate);
         }
 
         JournalEntry entry = new JournalEntry();
@@ -123,6 +179,19 @@ public class AccountingService {
 
         // CBS: Post to immutable ledger (append-only with hash chain)
         ledgerService.postToLedger(savedEntry);
+
+        // CBS Batch Control: Update batch running totals for intra-day reconciliation.
+        // Acquire PESSIMISTIC_WRITE lock on the batch row to serialize concurrent
+        // total updates. Without this lock, two concurrent postings would both read
+        // the same totals, both increment, and one save would overwrite the other.
+        if (activeBatchId != null) {
+            TransactionBatch lockedBatch = batchRepository.findAndLockById(activeBatchId)
+                .orElse(null);
+            if (lockedBatch != null && lockedBatch.isOpen()) {
+                lockedBatch.addTransaction(totalDebit, totalCredit);
+                batchRepository.save(lockedBatch);
+            }
+        }
 
         auditService.logEvent("JournalEntry", savedEntry.getId(), "POST",
             null, savedEntry.getJournalRef(), "ACCOUNTING",

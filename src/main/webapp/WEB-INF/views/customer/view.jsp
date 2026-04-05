@@ -46,7 +46,7 @@
                     </c:choose>
                 </td></tr>
                 <tr><td class="fw-bold">CIBIL Score</td><td><c:out value="${customer.cibilScore}" /></td></tr>
-                <tr><td class="fw-bold">Branch</td><td><c:out value="${customer.branch.branchCode}" /> - <c:out value="${customer.branch.branchName}" /></td></tr>
+                <tr><td class="fw-bold">Branch</td><td><a href="${pageContext.request.contextPath}/branch/view/${customer.branch.id}"><c:out value="${customer.branch.branchCode}" /> - <c:out value="${customer.branch.branchName}" /></a></td></tr>
                 <tr><td class="fw-bold">Status</td><td>
                     <c:choose>
                         <c:when test="${customer.active}"><span class="fv-badge fv-badge-active">Active</span></c:when>

@@ -39,6 +39,16 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "product_type", nullable = false, length = 50)
     private String productType;
 
+    /**
+     * ISO 4217 currency code for all monetary amounts on this account.
+     * Per CBS multi-currency standards, every account must declare its currency.
+     * All amounts (sanctioned, outstanding, accrued, etc.) are in this currency.
+     * For India-only deployment, defaults to INR. Future multi-currency support
+     * requires FCY→LCY conversion at the GL posting level.
+     */
+    @Column(name = "currency_code", nullable = false, length = 3)
+    private String currencyCode = "INR";
+
     @Column(name = "sanctioned_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal sanctionedAmount;
 
@@ -118,6 +128,17 @@ public class LoanAccount extends BaseEntity {
     /** Penal interest accrued on overdue EMIs */
     @Column(name = "penal_interest_accrued", precision = 18, scale = 2)
     private BigDecimal penalInterestAccrued = BigDecimal.ZERO;
+
+    /**
+     * RBI Fair Lending: Independent penal interest accrual date tracker.
+     * Separate from lastInterestAccrualDate because regular interest and penal interest
+     * have different accrual bases (outstanding principal vs overdue principal) and
+     * different lifecycle triggers. EOD runs regular accrual before penal accrual,
+     * so sharing the same date field would cause penal calculation to always get
+     * days=0 (since regular accrual already advanced the date to today).
+     */
+    @Column(name = "last_penal_accrual_date")
+    private LocalDate lastPenalAccrualDate;
 
     /** Collateral reference for secured loans */
     @Column(name = "collateral_reference", length = 100)

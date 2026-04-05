@@ -6,6 +6,8 @@ import com.finvanta.domain.enums.ApplicationStatus;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanTransactionRepository;
+import com.finvanta.repository.ProductMasterRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanApplicationService;
 import com.finvanta.service.LoanScheduleService;
@@ -18,7 +20,6 @@ import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 
 @Controller
 @RequestMapping("/loan")
@@ -27,22 +28,28 @@ public class LoanController {
     private final LoanApplicationService applicationService;
     private final LoanAccountService accountService;
     private final LoanScheduleService scheduleService;
+    private final BusinessDateService businessDateService;
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
     private final LoanTransactionRepository transactionRepository;
+    private final ProductMasterRepository productRepository;
 
     public LoanController(LoanApplicationService applicationService,
                            LoanAccountService accountService,
                            LoanScheduleService scheduleService,
+                           BusinessDateService businessDateService,
                            CustomerRepository customerRepository,
                            BranchRepository branchRepository,
-                           LoanTransactionRepository transactionRepository) {
+                           LoanTransactionRepository transactionRepository,
+                           ProductMasterRepository productRepository) {
         this.applicationService = applicationService;
         this.accountService = accountService;
         this.scheduleService = scheduleService;
+        this.businessDateService = businessDateService;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.transactionRepository = transactionRepository;
+        this.productRepository = productRepository;
     }
 
     @GetMapping("/apply")
@@ -52,6 +59,7 @@ public class LoanController {
         mav.addObject("application", new LoanApplication());
         mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
         mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+        mav.addObject("products", productRepository.findActiveProducts(tenantId));
         return mav;
     }
 
@@ -66,6 +74,7 @@ public class LoanController {
             ModelAndView mav = new ModelAndView("loan/apply");
             mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
             mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+            mav.addObject("products", productRepository.findActiveProducts(tenantId));
             return mav;
         }
 
@@ -161,6 +170,11 @@ public class LoanController {
         mav.addObject("transactions",
             transactionRepository.findByTenantIdAndLoanAccountIdOrderByPostingDateDesc(tenantId, account.getId()));
         mav.addObject("schedule", scheduleService.getSchedule(account.getId()));
+
+        // Cross-module linkage: resolve product ID for "View GL Config" link
+        productRepository.findByTenantIdAndProductCode(tenantId, account.getProductType())
+            .ifPresent(p -> mav.addObject("productId", p.getId()));
+
         return mav;
     }
 
@@ -181,8 +195,40 @@ public class LoanController {
                                     @RequestParam BigDecimal amount,
                                     RedirectAttributes redirectAttributes) {
         try {
-            accountService.processRepayment(accountNumber, amount, LocalDate.now());
+            accountService.processRepayment(accountNumber, amount,
+                businessDateService.getCurrentBusinessDate());
             redirectAttributes.addFlashAttribute("success", "Repayment processed successfully");
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
+    /** CBS Prepayment/Foreclosure — MAKER/ADMIN. Pays off total outstanding and closes loan. */
+    @PostMapping("/prepayment/{accountNumber}")
+    public String processPrepayment(@PathVariable String accountNumber,
+                                     @RequestParam BigDecimal amount,
+                                     RedirectAttributes redirectAttributes) {
+        try {
+            accountService.processPrepayment(accountNumber, amount,
+                businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success",
+                "Loan prepaid/foreclosed successfully: " + accountNumber);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
+    /** CBS Write-Off — ADMIN only (enforced in SecurityConfig). NPA accounts only. */
+    @PostMapping("/write-off/{accountNumber}")
+    public String writeOffAccount(@PathVariable String accountNumber,
+                                   RedirectAttributes redirectAttributes) {
+        try {
+            accountService.writeOffAccount(accountNumber,
+                businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success",
+                "Loan written off successfully: " + accountNumber);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -201,5 +247,47 @@ public class LoanController {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
             return "redirect:/loan/applications";
         }
+    }
+
+    /**
+     * CBS Transaction Reversal — CHECKER/ADMIN only.
+     * Per Finacle TRAN_REVERSAL: creates contra GL entries and restores account balances.
+     * Original transaction is marked reversed (never deleted per CBS audit rules).
+     */
+    @PostMapping("/reversal/{transactionRef}")
+    public String reverseTransaction(@PathVariable String transactionRef,
+                                      @RequestParam String reason,
+                                      @RequestParam String accountNumber,
+                                      RedirectAttributes redirectAttributes) {
+        try {
+            accountService.reverseTransaction(transactionRef, reason,
+                businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success",
+                "Transaction reversed: " + transactionRef);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
+    /**
+     * CBS Fee Charging — MAKER/ADMIN.
+     * Processing fees, documentation charges, etc.
+     * GL Entry: DR Bank Operations / CR Fee Income
+     */
+    @PostMapping("/fee/{accountNumber}")
+    public String chargeFee(@PathVariable String accountNumber,
+                             @RequestParam BigDecimal feeAmount,
+                             @RequestParam String feeType,
+                             RedirectAttributes redirectAttributes) {
+        try {
+            accountService.chargeFee(accountNumber, feeAmount, feeType,
+                businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success",
+                feeType + " charged: ₹" + feeAmount);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
     }
 }

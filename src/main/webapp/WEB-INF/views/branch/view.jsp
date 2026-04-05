@@ -11,7 +11,10 @@
 
     <div class="row g-3 mb-3">
         <div class="col"><div class="fv-stat-card"><div class="stat-value"><c:out value="${customers.size()}" default="0" /></div><div class="stat-label">Customers</div></div></div>
+        <div class="col"><div class="fv-stat-card"><div class="stat-value"><c:out value="${activeCount}" default="0" /></div><div class="stat-label">Active Accounts</div></div></div>
         <div class="col"><div class="fv-stat-card"><div class="stat-value amount"><fmt:formatNumber value="${totalOutstanding}" type="number" maxFractionDigits="0" /></div><div class="stat-label">Outstanding (INR)</div></div></div>
+        <div class="col"><div class="fv-stat-card stat-warning"><div class="stat-value"><c:out value="${smaCount}" default="0" /></div><div class="stat-label">SMA Accounts</div></div></div>
+        <div class="col"><div class="fv-stat-card stat-danger"><div class="stat-value"><c:out value="${npaCount}" default="0" /></div><div class="stat-label">NPA Accounts</div></div></div>
     </div>
 
     <div class="fv-card">
@@ -32,6 +35,53 @@
                 <tr><td class="fw-bold">Region</td><td><c:out value="${branch.region}" default="--" /></td></tr>
                 <tr><td class="fw-bold">Address</td><td><c:out value="${branch.address}" />, <c:out value="${branch.city}" />, <c:out value="${branch.state}" /> - <c:out value="${branch.pinCode}" /></td></tr>
                 <tr><td class="fw-bold">Status</td><td><span class="fv-badge fv-badge-active">Active</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- CBS Branch Loan Portfolio -->
+    <div class="fv-card">
+        <div class="card-header">Loan Accounts at this Branch</div>
+        <div class="card-body">
+            <table class="table fv-table fv-datatable">
+                <thead>
+                    <tr>
+                        <th>Account No.</th>
+                        <th>Customer</th>
+                        <th>Product</th>
+                        <th class="text-end">Outstanding</th>
+                        <th>DPD</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="acc" items="${loanAccounts}">
+                        <tr>
+                            <td><a href="${pageContext.request.contextPath}/loan/account/${acc.accountNumber}"><c:out value="${acc.accountNumber}" /></a></td>
+                            <td><a href="${pageContext.request.contextPath}/customer/view/${acc.customer.id}"><c:out value="${acc.customer.fullName}" /></a></td>
+                            <td><c:out value="${acc.productType}" /></td>
+                            <td class="amount"><fmt:formatNumber value="${acc.outstandingPrincipal}" type="number" maxFractionDigits="2" /></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${acc.daysPastDue > 90}"><span class="fv-badge fv-badge-npa"><c:out value="${acc.daysPastDue}" /></span></c:when>
+                                    <c:when test="${acc.daysPastDue > 0}"><span class="fv-badge fv-badge-pending"><c:out value="${acc.daysPastDue}" /></span></c:when>
+                                    <c:otherwise>0</c:otherwise>
+                                </c:choose>
+                            </td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${acc.status.npa}"><span class="fv-badge fv-badge-npa"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:when test="${acc.status.sma}"><span class="fv-badge fv-badge-pending"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:when test="${acc.status.terminal}"><span class="fv-badge fv-badge-closed"><c:out value="${acc.status}" /></span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-active"><c:out value="${acc.status}" /></span></c:otherwise>
+                                </c:choose>
+                            </td>
+                        </tr>
+                    </c:forEach>
+                    <c:if test="${empty loanAccounts}">
+                        <tr><td colspan="6" class="text-center text-muted">No loan accounts at this branch</td></tr>
+                    </c:if>
                 </tbody>
             </table>
         </div>

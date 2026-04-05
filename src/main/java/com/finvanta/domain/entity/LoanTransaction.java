@@ -65,4 +65,22 @@ public class LoanTransaction extends BaseEntity {
 
     @Column(name = "journal_entry_id")
     private Long journalEntryId;
+
+    /**
+     * CBS Idempotency Key per Finacle/Temenos UNIQUE.REF pattern.
+     *
+     * Client-supplied key that uniquely identifies a transaction request.
+     * If a retry sends the same idempotency key, the system returns the
+     * existing transaction instead of creating a duplicate.
+     *
+     * Format: caller-defined (typically: channel + accountNo + timestamp + nonce)
+     * Example: "WEB-LN001-20240401-abc123"
+     *
+     * Per CBS standards:
+     * - Unique constraint prevents duplicate processing on network retries
+     * - Null = no idempotency protection (system-generated transactions like accrual)
+     * - Non-null = client-initiated transactions (repayment, prepayment, fee)
+     */
+    @Column(name = "idempotency_key", length = 100, unique = false)
+    private String idempotencyKey;
 }

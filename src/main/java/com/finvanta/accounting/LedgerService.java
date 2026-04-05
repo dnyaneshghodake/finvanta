@@ -59,6 +59,25 @@ public class LedgerService {
      * - SHA-256 hash chain
      * - Source journal traceability
      *
+     * <h3>CBS Ledger Sequence Serialization Strategy:</h3>
+     * The pessimistic lock on the latest ledger entry serializes concurrent postings
+     * when at least one entry exists. For the very first posting (empty ledger),
+     * no row exists to lock, so two concurrent first-postings could both get
+     * sequence=1. The UNIQUE constraint (uq_ledger_tenant_seq) is the DB-level
+     * safety net — one will succeed, the other will get a ConstraintViolationException
+     * which propagates up and rolls back the entire transaction (including GL updates).
+     *
+     * This is acceptable because:
+     * <ol>
+     *   <li>First-posting race is extremely rare (only on tenant initialization)</li>
+     *   <li>The retry at the caller level (BatchService per-account try/catch) handles it</li>
+     *   <li>GL updates and ledger are in the same @Transactional — both roll back atomically</li>
+     * </ol>
+     *
+     * <b>Production enhancement:</b> Use a DB sequence (CREATE SEQUENCE ledger_seq_tenant)
+     * or a dedicated tenant_ledger_state table with a sentinel row per tenant that
+     * is always locked before sequence allocation.
+     *
      * @param journalEntry The posted journal entry
      * @return List of created ledger entries
      */
@@ -66,11 +85,14 @@ public class LedgerService {
     public List<LedgerEntry> postToLedger(JournalEntry journalEntry) {
         String tenantId = TenantContext.getCurrentTenant();
 
-        // Get current max sequence and previous hash for chain
-        long currentSequence = ledgerRepository.getMaxSequence(tenantId);
-        String previousHash = ledgerRepository.findLatestByTenantId(tenantId)
-            .map(LedgerEntry::getHashValue)
-            .orElse("GENESIS");
+        // Get current max sequence and previous hash for chain.
+        // Uses pessimistic lock to serialize concurrent postings and prevent
+        // duplicate sequences or broken hash chains.
+        // NOTE: For the first-ever posting (empty ledger), no lock is acquired.
+        // The UNIQUE constraint (uq_ledger_tenant_seq) is the safety net — see Javadoc above.
+        java.util.Optional<LedgerEntry> latestEntry = ledgerRepository.findAndLockLatestByTenantId(tenantId);
+        long currentSequence = latestEntry.map(LedgerEntry::getLedgerSequence).orElse(0L);
+        String previousHash = latestEntry.map(LedgerEntry::getHashValue).orElse("GENESIS");
 
         List<LedgerEntry> entries = new ArrayList<>();
 
@@ -108,10 +130,12 @@ public class LedgerService {
 
         List<LedgerEntry> saved = ledgerRepository.saveAll(entries);
 
-        log.debug("Ledger posted: journalRef={}, entries={}, sequences={}-{}",
-            journalEntry.getJournalRef(), saved.size(),
-            saved.get(0).getLedgerSequence(),
-            saved.get(saved.size() - 1).getLedgerSequence());
+        if (!saved.isEmpty()) {
+            log.debug("Ledger posted: journalRef={}, entries={}, sequences={}-{}",
+                journalEntry.getJournalRef(), saved.size(),
+                saved.get(0).getLedgerSequence(),
+                saved.get(saved.size() - 1).getLedgerSequence());
+        }
 
         return saved;
     }
