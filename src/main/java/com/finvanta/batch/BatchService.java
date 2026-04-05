@@ -7,6 +7,7 @@ import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.BatchStatus;
 import com.finvanta.domain.enums.LoanStatus;
 import com.finvanta.domain.rules.NpaClassificationRule;
+import com.finvanta.domain.rules.ProvisioningRule;
 import com.finvanta.repository.BatchJobRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.LoanAccountRepository;
@@ -34,6 +35,7 @@ public class BatchService {
     private final LoanAccountRepository loanAccountRepository;
     private final LoanAccountService loanAccountService;
     private final NpaClassificationRule npaRule;
+    private final ProvisioningRule provisioningRule;
     private final AuditService auditService;
 
     /**
@@ -49,12 +51,14 @@ public class BatchService {
                         LoanAccountRepository loanAccountRepository,
                         LoanAccountService loanAccountService,
                         NpaClassificationRule npaRule,
+                        ProvisioningRule provisioningRule,
                         AuditService auditService) {
         this.batchJobRepository = batchJobRepository;
         this.calendarRepository = calendarRepository;
         this.loanAccountRepository = loanAccountRepository;
         this.loanAccountService = loanAccountService;
         this.npaRule = npaRule;
+        this.provisioningRule = provisioningRule;
         this.auditService = auditService;
     }
 
@@ -135,7 +139,22 @@ public class BatchService {
                 }
             }
 
-            // Step 6: Mark EOD complete (own transaction)
+            // Step 6: Run provisioning calculation (RBI IRAC mandatory)
+            self.updateBatchStep(eodJob, "PROVISIONING");
+
+            List<LoanAccount> allAccounts = loanAccountRepository.findAllActiveAccounts(tenantId);
+            for (LoanAccount account : allAccounts) {
+                try {
+                    self.calculateProvisioning(account);
+                } catch (Exception e) {
+                    errorLog.append("Provisioning failed for ")
+                        .append(account.getAccountNumber()).append(": ")
+                        .append(e.getMessage()).append("\n");
+                    log.error("Provisioning failed: accNo={}", account.getAccountNumber(), e);
+                }
+            }
+
+            // Step 7: Mark EOD complete (own transaction)
             BatchStatus finalStatus = failedRecords > 0
                 ? BatchStatus.PARTIALLY_COMPLETED : BatchStatus.COMPLETED;
 
@@ -235,6 +254,26 @@ public class BatchService {
 
         calendar.setLocked(false);
         calendarRepository.save(calendar);
+    }
+
+    /**
+     * RBI IRAC: Calculate and update provisioning amount for a loan account.
+     * Provisioning is mandatory for all loan accounts — Standard assets at 0.40%,
+     * NPA accounts at 10-100% depending on classification.
+     */
+    @Transactional
+    protected void calculateProvisioning(LoanAccount account) {
+        java.math.BigDecimal newProvisioning = provisioningRule.calculateProvisioning(account);
+        java.math.BigDecimal currentProvisioning = account.getProvisioningAmount();
+
+        if (newProvisioning.compareTo(currentProvisioning) != 0) {
+            account.setProvisioningAmount(newProvisioning);
+            account.setUpdatedBy("SYSTEM");
+            loanAccountRepository.save(account);
+
+            log.debug("Provisioning updated: accNo={}, old={}, new={}, status={}",
+                account.getAccountNumber(), currentProvisioning, newProvisioning, account.getStatus());
+        }
     }
 
     @Transactional

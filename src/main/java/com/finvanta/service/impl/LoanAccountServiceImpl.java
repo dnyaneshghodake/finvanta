@@ -2,6 +2,7 @@ package com.finvanta.service.impl;
 
 import com.finvanta.accounting.AccountingService;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
+import com.finvanta.accounting.GLConstants;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.entity.LoanApplication;
@@ -32,11 +33,12 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
     private static final Logger log = LoggerFactory.getLogger(LoanAccountServiceImpl.class);
 
-    private static final String GL_LOAN_ASSET = "1001";
-    private static final String GL_DISBURSEMENT_BANK = "1100";
-    private static final String GL_INTEREST_INCOME = "4001";
-    private static final String GL_INTEREST_RECEIVABLE = "1002";
-    private static final String GL_CASH_BANK = "1100";
+    // GL codes centralized in GLConstants per Finacle/Temenos guidelines
+    private static final String GL_LOAN_ASSET = GLConstants.LOAN_ASSET;
+    private static final String GL_DISBURSEMENT_BANK = GLConstants.BANK_OPERATIONS;
+    private static final String GL_INTEREST_INCOME = GLConstants.INTEREST_INCOME;
+    private static final String GL_INTEREST_RECEIVABLE = GLConstants.INTEREST_RECEIVABLE;
+    private static final String GL_CASH_BANK = GLConstants.BANK_OPERATIONS;
 
     private final LoanAccountRepository accountRepository;
     private final LoanApplicationRepository applicationRepository;

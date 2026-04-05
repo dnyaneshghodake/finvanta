@@ -63,8 +63,16 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "interest_rate", nullable = false, precision = 8, scale = 4)
     private BigDecimal interestRate;
 
+    /** RBI Fair Lending: Penal rate applied on overdue EMIs (% p.a.) */
+    @Column(name = "penal_rate", precision = 8, scale = 4)
+    private BigDecimal penalRate = BigDecimal.ZERO;
+
     @Column(name = "emi_amount", precision = 18, scale = 2)
     private BigDecimal emiAmount;
+
+    /** RBI IRAC: Repayment frequency — MONTHLY, QUARTERLY, BULLET */
+    @Column(name = "repayment_frequency", length = 20)
+    private String repaymentFrequency = "MONTHLY";
 
     @Column(name = "tenure_months", nullable = false)
     private Integer tenureMonths;
@@ -100,7 +108,26 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "npa_classification_date")
     private LocalDate npaClassificationDate;
 
+    /**
+     * RBI IRAC: Provisioning amount based on NPA classification.
+     * Standard: 0.40%, Sub-standard: 10%, Doubtful: 20-50%, Loss: 100%
+     */
+    @Column(name = "provisioning_amount", precision = 18, scale = 2)
+    private BigDecimal provisioningAmount = BigDecimal.ZERO;
+
+    /** Penal interest accrued on overdue EMIs */
+    @Column(name = "penal_interest_accrued", precision = 18, scale = 2)
+    private BigDecimal penalInterestAccrued = BigDecimal.ZERO;
+
+    /** Collateral reference for secured loans */
+    @Column(name = "collateral_reference", length = 100)
+    private String collateralReference;
+
+    /** RBI risk classification: LOW, MEDIUM, HIGH, VERY_HIGH */
+    @Column(name = "risk_category", length = 20)
+    private String riskCategory;
+
     public BigDecimal getTotalOutstanding() {
-        return outstandingPrincipal.add(outstandingInterest).add(accruedInterest);
+        return outstandingPrincipal.add(outstandingInterest).add(accruedInterest).add(penalInterestAccrued);
     }
 }
