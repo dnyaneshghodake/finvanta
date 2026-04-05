@@ -5,6 +5,7 @@ import com.finvanta.repository.DbSequenceRepository;
 import com.finvanta.util.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,14 +66,23 @@ public class SequenceGeneratorService {
             .orElse(null);
 
         if (seq == null) {
-            // Lazy init: create the sequence row on first use
-            seq = new DbSequence();
-            seq.setTenantId(tenantId);
-            seq.setSequenceName(sequenceName);
-            seq.setCurrentValue(0);
-            seq = sequenceRepository.saveAndFlush(seq);
+            // Lazy init: create the sequence row on first use.
+            // Race condition: two threads may both find null and attempt to insert.
+            // The UNIQUE constraint (tenant_id, sequence_name) ensures only one succeeds.
+            // On duplicate key, catch and re-acquire the lock on the winning row.
+            try {
+                seq = new DbSequence();
+                seq.setTenantId(tenantId);
+                seq.setSequenceName(sequenceName);
+                seq.setCurrentValue(0);
+                seq = sequenceRepository.saveAndFlush(seq);
+            } catch (DataIntegrityViolationException e) {
+                // Another thread created the row first — this is expected under concurrency.
+                log.debug("Sequence row already exists (concurrent init): name={}, tenant={}", sequenceName, tenantId);
+            }
 
-            // Re-acquire with lock (the save above may not hold the lock in all DBs)
+            // Re-acquire with lock (the save above may not hold the lock in all DBs,
+            // and on duplicate key the entity is detached)
             seq = sequenceRepository
                 .findAndLockByTenantIdAndSequenceName(tenantId, sequenceName)
                 .orElseThrow(() -> new IllegalStateException(

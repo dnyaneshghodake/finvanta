@@ -171,56 +171,51 @@ public class LedgerService {
             return true;
         }
 
+        // Load ALL entries in sequence order for full chain verification.
+        // NOTE: For production ledgers with millions of entries, this must be replaced
+        // with a paginated repository method: findByTenantIdOrderByLedgerSequenceAsc(tenantId, Pageable).
+        // The current LedgerEntryRepository does not have a suitable method for full-tenant
+        // ordered retrieval — findByTenantIdAndBusinessDateOrderByLedgerSequenceAsc filters
+        // by businessDate and returns zero results when null is passed (Spring Data generates
+        // WHERE business_date IS NULL). Until a proper paginated query is added, we use
+        // findTopByTenantIdOrderByLedgerSequenceDesc with a large page to load all entries.
+        // TODO: Add findAllByTenantIdOrderByLedgerSequenceAsc(tenantId, Pageable) to repository.
+        List<LedgerEntry> entries = ledgerRepository.findTopByTenantIdOrderByLedgerSequenceDesc(
+            tenantId, org.springframework.data.domain.PageRequest.of(0, (int) Math.min(maxSeq, Integer.MAX_VALUE),
+                org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "ledgerSequence")));
+
+        if (entries.isEmpty()) {
+            log.warn("Ledger verification: no entries found despite maxSeq={}. Possible query issue.", maxSeq);
+            return false;
+        }
+
         String expectedPreviousHash = "GENESIS";
         long verifiedCount = 0;
-        int pageSize = 500;
-        int page = 0;
         boolean chainValid = true;
 
-        while (verifiedCount < maxSeq) {
-            // Load entries in sequence order, paginated
-            List<LedgerEntry> entries = ledgerRepository.findByTenantIdAndBusinessDateOrderByLedgerSequenceAsc(
-                tenantId, null);
-
-            // For large ledgers, use a paginated query. The existing repository method
-            // loads by businessDate; for full verification we need all entries in sequence.
-            // Using the existing method with null date returns all entries (H2/dev compatible).
-            // Production: Add a paginated findByTenantIdOrderByLedgerSequenceAsc query.
-            if (entries.isEmpty()) {
+        for (LedgerEntry entry : entries) {
+            // 1. Verify chain linkage: entry's previousHash must match expected
+            if (!expectedPreviousHash.equals(entry.getPreviousHash())) {
+                log.error("LEDGER TAMPER DETECTED: Chain break at sequence {}. "
+                    + "Expected previousHash={}, found previousHash={}",
+                    entry.getLedgerSequence(), expectedPreviousHash, entry.getPreviousHash());
+                chainValid = false;
                 break;
             }
 
-            for (LedgerEntry entry : entries) {
-                // 1. Verify chain linkage: entry's previousHash must match expected
-                if (!expectedPreviousHash.equals(entry.getPreviousHash())) {
-                    log.error("LEDGER TAMPER DETECTED: Chain break at sequence {}. "
-                        + "Expected previousHash={}, found previousHash={}",
-                        entry.getLedgerSequence(), expectedPreviousHash, entry.getPreviousHash());
-                    chainValid = false;
-                    break;
-                }
-
-                // 2. Recompute hash from entry data and verify against stored hash
-                String recomputedHash = computeHash(entry, entry.getPreviousHash());
-                if (!recomputedHash.equals(entry.getHashValue())) {
-                    log.error("LEDGER TAMPER DETECTED: Hash mismatch at sequence {}. "
-                        + "Stored hash={}, recomputed hash={}. Entry data may have been modified.",
-                        entry.getLedgerSequence(), entry.getHashValue(), recomputedHash);
-                    chainValid = false;
-                    break;
-                }
-
-                // 3. Advance chain: this entry's hash becomes the expected previousHash for next
-                expectedPreviousHash = entry.getHashValue();
-                verifiedCount++;
-            }
-
-            if (!chainValid) {
+            // 2. Recompute hash from entry data and verify against stored hash
+            String recomputedHash = computeHash(entry, entry.getPreviousHash());
+            if (!recomputedHash.equals(entry.getHashValue())) {
+                log.error("LEDGER TAMPER DETECTED: Hash mismatch at sequence {}. "
+                    + "Stored hash={}, recomputed hash={}. Entry data may have been modified.",
+                    entry.getLedgerSequence(), entry.getHashValue(), recomputedHash);
+                chainValid = false;
                 break;
             }
 
-            // For the non-paginated path (dev/test), all entries are loaded in one call
-            break;
+            // 3. Advance chain: this entry's hash becomes the expected previousHash for next
+            expectedPreviousHash = entry.getHashValue();
+            verifiedCount++;
         }
 
         if (chainValid) {
