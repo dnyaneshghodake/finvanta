@@ -37,9 +37,20 @@ public class Transaction360Controller {
         return mav;
     }
 
-    /** Transaction 360 by voucher number */
-    @GetMapping("/voucher/{voucherNumber}")
-    public ModelAndView viewByVoucher(@PathVariable String voucherNumber) {
+    /**
+     * Transaction 360 by voucher number.
+     *
+     * Voucher format contains slashes: VCH/branch/YYYYMMDD/seq
+     * Spring MVC treats '/' as path delimiter, so we use '**' wildcard
+     * and extract the full voucher from the request path.
+     */
+    @GetMapping("/voucher/**")
+    public ModelAndView viewByVoucher(jakarta.servlet.http.HttpServletRequest request) {
+        String fullPath = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        // Extract everything after /txn360/voucher/
+        String voucherNumber = fullPath.substring(
+            (contextPath + "/txn360/voucher/").length());
         ModelAndView mav = new ModelAndView("txn360/view");
         mav.addAllObjects(transaction360Service.getByVoucher(voucherNumber));
         mav.addObject("lookupType", "Voucher");
@@ -62,10 +73,18 @@ public class Transaction360Controller {
      *   TXN... → transaction ref
      *   VCH... → voucher number
      *   JRN... → journal ref
+     *
+     * Input is sanitized to prevent path traversal and open redirect attacks.
+     * Only alphanumeric characters, hyphens, underscores, and forward slashes are allowed
+     * (forward slash is needed for voucher format VCH/branch/date/seq).
      */
     @GetMapping("/search")
     public String smartSearch(@RequestParam String q) {
         String trimmed = q.trim();
+        // CBS: Sanitize input to prevent path traversal / CRLF injection
+        if (!trimmed.matches("[A-Za-z0-9/_-]+")) {
+            return "redirect:/txn360/search";
+        }
         if (trimmed.startsWith("VCH")) {
             return "redirect:/txn360/voucher/" + trimmed;
         } else if (trimmed.startsWith("JRN")) {
