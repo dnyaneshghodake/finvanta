@@ -3,6 +3,7 @@ package com.finvanta.service.impl;
 import com.finvanta.accounting.AccountingService;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
+import com.finvanta.accounting.SuspenseService;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.entity.LoanApplication;
@@ -62,6 +63,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final InterestCalculationRule interestRule;
     private final NpaClassificationRule npaRule;
     private final AuditService auditService;
+    private final SuspenseService suspenseService;
     private final com.finvanta.service.LoanScheduleService scheduleService;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
@@ -71,6 +73,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    InterestCalculationRule interestRule,
                                    NpaClassificationRule npaRule,
                                    AuditService auditService,
+                                   SuspenseService suspenseService,
                                    com.finvanta.service.LoanScheduleService scheduleService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
@@ -79,6 +82,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.interestRule = interestRule;
         this.npaRule = npaRule;
         this.auditService = auditService;
+        this.suspenseService = suspenseService;
         this.scheduleService = scheduleService;
     }
 
@@ -424,6 +428,17 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             account.setNpaClassificationDate(LocalDate.now());
             account.setUpdatedBy("SYSTEM");
             accountRepository.save(account);
+
+            // RBI IRAC: When account transitions to NPA, reverse accrued interest to suspense.
+            // Previously recognized interest income must be reversed from P&L.
+            // GL Entry: DR Interest Income (4001) / CR Interest Suspense (2100)
+            if (newStatus.isNpa() && !previousStatus.isNpa()) {
+                try {
+                    suspenseService.reverseInterestToSuspense(account, LocalDate.now());
+                } catch (Exception e) {
+                    log.warn("Suspense reversal failed for {}: {}", accountNumber, e.getMessage());
+                }
+            }
 
             auditService.logEvent("LoanAccount", account.getId(), "NPA_CLASSIFY",
                 previousStatus.name(), newStatus.name(), "LOAN_ACCOUNTS",
