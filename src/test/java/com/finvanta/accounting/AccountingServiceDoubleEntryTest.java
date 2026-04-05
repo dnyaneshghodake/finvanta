@@ -26,7 +26,7 @@ class AccountingServiceDoubleEntryTest {
     @BeforeEach
     void setUp() {
         // Create with null dependencies — we only test validateDoubleEntry()
-        accountingService = new AccountingService(null, null, null, null, null, null);
+        accountingService = new AccountingService(null, null, null, null, null);
     }
 
     @Test

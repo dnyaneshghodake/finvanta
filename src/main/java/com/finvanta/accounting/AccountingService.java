@@ -6,7 +6,6 @@ import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.domain.entity.JournalEntryLine;
 import com.finvanta.domain.entity.TransactionBatch;
 import com.finvanta.domain.enums.DebitCredit;
-import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.JournalEntryRepository;
 import com.finvanta.repository.TransactionBatchRepository;
@@ -47,20 +46,17 @@ public class AccountingService {
     private final AuditService auditService;
     private final LedgerService ledgerService;
     private final TransactionBatchRepository batchRepository;
-    private final BusinessCalendarRepository calendarRepository;
 
     public AccountingService(JournalEntryRepository journalEntryRepository,
                              GLMasterRepository glMasterRepository,
                              AuditService auditService,
                              LedgerService ledgerService,
-                             TransactionBatchRepository batchRepository,
-                             BusinessCalendarRepository calendarRepository) {
+                             TransactionBatchRepository batchRepository) {
         this.journalEntryRepository = journalEntryRepository;
         this.glMasterRepository = glMasterRepository;
         this.auditService = auditService;
         this.ledgerService = ledgerService;
         this.batchRepository = batchRepository;
-        this.calendarRepository = calendarRepository;
     }
 
     @Transactional
