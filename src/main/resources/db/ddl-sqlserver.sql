@@ -99,7 +99,51 @@ CREATE INDEX idx_cust_tenant_custno ON customers (tenant_id, customer_number);
 CREATE INDEX idx_cust_pan ON customers (tenant_id, pan_number);
 CREATE INDEX idx_cust_aadhaar ON customers (tenant_id, aadhaar_number);
 
--- 5. LOAN APPLICATIONS
+-- 5. PRODUCT MASTER (Finacle PDDEF / Temenos AA.PRODUCT.CATALOG)
+CREATE TABLE product_master (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    product_code    VARCHAR(50)     NOT NULL,
+    product_name    VARCHAR(200)    NOT NULL,
+    product_category VARCHAR(50)    NOT NULL,
+    description     VARCHAR(500),
+    currency_code   VARCHAR(3)      NOT NULL DEFAULT 'INR',
+    interest_method VARCHAR(30)     NOT NULL DEFAULT 'ACTUAL_365',
+    interest_type   VARCHAR(20)     NOT NULL DEFAULT 'FIXED',
+    min_interest_rate DECIMAL(8,4),
+    max_interest_rate DECIMAL(8,4),
+    default_penal_rate DECIMAL(8,4) DEFAULT 2.0000,
+    min_loan_amount DECIMAL(18,2),
+    max_loan_amount DECIMAL(18,2),
+    min_tenure_months INT,
+    max_tenure_months INT,
+    repayment_frequency VARCHAR(20) NOT NULL DEFAULT 'MONTHLY',
+    -- GL Code Mapping (Product → GL)
+    gl_loan_asset       VARCHAR(20) NOT NULL,
+    gl_interest_receivable VARCHAR(20) NOT NULL,
+    gl_bank_operations  VARCHAR(20) NOT NULL,
+    gl_interest_income  VARCHAR(20) NOT NULL,
+    gl_fee_income       VARCHAR(20) NOT NULL,
+    gl_penal_income     VARCHAR(20) NOT NULL,
+    gl_provision_expense VARCHAR(20) NOT NULL,
+    gl_provision_npa    VARCHAR(20) NOT NULL,
+    gl_write_off_expense VARCHAR(20) NOT NULL,
+    gl_interest_suspense VARCHAR(20) NOT NULL,
+    is_active       BIT             NOT NULL DEFAULT 1,
+    repayment_allocation VARCHAR(30) NOT NULL DEFAULT 'INTEREST_FIRST',
+    prepayment_penalty_applicable BIT NOT NULL DEFAULT 0,
+    processing_fee_pct DECIMAL(8,4) DEFAULT 0.0000,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_product_tenant_code UNIQUE (tenant_id, product_code)
+);
+CREATE INDEX idx_product_tenant_code ON product_master (tenant_id, product_code);
+CREATE INDEX idx_product_tenant_active ON product_master (tenant_id, is_active);
+
+-- 6. LOAN APPLICATIONS
 CREATE TABLE loan_applications (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
@@ -147,6 +191,7 @@ CREATE TABLE loan_accounts (
     customer_id     BIGINT          NOT NULL,
     branch_id       BIGINT          NOT NULL,
     product_type    VARCHAR(50)     NOT NULL,
+    currency_code   VARCHAR(3)      NOT NULL DEFAULT 'INR',  -- ISO 4217 currency code
     sanctioned_amount DECIMAL(18,2) NOT NULL,
     disbursed_amount DECIMAL(18,2)  NOT NULL DEFAULT 0.00,
     outstanding_principal DECIMAL(18,2) NOT NULL DEFAULT 0.00,

@@ -39,6 +39,16 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "product_type", nullable = false, length = 50)
     private String productType;
 
+    /**
+     * ISO 4217 currency code for all monetary amounts on this account.
+     * Per CBS multi-currency standards, every account must declare its currency.
+     * All amounts (sanctioned, outstanding, accrued, etc.) are in this currency.
+     * For India-only deployment, defaults to INR. Future multi-currency support
+     * requires FCY→LCY conversion at the GL posting level.
+     */
+    @Column(name = "currency_code", nullable = false, length = 3)
+    private String currencyCode = "INR";
+
     @Column(name = "sanctioned_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal sanctionedAmount;
 
