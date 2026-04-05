@@ -62,8 +62,8 @@ spring:
   datasource:
     url: jdbc:sqlserver://localhost:1433;databaseName=finvanta;encrypt=true;trustServerCertificate=true
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
-    username: ${DB_USERNAME:finvanta_user}
-    password: ${DB_PASSWORD:}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:sqlserver#123}
 
   jpa:
     hibernate:
