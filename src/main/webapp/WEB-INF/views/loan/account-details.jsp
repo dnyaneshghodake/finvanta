@@ -92,6 +92,42 @@
                 </form>
             </div>
         </div>
+
+        <!-- CBS Prepayment/Foreclosure — per RBI Fair Lending Code 2023 -->
+        <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <div class="fv-card">
+            <div class="card-header">Prepayment / Foreclosure</div>
+            <div class="card-body">
+                <p class="text-muted">Pay off total outstanding to close the loan early. Per RBI Fair Lending Code 2023, no prepayment penalty on floating rate loans.</p>
+                <form method="post" action="${pageContext.request.contextPath}/loan/prepayment/${account.accountNumber}" class="fv-form">
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Total Outstanding (INR)</label>
+                            <input type="number" name="amount" class="form-control" step="0.01" min="1" required value="${account.totalOutstanding}" />
+                        </div>
+                    </div>
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-warning" data-confirm="Confirm prepayment/foreclosure? This will close the loan.">Prepay / Foreclose</button>
+                </form>
+            </div>
+        </div>
+        </c:if>
+
+        <!-- CBS Write-Off — ADMIN only, NPA accounts only -->
+        <c:if test="${account.status.npa and pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <div class="fv-card">
+            <div class="card-header text-danger">NPA Write-Off</div>
+            <div class="card-body">
+                <p class="text-danger">Write off this NPA account. This removes the loan asset from the balance sheet and is <strong>irreversible</strong>.</p>
+                <p>Outstanding Principal: <strong class="amount"><fmt:formatNumber value="${account.outstandingPrincipal}" type="number" maxFractionDigits="2" /> INR</strong></p>
+                <p>Provisioning Held: <strong class="amount"><fmt:formatNumber value="${account.provisioningAmount}" type="number" maxFractionDigits="2" /> INR</strong></p>
+                <form method="post" action="${pageContext.request.contextPath}/loan/write-off/${account.accountNumber}">
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-danger" data-confirm="CONFIRM WRITE-OFF: This action is irreversible and will remove ₹${account.outstandingPrincipal} from the balance sheet.">Write Off Account</button>
+                </form>
+            </div>
+        </div>
+        </c:if>
     </c:if>
 
     <!-- CBS Amortization Schedule -->
