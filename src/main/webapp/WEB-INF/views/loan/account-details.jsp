@@ -29,9 +29,12 @@
                 <tr><td class="fw-bold">Customer</td><td><c:out value="${account.customer.fullName}" /></td></tr>
                 <tr><td class="fw-bold">Product Type</td><td><c:out value="${account.productType}" /></td></tr>
                 <tr><td class="fw-bold">Status</td><td>
-                    <span class="fv-badge ${account.status.npa() ? 'fv-badge-npa' : (account.status == 'ACTIVE' ? 'fv-badge-active' : 'fv-badge-pending')}">
-                        <c:out value="${account.status}" />
-                    </span>
+                    <c:choose>
+                        <c:when test="${account.status.npa()}"><span class="fv-badge fv-badge-npa"><c:out value="${account.status}" /></span></c:when>
+                        <c:when test="${account.status == 'ACTIVE'}"><span class="fv-badge fv-badge-active"><c:out value="${account.status}" /></span></c:when>
+                        <c:when test="${account.status == 'CLOSED'}"><span class="fv-badge fv-badge-closed"><c:out value="${account.status}" /></span></c:when>
+                        <c:otherwise><span class="fv-badge fv-badge-pending"><c:out value="${account.status}" /></span></c:otherwise>
+                    </c:choose>
                 </td></tr>
                 <tr><td class="fw-bold">Interest Rate</td><td><fmt:formatNumber value="${account.interestRate}" maxFractionDigits="2" />% p.a.</td></tr>
                 <tr><td class="fw-bold">Tenure</td><td><c:out value="${account.tenureMonths}" /> months (Remaining: <c:out value="${account.remainingTenure}" />)</td></tr>
@@ -57,7 +60,7 @@
         </div>
     </c:if>
 
-    <c:if test="${account.disbursedAmount.unscaledValue() > 0 && account.status != 'CLOSED'}">
+    <c:if test="${account.disbursedAmount.unscaledValue() > 0 && !account.status.closed}">
         <div class="fv-card">
             <div class="card-header">Process Repayment</div>
             <div class="card-body">
