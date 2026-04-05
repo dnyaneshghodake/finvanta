@@ -314,6 +314,7 @@ CREATE TABLE loan_transactions (
     is_reversed     BIT             NOT NULL DEFAULT 0,
     reversed_by_ref VARCHAR(40),
     journal_entry_id BIGINT,
+    voucher_number  VARCHAR(40),    -- CBS voucher: VCH/branch/YYYYMMDD/seq — for reconciliation queries
     idempotency_key VARCHAR(100),   -- CBS idempotency: client-supplied key to prevent duplicate processing
     version         BIGINT          NOT NULL DEFAULT 0,
     created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),

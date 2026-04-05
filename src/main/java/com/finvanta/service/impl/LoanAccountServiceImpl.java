@@ -227,6 +227,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setBalanceAfter(disbursementAmount);
         txn.setNarration("Loan disbursement | Voucher: " + txnResult.getVoucherNumber());
         txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy(currentUser);
         transactionRepository.save(txn);
 
@@ -308,25 +309,38 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Interest income accrual - " + accountNumber)
         );
 
-        var journalEntry = accountingService.postJournalEntry(
-            accrualDate,
-            "Interest accrual for " + accountNumber,
-            "LOAN", accountNumber,
-            journalLines
+        // CBS: EOD system operations route through TransactionEngine with systemGenerated(true).
+        // This ensures uniform voucher generation, audit trail, and business date validation
+        // while skipping user-level transaction limits and maker-checker gates.
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("LOAN")
+                .transactionType("INTEREST_ACCRUAL")
+                .accountReference(accountNumber)
+                .amount(accruedAmount)
+                .valueDate(accrualDate)
+                .branchCode(account.getBranch() != null ? account.getBranch().getBranchCode() : null)
+                .productType(productType)
+                .narration("Interest accrual for " + accountNumber)
+                .journalLines(journalLines)
+                .systemGenerated(true)
+                .initiatedBy("SYSTEM")
+                .build()
         );
 
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.INTEREST_ACCRUAL);
         txn.setAmount(accruedAmount);
         txn.setInterestComponent(accruedAmount);
         txn.setValueDate(accrualDate);
-        txn.setPostingDate(LocalDateTime.now());
+        txn.setPostingDate(txnResult.getPostingDate());
         txn.setBalanceAfter(account.getTotalOutstanding().add(accruedAmount));
-        txn.setNarration("Daily interest accrual");
-        txn.setJournalEntryId(journalEntry.getId());
+        txn.setNarration("Daily interest accrual | Voucher: " + txnResult.getVoucherNumber());
+        txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy("SYSTEM");
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
@@ -387,25 +401,37 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Penal interest income - " + accountNumber)
         );
 
-        var journalEntry = accountingService.postJournalEntry(
-            businessDate,
-            "RBI penal interest for overdue account " + accountNumber,
-            "LOAN", accountNumber,
-            journalLines
+        // CBS: EOD system operations route through TransactionEngine with systemGenerated(true).
+        TransactionResult txnResult = transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("LOAN")
+                .transactionType("PENALTY_CHARGE")
+                .accountReference(accountNumber)
+                .amount(penalAmount)
+                .valueDate(businessDate)
+                .branchCode(account.getBranch() != null ? account.getBranch().getBranchCode() : null)
+                .productType(productType)
+                .narration("RBI penal interest for overdue account " + accountNumber)
+                .journalLines(journalLines)
+                .systemGenerated(true)
+                .initiatedBy("SYSTEM")
+                .build()
         );
 
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
+        txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.PENALTY_CHARGE);
         txn.setAmount(penalAmount);
         txn.setPenaltyComponent(penalAmount);
         txn.setValueDate(businessDate);
-        txn.setPostingDate(LocalDateTime.now());
+        txn.setPostingDate(txnResult.getPostingDate());
         txn.setBalanceAfter(account.getTotalOutstanding().add(penalAmount));
-        txn.setNarration("Penal interest: " + penalAmount + " on overdue principal " + account.getOverduePrincipal());
-        txn.setJournalEntryId(journalEntry.getId());
+        txn.setNarration("Penal interest: " + penalAmount + " on overdue principal " + account.getOverduePrincipal()
+            + " | Voucher: " + txnResult.getVoucherNumber());
+        txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy("SYSTEM");
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
@@ -572,6 +598,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setNarration("EMI repayment - P:" + principalPaid + " I:" + interestPaid
             + " | Voucher: " + txnResult.getVoucherNumber());
         txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setIdempotencyKey(idempotencyKey);
         txn.setCreatedBy(currentUser);
         LoanTransaction savedTxn = transactionRepository.save(txn);
@@ -750,6 +777,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             + ", interest=" + interestReceivable + ", provision reversed=" + provisionHeld
             + " | Voucher: " + txnResult.getVoucherNumber());
         txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy(currentUser);
         transactionRepository.save(txn);
 
@@ -864,6 +892,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setNarration("Prepayment/Foreclosure: P=" + principalDue + ", I=" + interestDue
             + " | Voucher: " + txnResult.getVoucherNumber());
         txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy(currentUser);
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
@@ -1067,6 +1096,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         reversal.setNarration("REVERSAL of " + transactionRef + ": " + reason
             + " | Voucher: " + txnResult.getVoucherNumber());
         reversal.setJournalEntryId(txnResult.getJournalEntryId());
+        reversal.setVoucherNumber(txnResult.getVoucherNumber());
         reversal.setReversedByRef(transactionRef);
         reversal.setCreatedBy(currentUser);
         LoanTransaction savedReversal = transactionRepository.save(reversal);
@@ -1146,6 +1176,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setBalanceAfter(account.getTotalOutstanding());
         txn.setNarration(feeType + ": " + feeAmount + " | Voucher: " + txnResult.getVoucherNumber());
         txn.setJournalEntryId(txnResult.getJournalEntryId());
+        txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy(currentUser);
         LoanTransaction savedTxn = transactionRepository.save(txn);
 

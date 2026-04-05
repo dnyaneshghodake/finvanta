@@ -77,6 +77,15 @@
 			<artifactId>jackson-datatype-jsr310</artifactId>
 		</dependency>
 
+		<!-- Caffeine Cache — high-performance in-memory cache for ProductGLResolver -->
+		<!-- Per CBS standards: product GL code lookups must be cached to avoid
+		     repeated DB queries during EOD batch (100s of accounts × 3 GL lookups each).
+		     TTL-based eviction ensures stale GL codes are refreshed automatically. -->
+		<dependency>
+			<groupId>com.github.ben-manes.caffeine</groupId>
+			<artifactId>caffeine</artifactId>
+		</dependency>
+
 		<!-- Lombok -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
