@@ -26,4 +26,17 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     );
 
     List<JournalEntry> findByTenantIdAndSourceModuleAndSourceRef(String tenantId, String sourceModule, String sourceRef);
+
+    /**
+     * CBS Reconciliation: Sum journal line amounts by GL code and debit/credit direction.
+     * Used to compare journal totals against GL master balances.
+     */
+    @Query("SELECT COALESCE(SUM(jel.amount), 0) FROM JournalEntryLine jel " +
+           "JOIN jel.journalEntry je " +
+           "WHERE je.tenantId = :tenantId AND jel.glCode = :glCode " +
+           "AND jel.debitCredit = :debitCredit AND je.posted = true")
+    java.math.BigDecimal sumJournalLinesByGlCode(
+        @Param("tenantId") String tenantId,
+        @Param("glCode") String glCode,
+        @Param("debitCredit") String debitCredit);
 }

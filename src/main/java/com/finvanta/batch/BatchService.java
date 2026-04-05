@@ -1,6 +1,7 @@
 package com.finvanta.batch;
 
 import com.finvanta.accounting.GLConstants;
+import com.finvanta.accounting.ReconciliationService;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BatchJob;
 import com.finvanta.domain.entity.BusinessCalendar;
@@ -53,6 +54,7 @@ public class BatchService {
     private final NpaClassificationRule npaRule;
     private final ProvisioningRule provisioningRule;
     private final AuditService auditService;
+    private final ReconciliationService reconciliationService;
 
     /**
      * Self-reference to invoke @Transactional methods through the Spring proxy.
@@ -68,7 +70,8 @@ public class BatchService {
                         LoanAccountService loanAccountService,
                         NpaClassificationRule npaRule,
                         ProvisioningRule provisioningRule,
-                        AuditService auditService) {
+                        AuditService auditService,
+                        ReconciliationService reconciliationService) {
         this.batchJobRepository = batchJobRepository;
         this.calendarRepository = calendarRepository;
         this.loanAccountRepository = loanAccountRepository;
@@ -76,6 +79,7 @@ public class BatchService {
         this.npaRule = npaRule;
         this.provisioningRule = provisioningRule;
         this.auditService = auditService;
+        this.reconciliationService = reconciliationService;
     }
 
     /**
@@ -176,9 +180,9 @@ public class BatchService {
                 }
             }
 
-            // Step 7: GL balance validation (trial balance check before day close)
-            self.updateBatchStep(eodJob, "GL_VALIDATION");
-            self.validateGlBalance(tenantId);
+            // Step 7: GL reconciliation (subledger vs GL comparison before day close)
+            self.updateBatchStep(eodJob, "GL_RECONCILIATION");
+            validateGlBalance(businessDate);
 
             // Step 8: Mark EOD complete (own transaction)
             BatchStatus finalStatus = failedRecords > 0
@@ -331,22 +335,23 @@ public class BatchService {
     }
 
     /**
-     * CBS EOD Step: GL Balance Validation (Trial Balance Check).
-     * Per Finacle/Temenos, validates total debits == total credits across
-     * all postable GL accounts before day close.
+     * CBS EOD Step: GL Reconciliation (Subledger vs GL comparison).
+     * Per Finacle/Temenos and RBI audit requirements:
+     * 1. Trial Balance: Sum(GL debits) must equal Sum(GL credits)
+     * 2. Per-GL: GL balance must match sum of all journal postings to that GL
      *
-     * GL imbalance is logged as a warning — it indicates a reconciliation issue
-     * but should not block EOD completion (would lock the business day).
-     *
-     * TODO: Inject GLMasterRepository or AccountingService and query
-     * SUM(debit_balance) vs SUM(credit_balance) from gl_master.
-     * If imbalanced, log WARNING and create a reconciliation exception record.
-     * The AccountingService.getTrialBalance() already provides this check
-     * via the /accounting/trial-balance endpoint.
+     * If imbalanced: logs WARNING but does NOT block EOD (to avoid locking the business day).
+     * The reconciliation report is available at /reconciliation/report for manual review.
+     * Day Close validation (BusinessDateService.closeDay) will block if GL is imbalanced.
      */
-    @Transactional
-    protected void validateGlBalance(String tenantId) {
-        log.info("GL Balance Validation: Checking trial balance integrity for tenant={}", tenantId);
+    protected void validateGlBalance(LocalDate businessDate) {
+        try {
+            reconciliationService.validateForDayClose(businessDate);
+            log.info("GL Reconciliation PASSED for business date {}", businessDate);
+        } catch (Exception e) {
+            // Log but don't block EOD — day close will enforce the check
+            log.warn("GL Reconciliation WARNING for {}: {}", businessDate, e.getMessage());
+        }
     }
 
     /**
