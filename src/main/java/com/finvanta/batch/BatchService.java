@@ -124,10 +124,13 @@ public class BatchService {
                 }
             }
 
-            // Step 4: Run DPD calculation
+            // Step 4: Run DPD calculation.
+            // Re-fetch accounts to avoid stale entity versions after interest accrual
+            // modified and saved them with incremented @Version in Step 3.
             self.updateBatchStep(eodJob, "DPD_CALCULATION");
 
-            for (LoanAccount account : activeAccounts) {
+            List<LoanAccount> accountsForDpd = loanAccountRepository.findAllActiveAccounts(tenantId);
+            for (LoanAccount account : accountsForDpd) {
                 try {
                     self.updateDaysPastDue(account, businessDate);
                 } catch (Exception e) {
@@ -138,20 +141,23 @@ public class BatchService {
                 }
             }
 
-            // Step 5: Run NPA classification — each account in its own transaction
+            // Step 5: Run SMA/NPA classification — each account in its own transaction.
+            // Per RBI IRAC + Early Warning Framework, ALL accounts with DPD >= 1 must be
+            // classified: SMA-0 (1-30), SMA-1 (31-60), SMA-2 (61-90), NPA (91+).
+            // Using threshold=1 ensures SMA accounts are not missed.
             self.updateBatchStep(eodJob, "NPA_CLASSIFICATION");
 
-            List<LoanAccount> npaCandidates = loanAccountRepository
-                .findNpaCandidates(tenantId, npaRule.getNpaThresholdDays());
+            List<LoanAccount> classificationCandidates = loanAccountRepository
+                .findNpaCandidates(tenantId, 1);
 
-            for (LoanAccount account : npaCandidates) {
+            for (LoanAccount account : classificationCandidates) {
                 try {
                     loanAccountService.classifyNPA(account.getAccountNumber());
                 } catch (Exception e) {
-                    errorLog.append("NPA classification failed for ")
+                    errorLog.append("SMA/NPA classification failed for ")
                         .append(account.getAccountNumber()).append(": ")
                         .append(e.getMessage()).append("\n");
-                    log.error("NPA classification failed: accNo={}", account.getAccountNumber(), e);
+                    log.error("SMA/NPA classification failed: accNo={}", account.getAccountNumber(), e);
                 }
             }
 
@@ -234,10 +240,15 @@ public class BatchService {
         return batchJobRepository.save(eodJob);
     }
 
+    /**
+     * Updates the current batch step name. Re-fetches by ID to avoid
+     * OptimisticLockException from stale @Version after prior transactions.
+     */
     @Transactional
     protected void updateBatchStep(BatchJob eodJob, String stepName) {
-        eodJob.setStepName(stepName);
-        batchJobRepository.save(eodJob);
+        BatchJob fresh = batchJobRepository.findById(eodJob.getId()).orElse(eodJob);
+        fresh.setStepName(stepName);
+        batchJobRepository.save(fresh);
     }
 
     @Transactional
@@ -245,35 +256,39 @@ public class BatchService {
                                      BatchStatus status, int totalRecords,
                                      int processedRecords, int failedRecords,
                                      String errorMessage) {
-        calendar.setEodComplete(true);
-        calendarRepository.save(calendar);
+        BusinessCalendar freshCal = calendarRepository.findById(calendar.getId()).orElse(calendar);
+        freshCal.setEodComplete(true);
+        calendarRepository.save(freshCal);
 
-        eodJob.setStatus(status);
-        eodJob.setStepName("COMPLETED");
-        eodJob.setCompletedAt(LocalDateTime.now());
-        eodJob.setTotalRecords(totalRecords);
-        eodJob.setProcessedRecords(processedRecords);
-        eodJob.setFailedRecords(failedRecords);
+        BatchJob fresh = batchJobRepository.findById(eodJob.getId()).orElse(eodJob);
+        fresh.setStatus(status);
+        fresh.setStepName("COMPLETED");
+        fresh.setCompletedAt(LocalDateTime.now());
+        fresh.setTotalRecords(totalRecords);
+        fresh.setProcessedRecords(processedRecords);
+        fresh.setFailedRecords(failedRecords);
         if (errorMessage != null) {
-            eodJob.setErrorMessage(errorMessage);
+            fresh.setErrorMessage(errorMessage);
         }
-        batchJobRepository.save(eodJob);
+        batchJobRepository.save(fresh);
     }
 
     @Transactional
     protected void failEodBatch(BatchJob eodJob, BusinessCalendar calendar,
                                  int totalRecords, int processedRecords,
                                  int failedRecords, String errorMessage) {
-        eodJob.setStatus(BatchStatus.FAILED);
-        eodJob.setCompletedAt(LocalDateTime.now());
-        eodJob.setTotalRecords(totalRecords);
-        eodJob.setProcessedRecords(processedRecords);
-        eodJob.setFailedRecords(failedRecords);
-        eodJob.setErrorMessage(errorMessage);
-        batchJobRepository.save(eodJob);
+        BatchJob fresh = batchJobRepository.findById(eodJob.getId()).orElse(eodJob);
+        fresh.setStatus(BatchStatus.FAILED);
+        fresh.setCompletedAt(LocalDateTime.now());
+        fresh.setTotalRecords(totalRecords);
+        fresh.setProcessedRecords(processedRecords);
+        fresh.setFailedRecords(failedRecords);
+        fresh.setErrorMessage(errorMessage);
+        batchJobRepository.save(fresh);
 
-        calendar.setLocked(false);
-        calendarRepository.save(calendar);
+        BusinessCalendar freshCal = calendarRepository.findById(calendar.getId()).orElse(calendar);
+        freshCal.setLocked(false);
+        calendarRepository.save(freshCal);
     }
 
     /**
@@ -289,27 +304,34 @@ public class BatchService {
      *   DR Provision for NPA (1003) — Release provision
      *   CR Provision Expense (5001) — P&L reversal
      */
+    /**
+     * RBI IRAC provisioning calculation. Re-fetches account by ID to ensure
+     * fresh @Version after prior EOD steps (accrual, DPD, NPA classification).
+     */
     @Transactional
     protected void calculateProvisioning(LoanAccount account) {
-        BigDecimal newProvisioning = provisioningRule.calculateProvisioning(account);
-        BigDecimal currentProvisioning = account.getProvisioningAmount();
+        LoanAccount fresh = loanAccountRepository.findById(account.getId())
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
+                "Loan account not found during provisioning: " + account.getAccountNumber()));
+
+        BigDecimal newProvisioning = provisioningRule.calculateProvisioning(fresh);
+        BigDecimal currentProvisioning = fresh.getProvisioningAmount();
         BigDecimal delta = newProvisioning.subtract(currentProvisioning);
 
         if (delta.compareTo(BigDecimal.ZERO) != 0) {
-            account.setProvisioningAmount(newProvisioning);
-            account.setUpdatedBy("SYSTEM");
-            loanAccountRepository.save(account);
+            fresh.setProvisioningAmount(newProvisioning);
+            fresh.setUpdatedBy("SYSTEM");
+            loanAccountRepository.save(fresh);
 
             // TODO: Inject AccountingService and post provisioning GL entry.
             // GL Entry: DR Provision Expense (5001) / CR Provision for NPA (1003) on increase,
             //           DR Provision for NPA (1003) / CR Provision Expense (5001) on release.
             log.info("Provisioning updated: accNo={}, delta={}, status={}, expenseGL={}, provisionGL={}",
-                account.getAccountNumber(), delta, account.getStatus(),
-                com.finvanta.accounting.GLConstants.PROVISION_EXPENSE,
-                com.finvanta.accounting.GLConstants.PROVISION_NPA);
+                fresh.getAccountNumber(), delta, fresh.getStatus(),
+                GLConstants.PROVISION_EXPENSE, GLConstants.PROVISION_NPA);
 
             log.debug("Provisioning updated: accNo={}, old={}, new={}, delta={}, status={}",
-                account.getAccountNumber(), currentProvisioning, newProvisioning, delta, account.getStatus());
+                fresh.getAccountNumber(), currentProvisioning, newProvisioning, delta, fresh.getStatus());
         }
     }
 
@@ -332,21 +354,30 @@ public class BatchService {
         log.info("GL Balance Validation: Checking trial balance integrity for tenant={}", tenantId);
     }
 
+    /**
+     * DPD calculation per RBI Early Warning Framework.
+     * Re-loads account by ID within this transaction to ensure fresh @Version
+     * and avoid OptimisticLockException from stale entities in the batch list.
+     */
     @Transactional
     protected void updateDaysPastDue(LoanAccount account, LocalDate businessDate) {
-        if (account.getStatus().isTerminal()) {
+        LoanAccount fresh = loanAccountRepository.findById(account.getId())
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
+                "Loan account not found during DPD update: " + account.getAccountNumber()));
+
+        if (fresh.getStatus().isTerminal()) {
             return;
         }
 
-        LocalDate lastPayment = account.getLastPaymentDate();
-        LocalDate nextEmi = account.getNextEmiDate();
+        LocalDate lastPayment = fresh.getLastPaymentDate();
+        LocalDate nextEmi = fresh.getNextEmiDate();
 
         if (nextEmi != null && businessDate.isAfter(nextEmi) && (lastPayment == null || lastPayment.isBefore(nextEmi))) {
             int dpd = (int) ChronoUnit.DAYS.between(nextEmi, businessDate);
-            account.setDaysPastDue(dpd);
-            account.setOverduePrincipal(account.getEmiAmount() != null ? account.getEmiAmount() : account.getOutstandingPrincipal());
-            account.setUpdatedBy("SYSTEM");
-            loanAccountRepository.save(account);
+            fresh.setDaysPastDue(dpd);
+            fresh.setOverduePrincipal(fresh.getEmiAmount() != null ? fresh.getEmiAmount() : fresh.getOutstandingPrincipal());
+            fresh.setUpdatedBy("SYSTEM");
+            loanAccountRepository.save(fresh);
         }
     }
 
