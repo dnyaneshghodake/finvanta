@@ -82,8 +82,10 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
 
             return Base64.getEncoder().encodeToString(combined);
         } catch (Exception e) {
-            log.error("PII encryption failed — storing plaintext as fallback", e);
-            return attribute;
+            // Per RBI IT Governance Direction 2023: PII must NEVER be stored in plaintext.
+            // Fail the operation rather than silently persisting unencrypted data.
+            throw new RuntimeException("PII encryption failed — refusing to store plaintext. "
+                + "Check FINVANTA_PII_KEY configuration.", e);
         }
     }
 
