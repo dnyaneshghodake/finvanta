@@ -33,7 +33,7 @@
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
             <button type="submit" class="btn btn-fv-primary w-100 py-2">Sign In</button>
         </form>
-        <p class="text-center mt-4 fv-footer">
+        <p class="text-center mt-4" style="font-size:11px;color:#90a4ae;">
             Finvanta Systems Pvt Ltd &copy; 2026
         </p>
     </div>
