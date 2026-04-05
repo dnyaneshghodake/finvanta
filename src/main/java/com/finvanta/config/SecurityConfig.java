@@ -4,7 +4,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -53,7 +52,7 @@ public class SecurityConfig {
     /**
      * Uses DelegatingPasswordEncoder (Spring Security standard).
      * Supports {bcrypt}, {noop}, {scrypt}, {argon2} prefixes.
-     * Seed data uses {bcrypt} hashes. Production passwords must always be {bcrypt}.
+     * Dev seed data uses {noop} prefix (plaintext). Production passwords must always be {bcrypt}.
      */
     @Bean
     public PasswordEncoder passwordEncoder() {

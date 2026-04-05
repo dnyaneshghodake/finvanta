@@ -203,6 +203,16 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             return null;
         }
 
+        // RBI IRAC: Income recognition must stop when account becomes NPA.
+        // Interest on NPA accounts is tracked in a memorandum (suspense) account,
+        // not recognized as income in P&L. Per RBI Master Circular on IRAC Norms,
+        // interest accrued on NPA accounts must be reversed and not taken to income.
+        if (account.getStatus().isIncomeReversalRequired()) {
+            log.debug("Interest accrual skipped for NPA account: accNo={}, status={}",
+                accountNumber, account.getStatus());
+            return null;
+        }
+
         LocalDate fromDate = account.getLastInterestAccrualDate() != null
             ? account.getLastInterestAccrualDate()
             : account.getDisbursementDate();
