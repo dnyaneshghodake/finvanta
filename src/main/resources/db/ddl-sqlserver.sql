@@ -374,7 +374,8 @@ CREATE TABLE ledger_entries (
 );
 -- No @Version column — ledger entries are immutable (no updates allowed)
 -- No UPDATE or DELETE triggers should be allowed (same pattern as audit_logs)
-CREATE INDEX idx_ledger_tenant_seq ON ledger_entries (tenant_id, ledger_sequence);
+-- UNIQUE constraint on (tenant_id, ledger_sequence) — DB-level safety net for hash chain integrity
+CREATE UNIQUE INDEX uq_ledger_tenant_seq ON ledger_entries (tenant_id, ledger_sequence);
 CREATE INDEX idx_ledger_tenant_gl ON ledger_entries (tenant_id, gl_code, business_date);
 CREATE INDEX idx_ledger_tenant_date ON ledger_entries (tenant_id, business_date);
 CREATE INDEX idx_ledger_journal ON ledger_entries (tenant_id, journal_entry_id);
@@ -494,6 +495,28 @@ INSTEAD OF DELETE
 AS
 BEGIN
     RAISERROR ('Audit log records cannot be deleted - immutability enforced', 16, 1);
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+-- ============================================================
+-- PROTECT LEDGER ENTRIES FROM MODIFICATIONS (RBI audit grade)
+-- ============================================================
+GO
+CREATE TRIGGER trg_ledger_no_update ON ledger_entries
+INSTEAD OF UPDATE
+AS
+BEGIN
+    RAISERROR ('Ledger entries cannot be updated - immutability enforced per RBI audit requirements', 16, 1);
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+CREATE TRIGGER trg_ledger_no_delete ON ledger_entries
+INSTEAD OF DELETE
+AS
+BEGIN
+    RAISERROR ('Ledger entries cannot be deleted - immutability enforced per RBI audit requirements', 16, 1);
     ROLLBACK TRANSACTION;
 END;
 GO
