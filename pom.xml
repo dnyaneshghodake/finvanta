@@ -19,6 +19,18 @@
 		Finvanta KYCShield → KYC Platform
 		Finvanta AMLGuard → AML Engine
 		Finvanta MobileX → Mobile Banking
+
+		Tech Stack:
+		Spring Boot 3.x
+		Spring MVC
+		JSP + JSTL (no Thymeleaf)
+		Java 17
+		JPA (Hibernate)
+		SQL Server (Prod) / Oracle compatible
+		H2 (Dev)
+		Lombok
+		Maven
+		Layered architecture strictly enforced
 	</description>
 
 	<url/>
