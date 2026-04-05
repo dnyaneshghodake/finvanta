@@ -16,13 +16,13 @@ VALUES ('DEFAULT', 'DEL001', 'New Delhi Main', 'FNVT0000002', 'Connaught Place',
 INSERT INTO branches (tenant_id, branch_code, branch_name, ifsc_code, address, city, state, pin_code, is_active, region, version, created_at, created_by)
 VALUES ('DEFAULT', 'BLR001', 'Bangalore Main', 'FNVT0000003', 'MG Road', 'Bangalore', 'Karnataka', '560001', true, 'SOUTH', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
--- Business Calendar (April 2026)
-INSERT INTO business_calendar (tenant_id, business_date, is_holiday, is_eod_complete, is_locked, version, created_at, created_by) VALUES ('DEFAULT', '2026-04-01', false, false, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
-INSERT INTO business_calendar (tenant_id, business_date, is_holiday, is_eod_complete, is_locked, version, created_at, created_by) VALUES ('DEFAULT', '2026-04-02', false, false, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
-INSERT INTO business_calendar (tenant_id, business_date, is_holiday, is_eod_complete, is_locked, version, created_at, created_by) VALUES ('DEFAULT', '2026-04-03', false, false, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
-INSERT INTO business_calendar (tenant_id, business_date, is_holiday, is_eod_complete, is_locked, version, created_at, created_by) VALUES ('DEFAULT', '2026-04-04', true, false, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
-INSERT INTO business_calendar (tenant_id, business_date, is_holiday, is_eod_complete, is_locked, version, created_at, created_by) VALUES ('DEFAULT', '2026-04-05', true, false, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
-INSERT INTO business_calendar (tenant_id, business_date, is_holiday, is_eod_complete, is_locked, version, created_at, created_by) VALUES ('DEFAULT', '2026-04-06', false, false, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+-- Business Calendar (April 2026) — day_status required per CBS Day Control lifecycle
+INSERT INTO business_calendar (tenant_id, business_date, is_holiday, day_status, is_eod_complete, is_locked, version, created_at, created_by) VALUES ('DEFAULT', '2026-04-01', false, 'NOT_OPENED', false, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO business_calendar (tenant_id, business_date, is_holiday, day_status, is_eod_complete, is_locked, version, created_at, created_by) VALUES ('DEFAULT', '2026-04-02', false, 'NOT_OPENED', false, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO business_calendar (tenant_id, business_date, is_holiday, day_status, is_eod_complete, is_locked, version, created_at, created_by) VALUES ('DEFAULT', '2026-04-03', false, 'NOT_OPENED', false, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO business_calendar (tenant_id, business_date, is_holiday, day_status, is_eod_complete, is_locked, version, created_at, created_by) VALUES ('DEFAULT', '2026-04-04', true, 'NOT_OPENED', false, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO business_calendar (tenant_id, business_date, is_holiday, day_status, is_eod_complete, is_locked, version, created_at, created_by) VALUES ('DEFAULT', '2026-04-05', true, 'NOT_OPENED', false, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO business_calendar (tenant_id, business_date, is_holiday, day_status, is_eod_complete, is_locked, version, created_at, created_by) VALUES ('DEFAULT', '2026-04-06', false, 'NOT_OPENED', false, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Customers
 INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, branch_id, version, created_at, created_by)
