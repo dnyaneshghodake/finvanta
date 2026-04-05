@@ -412,6 +412,13 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         accountRepository.save(account);
 
+        // CBS: Update amortization schedule — allocate payment to oldest unpaid installment (FIFO)
+        try {
+            scheduleService.updateInstallmentsOnPayment(account.getId(), amount, valueDate);
+        } catch (Exception e) {
+            log.warn("Schedule update failed for repayment {}: {}", accountNumber, e.getMessage());
+        }
+
         auditService.logEvent("LoanAccount", account.getId(), "REPAYMENT",
             null, savedTxn.getTransactionRef(), "LOAN_ACCOUNTS",
             "Repayment: " + amount + " (P:" + principalPaid + " I:" + interestPaid + ")");

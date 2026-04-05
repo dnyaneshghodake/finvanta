@@ -60,6 +60,7 @@ public class BatchService {
     private final AuditService auditService;
     private final ReconciliationService reconciliationService;
     private final AccountingService accountingService;
+    private final com.finvanta.service.LoanScheduleService scheduleService;
 
     /**
      * Self-reference to invoke @Transactional methods through the Spring proxy.
@@ -77,7 +78,8 @@ public class BatchService {
                         ProvisioningRule provisioningRule,
                         AuditService auditService,
                         ReconciliationService reconciliationService,
-                        AccountingService accountingService) {
+                        AccountingService accountingService,
+                        com.finvanta.service.LoanScheduleService scheduleService) {
         this.batchJobRepository = batchJobRepository;
         this.calendarRepository = calendarRepository;
         this.loanAccountRepository = loanAccountRepository;
@@ -87,6 +89,7 @@ public class BatchService {
         this.auditService = auditService;
         this.reconciliationService = reconciliationService;
         this.accountingService = accountingService;
+        this.scheduleService = scheduleService;
     }
 
     /**
@@ -150,6 +153,16 @@ public class BatchService {
                         .append(e.getMessage()).append("\n");
                     log.error("DPD update failed: accNo={}", account.getAccountNumber(), e);
                 }
+            }
+
+            // Step 4b: Mark overdue schedule installments
+            // Per RBI IRAC, installments past due date that are unpaid become OVERDUE.
+            try {
+                int overdueMarked = scheduleService.markOverdueInstallments(businessDate);
+                log.info("Schedule overdue marking: {} installments marked for date={}", overdueMarked, businessDate);
+            } catch (Exception e) {
+                errorLog.append("Schedule overdue marking failed: ").append(e.getMessage()).append("\n");
+                log.error("Schedule overdue marking failed: date={}", businessDate, e);
             }
 
             // Step 5: Run SMA/NPA classification — each account in its own transaction.

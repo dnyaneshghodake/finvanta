@@ -146,6 +146,90 @@ public class LoanScheduleService {
     }
 
     /**
+     * Updates schedule installments when a repayment is received.
+     * Per Finacle/Temenos, repayment is allocated to the oldest unpaid installment first (FIFO).
+     * Installment status transitions: SCHEDULED/OVERDUE → PARTIALLY_PAID → PAID
+     *
+     * @param accountId  Loan account ID
+     * @param amount     Total repayment amount
+     * @param valueDate  CBS business date of the payment
+     * @return Number of installments fully paid
+     */
+    @Transactional
+    public int updateInstallmentsOnPayment(Long accountId, BigDecimal amount, LocalDate valueDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+        List<LoanSchedule> unpaid = scheduleRepository.findUnpaidInstallments(tenantId, accountId);
+
+        if (unpaid.isEmpty()) {
+            return 0;
+        }
+
+        BigDecimal remaining = amount;
+        int fullyPaid = 0;
+
+        for (LoanSchedule inst : unpaid) {
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+                break;
+            }
+
+            BigDecimal due = inst.getRemainingDue();
+            BigDecimal allocated = remaining.min(due);
+
+            inst.setPaidAmount(inst.getPaidAmount().add(allocated));
+            inst.setPaidDate(valueDate);
+            inst.setUpdatedBy("SYSTEM");
+
+            if (inst.getPaidAmount().compareTo(inst.getEmiAmount()) >= 0) {
+                inst.setStatus("PAID");
+                inst.setDaysPastDue(0);
+                fullyPaid++;
+            } else {
+                inst.setStatus("PARTIALLY_PAID");
+            }
+
+            scheduleRepository.save(inst);
+            remaining = remaining.subtract(allocated);
+        }
+
+        log.info("Schedule updated on payment: accountId={}, amount={}, installmentsPaid={}",
+            accountId, amount, fullyPaid);
+
+        return fullyPaid;
+    }
+
+    /**
+     * Marks overdue installments during EOD batch processing.
+     * Per RBI IRAC, installments past due date that are not fully paid become OVERDUE.
+     *
+     * @param businessDate CBS business date
+     * @return Number of installments marked overdue
+     */
+    @Transactional
+    public int markOverdueInstallments(LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+        List<LoanSchedule> dueInstallments = scheduleRepository
+            .findScheduledInstallmentsDueBy(tenantId, businessDate);
+
+        int marked = 0;
+        for (LoanSchedule inst : dueInstallments) {
+            if (businessDate.isAfter(inst.getDueDate())) {
+                inst.setStatus("OVERDUE");
+                int dpd = (int) java.time.temporal.ChronoUnit.DAYS.between(inst.getDueDate(), businessDate);
+                inst.setDaysPastDue(dpd);
+                inst.setUpdatedBy("SYSTEM");
+                scheduleRepository.save(inst);
+                marked++;
+            }
+        }
+
+        if (marked > 0) {
+            log.info("Marked {} installments as OVERDUE for business date {}", marked, businessDate);
+        }
+
+        return marked;
+    }
+
+    /**
      * Returns the full schedule for display.
      */
     public List<LoanSchedule> getSchedule(Long accountId) {
