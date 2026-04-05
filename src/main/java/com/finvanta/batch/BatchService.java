@@ -9,6 +9,7 @@ import com.finvanta.domain.entity.BatchJob;
 import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.BatchStatus;
+import com.finvanta.domain.enums.DayStatus;
 import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.domain.rules.NpaClassificationRule;
 import com.finvanta.domain.rules.ProvisioningRule;
@@ -177,7 +178,7 @@ public class BatchService {
             List<LoanAccount> allAccounts = loanAccountRepository.findAllActiveAccounts(tenantId);
             for (LoanAccount account : allAccounts) {
                 try {
-                    self.calculateProvisioning(account);
+                    self.calculateProvisioning(account, businessDate);
                 } catch (Exception e) {
                     errorLog.append("Provisioning failed for ")
                         .append(account.getAccountNumber()).append(": ")
@@ -240,7 +241,7 @@ public class BatchService {
         }
 
         calendar.setLocked(true);
-        calendar.setDayStatus("EOD_RUNNING");
+        calendar.setDayStatus(DayStatus.EOD_RUNNING);
         return calendarRepository.save(calendar);
     }
 
@@ -306,7 +307,7 @@ public class BatchService {
         // Revert calendar: unlock and restore DAY_OPEN so EOD can be retried
         BusinessCalendar freshCal = calendarRepository.findById(calendar.getId()).orElse(calendar);
         freshCal.setLocked(false);
-        freshCal.setDayStatus("DAY_OPEN");
+        freshCal.setDayStatus(DayStatus.DAY_OPEN);
         calendarRepository.save(freshCal);
     }
 
@@ -323,7 +324,7 @@ public class BatchService {
      *   DR Provision for NPA (1003) / CR Provision Expense (5001)
      */
     @Transactional
-    protected void calculateProvisioning(LoanAccount account) {
+    protected void calculateProvisioning(LoanAccount account, LocalDate businessDate) {
         LoanAccount fresh = loanAccountRepository.findById(account.getId())
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
                 "Loan account not found during provisioning: " + account.getAccountNumber()));
@@ -353,8 +354,7 @@ public class BatchService {
                         "Loan loss provision - " + fresh.getAccountNumber())
                 );
                 accountingService.postJournalEntry(
-                    fresh.getLastInterestAccrualDate() != null
-                        ? fresh.getLastInterestAccrualDate() : java.time.LocalDate.now(),
+                    businessDate,
                     "RBI IRAC provisioning " + action + " for " + fresh.getAccountNumber(),
                     "PROVISIONING", fresh.getAccountNumber(),
                     lines
