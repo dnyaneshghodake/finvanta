@@ -148,7 +148,54 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "risk_category", length = 20)
     private String riskCategory;
 
+    // --- Multi-Disbursement Support (per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT) ---
+
+    /**
+     * Disbursement mode per product configuration:
+     *   SINGLE       - Full sanctioned amount in one shot (Term Loan, Gold Loan)
+     *   MULTI_TRANCHE - Stage-wise linked to milestones (Home Loan, Construction)
+     *   DRAWDOWN     - Multiple draws within limit (Working Capital, OD)
+     *
+     * Per Finacle DISB_MASTER: the disbursement mode determines whether partial
+     * disbursements are allowed and how interest accrual/EMI calculation behaves.
+     */
+    @Column(name = "disbursement_mode", length = 20)
+    private String disbursementMode = "SINGLE";
+
+    /** Number of tranches planned (for MULTI_TRANCHE mode) */
+    @Column(name = "total_tranches_planned")
+    private Integer totalTranchesPlanned;
+
+    /** Number of tranches actually disbursed so far */
+    @Column(name = "tranches_disbursed")
+    private Integer tranchesDisbursed = 0;
+
+    /**
+     * Whether the loan is fully disbursed.
+     * For SINGLE mode: true after first disbursement.
+     * For MULTI_TRANCHE: true after all planned tranches are disbursed.
+     * For DRAWDOWN: always false (draws can happen anytime within limit).
+     *
+     * Interest accrual runs on disbursedAmount (not sanctionedAmount).
+     * EMI schedule is generated/recalculated when fullyDisbursed becomes true.
+     */
+    @Column(name = "is_fully_disbursed", nullable = false)
+    private boolean fullyDisbursed = false;
+
+    /**
+     * Returns the undisbursed commitment: sanctioned - disbursed.
+     * For SINGLE mode, this is either full sanctioned (before) or zero (after).
+     * For MULTI_TRANCHE, this decreases with each tranche.
+     */
+    public BigDecimal getUndisbursedAmount() {
+        return sanctionedAmount.subtract(disbursedAmount).max(BigDecimal.ZERO);
+    }
+
     public BigDecimal getTotalOutstanding() {
         return outstandingPrincipal.add(outstandingInterest).add(accruedInterest).add(penalInterestAccrued);
+    }
+
+    public boolean isMultiDisbursement() {
+        return "MULTI_TRANCHE".equals(disbursementMode) || "DRAWDOWN".equals(disbursementMode);
     }
 }

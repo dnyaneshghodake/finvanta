@@ -164,9 +164,39 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         return saved;
     }
 
+    /**
+     * CBS Disbursement per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT.
+     *
+     * Supports three disbursement modes (configured per product):
+     *   SINGLE       - Full sanctioned amount in one shot (Term Loan, Gold Loan)
+     *   MULTI_TRANCHE - Stage-wise linked to milestones (Home Loan, Construction)
+     *   DRAWDOWN     - Multiple draws within limit (Working Capital, OD)
+     *
+     * For SINGLE mode: disburseLoan() disburses full amount (backward compatible).
+     * For MULTI_TRANCHE: use disburseTranche() with specific amount per milestone.
+     *
+     * Per RBI Housing Finance guidelines:
+     *   - Disbursement linked to construction progress
+     *   - Interest charged only on disbursed amount
+     *   - EMI calculated on disbursed amount after full disbursement
+     */
     @Override
     @Transactional
     public LoanAccount disburseLoan(String accountNumber) {
+        return disburseTranche(accountNumber, null, null);
+    }
+
+    /**
+     * CBS Tranche Disbursement for multi-disbursement products.
+     *
+     * @param accountNumber Loan account number
+     * @param trancheAmount Amount to disburse (null = full remaining)
+     * @param narration     Tranche narration (null = auto-generated)
+     * @return Updated loan account
+     */
+    @Transactional
+    public LoanAccount disburseTranche(String accountNumber, BigDecimal trancheAmount,
+                                        String narration) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
@@ -174,23 +204,52 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
                 "Loan account not found: " + accountNumber));
 
-        if (account.getDisbursedAmount().compareTo(BigDecimal.ZERO) > 0) {
-            throw new BusinessException("ALREADY_DISBURSED",
-                "Loan has already been disbursed");
+        if (account.isFullyDisbursed()) {
+            throw new BusinessException("FULLY_DISBURSED",
+                "Loan is already fully disbursed. Total: INR " + account.getDisbursedAmount());
         }
 
-        BigDecimal disbursementAmount = account.getSanctionedAmount();
+        if ("SINGLE".equals(account.getDisbursementMode())
+                && account.getDisbursedAmount().signum() > 0) {
+            throw new BusinessException("ALREADY_DISBURSED",
+                "Single-disbursement loan has already been disbursed");
+        }
+
+        // Resolve disbursement amount
+        BigDecimal disbursementAmount = (trancheAmount != null && trancheAmount.signum() > 0)
+            ? trancheAmount : account.getUndisbursedAmount();
+
+        if (disbursementAmount.compareTo(account.getUndisbursedAmount()) > 0) {
+            throw new BusinessException("DISBURSEMENT_EXCEEDS_SANCTIONED",
+                "Disbursement INR " + disbursementAmount
+                    + " exceeds undisbursed balance INR " + account.getUndisbursedAmount());
+        }
+
+        if (disbursementAmount.signum() <= 0) {
+            throw new BusinessException("INVALID_DISBURSEMENT_AMOUNT",
+                "Disbursement amount must be positive");
+        }
+
         LocalDate bizDate = businessDateService.getCurrentBusinessDate();
         String productType = account.getProductType();
+        boolean isFirstTranche = account.getDisbursedAmount().signum() == 0;
+        int trancheNum = (account.getTranchesDisbursed() != null
+            ? account.getTranchesDisbursed() : 0) + 1;
 
-        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
-        // TransactionEngine enforces: amount validation → business date → day status → branch →
-        // transaction limits → maker-checker → GL posting → voucher → audit trail
+        String txnNarration = (narration != null && !narration.isBlank())
+            ? narration
+            : (account.isMultiDisbursement()
+                ? "Tranche " + trancheNum + " disbursement for " + accountNumber
+                : "Loan disbursement for account " + accountNumber);
+
+        // CBS: ALL financial postings go through TransactionEngine
         List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(glResolver.getLoanAssetGL(productType), DebitCredit.DEBIT, disbursementAmount,
-                "Loan disbursement - " + accountNumber),
-            new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.CREDIT, disbursementAmount,
-                "Bank credit for loan disbursement - " + accountNumber)
+            new JournalLineRequest(glResolver.getLoanAssetGL(productType),
+                DebitCredit.DEBIT, disbursementAmount,
+                "Disbursement T" + trancheNum + " - " + accountNumber),
+            new JournalLineRequest(glResolver.getBankOperationsGL(productType),
+                DebitCredit.CREDIT, disbursementAmount,
+                "Bank credit T" + trancheNum + " - " + accountNumber)
         );
 
         TransactionResult txnResult = transactionEngine.execute(
@@ -202,7 +261,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 .valueDate(bizDate)
                 .branchCode(account.getBranch().getBranchCode())
                 .productType(productType)
-                .narration("Loan disbursement for account " + accountNumber)
+                .narration(txnNarration)
                 .journalLines(journalLines)
                 .build()
         );
@@ -216,42 +275,67 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setPrincipalComponent(disbursementAmount);
         txn.setValueDate(bizDate);
         txn.setPostingDate(txnResult.getPostingDate());
-        txn.setBalanceAfter(disbursementAmount);
-        txn.setNarration("Loan disbursement | Voucher: " + txnResult.getVoucherNumber());
+        txn.setBalanceAfter(account.getDisbursedAmount().add(disbursementAmount));
+        txn.setNarration(txnNarration + " | Voucher: " + txnResult.getVoucherNumber());
         txn.setJournalEntryId(txnResult.getJournalEntryId());
         txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy(currentUser);
         transactionRepository.save(txn);
 
-        account.setDisbursedAmount(disbursementAmount);
-        account.setOutstandingPrincipal(disbursementAmount);
-        account.setDisbursementDate(bizDate);
-        account.setLastInterestAccrualDate(bizDate);
-        account.setNextEmiDate(bizDate.plusMonths(1));
-        account.setMaturityDate(bizDate.plusMonths(account.getTenureMonths()));
+        // Update account balances
+        account.setDisbursedAmount(account.getDisbursedAmount().add(disbursementAmount));
+        account.setOutstandingPrincipal(
+            account.getOutstandingPrincipal().add(disbursementAmount));
+        account.setTranchesDisbursed(trancheNum);
         account.setUpdatedBy(currentUser);
+
+        if (isFirstTranche) {
+            account.setDisbursementDate(bizDate);
+            account.setLastInterestAccrualDate(bizDate);
+        }
+
+        // Check if fully disbursed
+        boolean nowFullyDisbursed = account.getUndisbursedAmount().signum() == 0;
+        if (nowFullyDisbursed || "SINGLE".equals(account.getDisbursementMode())) {
+            account.setFullyDisbursed(true);
+            account.setNextEmiDate(bizDate.plusMonths(1));
+            account.setMaturityDate(bizDate.plusMonths(account.getTenureMonths()));
+
+            // Recalculate EMI on actual disbursed amount
+            BigDecimal emi = interestRule.calculateEmi(
+                account.getDisbursedAmount(),
+                account.getInterestRate(),
+                account.getTenureMonths()
+            );
+            account.setEmiAmount(emi);
+
+            LoanApplication application = account.getApplication();
+            application.setStatus(ApplicationStatus.DISBURSED);
+            application.setUpdatedBy(currentUser);
+            applicationRepository.save(application);
+
+            try {
+                scheduleService.generateSchedule(account, bizDate);
+            } catch (Exception e) {
+                log.warn("Schedule generation skipped: {}", e.getMessage());
+            }
+        }
 
         LoanAccount saved = accountRepository.save(account);
 
-        // Mark application as DISBURSED now that disbursement is complete
-        LoanApplication application = saved.getApplication();
-        application.setStatus(ApplicationStatus.DISBURSED);
-        application.setUpdatedBy(currentUser);
-        applicationRepository.save(application);
-
-        // CBS: Generate amortization schedule at disbursement per Finacle/Temenos standards
-        scheduleService.generateSchedule(saved, saved.getDisbursementDate());
-
-        // NOTE: Audit trail for the financial posting is handled by TransactionEngine (Step 10).
-        // Module-level audit for the account state change is separate.
         auditService.logEvent("LoanAccount", saved.getId(), "DISBURSE",
             null, saved.getAccountNumber(), "LOAN_ACCOUNTS",
-            "Loan disbursed: " + disbursementAmount + ", schedule generated"
-                + " | Voucher: " + txnResult.getVoucherNumber()
-                + " | Journal: " + txnResult.getJournalRef());
+            "Disbursement: INR " + disbursementAmount
+                + " (Tranche " + trancheNum + ")"
+                + " | Total: INR " + saved.getDisbursedAmount()
+                + " | Remaining: INR " + saved.getUndisbursedAmount()
+                + " | Fully disbursed: " + saved.isFullyDisbursed()
+                + " | Voucher: " + txnResult.getVoucherNumber());
 
-        log.info("Loan disbursed: accNo={}, amount={}, voucher={}, journal={}",
-            accountNumber, disbursementAmount, txnResult.getVoucherNumber(), txnResult.getJournalRef());
+        log.info("Disbursement: accNo={}, tranche={}, amount={}, total={}, remaining={}, fullyDisbursed={}",
+            accountNumber, trancheNum, disbursementAmount,
+            saved.getDisbursedAmount(), saved.getUndisbursedAmount(),
+            saved.isFullyDisbursed());
 
         return saved;
     }

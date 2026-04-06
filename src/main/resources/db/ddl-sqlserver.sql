@@ -219,6 +219,11 @@ CREATE TABLE loan_accounts (
     last_penal_accrual_date DATE,
     collateral_reference VARCHAR(100),
     risk_category   VARCHAR(20),
+    -- Multi-Disbursement (Finacle DISB_MASTER / Temenos AA.DISBURSEMENT)
+    disbursement_mode VARCHAR(20)    DEFAULT 'SINGLE',       -- SINGLE, MULTI_TRANCHE, DRAWDOWN
+    total_tranches_planned INT,
+    tranches_disbursed INT           DEFAULT 0,
+    is_fully_disbursed BIT           NOT NULL DEFAULT 0,
     version         BIGINT          NOT NULL DEFAULT 0,
     created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
     updated_at      DATETIME2,
@@ -539,7 +544,38 @@ CREATE TABLE db_sequences (
 );
 CREATE INDEX idx_dbseq_tenant_name ON db_sequences (tenant_id, sequence_name);
 
--- 20. COLLATERALS (Finacle COLMAS / Temenos AA.COLLATERAL)
+-- 20. DISBURSEMENT SCHEDULES (Finacle DISB_MASTER / Temenos AA.DISBURSEMENT.ARRANGEMENT)
+CREATE TABLE disbursement_schedules (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    loan_account_id BIGINT          NOT NULL,
+    tranche_number  INT             NOT NULL,
+    tranche_amount  DECIMAL(18,2)   NOT NULL,
+    tranche_percentage DECIMAL(8,2),
+    milestone_description VARCHAR(500) NOT NULL,
+    expected_date   DATE,
+    actual_date     DATE,
+    status          VARCHAR(20)     NOT NULL DEFAULT 'PLANNED',
+    condition_verified_by VARCHAR(100),
+    condition_verified_date DATE,
+    approved_by     VARCHAR(100),
+    approved_date   DATE,
+    transaction_ref VARCHAR(40),
+    voucher_number  VARCHAR(40),
+    remarks         VARCHAR(500),
+    beneficiary_name VARCHAR(200),
+    beneficiary_account VARCHAR(40),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT fk_disbsched_account FOREIGN KEY (loan_account_id) REFERENCES loan_accounts(id)
+);
+CREATE INDEX idx_disbsched_account ON disbursement_schedules (tenant_id, loan_account_id);
+CREATE INDEX idx_disbsched_status ON disbursement_schedules (tenant_id, status);
+
+-- 21. COLLATERALS (Finacle COLMAS / Temenos AA.COLLATERAL)
 CREATE TABLE collaterals (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
