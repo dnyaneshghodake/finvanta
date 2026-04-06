@@ -65,15 +65,17 @@ UPDATE business_calendar SET holiday_description = 'Sunday'              WHERE t
 UPDATE business_calendar SET holiday_description = 'Saturday'            WHERE tenant_id = 'DEFAULT' AND business_date = '2026-04-25';
 UPDATE business_calendar SET holiday_description = 'Sunday'              WHERE tenant_id = 'DEFAULT' AND business_date = '2026-04-26';
 
--- Customers
-INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'CUST001', 'Rajesh', 'Sharma', '1985-03-15', 'ABCDE1234F', '123456789012', '9876543210', 'rajesh.sharma@email.com', '123 MG Road', 'Mumbai', 'Maharashtra', '400001', true, '2026-01-15', 'admin', 750, 'INDIVIDUAL', true, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+-- Customers (with CBS Exposure Limits per RBI Exposure Norms)
+-- monthly_income: for DTI ratio check (total EMI <= 60% of income)
+-- max_borrowing_limit: per-customer cap on total outstanding exposure
+INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, branch_id, monthly_income, max_borrowing_limit, employment_type, employer_name, version, created_at, created_by)
+VALUES ('DEFAULT', 'CUST001', 'Rajesh', 'Sharma', '1985-03-15', 'ABCDE1234F', '123456789012', '9876543210', 'rajesh.sharma@email.com', '123 MG Road', 'Mumbai', 'Maharashtra', '400001', true, '2026-01-15', 'admin', 750, 'INDIVIDUAL', true, 1, 150000.00, 5000000.00, 'SALARIED', 'Tata Consultancy Services', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
-INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'CUST002', 'Priya', 'Patel', '1990-07-22', 'FGHIJ5678K', '234567890123', '9876543211', 'priya.patel@email.com', '456 Ring Road', 'Delhi', 'Delhi', '110002', true, '2026-02-10', 'admin', 820, 'INDIVIDUAL', true, 2, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, branch_id, monthly_income, max_borrowing_limit, employment_type, employer_name, version, created_at, created_by)
+VALUES ('DEFAULT', 'CUST002', 'Priya', 'Patel', '1990-07-22', 'FGHIJ5678K', '234567890123', '9876543211', 'priya.patel@email.com', '456 Ring Road', 'Delhi', 'Delhi', '110002', true, '2026-02-10', 'admin', 820, 'INDIVIDUAL', true, 2, 250000.00, 10000000.00, 'SALARIED', 'Infosys Limited', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
-INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, cibil_score, customer_type, is_active, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'CUST003', 'Arun', 'Kumar', '1978-11-05', 'KLMNO9012P', '345678901234', '9876543212', 'arun.kumar@email.com', '789 Brigade Road', 'Bangalore', 'Karnataka', '560002', false, 580, 'INDIVIDUAL', true, 3, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, cibil_score, customer_type, is_active, branch_id, monthly_income, max_borrowing_limit, employment_type, employer_name, version, created_at, created_by)
+VALUES ('DEFAULT', 'CUST003', 'Arun', 'Kumar', '1978-11-05', 'KLMNO9012P', '345678901234', '9876543212', 'arun.kumar@email.com', '789 Brigade Road', 'Bangalore', 'Karnataka', '560002', false, 580, 'INDIVIDUAL', true, 3, 80000.00, 2000000.00, 'SELF_EMPLOYED', NULL, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Product Master (Finacle PDDEF / Temenos AA.PRODUCT.CATALOG)
 -- Per CBS standards: GL codes are configured per product, not hardcoded.
@@ -142,19 +144,19 @@ VALUES ('DEFAULT', 'admin', '{noop}finvanta123', 'Vikram Joshi (Branch Manager)'
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
 VALUES ('DEFAULT', 'auditor1', '{noop}finvanta123', 'Meera Kulkarni (Internal Auditor)', 'auditor@finvanta.com', 'AUDITOR', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
--- Transaction Limits (CBS Internal Controls — per-role amount limits)
+-- Transaction Limits (CBS Internal Controls -- per-role amount limits)
 -- Per RBI guidelines: every financial transaction must be validated against configured limits
--- MAKER: ₹10L per transaction, ₹50L daily aggregate
--- CHECKER: ₹50L per transaction, ₹2Cr daily aggregate
--- ADMIN: ₹5Cr per transaction, ₹20Cr daily aggregate
+-- MAKER: INR 10L per transaction, INR 50L daily aggregate
+-- CHECKER: INR 50L per transaction, INR 2Cr daily aggregate
+-- ADMIN: INR 5Cr per transaction, INR 20Cr daily aggregate
 INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
-VALUES ('DEFAULT', 'MAKER', 'ALL', 1000000.00, 5000000.00, true, 'Maker default limit: ₹10L per txn, ₹50L daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'MAKER', 'ALL', 1000000.00, 5000000.00, true, 'Maker default limit: INR 10L per txn, INR 50L daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
-VALUES ('DEFAULT', 'CHECKER', 'ALL', 5000000.00, 20000000.00, true, 'Checker default limit: ₹50L per txn, ₹2Cr daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'CHECKER', 'ALL', 5000000.00, 20000000.00, true, 'Checker default limit: INR 50L per txn, INR 2Cr daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
-VALUES ('DEFAULT', 'ADMIN', 'ALL', 50000000.00, 200000000.00, true, 'Admin default limit: ₹5Cr per txn, ₹20Cr daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'ADMIN', 'ALL', 50000000.00, 200000000.00, true, 'Admin default limit: INR 5Cr per txn, INR 20Cr daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
 VALUES ('DEFAULT', 'MAKER', 'WRITE_OFF', 0.00, 0.00, true, 'Makers cannot perform write-offs (enforced via limit=0)', 0, CURRENT_TIMESTAMP, 'SYSTEM');
