@@ -2,7 +2,7 @@ package com.finvanta.batch;
 
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.ProductGLResolver;
-import com.finvanta.accounting.ReconciliationService;
+import com.finvanta.accounting.AccountingReconciliationEngine;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.audit.AuditService;
@@ -59,7 +59,7 @@ public class BatchService {
     private final LoanAccountService loanAccountService;
     private final ProvisioningRule provisioningRule;
     private final AuditService auditService;
-    private final ReconciliationService reconciliationService;
+    private final AccountingReconciliationEngine reconciliationService;
     private final TransactionEngine transactionEngine;
     private final LoanScheduleService scheduleService;
     private final TransactionBatchService transactionBatchService;
@@ -79,7 +79,7 @@ public class BatchService {
                         LoanAccountService loanAccountService,
                         ProvisioningRule provisioningRule,
                         AuditService auditService,
-                        ReconciliationService reconciliationService,
+                        AccountingReconciliationEngine reconciliationService,
                         TransactionEngine transactionEngine,
                         LoanScheduleService scheduleService,
                         TransactionBatchService transactionBatchService,

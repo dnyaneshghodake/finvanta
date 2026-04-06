@@ -739,3 +739,182 @@ BEGIN
     ROLLBACK TRANSACTION;
 END;
 GO
+
+-- ============================================================
+-- P0-1: CHARGE CONFIGURATION (Finacle CHRG_MASTER)
+-- ============================================================
+CREATE TABLE charge_config (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    charge_code     VARCHAR(50)     NOT NULL,
+    charge_name     VARCHAR(200),
+    event_trigger   VARCHAR(50)     NOT NULL, -- DISBURSEMENT, OVERDUE_EMI, CHEQUE_RETURN, ACCOUNT_CLOSURE, MANUAL
+    calculation_type VARCHAR(20)    NOT NULL, -- FLAT, PERCENTAGE, SLAB
+    base_amount     DECIMAL(18,2),
+    percentage      DECIMAL(5,2),
+    slab_json       NVARCHAR(MAX),
+    min_amount      DECIMAL(18,2),
+    max_amount      DECIMAL(18,2),
+    gst_applicable  BIT             NOT NULL DEFAULT 1,
+    gst_rate        DECIMAL(5,2)    DEFAULT 18.00,
+    gl_charge_income VARCHAR(10),
+    gl_gst_payable  VARCHAR(10)     DEFAULT '2200',
+    waiver_allowed  BIT             NOT NULL DEFAULT 1,
+    max_waiver_percent DECIMAL(5,2),
+    product_code    VARCHAR(50),    -- NULL means applies to all products
+    is_active       BIT             NOT NULL DEFAULT 1,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_chargeconfig_tenant_code_product UNIQUE (tenant_id, charge_code, product_code)
+);
+CREATE INDEX idx_chargeconfig_tenant_code ON charge_config (tenant_id, charge_code);
+CREATE INDEX idx_chargeconfig_tenant_product ON charge_config (tenant_id, product_code);
+CREATE INDEX idx_chargeconfig_tenant_active ON charge_config (tenant_id, is_active);
+GO
+
+-- ============================================================
+-- P0-2: INTEREST ACCRUAL (Audit-grade per-day records)
+-- ============================================================
+CREATE TABLE interest_accruals (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    account_id      BIGINT          NOT NULL,
+    accrual_date    DATE            NOT NULL,
+    principal_base  DECIMAL(18,2)   NOT NULL,
+    rate_applied    DECIMAL(8,4)    NOT NULL,
+    days_count      INT             NOT NULL,
+    accrued_amount  DECIMAL(18,2)   NOT NULL,
+    accrual_type    VARCHAR(20)     NOT NULL, -- REGULAR, PENAL
+    posted_flag     BIT             NOT NULL DEFAULT 0,
+    posting_date    DATE,
+    journal_entry_id BIGINT,
+    transaction_ref VARCHAR(50),
+    business_date   DATE            NOT NULL,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT fk_intaccrual_account FOREIGN KEY (account_id) REFERENCES loan_accounts(id)
+);
+CREATE INDEX idx_intaccrual_tenant_account_date ON interest_accruals (tenant_id, account_id, accrual_date);
+CREATE INDEX idx_intaccrual_tenant_account_type ON interest_accruals (tenant_id, account_id, accrual_type);
+CREATE INDEX idx_intaccrual_posted_flag ON interest_accruals (posted_flag);
+CREATE INDEX idx_intaccrual_business_date ON interest_accruals (business_date);
+GO
+
+-- ============================================================
+-- P1-1: INTER-BRANCH TRANSACTIONS (Finacle IB_SETTLEMENT)
+-- ============================================================
+CREATE TABLE inter_branch_transactions (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    source_branch_id BIGINT         NOT NULL,
+    target_branch_id BIGINT         NOT NULL,
+    amount          DECIMAL(18,2)   NOT NULL,
+    source_journal_id BIGINT,
+    target_journal_id BIGINT,
+    settlement_status VARCHAR(20)   NOT NULL, -- PENDING, SETTLED, FAILED
+    settlement_batch_ref VARCHAR(50),
+    business_date   DATE            NOT NULL,
+    failure_reason  VARCHAR(500),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT fk_ibxfr_source_branch FOREIGN KEY (source_branch_id) REFERENCES branches(id),
+    CONSTRAINT fk_ibxfr_target_branch FOREIGN KEY (target_branch_id) REFERENCES branches(id)
+);
+CREATE INDEX idx_ibxfr_tenant_sourcetarget ON inter_branch_transactions (tenant_id, source_branch_id, target_branch_id);
+CREATE INDEX idx_ibxfr_settlement_status ON inter_branch_transactions (settlement_status);
+CREATE INDEX idx_ibxfr_business_date ON inter_branch_transactions (business_date);
+GO
+
+-- ============================================================
+-- P1-2: CLEARING TRANSACTIONS (Finacle CLG_MASTER)
+-- ============================================================
+CREATE TABLE clearing_transactions (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    clearing_ref    VARCHAR(50)     NOT NULL,
+    source_type     VARCHAR(20)     NOT NULL, -- NEFT, RTGS, IMPS, CHEQUE, UPI
+    amount          DECIMAL(18,2)   NOT NULL,
+    customer_account_ref VARCHAR(50) NOT NULL,
+    counterparty_details VARCHAR(500),
+    status          VARCHAR(20)     NOT NULL, -- INITIATED, PENDING, CONFIRMED, SETTLED, FAILED, REVERSED
+    initiated_date  DATETIME2       NOT NULL DEFAULT GETDATE(),
+    settlement_date DATETIME2,
+    suspense_journal_id BIGINT,
+    settlement_journal_id BIGINT,
+    failure_reason  VARCHAR(500),
+    business_date   DATE            NOT NULL,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_clearing_ref UNIQUE (tenant_id, clearing_ref)
+);
+CREATE INDEX idx_clrg_tenant_ref ON clearing_transactions (tenant_id, clearing_ref);
+CREATE INDEX idx_clrg_status ON clearing_transactions (status);
+CREATE INDEX idx_clrg_initiated_date ON clearing_transactions (initiated_date);
+CREATE INDEX idx_clrg_settlement_date ON clearing_transactions (settlement_date);
+GO
+
+-- ============================================================
+-- P2-1: LEDGER PARTITIONING STRATEGY FOR PRODUCTION
+-- ============================================================
+-- For H2 (dev/test): Partitioning not available — this comment documents the strategy.
+--
+-- SQL Server Production Deployment DDL (commented out — uncomment when deploying):
+--
+-- Partition Function by Business Date (monthly partitions):
+-- CREATE PARTITION FUNCTION pf_date_monthly (DATE)
+--     AS RANGE LEFT FOR VALUES (
+--         '2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31', '2026-06-30',
+--         '2026-07-31', '2026-08-31', '2026-09-30', '2026-10-31', '2026-11-30', '2026-12-31'
+--     );
+--
+-- Partition Scheme by Date:
+-- CREATE PARTITION SCHEME ps_date_monthly
+--     AS PARTITION pf_date_monthly
+--     ALL TO ([PRIMARY]);
+--
+-- Partition ledger_entries by business_date:
+-- ALTER TABLE ledger_entries
+--     ADD CONSTRAINT pk_ledger_partitioned PRIMARY KEY (id, business_date)
+--     ON ps_date_monthly (business_date);
+--
+-- Partition journal_entries by value_date:
+-- ALTER TABLE journal_entries
+--     ADD CONSTRAINT pk_journal_partitioned PRIMARY KEY (id, value_date)
+--     ON ps_date_monthly (value_date);
+--
+-- Partition loan_transactions by value_date:
+-- ALTER TABLE loan_transactions
+--     ADD CONSTRAINT pk_loantxn_partitioned PRIMARY KEY (id, value_date)
+--     ON ps_date_monthly (value_date);
+--
+-- Partitioning Benefits (10M+ TPS):
+-- - Query filter on (business_date BETWEEN '2026-04-01' AND '2026-04-30') automatically prunes other partitions
+-- - Maintenance windows (SHRINK, REBUILD INDEX) per partition (weekly/monthly)
+-- - Archive old partitions (2+ year-old data) to separate filegroup for cost optimization
+-- - Parallel table scans within a partition (SQL Server parallelism)
+--
+GO
+
+-- ============================================================
+-- PARTITION HINTS FOR HEAVY QUERIES (Heavy-load optimization)
+-- ============================================================
+-- LedgerEntryRepository queries will include @QueryHint(name = "org.hibernate.query.HINT_FETCHGRAPH")
+-- for partition pruning on ledger_entries and journal_entries queries.
+--
+-- Example Hibernate query hint for partition-aware query:
+-- @QueryHint(name = "org.hibernate.query.HINT_SQL_COMMENT", value = "/* Partition pruning: business_date filter */")
+--
+GO
+

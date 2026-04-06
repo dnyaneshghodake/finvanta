@@ -39,6 +39,8 @@ import java.util.List;
  *   Step 5: NPA Classification (DPD-based per RBI IRAC)
  *   Step 6: Provisioning (RBI IRAC percentages)
  *   Step 7: GL Reconciliation (ledger vs GL master)
+ *   Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)
+ *   Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)
  *
  * Day status: DAY_OPEN -> EOD_RUNNING -> (eodComplete=true)
  * Day close is a separate admin action after EOD completes.
@@ -53,6 +55,8 @@ public class EodOrchestrator {
     private final LoanScheduleService scheduleService;
     private final ProvisioningService provisioningService;
     private final ReconciliationService reconciliationService;
+    private final InterBranchSettlementService settlementService;
+    private final ClearingService clearingService;
     private final BusinessCalendarRepository calendarRepository;
     private final BatchJobRepository batchJobRepository;
     private final AuditService auditService;
@@ -62,6 +66,8 @@ public class EodOrchestrator {
                            LoanScheduleService scheduleService,
                            ProvisioningService provisioningService,
                            ReconciliationService reconciliationService,
+                           InterBranchSettlementService settlementService,
+                           ClearingService clearingService,
                            BusinessCalendarRepository calendarRepository,
                            BatchJobRepository batchJobRepository,
                            AuditService auditService) {
@@ -70,6 +76,8 @@ public class EodOrchestrator {
         this.scheduleService = scheduleService;
         this.provisioningService = provisioningService;
         this.reconciliationService = reconciliationService;
+        this.settlementService = settlementService;
+        this.clearingService = clearingService;
         this.calendarRepository = calendarRepository;
         this.batchJobRepository = batchJobRepository;
         this.auditService = auditService;
@@ -175,6 +183,18 @@ public class EodOrchestrator {
             } else {
                 log.info("EOD Step 7: GL reconciliation balanced");
             }
+        }, errors);
+
+        // Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)
+        failedCount += runStep(eodJob, "INTER_BRANCH_SETTLEMENT", () -> {
+            settlementService.settleInterBranch(businessDate);
+            log.info("EOD Step 7.5: inter-branch settlement validated");
+        }, errors);
+
+        // Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)
+        failedCount += runStep(eodJob, "CLEARING_SUSPENSE", () -> {
+            clearingService.validateSuspenseBalance(businessDate);
+            log.info("EOD Step 7.6: clearing suspense validated");
         }, errors);
 
         return finalizeEod(eodJob, tenantId, businessDate,

@@ -29,10 +29,20 @@ public final class GLConstants {
     public static final String PROVISION_NPA = "1003";
     /** Bank Operations Account — cash/bank for disbursements and collections */
     public static final String BANK_OPERATIONS = "1100";
+    /** Inter-Branch Receivable — Settlement receivable from other branches */
+    public static final String INTER_BRANCH_RECEIVABLE = "1300";
 
     // --- LIABILITY GL Codes ---
     /** Customer Deposits */
     public static final String CUSTOMER_DEPOSITS = "2001";
+    /** CGST Payable — GST liability on service charges (18%) */
+    public static final String CGST_PAYABLE = "2200";
+    /** SGST Payable — State GST liability on service charges (9%) */
+    public static final String SGST_PAYABLE = "2201";
+    /** Inter-Branch Payable — Settlement payable to other branches */
+    public static final String INTER_BRANCH_PAYABLE = "2300";
+    /** Clearing Suspense — Temporary holding for clearing transactions */
+    public static final String CLEARING_SUSPENSE = "2400";
 
     // --- INCOME GL Codes ---
     /** Interest Income from Loans */

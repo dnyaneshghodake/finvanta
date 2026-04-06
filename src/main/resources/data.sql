@@ -108,6 +108,33 @@ INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance,
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '5001', 'Provision Expense', 'EXPENSE', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '5002', 'Write-Off Expense', 'EXPENSE', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
+-- P0-1: NEW GL CODES FOR CHARGES AND GST
+-- Inter-Branch GL codes (P1-1)
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '1300', 'Inter-Branch Receivable', 'ASSET', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2200', 'CGST Payable', 'LIABILITY', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2201', 'SGST Payable', 'LIABILITY', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2300', 'Inter-Branch Payable', 'LIABILITY', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Clearing Suspense GL (P1-2)
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2400', 'Clearing Suspense', 'LIABILITY', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- P0-1: CHARGE CONFIGURATIONS (Finacle CHRG_MASTER)
+-- PROCESSING_FEE: 1% of loan amount, GST applicable (18%)
+INSERT INTO charge_config (tenant_id, charge_code, charge_name, event_trigger, calculation_type, percentage, gst_applicable, gst_rate, gl_charge_income, gl_gst_payable, waiver_allowed, max_waiver_percent, product_code, is_active, version, created_at, created_by)
+VALUES ('DEFAULT', 'PROCESSING_FEE', 'Processing Fee', 'DISBURSEMENT', 'PERCENTAGE', 1.00, true, 18.00, '4002', '2200', true, 50.00, NULL, true, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- LATE_PAYMENT_FEE: Flat INR 500, GST applicable (18%)
+INSERT INTO charge_config (tenant_id, charge_code, charge_name, event_trigger, calculation_type, base_amount, gst_applicable, gst_rate, gl_charge_income, gl_gst_payable, waiver_allowed, max_waiver_percent, product_code, is_active, version, created_at, created_by)
+VALUES ('DEFAULT', 'LATE_PAYMENT_FEE', 'Late Payment Fee', 'OVERDUE_EMI', 'FLAT', 500.00, true, 18.00, '4002', '2200', true, 100.00, NULL, true, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- STAMP_DUTY: Slab-based (no GST), ranges by loan amount
+INSERT INTO charge_config (tenant_id, charge_code, charge_name, event_trigger, calculation_type, slab_json, gst_applicable, gl_charge_income, waiver_allowed, max_waiver_percent, product_code, is_active, version, created_at, created_by)
+VALUES ('DEFAULT', 'STAMP_DUTY', 'Stamp Duty (Slab)', 'DISBURSEMENT', 'SLAB', '[{"min":0,"max":100000,"rate":0.10},{"min":100001,"max":500000,"rate":0.15},{"min":500001,"max":10000000,"rate":0.20}]', false, '4002', false, 0.00, NULL, true, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- DOCUMENTATION_CHARGE: Flat INR 1000, GST applicable (18%)
+INSERT INTO charge_config (tenant_id, charge_code, charge_name, event_trigger, calculation_type, base_amount, gst_applicable, gst_rate, gl_charge_income, gl_gst_payable, waiver_allowed, max_waiver_percent, product_code, is_active, version, created_at, created_by)
+VALUES ('DEFAULT', 'DOCUMENTATION_CHARGE', 'Documentation Charge', 'DISBURSEMENT', 'FLAT', 1000.00, true, 18.00, '4002', '2200', true, 0.00, NULL, true, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
 -- App Users
 -- DEV: Uses {noop} prefix (plaintext) with DelegatingPasswordEncoder.
 -- PROD: Must use {bcrypt} hashed passwords. Never deploy {noop} to production.

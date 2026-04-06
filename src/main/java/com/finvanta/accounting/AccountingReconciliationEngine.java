@@ -43,17 +43,17 @@ import java.util.Map;
  *   Sum of all journal lines to GL 4001: Credit = ₹1,55,000 → Mismatch: ❌ (₹5,000 variance)
  */
 @Service
-public class ReconciliationService {
+public class AccountingReconciliationEngine {
 
-    private static final Logger log = LoggerFactory.getLogger(ReconciliationService.class);
+    private static final Logger log = LoggerFactory.getLogger(AccountingReconciliationEngine.class);
 
     private final GLMasterRepository glMasterRepository;
     private final JournalEntryRepository journalEntryRepository;
     private final AuditService auditService;
 
-    public ReconciliationService(GLMasterRepository glMasterRepository,
-                                  JournalEntryRepository journalEntryRepository,
-                                  AuditService auditService) {
+    public AccountingReconciliationEngine(GLMasterRepository glMasterRepository,
+                                   JournalEntryRepository journalEntryRepository,
+                                   AuditService auditService) {
         this.glMasterRepository = glMasterRepository;
         this.journalEntryRepository = journalEntryRepository;
         this.auditService = auditService;
