@@ -539,7 +539,100 @@ CREATE TABLE db_sequences (
 );
 CREATE INDEX idx_dbseq_tenant_name ON db_sequences (tenant_id, sequence_name);
 
--- 20. APP USERS
+-- 20. COLLATERALS (Finacle COLMAS / Temenos AA.COLLATERAL)
+CREATE TABLE collaterals (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    collateral_ref  VARCHAR(40)     NOT NULL,
+    loan_application_id BIGINT      NOT NULL,
+    customer_id     BIGINT          NOT NULL,
+    collateral_type VARCHAR(30)     NOT NULL,
+    description     VARCHAR(500),
+    owner_name      VARCHAR(200)    NOT NULL,
+    owner_relationship VARCHAR(30)  NOT NULL,
+    -- Gold-specific
+    gold_purity     VARCHAR(10),
+    gold_weight_grams DECIMAL(10,3),
+    gold_net_weight_grams DECIMAL(10,3),
+    gold_rate_per_gram DECIMAL(10,2),
+    -- Property-specific
+    property_address VARCHAR(500),
+    property_type   VARCHAR(30),
+    property_area_sqft DECIMAL(12,2),
+    registration_number VARCHAR(100),
+    registration_date DATE,
+    -- Vehicle-specific
+    vehicle_type    VARCHAR(30),
+    vehicle_registration VARCHAR(20),
+    vehicle_make    VARCHAR(50),
+    vehicle_model   VARCHAR(50),
+    vehicle_year    INT,
+    -- FD-specific
+    fd_number       VARCHAR(50),
+    fd_bank_name    VARCHAR(100),
+    fd_amount       DECIMAL(18,2),
+    fd_maturity_date DATE,
+    -- Valuation
+    market_value    DECIMAL(18,2),
+    forced_sale_value DECIMAL(18,2),
+    valuation_date  DATE,
+    valuation_amount DECIMAL(18,2),
+    valuator_name   VARCHAR(200),
+    valuator_firm   VARCHAR(200),
+    valuator_license VARCHAR(50),
+    valuation_validity_months INT,
+    -- Lien
+    lien_status     VARCHAR(20)     NOT NULL DEFAULT 'PENDING',
+    lien_creation_date DATE,
+    lien_reference  VARCHAR(100),
+    -- Insurance
+    insurance_policy_number VARCHAR(50),
+    insurance_company VARCHAR(200),
+    insurance_expiry_date DATE,
+    insurance_amount DECIMAL(18,2),
+    status          VARCHAR(20)     NOT NULL DEFAULT 'ACTIVE',
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_collateral_ref UNIQUE (tenant_id, collateral_ref),
+    CONSTRAINT fk_collateral_app FOREIGN KEY (loan_application_id) REFERENCES loan_applications(id),
+    CONSTRAINT fk_collateral_cust FOREIGN KEY (customer_id) REFERENCES customers(id)
+);
+CREATE INDEX idx_collateral_tenant_ref ON collaterals (tenant_id, collateral_ref);
+CREATE INDEX idx_collateral_loan ON collaterals (tenant_id, loan_application_id);
+CREATE INDEX idx_collateral_type ON collaterals (tenant_id, collateral_type);
+
+-- 21. LOAN DOCUMENTS (Finacle DOCMAS / Temenos AA.DOCUMENT)
+CREATE TABLE loan_documents (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    loan_application_id BIGINT      NOT NULL,
+    document_type   VARCHAR(50)     NOT NULL,
+    document_name   VARCHAR(200)    NOT NULL,
+    file_name       VARCHAR(255)    NOT NULL,
+    file_path       VARCHAR(500)    NOT NULL,
+    file_size       BIGINT,
+    content_type    VARCHAR(100),
+    verification_status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    verified_by     VARCHAR(100),
+    verified_date   DATE,
+    rejection_reason VARCHAR(500),
+    expiry_date     DATE,
+    is_mandatory    BIT             NOT NULL DEFAULT 0,
+    remarks         VARCHAR(500),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT fk_loandoc_app FOREIGN KEY (loan_application_id) REFERENCES loan_applications(id)
+);
+CREATE INDEX idx_loandoc_app ON loan_documents (tenant_id, loan_application_id);
+CREATE INDEX idx_loandoc_type ON loan_documents (tenant_id, document_type);
+
+-- 22. APP USERS
 CREATE TABLE app_users (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,

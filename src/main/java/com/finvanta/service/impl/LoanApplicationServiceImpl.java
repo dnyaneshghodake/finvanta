@@ -4,11 +4,13 @@ import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.domain.entity.LoanApplication;
+import com.finvanta.domain.entity.ProductMaster;
 import com.finvanta.domain.enums.ApplicationStatus;
 import com.finvanta.domain.rules.LoanEligibilityRule;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanApplicationRepository;
+import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanApplicationService;
 import com.finvanta.util.BusinessException;
@@ -32,6 +34,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
     private final LoanApplicationRepository applicationRepository;
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
+    private final ProductMasterRepository productRepository;
     private final LoanEligibilityRule eligibilityRule;
     private final ApprovalWorkflowService workflowService;
     private final AuditService auditService;
@@ -40,6 +43,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
     public LoanApplicationServiceImpl(LoanApplicationRepository applicationRepository,
                                        CustomerRepository customerRepository,
                                        BranchRepository branchRepository,
+                                       ProductMasterRepository productRepository,
                                        LoanEligibilityRule eligibilityRule,
                                        ApprovalWorkflowService workflowService,
                                        AuditService auditService,
@@ -47,6 +51,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         this.applicationRepository = applicationRepository;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
+        this.productRepository = productRepository;
         this.eligibilityRule = eligibilityRule;
         this.workflowService = workflowService;
         this.auditService = auditService;
@@ -69,7 +74,13 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
             .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND",
                 "Branch not found: " + branchId));
 
-        eligibilityRule.validate(application, customer);
+        // CBS: Resolve product for product-driven validation (amount/tenure/rate limits)
+        // Per Finacle PDDEF, each product defines its own eligibility bounds.
+        ProductMaster product = (application.getProductType() != null)
+            ? productRepository.findByTenantIdAndProductCode(tenantId, application.getProductType())
+                .orElse(null)
+            : null;
+        eligibilityRule.validate(application, customer, product);
 
         application.setTenantId(tenantId);
         application.setCustomer(customer);
@@ -174,8 +185,13 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
                 "Verifier and approver should be different users");
         }
 
+        // CBS: Re-validate at approval with product-driven limits (defense-in-depth)
         Customer customer = app.getCustomer();
-        eligibilityRule.validate(app, customer);
+        ProductMaster product = (app.getProductType() != null)
+            ? productRepository.findByTenantIdAndProductCode(tenantId, app.getProductType())
+                .orElse(null)
+            : null;
+        eligibilityRule.validate(app, customer, product);
 
         ApplicationStatus previousStatus = app.getStatus();
         app.setStatus(ApplicationStatus.APPROVED);

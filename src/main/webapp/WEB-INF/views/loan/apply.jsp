@@ -40,31 +40,45 @@
                         <select name="productType" id="productType" class="form-select" required>
                             <option value="">-- Select Product --</option>
                             <c:forEach var="product" items="${products}">
-                                <option value="${product.productCode}"><c:out value="${product.productCode}" /> - <c:out value="${product.productName}" /></option>
+                                <option value="${product.productCode}"
+                                    data-min-amount="${product.minLoanAmount}"
+                                    data-max-amount="${product.maxLoanAmount}"
+                                    data-min-tenure="${product.minTenureMonths}"
+                                    data-max-tenure="${product.maxTenureMonths}"
+                                    data-min-rate="${product.minInterestRate}"
+                                    data-max-rate="${product.maxInterestRate}"
+                                    data-default-penal="${product.defaultPenalRate}"
+                                    data-category="${product.productCategory}"
+                                    data-interest-type="${product.interestType}"
+                                    data-prepayment-penalty="${product.prepaymentPenaltyApplicable}"><c:out value="${product.productCode}" /> - <c:out value="${product.productName}" /></option>
                             </c:forEach>
                         </select>
+                        <small id="productHint" class="form-text text-muted"></small>
                     </div>
                     <div class="col-md-6">
                         <label for="requestedAmount" class="form-label">Requested Amount (INR) *</label>
                         <input type="number" name="requestedAmount" id="requestedAmount" class="form-control" min="10000" max="50000000" step="1000" required placeholder="e.g., 1000000" />
+                        <small id="amountHint" class="form-text text-muted"></small>
                     </div>
                 </div>
 
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <label for="interestRate" class="form-label">Interest Rate (% p.a.) *</label>
-                        <input type="number" name="interestRate" id="interestRate" class="form-control" min="1" max="36" step="0.25" required placeholder="e.g., 10.50" />
+                        <input type="number" name="interestRate" id="interestRate" class="form-control" min="1" max="36" step="0.25" required placeholder="Auto-populated from product" />
+                        <small id="rateHint" class="form-text text-muted"></small>
                     </div>
                     <div class="col-md-6">
                         <label for="tenureMonths" class="form-label">Tenure (Months) *</label>
                         <input type="number" name="tenureMonths" id="tenureMonths" class="form-control" min="3" max="360" required placeholder="e.g., 120" />
+                        <small id="tenureHint" class="form-text text-muted"></small>
                     </div>
                 </div>
 
                 <div class="row mb-3">
                     <div class="col-md-4">
                         <label for="penalRate" class="form-label">Penal Rate (% p.a.)</label>
-                        <input type="number" name="penalRate" id="penalRate" class="form-control" min="0" max="24" step="0.25" placeholder="e.g., 2.00" />
+                        <input type="number" name="penalRate" id="penalRate" class="form-control" min="0" max="24" step="0.25" placeholder="Auto from product" />
                     </div>
                     <div class="col-md-4">
                         <label for="riskCategory" class="form-label">Risk Category</label>
@@ -96,5 +110,66 @@
         </div>
     </div>
 </div>
+
+<!-- CBS: Product-driven auto-population per Finacle PDDEF -->
+<script>
+document.getElementById('productType').addEventListener('change', function() {
+    var sel = this.options[this.selectedIndex];
+    if (!sel.value) {
+        document.getElementById('productHint').textContent = '';
+        document.getElementById('amountHint').textContent = '';
+        document.getElementById('rateHint').textContent = '';
+        document.getElementById('tenureHint').textContent = '';
+        return;
+    }
+
+    var minAmt = sel.getAttribute('data-min-amount');
+    var maxAmt = sel.getAttribute('data-max-amount');
+    var minTenure = sel.getAttribute('data-min-tenure');
+    var maxTenure = sel.getAttribute('data-max-tenure');
+    var minRate = sel.getAttribute('data-min-rate');
+    var maxRate = sel.getAttribute('data-max-rate');
+    var defaultPenal = sel.getAttribute('data-default-penal');
+    var category = sel.getAttribute('data-category');
+    var interestType = sel.getAttribute('data-interest-type');
+
+    // Update HTML5 validation bounds from product
+    var amtField = document.getElementById('requestedAmount');
+    var rateField = document.getElementById('interestRate');
+    var tenureField = document.getElementById('tenureMonths');
+    var penalField = document.getElementById('penalRate');
+
+    if (minAmt && minAmt !== 'null') amtField.min = minAmt;
+    if (maxAmt && maxAmt !== 'null') amtField.max = maxAmt;
+    if (minTenure && minTenure !== 'null') tenureField.min = minTenure;
+    if (maxTenure && maxTenure !== 'null') tenureField.max = maxTenure;
+    if (minRate && minRate !== 'null') rateField.min = minRate;
+    if (maxRate && maxRate !== 'null') rateField.max = maxRate;
+
+    // Auto-populate interest rate with midpoint of product range
+    if (minRate && maxRate && minRate !== 'null' && maxRate !== 'null') {
+        var mid = ((parseFloat(minRate) + parseFloat(maxRate)) / 2).toFixed(2);
+        rateField.value = mid;
+    }
+
+    // Auto-populate penal rate from product default
+    if (defaultPenal && defaultPenal !== 'null') {
+        penalField.value = parseFloat(defaultPenal).toFixed(2);
+    }
+
+    // Display product hints
+    document.getElementById('productHint').textContent =
+        (category || '') + ' | ' + (interestType || '') + ' rate';
+    document.getElementById('amountHint').textContent =
+        (minAmt && minAmt !== 'null' ? 'Min: INR ' + Number(minAmt).toLocaleString('en-IN') : '') +
+        (maxAmt && maxAmt !== 'null' ? ' | Max: INR ' + Number(maxAmt).toLocaleString('en-IN') : '');
+    document.getElementById('rateHint').textContent =
+        (minRate && minRate !== 'null' ? 'Range: ' + minRate + '%' : '') +
+        (maxRate && maxRate !== 'null' ? ' - ' + maxRate + '%' : '');
+    document.getElementById('tenureHint').textContent =
+        (minTenure && minTenure !== 'null' ? minTenure + ' - ' : '') +
+        (maxTenure && maxTenure !== 'null' ? maxTenure + ' months' : '');
+});
+</script>
 
 <%@ include file="../layout/footer.jsp" %>
