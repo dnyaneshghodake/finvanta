@@ -4,12 +4,15 @@ import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.accounting.SuspenseService;
 import com.finvanta.audit.AuditService;
+import com.finvanta.batch.ChargeEngine;
+import com.finvanta.domain.entity.InterestAccrual;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.entity.LoanApplication;
 import com.finvanta.domain.entity.LoanTransaction;
 import com.finvanta.domain.enums.*;
 import com.finvanta.domain.rules.InterestCalculationRule;
 import com.finvanta.domain.rules.NpaClassificationRule;
+import com.finvanta.repository.InterestAccrualRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.repository.LoanApplicationRepository;
@@ -60,6 +63,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final LoanAccountRepository accountRepository;
     private final LoanApplicationRepository applicationRepository;
     private final LoanTransactionRepository transactionRepository;
+    private final InterestAccrualRepository accrualRepository;
     private final InterestCalculationRule interestRule;
     private final NpaClassificationRule npaRule;
     private final AuditService auditService;
@@ -68,10 +72,12 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final BusinessDateService businessDateService;
     private final ProductGLResolver glResolver;
     private final TransactionEngine transactionEngine;
+    private final ChargeEngine chargeEngine;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
                                    LoanApplicationRepository applicationRepository,
                                    LoanTransactionRepository transactionRepository,
+                                   InterestAccrualRepository accrualRepository,
                                    InterestCalculationRule interestRule,
                                    NpaClassificationRule npaRule,
                                    AuditService auditService,
@@ -79,10 +85,12 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    LoanScheduleService scheduleService,
                                    BusinessDateService businessDateService,
                                    ProductGLResolver glResolver,
-                                   TransactionEngine transactionEngine) {
+                                   TransactionEngine transactionEngine,
+                                   ChargeEngine chargeEngine) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
+        this.accrualRepository = accrualRepository;
         this.interestRule = interestRule;
         this.npaRule = npaRule;
         this.auditService = auditService;
@@ -91,6 +99,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.businessDateService = businessDateService;
         this.glResolver = glResolver;
         this.transactionEngine = transactionEngine;
+        this.chargeEngine = chargeEngine;
     }
 
     @Override
@@ -425,6 +434,26 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setUpdatedBy("SYSTEM");
         accountRepository.save(account);
 
+        // P0-2: Insert interest accrual record for audit-grade per-day tracking.
+        // This enables deterministic replay: any date range can be recalculated from this table.
+        // Per RBI audit requirements: all financial calculations must be logged and reproducible.
+        InterestAccrual accrual = new InterestAccrual();
+        accrual.setTenantId(tenantId);
+        accrual.setAccountId(account.getId());
+        accrual.setAccrualDate(accrualDate);
+        accrual.setPrincipalBase(account.getOutstandingPrincipal());
+        accrual.setRateApplied(account.getInterestRate());
+        accrual.setDaysCount(1);
+        accrual.setAccruedAmount(accruedAmount);
+        accrual.setAccrualType("REGULAR");
+        accrual.setPostedFlag(true);
+        accrual.setPostingDate(accrualDate);
+        accrual.setJournalEntryId(txnResult.getJournalEntryId());
+        accrual.setTransactionRef(txnResult.getTransactionRef());
+        accrual.setBusinessDate(accrualDate);
+        accrual.setCreatedBy("SYSTEM");
+        accrualRepository.save(accrual);
+
         log.debug("Interest accrued: accNo={}, amount={}, date={}",
             accountNumber, accruedAmount, accrualDate);
 
@@ -515,6 +544,25 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setLastPenalAccrualDate(businessDate);
         account.setUpdatedBy("SYSTEM");
         accountRepository.save(account);
+
+        // P0-2: Insert penal interest accrual record for audit-grade tracking.
+        // Penal interest accruals are tracked separately (accrual_type='PENAL') for reporting.
+        InterestAccrual accrual = new InterestAccrual();
+        accrual.setTenantId(tenantId);
+        accrual.setAccountId(account.getId());
+        accrual.setAccrualDate(businessDate);
+        accrual.setPrincipalBase(account.getOverduePrincipal());
+        accrual.setRateApplied(account.getPenalRate());
+        accrual.setDaysCount(1);
+        accrual.setAccruedAmount(penalAmount);
+        accrual.setAccrualType("PENAL");
+        accrual.setPostedFlag(true);
+        accrual.setPostingDate(businessDate);
+        accrual.setJournalEntryId(txnResult.getJournalEntryId());
+        accrual.setTransactionRef(txnResult.getTransactionRef());
+        accrual.setBusinessDate(businessDate);
+        accrual.setCreatedBy("SYSTEM");
+        accrualRepository.save(accrual);
 
         log.info("Penal interest accrued: accNo={}, amount={}, dpd={}, overduePrincipal={}",
             accountNumber, penalAmount, account.getDaysPastDue(), account.getOverduePrincipal());
@@ -1223,53 +1271,31 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 "Fee amount must be positive");
         }
 
-        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
-        // TransactionEngine enforces: amount → business date → day status → branch →
-        // transaction limits → maker-checker → GL posting → voucher → audit trail
-        String productType = account.getProductType();
-        List<JournalLineRequest> journalLines = List.of(
-            new JournalLineRequest(glResolver.getBankOperationsGL(productType), DebitCredit.DEBIT, feeAmount,
-                feeType + " - " + accountNumber),
-            new JournalLineRequest(glResolver.getFeeIncomeGL(productType), DebitCredit.CREDIT, feeAmount,
-                feeType + " income - " + accountNumber)
-        );
+        // CBS: Delegate to ChargeEngine per P0-1 refactoring.
+        // ChargeEngine.applyCharge() handles GL posting, GST calculation, and audit trail.
+        // This eliminates duplicate charge logic and centralizes via Finacle CHRG_MASTER pattern.
+        chargeEngine.applyCharge(accountNumber, feeType, feeAmount, businessDate);
 
-        TransactionResult txnResult = transactionEngine.execute(
-            TransactionRequest.builder()
-                .sourceModule("LOAN")
-                .transactionType("FEE_CHARGE")
-                .accountReference(accountNumber)
-                .amount(feeAmount)
-                .valueDate(businessDate)
-                .branchCode(account.getBranch().getBranchCode())
-                .productType(productType)
-                .narration(feeType + " for " + accountNumber)
-                .journalLines(journalLines)
-                .build()
-        );
-
+        // CBS: Create loan transaction record for module-level tracking
+        // This links the charge to the loan account transaction history
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
-        txn.setTransactionRef(txnResult.getTransactionRef());
+        txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.FEE_CHARGE);
         txn.setAmount(feeAmount);
         txn.setValueDate(businessDate);
-        txn.setPostingDate(txnResult.getPostingDate());
+        txn.setPostingDate(LocalDateTime.now());
         txn.setBalanceAfter(account.getTotalOutstanding());
-        txn.setNarration(feeType + ": " + feeAmount + " | Voucher: " + txnResult.getVoucherNumber());
-        txn.setJournalEntryId(txnResult.getJournalEntryId());
-        txn.setVoucherNumber(txnResult.getVoucherNumber());
+        txn.setNarration(feeType + ": " + feeAmount);
         txn.setCreatedBy(currentUser);
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
         auditService.logEvent("LoanAccount", account.getId(), "FEE_CHARGE",
             null, savedTxn.getTransactionRef(), "LOAN_ACCOUNTS",
-            feeType + ": " + feeAmount + " for " + accountNumber
-                + " | Voucher: " + txnResult.getVoucherNumber());
+            feeType + ": " + feeAmount + " for " + accountNumber);
 
-        log.info("Fee charged: accNo={}, type={}, amount={}, voucher={}",
-            accountNumber, feeType, feeAmount, txnResult.getVoucherNumber());
+        log.info("Fee charged: accNo={}, type={}, amount={}", accountNumber, feeType, feeAmount);
 
         return savedTxn;
     }
