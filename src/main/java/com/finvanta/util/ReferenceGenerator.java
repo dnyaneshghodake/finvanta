@@ -75,6 +75,11 @@ public final class ReferenceGenerator {
         return "CUST" + branchCode + timestamp() + nextSequence();
     }
 
+    /** Generates collateral reference: COL + timestamp + seq */
+    public static String generateCollateralRef() {
+        return "COL" + timestamp() + nextSequence();
+    }
+
     private static String timestamp() {
         return LocalDateTime.now().format(FORMATTER);
     }

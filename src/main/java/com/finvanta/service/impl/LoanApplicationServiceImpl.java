@@ -12,6 +12,7 @@ import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.CollateralService;
 import com.finvanta.service.LoanApplicationService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
@@ -36,6 +37,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
     private final BranchRepository branchRepository;
     private final ProductMasterRepository productRepository;
     private final LoanEligibilityRule eligibilityRule;
+    private final CollateralService collateralService;
     private final ApprovalWorkflowService workflowService;
     private final AuditService auditService;
     private final BusinessDateService businessDateService;
@@ -45,6 +47,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
                                        BranchRepository branchRepository,
                                        ProductMasterRepository productRepository,
                                        LoanEligibilityRule eligibilityRule,
+                                       CollateralService collateralService,
                                        ApprovalWorkflowService workflowService,
                                        AuditService auditService,
                                        BusinessDateService businessDateService) {
@@ -53,6 +56,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         this.branchRepository = branchRepository;
         this.productRepository = productRepository;
         this.eligibilityRule = eligibilityRule;
+        this.collateralService = collateralService;
         this.workflowService = workflowService;
         this.auditService = auditService;
         this.businessDateService = businessDateService;
@@ -192,6 +196,12 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
                 .orElse(null)
             : null;
         eligibilityRule.validate(app, customer, product);
+
+        // CBS: Validate LTV ratio at approval per RBI norms.
+        // If collaterals are registered, LTV must be within type-specific limits.
+        // Gold=75%, Property=80%, Vehicle=85%, FD=90% (per RBI circulars).
+        // Unsecured loans (no collaterals) skip this check.
+        collateralService.validateLtv(app.getId(), app.getRequestedAmount());
 
         ApplicationStatus previousStatus = app.getStatus();
         app.setStatus(ApplicationStatus.APPROVED);
