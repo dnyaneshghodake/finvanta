@@ -87,6 +87,11 @@ CREATE TABLE customers (
     customer_type   VARCHAR(20),
     is_active       BIT             NOT NULL DEFAULT 1,
     branch_id       BIGINT          NOT NULL,
+    -- CBS Customer Exposure Limits (Finacle CIF_LIMIT / RBI Exposure Norms)
+    monthly_income  DECIMAL(18,2),
+    max_borrowing_limit DECIMAL(18,2),
+    employment_type VARCHAR(30),
+    employer_name   VARCHAR(200),
     version         BIGINT          NOT NULL DEFAULT 0,
     created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
     updated_at      DATETIME2,

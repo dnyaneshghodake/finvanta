@@ -129,6 +129,42 @@
     </div>
     </c:if>
 
+    <!-- CBS Repayment Schedule Preview (RBI Fair Practices Code 2023) -->
+    <c:if test="${not empty schedulePreview}">
+    <div class="fv-card">
+        <div class="card-header">
+            Repayment Schedule Preview
+            <span class="badge bg-warning text-dark ms-2">Pre-Disbursement Disclosure</span>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-3">
+                <div class="col-md-3"><div class="fv-stat-card"><div class="stat-value amount"><fmt:formatNumber value="${previewEmi}" type="number" maxFractionDigits="2" /></div><div class="stat-label">Monthly EMI (INR)</div></div></div>
+                <div class="col-md-3"><div class="fv-stat-card"><div class="stat-value amount"><fmt:formatNumber value="${account.sanctionedAmount}" type="number" maxFractionDigits="2" /></div><div class="stat-label">Principal (INR)</div></div></div>
+                <div class="col-md-3"><div class="fv-stat-card stat-warning"><div class="stat-value amount"><fmt:formatNumber value="${previewTotalInterest}" type="number" maxFractionDigits="2" /></div><div class="stat-label">Total Interest (INR)</div></div></div>
+                <div class="col-md-3"><div class="fv-stat-card"><div class="stat-value amount"><fmt:formatNumber value="${previewTotalPayable}" type="number" maxFractionDigits="2" /></div><div class="stat-label">Total Payable (INR)</div></div></div>
+            </div>
+            <p class="text-muted small">Per RBI Fair Practices Code 2023: This schedule is indicative and based on the sanctioned amount at <fmt:formatNumber value="${account.interestRate}" maxFractionDigits="2" />% p.a. for <c:out value="${account.tenureMonths}" /> months. Actual schedule will be generated at disbursement.</p>
+            <table class="table fv-table fv-datatable">
+                <thead>
+                    <tr><th>#</th><th>Due Date</th><th class="text-end">EMI</th><th class="text-end">Principal</th><th class="text-end">Interest</th><th class="text-end">Closing Balance</th></tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="prev" items="${schedulePreview}">
+                        <tr>
+                            <td><c:out value="${prev.installmentNumber}" /></td>
+                            <td><c:out value="${prev.dueDate}" /></td>
+                            <td class="amount"><fmt:formatNumber value="${prev.emiAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${prev.principalAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${prev.interestAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${prev.closingBalance}" type="number" maxFractionDigits="2" /></td>
+                        </tr>
+                    </c:forEach>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    </c:if>
+
     <c:if test="${account.disbursedAmount.signum() == 0 || (account.multiDisbursement && !account.fullyDisbursed)}">
         <div class="fv-card">
             <div class="card-header">Disbursement

@@ -206,6 +206,33 @@ public class LoanController {
         productRepository.findByTenantIdAndProductCode(tenantId, account.getProductType())
             .ifPresent(p -> mav.addObject("productId", p.getId()));
 
+        // CBS: Schedule preview before disbursement per RBI Fair Practices Code 2023
+        // Show the borrower what their repayment schedule will look like BEFORE committing.
+        if (!account.isFullyDisbursed()) {
+            try {
+                java.time.LocalDate previewStartDate = java.time.LocalDate.now().plusMonths(1);
+                BigDecimal previewPrincipal = account.getDisbursedAmount().signum() > 0
+                    ? account.getSanctionedAmount() // Multi-tranche: preview on full sanctioned
+                    : account.getSanctionedAmount();
+                mav.addObject("schedulePreview",
+                    scheduleService.generateSchedulePreview(
+                        previewPrincipal,
+                        account.getInterestRate(),
+                        account.getTenureMonths(),
+                        previewStartDate));
+                // Calculate summary for disclosure
+                BigDecimal previewEmi = new com.finvanta.domain.rules.InterestCalculationRule()
+                    .calculateEmi(previewPrincipal, account.getInterestRate(), account.getTenureMonths());
+                BigDecimal totalPayable = previewEmi.multiply(BigDecimal.valueOf(account.getTenureMonths()));
+                BigDecimal totalInterest = totalPayable.subtract(previewPrincipal);
+                mav.addObject("previewEmi", previewEmi);
+                mav.addObject("previewTotalInterest", totalInterest);
+                mav.addObject("previewTotalPayable", totalPayable);
+            } catch (Exception e) {
+                // Preview is best-effort; don't block the page
+            }
+        }
+
         return mav;
     }
 

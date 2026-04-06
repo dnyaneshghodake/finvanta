@@ -3,10 +3,13 @@ package com.finvanta.domain.rules;
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.domain.entity.LoanApplication;
 import com.finvanta.domain.entity.ProductMaster;
+import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.util.BusinessException;
+import com.finvanta.util.TenantContext;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  * CBS Loan Eligibility Rule per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
@@ -26,6 +29,16 @@ import java.math.BigDecimal;
  */
 @Component
 public class LoanEligibilityRule {
+
+    /** Max DTI ratio: total EMI should not exceed 60% of monthly income */
+    private static final BigDecimal MAX_DTI_RATIO = new BigDecimal("60.00");
+    private static final BigDecimal HUNDRED = new BigDecimal("100");
+
+    private final LoanAccountRepository accountRepository;
+
+    public LoanEligibilityRule(LoanAccountRepository accountRepository) {
+        this.accountRepository = accountRepository;
+    }
 
     // --- System-wide fallback limits (used when product_master is not configured) ---
     private static final int MIN_CIBIL_SCORE = 650;
@@ -60,6 +73,9 @@ public class LoanEligibilityRule {
     public void validate(LoanApplication application, Customer customer, ProductMaster product) {
         // --- Customer eligibility (product-independent) ---
         validateCustomerEligibility(customer);
+
+        // --- Customer exposure limit check (RBI Exposure Norms) ---
+        validateExposureLimit(customer, application);
 
         // --- Resolve limits: product-specific or fallback ---
         BigDecimal minAmount = (product != null && product.getMinLoanAmount() != null)
@@ -124,6 +140,88 @@ public class LoanEligibilityRule {
             throw new BusinessException("ELIGIBILITY_CIBIL_LOW",
                 "CIBIL score " + customer.getCibilScore()
                     + " is below minimum threshold of " + MIN_CIBIL_SCORE);
+        }
+    }
+
+    /**
+     * CBS Customer Exposure Limit Validation per RBI Exposure Norms.
+     *
+     * Checks:
+     *   1. Max borrowing limit: total exposure (existing + proposed) must not exceed
+     *      the customer's configured maxBorrowingLimit
+     *   2. Debt-to-Income (DTI) ratio: total EMI obligations (existing + proposed)
+     *      must not exceed 60% of monthly income
+     *
+     * Per RBI Fair Practices Code 2023: banks must assess repayment capacity
+     * before sanctioning any loan. DTI ratio is the primary affordability metric.
+     *
+     * Skips check if customer has no income/limit configured (backward compatible).
+     */
+    private void validateExposureLimit(Customer customer, LoanApplication application) {
+        String tenantId = TenantContext.getCurrentTenant();
+
+        // 1. Max borrowing limit check
+        if (customer.getMaxBorrowingLimit() != null
+                && customer.getMaxBorrowingLimit().signum() > 0) {
+
+            // Sum existing outstanding across all active loans for this customer
+            BigDecimal existingExposure = BigDecimal.ZERO;
+            var existingAccounts = accountRepository.findByTenantIdAndCustomerId(
+                tenantId, customer.getId());
+            for (var acc : existingAccounts) {
+                if (!acc.getStatus().isTerminal()) {
+                    existingExposure = existingExposure.add(acc.getOutstandingPrincipal());
+                }
+            }
+
+            BigDecimal proposedTotal = existingExposure.add(application.getRequestedAmount());
+            if (proposedTotal.compareTo(customer.getMaxBorrowingLimit()) > 0) {
+                throw new BusinessException("EXPOSURE_LIMIT_EXCEEDED",
+                    "Total exposure INR " + proposedTotal
+                        + " (existing: INR " + existingExposure
+                        + " + proposed: INR " + application.getRequestedAmount()
+                        + ") exceeds customer borrowing limit of INR "
+                        + customer.getMaxBorrowingLimit());
+            }
+        }
+
+        // 2. Debt-to-Income (DTI) ratio check
+        if (customer.getMonthlyIncome() != null
+                && customer.getMonthlyIncome().signum() > 0) {
+
+            // Calculate existing total EMI obligations
+            BigDecimal existingEmi = BigDecimal.ZERO;
+            var existingAccounts = accountRepository.findByTenantIdAndCustomerId(
+                tenantId, customer.getId());
+            for (var acc : existingAccounts) {
+                if (!acc.getStatus().isTerminal() && acc.getEmiAmount() != null) {
+                    existingEmi = existingEmi.add(acc.getEmiAmount());
+                }
+            }
+
+            // Estimate proposed EMI using reducing balance formula
+            BigDecimal proposedEmi = new com.finvanta.domain.rules.InterestCalculationRule()
+                .calculateEmi(
+                    application.getRequestedAmount(),
+                    application.getInterestRate(),
+                    application.getTenureMonths()
+                );
+
+            BigDecimal totalEmi = existingEmi.add(proposedEmi);
+            BigDecimal maxAllowableEmi = customer.getMonthlyIncome()
+                .multiply(MAX_DTI_RATIO)
+                .divide(HUNDRED, 2, RoundingMode.HALF_UP);
+
+            if (totalEmi.compareTo(maxAllowableEmi) > 0) {
+                BigDecimal actualDti = totalEmi.multiply(HUNDRED)
+                    .divide(customer.getMonthlyIncome(), 2, RoundingMode.HALF_UP);
+                throw new BusinessException("DTI_RATIO_EXCEEDED",
+                    "Debt-to-Income ratio " + actualDti + "% exceeds maximum "
+                        + MAX_DTI_RATIO + "%. Total EMI: INR " + totalEmi
+                        + " (existing: INR " + existingEmi
+                        + " + proposed: INR " + proposedEmi
+                        + "). Monthly income: INR " + customer.getMonthlyIncome());
+            }
         }
     }
 }
