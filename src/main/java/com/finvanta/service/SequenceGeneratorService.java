@@ -71,19 +71,20 @@ public class SequenceGeneratorService {
             .orElse(null);
 
         if (seq == null) {
-            // Lazy init: ensure the sequence row exists using native SQL MERGE (upsert).
+            // Lazy init: ensure the sequence row exists using MERGE INTO (upsert).
             // This is idempotent and safe under concurrent first-use:
             //   - Thread A and B both find null and both execute MERGE
             //   - One inserts, the other matches and does nothing
             //   - No DataIntegrityViolationException, no poisoned persistence context
             //
-            // H2 and SQL Server both support MERGE syntax.
+            // Uses H2-native MERGE KEY syntax which is compatible with both H2 (dev/test)
+            // and SQL Server (prod via ddl-sqlserver.sql). The KEY clause specifies the
+            // unique constraint columns — H2 performs upsert based on these columns.
+            // Per Finacle SEQ_MASTER: sequence lazy-init must be idempotent across engines.
             entityManager.createNativeQuery(
-                "MERGE INTO db_sequences AS target "
-                + "USING (SELECT :tenantId AS tenant_id, :seqName AS sequence_name) AS source "
-                + "ON target.tenant_id = source.tenant_id AND target.sequence_name = source.sequence_name "
-                + "WHEN NOT MATCHED THEN INSERT (tenant_id, sequence_name, current_value, version) "
-                + "VALUES (:tenantId, :seqName, 0, 0);")
+                "MERGE INTO db_sequences (tenant_id, sequence_name, current_value, version) "
+                + "KEY (tenant_id, sequence_name) "
+                + "VALUES (:tenantId, :seqName, 0, 0)")
                 .setParameter("tenantId", tenantId)
                 .setParameter("seqName", sequenceName)
                 .executeUpdate();

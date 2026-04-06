@@ -1,12 +1,18 @@
 package com.finvanta.batch;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.finvanta.accounting.ProductGLResolver;
+import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.ChargeConfig;
 import com.finvanta.repository.ChargeConfigRepository;
+import com.finvanta.repository.LoanAccountRepository;
+import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.util.BusinessException;
+import com.finvanta.util.TenantContext;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -25,12 +31,33 @@ public class ChargeEngineTest {
     @Mock
     private ChargeConfigRepository configRepository;
 
-    @InjectMocks
+    @Mock
+    private LoanAccountRepository accountRepository;
+
+    @Mock
+    private TransactionEngine transactionEngine;
+
+    @Mock
+    private ProductGLResolver glResolver;
+
+    @Mock
+    private AuditService auditService;
+
     private ChargeEngine chargeEngine;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
+        // CBS: Set tenant context for multi-tenant charge resolution per Finacle CHRG_MASTER
+        TenantContext.setCurrentTenant("DEFAULT");
+        // Provide real ObjectMapper for slab JSON parsing — Jackson is a deterministic utility, not a service dependency
+        chargeEngine = new ChargeEngine(configRepository, accountRepository,
+            transactionEngine, glResolver, auditService, new ObjectMapper());
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
     }
 
     @Test

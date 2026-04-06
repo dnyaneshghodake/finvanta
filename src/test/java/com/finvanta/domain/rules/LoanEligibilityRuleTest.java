@@ -4,6 +4,8 @@ import com.finvanta.domain.entity.Customer;
 import com.finvanta.domain.entity.LoanApplication;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.util.BusinessException;
+import com.finvanta.util.TenantContext;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -36,11 +38,18 @@ class LoanEligibilityRuleTest {
 
     @BeforeEach
     void setUp() {
+        // CBS: Set tenant context for exposure limit validation per Finacle multi-tenant architecture
+        TenantContext.setCurrentTenant("TEST_TENANT");
         accountRepository = mock(LoanAccountRepository.class);
         // Default: no existing loans for the customer (exposure checks pass)
         when(accountRepository.findByTenantIdAndCustomerId(any(), any()))
             .thenReturn(Collections.emptyList());
         rule = new LoanEligibilityRule(accountRepository);
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
     }
 
     @Nested
