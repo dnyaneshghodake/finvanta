@@ -54,6 +54,16 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, Long> 
     @Query("SELECT COALESCE(MAX(le.ledgerSequence), 0) FROM LedgerEntry le WHERE le.tenantId = :tenantId")
     long getMaxSequence(@Param("tenantId") String tenantId);
 
+    /**
+     * All ledger entries for a tenant in ascending sequence order (paginated).
+     * Used by LedgerService.verifyChainIntegrity() for full chain verification.
+     */
+    @Query("SELECT le FROM LedgerEntry le WHERE le.tenantId = :tenantId " +
+           "ORDER BY le.ledgerSequence ASC")
+    List<LedgerEntry> findAllByTenantIdOrderByLedgerSequenceAsc(
+        @Param("tenantId") String tenantId,
+        org.springframework.data.domain.Pageable pageable);
+
     /** Ledger entries for a GL code on a business date (for reconciliation) */
     List<LedgerEntry> findByTenantIdAndGlCodeAndBusinessDateOrderByLedgerSequenceAsc(
         String tenantId, String glCode, LocalDate businessDate);

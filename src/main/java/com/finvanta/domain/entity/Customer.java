@@ -89,6 +89,35 @@ public class Customer extends BaseEntity {
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
 
+    // --- CBS Customer Exposure Limits (per Finacle CIF_LIMIT / RBI Exposure Norms) ---
+
+    /**
+     * Monthly gross income for Debt-to-Income (DTI) ratio calculation.
+     * Per RBI Fair Practices Code: total EMI obligations should not exceed
+     * 50-60% of monthly income. Set during KYC/income verification.
+     */
+    @Column(name = "monthly_income", precision = 18, scale = 2)
+    private java.math.BigDecimal monthlyIncome;
+
+    /**
+     * Maximum borrowing limit for this customer.
+     * Set by the bank based on income assessment, credit score, and risk category.
+     * Per RBI Exposure Norms: single borrower exposure is capped.
+     * Null = no explicit limit (system-wide limits from product_master apply).
+     */
+    @Column(name = "max_borrowing_limit", precision = 18, scale = 2)
+    private java.math.BigDecimal maxBorrowingLimit;
+
+    /**
+     * Employment type for income assessment: SALARIED, SELF_EMPLOYED, BUSINESS, RETIRED, OTHER
+     */
+    @Column(name = "employment_type", length = 30)
+    private String employmentType;
+
+    /** Employer name (for salaried customers) */
+    @Column(name = "employer_name", length = 200)
+    private String employerName;
+
     public String getFullName() {
         return firstName + " " + lastName;
     }

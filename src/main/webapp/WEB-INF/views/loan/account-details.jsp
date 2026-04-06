@@ -72,25 +72,143 @@
                 <tr><td class="fw-bold">NPA Date</td><td><c:out value="${account.npaDate}" default="--" /></td></tr>
                 <tr><td class="fw-bold">NPA Classification Date</td><td><c:out value="${account.npaClassificationDate}" default="--" /></td></tr>
                 <tr><td class="fw-bold">Provisioning</td><td class="amount"><fmt:formatNumber value="${account.provisioningAmount}" type="number" maxFractionDigits="2" /> INR</td></tr>
+                <tr><td class="fw-bold">Disbursement Mode</td><td><c:out value="${account.disbursementMode}" default="SINGLE" />
+                    <c:if test="${account.multiDisbursement}"> - Tranches: <c:out value="${account.tranchesDisbursed}" />/<c:out value="${account.totalTranchesPlanned}" default="N/A" /></c:if>
+                </td></tr>
+                <tr><td class="fw-bold">Fully Disbursed</td><td><c:choose><c:when test="${account.fullyDisbursed}"><span class="fv-badge fv-badge-active">YES</span></c:when><c:otherwise><span class="fv-badge fv-badge-pending">NO - Undisbursed: <fmt:formatNumber value="${account.undisbursedAmount}" type="number" maxFractionDigits="2" /> INR</span></c:otherwise></c:choose></td></tr>
                 </tbody>
             </table>
         </div>
     </div>
 
-    <c:if test="${account.disbursedAmount.unscaledValue() == 0}">
+    <!-- CBS Collaterals -->
+    <c:if test="${not empty collaterals}">
+    <div class="fv-card">
+        <div class="card-header">Collaterals <span class="badge bg-secondary">${collaterals.size()}</span></div>
+        <div class="card-body">
+            <table class="table fv-table">
+                <thead><tr><th>Ref</th><th>Type</th><th>Owner</th><th class="text-end">Market Value</th><th>Lien Status</th><th>Insurance Expiry</th></tr></thead>
+                <tbody>
+                <c:forEach var="col" items="${collaterals}">
+                    <tr>
+                        <td class="font-monospace"><c:out value="${col.collateralRef}" /></td>
+                        <td><c:out value="${col.collateralType}" /></td>
+                        <td><c:out value="${col.ownerName}" /></td>
+                        <td class="text-end amount"><fmt:formatNumber value="${col.marketValue}" type="number" maxFractionDigits="2" /> INR</td>
+                        <td><c:out value="${col.lienStatus}" /></td>
+                        <td><c:out value="${col.insuranceExpiryDate}" default="--" /></td>
+                    </tr>
+                </c:forEach>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    </c:if>
+
+    <!-- CBS Documents -->
+    <c:if test="${not empty documents}">
+    <div class="fv-card">
+        <div class="card-header">Documents <span class="badge bg-secondary">${documents.size()}</span></div>
+        <div class="card-body">
+            <table class="table fv-table">
+                <thead><tr><th>Type</th><th>Name</th><th>Mandatory</th><th>Status</th><th>Verified By</th><th>Expiry</th></tr></thead>
+                <tbody>
+                <c:forEach var="doc" items="${documents}">
+                    <tr>
+                        <td><c:out value="${doc.documentType}" /></td>
+                        <td><c:out value="${doc.documentName}" /></td>
+                        <td><c:if test="${doc.mandatory}"><span class="fv-badge fv-badge-npa">Required</span></c:if><c:if test="${!doc.mandatory}">Optional</c:if></td>
+                        <td><c:choose><c:when test="${doc.verificationStatus == 'VERIFIED'}"><span class="fv-badge fv-badge-active">VERIFIED</span></c:when><c:when test="${doc.verificationStatus == 'REJECTED'}"><span class="fv-badge fv-badge-npa">REJECTED</span></c:when><c:otherwise><span class="fv-badge fv-badge-pending">PENDING</span></c:otherwise></c:choose></td>
+                        <td><c:out value="${doc.verifiedBy}" default="--" /></td>
+                        <td><c:out value="${doc.expiryDate}" default="--" /></td>
+                    </tr>
+                </c:forEach>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    </c:if>
+
+    <!-- CBS Repayment Schedule Preview (RBI Fair Practices Code 2023) -->
+    <c:if test="${not empty schedulePreview}">
+    <div class="fv-card">
+        <div class="card-header">
+            Repayment Schedule Preview
+            <span class="badge bg-warning text-dark ms-2">Pre-Disbursement Disclosure</span>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-3">
+                <div class="col-md-3"><div class="fv-stat-card"><div class="stat-value amount"><fmt:formatNumber value="${previewEmi}" type="number" maxFractionDigits="2" /></div><div class="stat-label">Monthly EMI (INR)</div></div></div>
+                <div class="col-md-3"><div class="fv-stat-card"><div class="stat-value amount"><fmt:formatNumber value="${account.sanctionedAmount}" type="number" maxFractionDigits="2" /></div><div class="stat-label">Principal (INR)</div></div></div>
+                <div class="col-md-3"><div class="fv-stat-card stat-warning"><div class="stat-value amount"><fmt:formatNumber value="${previewTotalInterest}" type="number" maxFractionDigits="2" /></div><div class="stat-label">Total Interest (INR)</div></div></div>
+                <div class="col-md-3"><div class="fv-stat-card"><div class="stat-value amount"><fmt:formatNumber value="${previewTotalPayable}" type="number" maxFractionDigits="2" /></div><div class="stat-label">Total Payable (INR)</div></div></div>
+            </div>
+            <p class="text-muted small">Per RBI Fair Practices Code 2023: This schedule is indicative and based on the sanctioned amount at <fmt:formatNumber value="${account.interestRate}" maxFractionDigits="2" />% p.a. for <c:out value="${account.tenureMonths}" /> months. Actual schedule will be generated at disbursement.</p>
+            <table class="table fv-table fv-datatable">
+                <thead>
+                    <tr><th>#</th><th>Due Date</th><th class="text-end">EMI</th><th class="text-end">Principal</th><th class="text-end">Interest</th><th class="text-end">Closing Balance</th></tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="prev" items="${schedulePreview}">
+                        <tr>
+                            <td><c:out value="${prev.installmentNumber}" /></td>
+                            <td><c:out value="${prev.dueDate}" /></td>
+                            <td class="amount"><fmt:formatNumber value="${prev.emiAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${prev.principalAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${prev.interestAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td class="amount"><fmt:formatNumber value="${prev.closingBalance}" type="number" maxFractionDigits="2" /></td>
+                        </tr>
+                    </c:forEach>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    </c:if>
+
+    <c:if test="${account.disbursedAmount.signum() == 0 || (account.multiDisbursement && !account.fullyDisbursed)}">
         <div class="fv-card">
-            <div class="card-header">Disbursement</div>
+            <div class="card-header">Disbursement
+                <c:if test="${account.multiDisbursement}"><span class="badge bg-info ms-2">Multi-Tranche</span></c:if>
+            </div>
             <div class="card-body">
+                <p>Sanctioned: <strong class="amount"><fmt:formatNumber value="${account.sanctionedAmount}" type="number" maxFractionDigits="2" /> INR</strong>
+                    | Disbursed: <strong class="amount"><fmt:formatNumber value="${account.disbursedAmount}" type="number" maxFractionDigits="2" /> INR</strong>
+                    | Remaining: <strong class="amount"><fmt:formatNumber value="${account.undisbursedAmount}" type="number" maxFractionDigits="2" /> INR</strong></p>
+
+                <c:if test="${!account.multiDisbursement}">
+                <!-- Single disbursement: full sanctioned amount -->
                 <form method="post" action="${pageContext.request.contextPath}/loan/disburse/${account.accountNumber}">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                    <p>Disbursement Amount: <strong class="amount"><fmt:formatNumber value="${account.sanctionedAmount}" type="number" maxFractionDigits="2" /> INR</strong></p>
-                    <button type="submit" class="btn btn-success mt-2" data-confirm="Confirm disbursement?">Disburse Loan</button>
+                    <button type="submit" class="btn btn-success" data-confirm="Confirm full disbursement of INR ${account.undisbursedAmount}?">Disburse Full Amount</button>
                 </form>
+                </c:if>
+
+                <c:if test="${account.multiDisbursement}">
+                <!-- Multi-tranche: specify tranche amount -->
+                <form method="post" action="${pageContext.request.contextPath}/loan/disburse-tranche/${account.accountNumber}" class="fv-form">
+                    <div class="row mb-2">
+                        <div class="col-md-4">
+                            <label class="form-label">Tranche Amount (INR) *</label>
+                            <input type="number" name="trancheAmount" class="form-control" step="0.01" min="1" max="${account.undisbursedAmount}" required />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Narration</label>
+                            <input type="text" name="narration" class="form-control" placeholder="e.g., Foundation complete - Tranche 1" />
+                        </div>
+                    </div>
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-success" data-confirm="Confirm tranche disbursement?">Disburse Tranche</button>
+                    <form method="post" action="${pageContext.request.contextPath}/loan/disburse/${account.accountNumber}" class="d-inline ms-2">
+                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                        <button type="submit" class="btn btn-outline-success" data-confirm="Disburse all remaining INR ${account.undisbursedAmount}?">Disburse All Remaining</button>
+                    </form>
+                </form>
+                </c:if>
             </div>
         </div>
     </c:if>
 
-    <c:if test="${account.disbursedAmount.unscaledValue() > 0 and not account.status.terminal}">
+    <c:if test="${account.disbursedAmount.signum() > 0 and not account.status.terminal}">
         <div class="fv-card">
             <div class="card-header">Process Repayment</div>
             <div class="card-body">
@@ -107,7 +225,7 @@
             </div>
         </div>
 
-        <!-- CBS Prepayment/Foreclosure — per RBI Fair Lending Code 2023 -->
+        <!-- CBS Prepayment/Foreclosure - per RBI Fair Lending Code 2023 -->
         <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <div class="fv-card">
             <div class="card-header">Prepayment / Foreclosure</div>
@@ -127,7 +245,7 @@
         </div>
         </c:if>
 
-        <!-- CBS Fee Charging — MAKER/ADMIN -->
+        <!-- CBS Fee Charging - MAKER/ADMIN -->
         <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <div class="fv-card">
             <div class="card-header">Charge Fee</div>
@@ -157,7 +275,7 @@
         </div>
         </c:if>
 
-        <!-- CBS Write-Off — ADMIN only, NPA accounts only -->
+        <!-- CBS Write-Off - ADMIN only, NPA accounts only -->
         <c:if test="${account.status.npa and pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <div class="fv-card">
             <div class="card-header text-danger">NPA Write-Off</div>
@@ -167,7 +285,7 @@
                 <p>Provisioning Held: <strong class="amount"><fmt:formatNumber value="${account.provisioningAmount}" type="number" maxFractionDigits="2" /> INR</strong></p>
                 <form method="post" action="${pageContext.request.contextPath}/loan/write-off/${account.accountNumber}">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                    <button type="submit" class="btn btn-danger" data-confirm="CONFIRM WRITE-OFF: This action is irreversible and will remove ₹${account.outstandingPrincipal} from the balance sheet.">Write Off Account</button>
+                    <button type="submit" class="btn btn-danger" data-confirm="CONFIRM WRITE-OFF: This action is irreversible and will remove INR ${account.outstandingPrincipal} from the balance sheet.">Write Off Account</button>
                 </form>
             </div>
         </div>
@@ -204,7 +322,7 @@
                             <td class="amount"><fmt:formatNumber value="${sched.interestAmount}" type="number" maxFractionDigits="2" /></td>
                             <td class="amount"><fmt:formatNumber value="${sched.closingBalance}" type="number" maxFractionDigits="2" /></td>
                             <td class="amount"><fmt:formatNumber value="${sched.paidAmount}" type="number" maxFractionDigits="2" /></td>
-                            <td><c:out value="${sched.paidDate}" default="—" /></td>
+                            <td><c:out value="${sched.paidDate}" default="--" /></td>
                             <td><c:if test="${sched.daysPastDue > 0}"><span class="fv-badge fv-badge-npa"><c:out value="${sched.daysPastDue}" /></span></c:if><c:if test="${sched.daysPastDue == 0}">0</c:if></td>
                             <td>
                                 <c:choose>

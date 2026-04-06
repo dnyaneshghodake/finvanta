@@ -49,6 +49,7 @@ class TransactionRequestTest {
         assertThrows(IllegalArgumentException.class, () ->
             TransactionRequest.builder()
                 .sourceModule("LOAN").transactionType("TEST")
+                .accountReference("LN001")
                 .valueDate(LocalDate.now()).narration("test")
                 .journalLines(validLines())
                 .build());
@@ -60,6 +61,7 @@ class TransactionRequestTest {
         assertThrows(IllegalArgumentException.class, () ->
             TransactionRequest.builder()
                 .sourceModule("LOAN").transactionType("TEST")
+                .accountReference("LN001")
                 .amount(BigDecimal.ZERO)
                 .valueDate(LocalDate.now()).narration("test")
                 .journalLines(validLines())
@@ -72,6 +74,7 @@ class TransactionRequestTest {
         assertThrows(IllegalArgumentException.class, () ->
             TransactionRequest.builder()
                 .transactionType("TEST")
+                .accountReference("LN001")
                 .amount(new BigDecimal("1000"))
                 .valueDate(LocalDate.now()).narration("test")
                 .journalLines(validLines())
@@ -84,6 +87,7 @@ class TransactionRequestTest {
         assertThrows(IllegalArgumentException.class, () ->
             TransactionRequest.builder()
                 .sourceModule("LOAN").transactionType("TEST")
+                .accountReference("LN001")
                 .amount(new BigDecimal("1000"))
                 .valueDate(LocalDate.now())
                 .journalLines(validLines())
@@ -96,6 +100,7 @@ class TransactionRequestTest {
         assertThrows(IllegalArgumentException.class, () ->
             TransactionRequest.builder()
                 .sourceModule("LOAN").transactionType("TEST")
+                .accountReference("LN001")
                 .amount(new BigDecimal("1000"))
                 .valueDate(LocalDate.now()).narration("test")
                 .journalLines(List.of(
@@ -104,10 +109,36 @@ class TransactionRequestTest {
     }
 
     @Test
+    @DisplayName("Missing account reference rejected per CBS audit rules")
+    void missingAccountReference() {
+        assertThrows(IllegalArgumentException.class, () ->
+            TransactionRequest.builder()
+                .sourceModule("LOAN").transactionType("TEST")
+                .amount(new BigDecimal("1000"))
+                .valueDate(LocalDate.now()).narration("test")
+                .journalLines(validLines())
+                .build());
+    }
+
+    @Test
+    @DisplayName("Missing transaction type rejected")
+    void missingTransactionType() {
+        assertThrows(IllegalArgumentException.class, () ->
+            TransactionRequest.builder()
+                .sourceModule("LOAN")
+                .accountReference("LN001")
+                .amount(new BigDecimal("1000"))
+                .valueDate(LocalDate.now()).narration("test")
+                .journalLines(validLines())
+                .build());
+    }
+
+    @Test
     @DisplayName("System-generated flag is set correctly")
     void systemGenerated() {
         TransactionRequest req = TransactionRequest.builder()
             .sourceModule("LOAN").transactionType("ACCRUAL")
+            .accountReference("LN001")
             .amount(new BigDecimal("274")).valueDate(LocalDate.now())
             .narration("Interest accrual").journalLines(validLines())
             .systemGenerated(true)

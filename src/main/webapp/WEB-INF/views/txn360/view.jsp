@@ -52,10 +52,10 @@
                 </div>
                 <div class="col-md-6">
                     <table class="table fv-table mb-0">
-                        <tr><td class="fw-bold" style="width:200px">Voucher Number</td><td class="font-monospace"><c:out value="${transaction.voucherNumber}" default="—" /></td></tr>
-                        <tr><td class="fw-bold">Journal Entry ID</td><td><c:out value="${transaction.journalEntryId}" default="—" /></td></tr>
+                        <tr><td class="fw-bold" style="width:200px">Voucher Number</td><td class="font-monospace"><c:out value="${transaction.voucherNumber}" default="--" /></td></tr>
+                        <tr><td class="fw-bold">Journal Entry ID</td><td><c:out value="${transaction.journalEntryId}" default="--" /></td></tr>
                         <tr><td class="fw-bold">Balance After</td><td class="amount"><fmt:formatNumber value="${transaction.balanceAfter}" type="number" maxFractionDigits="2" /></td></tr>
-                        <tr><td class="fw-bold">Idempotency Key</td><td class="font-monospace small"><c:out value="${transaction.idempotencyKey}" default="—" /></td></tr>
+                        <tr><td class="fw-bold">Idempotency Key</td><td class="font-monospace small"><c:out value="${transaction.idempotencyKey}" default="--" /></td></tr>
                         <tr><td class="fw-bold">Narration</td><td><c:out value="${transaction.narration}" /></td></tr>
                         <c:if test="${transaction.reversed}">
                         <tr><td class="fw-bold text-danger">Reversed By</td><td class="font-monospace"><c:out value="${transaction.reversedByRef}" /></td></tr>
@@ -110,7 +110,7 @@
                 <div class="col-md-6">
                     <table class="table fv-table mb-0">
                         <tr><td class="fw-bold" style="width:200px">Customer</td><td><a href="${pageContext.request.contextPath}/customer/view/${customer.id}"><c:out value="${customer.firstName}" /> <c:out value="${customer.lastName}" /></a> (<c:out value="${customer.customerNumber}" />)</td></tr>
-                        <tr><td class="fw-bold">Branch</td><td><a href="${pageContext.request.contextPath}/branch/view/${branch.id}"><c:out value="${branch.branchCode}" /> — <c:out value="${branch.branchName}" /></a></td></tr>
+                        <tr><td class="fw-bold">Branch</td><td><a href="${pageContext.request.contextPath}/branch/view/${branch.id}"><c:out value="${branch.branchCode}" /> - <c:out value="${branch.branchName}" /></a></td></tr>
                         <tr><td class="fw-bold">Currency</td><td><c:out value="${account.currencyCode}" /></td></tr>
                         <tr><td class="fw-bold">DPD</td><td><c:out value="${account.daysPastDue}" /></td></tr>
                     </table>
@@ -122,7 +122,9 @@
     <!-- GL Posting -->
     <c:if test="${not empty journal}">
     <div class="fv-card mb-3">
-        <div class="card-header">GL Posting — Journal: <span class="font-monospace"><c:out value="${journal.journalRef}" /></span></div>
+        <div class="card-header">GL Posting - Journal: <span class="font-monospace"><c:out value="${journal.journalRef}" /></span>
+            <c:if test="${not empty compoundJournals}"><span class="fv-badge fv-badge-pending ms-2">Compound (${compoundJournals.size()} journals)</span></c:if>
+        </div>
         <div class="card-body">
             <table class="table fv-table">
                 <thead>
@@ -161,6 +163,53 @@
     </div>
     </c:if>
 
+    <!-- CBS Compound Journals (e.g., Write-Off with multiple balanced journal groups) -->
+    <c:if test="${not empty compoundJournals}">
+    <c:forEach var="cj" items="${compoundJournals}" varStatus="cjStatus">
+    <c:if test="${cj.id != journal.id}">
+    <div class="fv-card mb-3">
+        <div class="card-header">Compound Journal ${cjStatus.index + 1}: <span class="font-monospace"><c:out value="${cj.journalRef}" /></span></div>
+        <div class="card-body">
+            <p class="text-muted small mb-2"><c:out value="${cj.narration}" /></p>
+            <table class="table fv-table">
+                <thead>
+                    <tr><th>GL Code</th><th>GL Name</th><th>DR/CR</th><th class="text-end">Amount</th><th>Narration</th></tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="cjLine" items="${cj.lines}">
+                    <tr>
+                        <td class="font-monospace"><c:out value="${cjLine.glCode}" /></td>
+                        <td><c:out value="${cjLine.glName}" /></td>
+                        <td>
+                            <c:choose>
+                                <c:when test="${cjLine.debitCredit == 'DEBIT'}"><span class="text-danger fw-bold">DR</span></c:when>
+                                <c:otherwise><span class="text-success fw-bold">CR</span></c:otherwise>
+                            </c:choose>
+                        </td>
+                        <td class="text-end amount"><fmt:formatNumber value="${cjLine.amount}" type="number" maxFractionDigits="2" /></td>
+                        <td class="small"><c:out value="${cjLine.narration}" /></td>
+                    </tr>
+                    </c:forEach>
+                </tbody>
+                <tfoot>
+                    <tr class="table-light fw-bold">
+                        <td colspan="3">Total</td>
+                        <td class="text-end">DR: <fmt:formatNumber value="${cj.totalDebit}" type="number" maxFractionDigits="2" /> | CR: <fmt:formatNumber value="${cj.totalCredit}" type="number" maxFractionDigits="2" /></td>
+                        <td>
+                            <c:choose>
+                                <c:when test="${cj.totalDebit == cj.totalCredit}"><span class="text-success">Balanced &#10003;</span></c:when>
+                                <c:otherwise><span class="text-danger">IMBALANCED &#10007;</span></c:otherwise>
+                            </c:choose>
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+    </c:if>
+    </c:forEach>
+    </c:if>
+
     <!-- Reversal Linkage -->
     <c:if test="${not empty reversalTransaction}">
     <div class="fv-card mb-3">
@@ -184,8 +233,8 @@
                 <a href="${pageContext.request.contextPath}/txn360/${originalTransaction.transactionRef}" class="font-monospace">
                     <c:out value="${originalTransaction.transactionRef}" />
                 </a>
-                — <c:out value="${originalTransaction.transactionType}" />
-                — <fmt:formatNumber value="${originalTransaction.amount}" type="number" maxFractionDigits="2" /> INR
+                - <c:out value="${originalTransaction.transactionType}" />
+                - <fmt:formatNumber value="${originalTransaction.amount}" type="number" maxFractionDigits="2" /> INR
             </p>
         </div>
     </div>

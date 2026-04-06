@@ -113,10 +113,25 @@ public class Transaction360Service {
         view.put("branch", account.getBranch());
 
         // 3. GL Posting (Journal + Lines)
+        // For compound transactions (e.g., write-off), the primary journalEntryId points to
+        // the first journal entry only. All compound journals share the same sourceModule,
+        // sourceRef (account number), and valueDate, so we query by all three to retrieve
+        // only the compound group — not unrelated journals from other business dates.
         if (txn.getJournalEntryId() != null) {
             journalEntryRepository.findById(txn.getJournalEntryId()).ifPresent(journal -> {
                 view.put("journal", journal);
                 view.put("journalLines", journal.getLines());
+
+                // CBS Compound Journal: find all related journals for this specific
+                // transaction date (not all-time). Per Finacle TRAN_POSTING, compound
+                // groups share sourceModule + sourceRef + valueDate.
+                List<JournalEntry> relatedJournals = journalEntryRepository
+                    .findByTenantIdAndSourceModuleAndSourceRefAndValueDate(
+                        tenantId, journal.getSourceModule(), journal.getSourceRef(),
+                        journal.getValueDate());
+                if (relatedJournals.size() > 1) {
+                    view.put("compoundJournals", relatedJournals);
+                }
             });
         }
 

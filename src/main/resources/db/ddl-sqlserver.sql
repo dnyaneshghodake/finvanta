@@ -87,6 +87,11 @@ CREATE TABLE customers (
     customer_type   VARCHAR(20),
     is_active       BIT             NOT NULL DEFAULT 1,
     branch_id       BIGINT          NOT NULL,
+    -- CBS Customer Exposure Limits (Finacle CIF_LIMIT / RBI Exposure Norms)
+    monthly_income  DECIMAL(18,2),
+    max_borrowing_limit DECIMAL(18,2),
+    employment_type VARCHAR(30),
+    employer_name   VARCHAR(200),
     version         BIGINT          NOT NULL DEFAULT 0,
     created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
     updated_at      DATETIME2,
@@ -219,6 +224,11 @@ CREATE TABLE loan_accounts (
     last_penal_accrual_date DATE,
     collateral_reference VARCHAR(100),
     risk_category   VARCHAR(20),
+    -- Multi-Disbursement (Finacle DISB_MASTER / Temenos AA.DISBURSEMENT)
+    disbursement_mode VARCHAR(20)    DEFAULT 'SINGLE',       -- SINGLE, MULTI_TRANCHE, DRAWDOWN
+    total_tranches_planned INT,
+    tranches_disbursed INT           DEFAULT 0,
+    is_fully_disbursed BIT           NOT NULL DEFAULT 0,
     version         BIGINT          NOT NULL DEFAULT 0,
     created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
     updated_at      DATETIME2,
@@ -528,7 +538,142 @@ CREATE TABLE transaction_limits (
 );
 CREATE INDEX idx_txnlimit_tenant_role ON transaction_limits (tenant_id, role, transaction_type);
 
--- 19. APP USERS
+-- 19. DB SEQUENCES (Finacle SEQ_MASTER / Temenos EB.SEQUENCE — portable sequence generator)
+CREATE TABLE db_sequences (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    sequence_name   VARCHAR(100)    NOT NULL,
+    current_value   BIGINT          NOT NULL DEFAULT 0,
+    version         BIGINT          NOT NULL DEFAULT 0,
+    CONSTRAINT uq_dbseq_tenant_name UNIQUE (tenant_id, sequence_name)
+);
+CREATE INDEX idx_dbseq_tenant_name ON db_sequences (tenant_id, sequence_name);
+
+-- 20. DISBURSEMENT SCHEDULES (Finacle DISB_MASTER / Temenos AA.DISBURSEMENT.ARRANGEMENT)
+CREATE TABLE disbursement_schedules (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    loan_account_id BIGINT          NOT NULL,
+    tranche_number  INT             NOT NULL,
+    tranche_amount  DECIMAL(18,2)   NOT NULL,
+    tranche_percentage DECIMAL(8,2),
+    milestone_description VARCHAR(500) NOT NULL,
+    expected_date   DATE,
+    actual_date     DATE,
+    status          VARCHAR(20)     NOT NULL DEFAULT 'PLANNED',
+    condition_verified_by VARCHAR(100),
+    condition_verified_date DATE,
+    approved_by     VARCHAR(100),
+    approved_date   DATE,
+    transaction_ref VARCHAR(40),
+    voucher_number  VARCHAR(40),
+    remarks         VARCHAR(500),
+    beneficiary_name VARCHAR(200),
+    beneficiary_account VARCHAR(40),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT fk_disbsched_account FOREIGN KEY (loan_account_id) REFERENCES loan_accounts(id)
+);
+CREATE INDEX idx_disbsched_account ON disbursement_schedules (tenant_id, loan_account_id);
+CREATE INDEX idx_disbsched_status ON disbursement_schedules (tenant_id, status);
+
+-- 21. COLLATERALS (Finacle COLMAS / Temenos AA.COLLATERAL)
+CREATE TABLE collaterals (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    collateral_ref  VARCHAR(40)     NOT NULL,
+    loan_application_id BIGINT      NOT NULL,
+    customer_id     BIGINT          NOT NULL,
+    collateral_type VARCHAR(30)     NOT NULL,
+    description     VARCHAR(500),
+    owner_name      VARCHAR(200)    NOT NULL,
+    owner_relationship VARCHAR(30)  NOT NULL,
+    -- Gold-specific
+    gold_purity     VARCHAR(10),
+    gold_weight_grams DECIMAL(10,3),
+    gold_net_weight_grams DECIMAL(10,3),
+    gold_rate_per_gram DECIMAL(10,2),
+    -- Property-specific
+    property_address VARCHAR(500),
+    property_type   VARCHAR(30),
+    property_area_sqft DECIMAL(12,2),
+    registration_number VARCHAR(100),
+    registration_date DATE,
+    -- Vehicle-specific
+    vehicle_type    VARCHAR(30),
+    vehicle_registration VARCHAR(20),
+    vehicle_make    VARCHAR(50),
+    vehicle_model   VARCHAR(50),
+    vehicle_year    INT,
+    -- FD-specific
+    fd_number       VARCHAR(50),
+    fd_bank_name    VARCHAR(100),
+    fd_amount       DECIMAL(18,2),
+    fd_maturity_date DATE,
+    -- Valuation
+    market_value    DECIMAL(18,2),
+    forced_sale_value DECIMAL(18,2),
+    valuation_date  DATE,
+    valuation_amount DECIMAL(18,2),
+    valuator_name   VARCHAR(200),
+    valuator_firm   VARCHAR(200),
+    valuator_license VARCHAR(50),
+    valuation_validity_months INT,
+    -- Lien
+    lien_status     VARCHAR(20)     NOT NULL DEFAULT 'PENDING',
+    lien_creation_date DATE,
+    lien_reference  VARCHAR(100),
+    -- Insurance
+    insurance_policy_number VARCHAR(50),
+    insurance_company VARCHAR(200),
+    insurance_expiry_date DATE,
+    insurance_amount DECIMAL(18,2),
+    status          VARCHAR(20)     NOT NULL DEFAULT 'ACTIVE',
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_collateral_ref UNIQUE (tenant_id, collateral_ref),
+    CONSTRAINT fk_collateral_app FOREIGN KEY (loan_application_id) REFERENCES loan_applications(id),
+    CONSTRAINT fk_collateral_cust FOREIGN KEY (customer_id) REFERENCES customers(id)
+);
+CREATE INDEX idx_collateral_tenant_ref ON collaterals (tenant_id, collateral_ref);
+CREATE INDEX idx_collateral_loan ON collaterals (tenant_id, loan_application_id);
+CREATE INDEX idx_collateral_type ON collaterals (tenant_id, collateral_type);
+
+-- 21. LOAN DOCUMENTS (Finacle DOCMAS / Temenos AA.DOCUMENT)
+CREATE TABLE loan_documents (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    loan_application_id BIGINT      NOT NULL,
+    document_type   VARCHAR(50)     NOT NULL,
+    document_name   VARCHAR(200)    NOT NULL,
+    file_name       VARCHAR(255)    NOT NULL,
+    file_path       VARCHAR(500)    NOT NULL,
+    file_size       BIGINT,
+    content_type    VARCHAR(100),
+    verification_status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    verified_by     VARCHAR(100),
+    verified_date   DATE,
+    rejection_reason VARCHAR(500),
+    expiry_date     DATE,
+    is_mandatory    BIT             NOT NULL DEFAULT 0,
+    remarks         VARCHAR(500),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT fk_loandoc_app FOREIGN KEY (loan_application_id) REFERENCES loan_applications(id)
+);
+CREATE INDEX idx_loandoc_app ON loan_documents (tenant_id, loan_application_id);
+CREATE INDEX idx_loandoc_type ON loan_documents (tenant_id, document_type);
+
+-- 22. APP USERS
 CREATE TABLE app_users (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,

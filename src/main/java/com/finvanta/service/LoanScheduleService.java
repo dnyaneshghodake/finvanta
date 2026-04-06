@@ -230,6 +230,80 @@ public class LoanScheduleService {
     }
 
     /**
+     * CBS Schedule Preview per RBI Fair Practices Code 2023.
+     *
+     * Generates an in-memory amortization schedule WITHOUT persisting to DB.
+     * This is shown to the borrower BEFORE disbursement for disclosure:
+     *   - EMI amount per installment
+     *   - Principal/interest split
+     *   - Total interest payable over loan tenure
+     *   - Total cost of credit
+     *
+     * Per RBI: "The bank shall provide the borrower with a repayment schedule
+     * before disbursement of the loan."
+     *
+     * @param principal    Loan principal amount
+     * @param annualRate   Interest rate (% p.a.)
+     * @param tenureMonths Loan tenure in months
+     * @param startDate    Expected first EMI date
+     * @return List of preview schedule lines (not persisted)
+     */
+    public List<LoanSchedule> generateSchedulePreview(BigDecimal principal, BigDecimal annualRate,
+                                                        int tenureMonths, LocalDate startDate) {
+        BigDecimal emi = interestRule.calculateEmi(principal, annualRate, tenureMonths);
+
+        BigDecimal monthlyRate = annualRate
+            .divide(BigDecimal.valueOf(100), MC)
+            .divide(BigDecimal.valueOf(12), MC);
+
+        BigDecimal openingBalance = principal;
+        LocalDate dueDate = startDate;
+        List<LoanSchedule> previewLines = new ArrayList<>();
+        BigDecimal totalInterest = BigDecimal.ZERO;
+
+        for (int i = 1; i <= tenureMonths; i++) {
+            BigDecimal interestComponent = openingBalance
+                .multiply(monthlyRate, MC)
+                .setScale(SCALE, RoundingMode.HALF_UP);
+
+            BigDecimal principalComponent;
+            if (i == tenureMonths) {
+                principalComponent = openingBalance;
+                interestComponent = emi.subtract(principalComponent)
+                    .max(BigDecimal.ZERO)
+                    .setScale(SCALE, RoundingMode.HALF_UP);
+            } else {
+                principalComponent = emi.subtract(interestComponent)
+                    .setScale(SCALE, RoundingMode.HALF_UP);
+            }
+
+            BigDecimal closingBalance = openingBalance.subtract(principalComponent)
+                .max(BigDecimal.ZERO)
+                .setScale(SCALE, RoundingMode.HALF_UP);
+
+            totalInterest = totalInterest.add(interestComponent);
+
+            LoanSchedule line = new LoanSchedule();
+            line.setInstallmentNumber(i);
+            line.setDueDate(dueDate);
+            line.setEmiAmount(emi);
+            line.setPrincipalAmount(principalComponent);
+            line.setInterestAmount(interestComponent);
+            line.setClosingBalance(closingBalance);
+            line.setStatus("PREVIEW");
+
+            previewLines.add(line);
+            openingBalance = closingBalance;
+            dueDate = dueDate.plusMonths(1);
+        }
+
+        log.info("Schedule preview generated: principal={}, rate={}%, tenure={}, emi={}, totalInterest={}",
+            principal, annualRate, tenureMonths, emi, totalInterest);
+
+        return previewLines;
+    }
+
+    /**
      * Returns the full schedule for display.
      */
     public List<LoanSchedule> getSchedule(Long accountId) {

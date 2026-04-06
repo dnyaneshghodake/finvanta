@@ -2,6 +2,7 @@ package com.finvanta.domain.rules;
 
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.domain.entity.LoanApplication;
+import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.util.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -9,8 +10,12 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Loan Eligibility Rule Tests per RBI Fair Lending Code.
@@ -19,17 +24,23 @@ import static org.junit.jupiter.api.Assertions.*;
  * - KYC verification mandatory
  * - Customer active status
  * - CIBIL score minimum threshold (650)
- * - Loan amount range (₹10,000 — ₹5,00,00,000)
- * - Tenure range (3 — 360 months)
- * - Interest rate range (1% — 36%)
+ * - Loan amount range (INR 10,000 - INR 5,00,00,000)
+ * - Tenure range (3 - 360 months)
+ * - Interest rate range (1% - 36%)
+ * - Customer exposure limit (max borrowing + DTI ratio)
  */
 class LoanEligibilityRuleTest {
 
     private LoanEligibilityRule rule;
+    private LoanAccountRepository accountRepository;
 
     @BeforeEach
     void setUp() {
-        rule = new LoanEligibilityRule();
+        accountRepository = mock(LoanAccountRepository.class);
+        // Default: no existing loans for the customer (exposure checks pass)
+        when(accountRepository.findByTenantIdAndCustomerId(any(), any()))
+            .thenReturn(Collections.emptyList());
+        rule = new LoanEligibilityRule(accountRepository);
     }
 
     @Nested

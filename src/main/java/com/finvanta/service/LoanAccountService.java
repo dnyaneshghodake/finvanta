@@ -13,6 +13,23 @@ public interface LoanAccountService {
 
     LoanAccount disburseLoan(String accountNumber);
 
+    /**
+     * CBS Tranche Disbursement per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT.
+     *
+     * For multi-disbursement products (Home Loan, Construction Finance, Education Loan),
+     * disburses a specific tranche amount. Each tranche is a separate GL posting.
+     * Interest accrues only on the disbursed amount. EMI and schedule are generated
+     * after full disbursement.
+     *
+     * For SINGLE mode: pass null for trancheAmount to disburse full remaining.
+     *
+     * @param accountNumber Loan account number
+     * @param trancheAmount Amount to disburse (null = full remaining balance)
+     * @param narration     Tranche narration (null = auto-generated)
+     * @return Updated loan account
+     */
+    LoanAccount disburseTranche(String accountNumber, BigDecimal trancheAmount, String narration);
+
     LoanTransaction applyInterestAccrual(String accountNumber, LocalDate accrualDate);
 
     /**

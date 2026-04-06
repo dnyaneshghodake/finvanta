@@ -4,6 +4,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 /**
  * CBS Security Utility — extracts current user context from Spring Security.
  *
@@ -26,32 +30,44 @@ public final class SecurityUtil {
     }
 
     /**
-     * Returns the current user's highest-privilege CBS role for transaction limit resolution.
+     * Returns the current user's CBS role for transaction limit resolution.
      * Extracts from Spring Security GrantedAuthority, stripping the "ROLE_" prefix.
      *
-     * Per CBS role hierarchy (highest privilege first):
-     *   ADMIN > CHECKER > MAKER > AUDITOR
+     * Per CBS transactional role hierarchy (most restrictive first):
+     *   MAKER < CHECKER < ADMIN
      *
-     * When a user has multiple roles (e.g., ROLE_MAKER + ROLE_ADMIN), the highest-privilege
-     * role is returned. This ensures transaction limits are checked against the most
-     * permissive role, per Finacle/Temenos dual-role user support.
+     * AUDITOR is excluded — it is a read-only audit role that should never initiate
+     * financial transactions. Including AUDITOR would cause the limit lookup to find
+     * no configured limits (AUDITOR has no transaction limits configured), which
+     * silently bypasses all limit checks via the "no limit configured" fallback path
+     * in TransactionLimitService.
      *
-     * @return Highest-privilege role string without "ROLE_" prefix, or null if no role found
+     * RBI Segregation of Duties Compliance:
+     * When a user has multiple transactional roles (e.g., ROLE_MAKER + ROLE_ADMIN),
+     * the LOWEST-privilege transactional role is returned. This ensures transaction
+     * limits are checked against the most restrictive role, enforcing the principle
+     * of least privilege per:
+     *   - RBI Master Direction on IT Governance (2023) Section 8.3
+     *   - Finacle TRAN_AUTH: "dual-role users are subject to the lower limit"
+     *
+     * @return Lowest-privilege transactional role without "ROLE_" prefix, or null if no role found
      */
     public static String getCurrentUserRole() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || auth.getAuthorities() == null) {
             return null;
         }
-        // CBS role hierarchy: ADMIN has highest limits, then CHECKER, MAKER, AUDITOR
-        java.util.List<String> hierarchy = java.util.List.of("ADMIN", "CHECKER", "MAKER", "AUDITOR");
-        java.util.Set<String> userRoles = auth.getAuthorities().stream()
+        // CBS transactional role hierarchy: MAKER is most restrictive, ADMIN is least.
+        // AUDITOR is excluded — it is read-only and has no transaction limits configured.
+        // Returning AUDITOR would cause limit lookup to find nothing → bypass all limits.
+        List<String> leastPrivilegeFirst = List.of("MAKER", "CHECKER", "ADMIN");
+        Set<String> userRoles = auth.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
             .filter(a -> a.startsWith("ROLE_"))
             .map(a -> a.substring(5))
-            .collect(java.util.stream.Collectors.toSet());
+            .collect(Collectors.toSet());
 
-        return hierarchy.stream()
+        return leastPrivilegeFirst.stream()
             .filter(userRoles::contains)
             .findFirst()
             .orElse(null);

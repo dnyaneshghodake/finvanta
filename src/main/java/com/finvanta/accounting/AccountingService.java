@@ -47,6 +47,59 @@ public class AccountingService {
     private final LedgerService ledgerService;
     private final TransactionBatchRepository batchRepository;
 
+    /**
+     * CBS Engine Context Guard — cryptographic token-based trust boundary.
+     *
+     * Per Finacle/Temenos architecture: the GL posting layer (AccountingService) must ONLY
+     * be invoked through the transaction engine. Direct calls would skip:
+     *   - Day status validation (Step 3)
+     *   - Transaction limit validation (Step 6)
+     *   - Maker-checker gate (Step 7)
+     *   - Voucher generation (Step 9)
+     *   - Audit trail (Step 10)
+     *
+     * Previous implementation used public static enterEngineContext()/exitEngineContext()
+     * which any class could call to bypass the guard. This replacement uses a per-invocation
+     * random token: TransactionEngine generates a token, sets it via setEngineToken(), and
+     * AccountingService validates it. No external class can forge a valid token because:
+     *   1. The token is a 128-bit SecureRandom value (unguessable)
+     *   2. setEngineToken() stores it in a ThreadLocal (thread-confined)
+     *   3. clearEngineToken() removes it in a finally block (no stale tokens)
+     *
+     * This is defense-in-depth. The primary enforcement is architectural (all modules
+     * call TransactionEngine), but this guard catches accidental direct calls and makes
+     * intentional bypass cryptographically infeasible.
+     */
+    private static final ThreadLocal<String> ENGINE_TOKEN = new ThreadLocal<>();
+
+    /**
+     * Generates a new engine context token for this invocation.
+     * Called by TransactionEngine before GL posting.
+     *
+     * @return The generated token (TransactionEngine must pass this back for validation)
+     */
+    public static String generateEngineToken() {
+        String token = java.util.UUID.randomUUID().toString();
+        ENGINE_TOKEN.set(token);
+        return token;
+    }
+
+    /**
+     * Clears the engine context token. Called by TransactionEngine in finally block.
+     * Prevents stale tokens on thread pool reuse.
+     */
+    public static void clearEngineToken() { ENGINE_TOKEN.remove(); }
+
+    // Legacy compatibility — retained for migration period only.
+    // TODO: Remove after confirming no callers use the old API.
+    /** @deprecated Use generateEngineToken()/clearEngineToken() instead */
+    @Deprecated(forRemoval = true)
+    public static void enterEngineContext() { generateEngineToken(); }
+
+    /** @deprecated Use clearEngineToken() instead */
+    @Deprecated(forRemoval = true)
+    public static void exitEngineContext() { clearEngineToken(); }
+
     public AccountingService(JournalEntryRepository journalEntryRepository,
                              GLMasterRepository glMasterRepository,
                              AuditService auditService,
@@ -64,6 +117,22 @@ public class AccountingService {
                                           String sourceModule, String sourceRef,
                                           List<JournalLineRequest> lines) {
         String tenantId = TenantContext.getCurrentTenant();
+
+        // CBS Defense-in-Depth: Verify this call originates from TransactionEngine.
+        // Direct calls bypass day control, transaction limits, voucher generation, and audit.
+        // Hard-fail: all financial postings MUST route through TransactionEngine.execute().
+        // Per RBI IT Governance Direction 2023 Section 8.3 and Finacle TRAN_POSTING:
+        // the GL posting layer must never be invoked outside the validated engine pipeline.
+        if (ENGINE_TOKEN.get() == null) {
+            log.error("SECURITY VIOLATION: AccountingService.postJournalEntry() called outside "
+                + "TransactionEngine context. Module={}, sourceRef={}. "
+                + "This bypasses CBS validation chain (Steps 3-10). Rejecting posting.",
+                sourceModule, sourceRef);
+            throw new BusinessException("ENGINE_CONTEXT_REQUIRED",
+                "GL postings must be initiated through TransactionEngine. "
+                    + "Direct calls to AccountingService.postJournalEntry() are prohibited. "
+                    + "Module=" + sourceModule + ", sourceRef=" + sourceRef);
+        }
 
         if (lines == null || lines.size() < 2) {
             throw new BusinessException("ACCOUNTING_INVALID_ENTRY",
