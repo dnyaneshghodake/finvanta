@@ -47,4 +47,15 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
 
     @Query("SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.branch.id = :branchId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
     java.math.BigDecimal calculateTotalOutstandingByBranch(@Param("tenantId") String tenantId, @Param("branchId") Long branchId);
+
+    /** CBS Branch Portfolio: all loan accounts at a specific branch */
+    List<LoanAccount> findByTenantIdAndBranchId(String tenantId, Long branchId);
+
+    /** CBS Dashboard: Total NPA outstanding (Sub-Standard + Doubtful + Loss) */
+    @Query("SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status IN ('NPA_SUBSTANDARD', 'NPA_DOUBTFUL', 'NPA_LOSS')")
+    BigDecimal calculateTotalNpaOutstanding(@Param("tenantId") String tenantId);
+
+    /** CBS Dashboard: Total provisioning held across all accounts */
+    @Query("SELECT COALESCE(SUM(la.provisioningAmount), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
+    BigDecimal calculateTotalProvisioning(@Param("tenantId") String tenantId);
 }

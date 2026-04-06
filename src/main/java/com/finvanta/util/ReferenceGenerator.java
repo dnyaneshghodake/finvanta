@@ -75,17 +75,24 @@ public final class ReferenceGenerator {
         return "CUST" + branchCode + timestamp() + nextSequence();
     }
 
+    /** Generates collateral reference: COL + timestamp + seq */
+    public static String generateCollateralRef() {
+        return "COL" + timestamp() + nextSequence();
+    }
+
     private static String timestamp() {
         return LocalDateTime.now().format(FORMATTER);
     }
 
     /**
-     * Returns a monotonically increasing 6-digit sequence.
-     * Never wraps (no modulo) — guarantees uniqueness within JVM lifecycle.
+     * Returns a monotonically increasing sequence formatted to 6+ digits.
+     * Never wraps — guarantees uniqueness within JVM lifecycle.
      * Seeded from System.nanoTime() to avoid collisions across JVM restarts.
+     * Values above 999999 produce longer strings (7+ digits), which is safe
+     * because all reference columns are VARCHAR(40) with ample headroom.
      */
     private static String nextSequence() {
         long val = SEQUENCE.incrementAndGet();
-        return String.format("%06d", val % 1000000);
+        return String.format("%06d", val);
     }
 }

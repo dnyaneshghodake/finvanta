@@ -39,6 +39,16 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "product_type", nullable = false, length = 50)
     private String productType;
 
+    /**
+     * ISO 4217 currency code for all monetary amounts on this account.
+     * Per CBS multi-currency standards, every account must declare its currency.
+     * All amounts (sanctioned, outstanding, accrued, etc.) are in this currency.
+     * For India-only deployment, defaults to INR. Future multi-currency support
+     * requires FCY→LCY conversion at the GL posting level.
+     */
+    @Column(name = "currency_code", nullable = false, length = 3)
+    private String currencyCode = "INR";
+
     @Column(name = "sanctioned_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal sanctionedAmount;
 
@@ -119,6 +129,17 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "penal_interest_accrued", precision = 18, scale = 2)
     private BigDecimal penalInterestAccrued = BigDecimal.ZERO;
 
+    /**
+     * RBI Fair Lending: Independent penal interest accrual date tracker.
+     * Separate from lastInterestAccrualDate because regular interest and penal interest
+     * have different accrual bases (outstanding principal vs overdue principal) and
+     * different lifecycle triggers. EOD runs regular accrual before penal accrual,
+     * so sharing the same date field would cause penal calculation to always get
+     * days=0 (since regular accrual already advanced the date to today).
+     */
+    @Column(name = "last_penal_accrual_date")
+    private LocalDate lastPenalAccrualDate;
+
     /** Collateral reference for secured loans */
     @Column(name = "collateral_reference", length = 100)
     private String collateralReference;
@@ -127,7 +148,54 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "risk_category", length = 20)
     private String riskCategory;
 
+    // --- Multi-Disbursement Support (per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT) ---
+
+    /**
+     * Disbursement mode per product configuration:
+     *   SINGLE       - Full sanctioned amount in one shot (Term Loan, Gold Loan)
+     *   MULTI_TRANCHE - Stage-wise linked to milestones (Home Loan, Construction)
+     *   DRAWDOWN     - Multiple draws within limit (Working Capital, OD)
+     *
+     * Per Finacle DISB_MASTER: the disbursement mode determines whether partial
+     * disbursements are allowed and how interest accrual/EMI calculation behaves.
+     */
+    @Column(name = "disbursement_mode", length = 20)
+    private String disbursementMode = "SINGLE";
+
+    /** Number of tranches planned (for MULTI_TRANCHE mode) */
+    @Column(name = "total_tranches_planned")
+    private Integer totalTranchesPlanned;
+
+    /** Number of tranches actually disbursed so far */
+    @Column(name = "tranches_disbursed")
+    private Integer tranchesDisbursed = 0;
+
+    /**
+     * Whether the loan is fully disbursed.
+     * For SINGLE mode: true after first disbursement.
+     * For MULTI_TRANCHE: true after all planned tranches are disbursed.
+     * For DRAWDOWN: always false (draws can happen anytime within limit).
+     *
+     * Interest accrual runs on disbursedAmount (not sanctionedAmount).
+     * EMI schedule is generated/recalculated when fullyDisbursed becomes true.
+     */
+    @Column(name = "is_fully_disbursed", nullable = false)
+    private boolean fullyDisbursed = false;
+
+    /**
+     * Returns the undisbursed commitment: sanctioned - disbursed.
+     * For SINGLE mode, this is either full sanctioned (before) or zero (after).
+     * For MULTI_TRANCHE, this decreases with each tranche.
+     */
+    public BigDecimal getUndisbursedAmount() {
+        return sanctionedAmount.subtract(disbursedAmount).max(BigDecimal.ZERO);
+    }
+
     public BigDecimal getTotalOutstanding() {
         return outstandingPrincipal.add(outstandingInterest).add(accruedInterest).add(penalInterestAccrued);
+    }
+
+    public boolean isMultiDisbursement() {
+        return "MULTI_TRANCHE".equals(disbursementMode) || "DRAWDOWN".equals(disbursementMode);
     }
 }

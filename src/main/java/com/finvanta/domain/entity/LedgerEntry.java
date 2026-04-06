@@ -37,10 +37,11 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "ledger_entries", indexes = {
-    @Index(name = "idx_ledger_tenant_seq", columnList = "tenant_id, ledger_sequence"),
     @Index(name = "idx_ledger_tenant_gl", columnList = "tenant_id, gl_code, business_date"),
     @Index(name = "idx_ledger_tenant_date", columnList = "tenant_id, business_date"),
     @Index(name = "idx_ledger_journal", columnList = "tenant_id, journal_entry_id")
+}, uniqueConstraints = {
+    @UniqueConstraint(name = "uq_ledger_tenant_seq", columnNames = {"tenant_id", "ledger_sequence"})
 })
 @Getter
 @Setter

@@ -1,6 +1,6 @@
 package com.finvanta.controller;
 
-import com.finvanta.accounting.ReconciliationService;
+import com.finvanta.accounting.AccountingReconciliationEngine;
 import com.finvanta.service.BusinessDateService;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,10 +19,10 @@ import java.time.LocalDate;
 @RequestMapping("/reconciliation")
 public class ReconciliationController {
 
-    private final ReconciliationService reconciliationService;
+    private final AccountingReconciliationEngine reconciliationService;
     private final BusinessDateService businessDateService;
 
-    public ReconciliationController(ReconciliationService reconciliationService,
+    public ReconciliationController(AccountingReconciliationEngine reconciliationService,
                                      BusinessDateService businessDateService) {
         this.reconciliationService = reconciliationService;
         this.businessDateService = businessDateService;

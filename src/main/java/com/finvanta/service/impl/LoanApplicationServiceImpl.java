@@ -4,11 +4,15 @@ import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.domain.entity.LoanApplication;
+import com.finvanta.domain.entity.ProductMaster;
 import com.finvanta.domain.enums.ApplicationStatus;
 import com.finvanta.domain.rules.LoanEligibilityRule;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanApplicationRepository;
+import com.finvanta.repository.ProductMasterRepository;
+import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.CollateralService;
 import com.finvanta.service.LoanApplicationService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
@@ -31,22 +35,31 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
     private final LoanApplicationRepository applicationRepository;
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
+    private final ProductMasterRepository productRepository;
     private final LoanEligibilityRule eligibilityRule;
+    private final CollateralService collateralService;
     private final ApprovalWorkflowService workflowService;
     private final AuditService auditService;
+    private final BusinessDateService businessDateService;
 
     public LoanApplicationServiceImpl(LoanApplicationRepository applicationRepository,
                                        CustomerRepository customerRepository,
                                        BranchRepository branchRepository,
+                                       ProductMasterRepository productRepository,
                                        LoanEligibilityRule eligibilityRule,
+                                       CollateralService collateralService,
                                        ApprovalWorkflowService workflowService,
-                                       AuditService auditService) {
+                                       AuditService auditService,
+                                       BusinessDateService businessDateService) {
         this.applicationRepository = applicationRepository;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
+        this.productRepository = productRepository;
         this.eligibilityRule = eligibilityRule;
+        this.collateralService = collateralService;
         this.workflowService = workflowService;
         this.auditService = auditService;
+        this.businessDateService = businessDateService;
     }
 
     @Override
@@ -65,14 +78,20 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
             .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND",
                 "Branch not found: " + branchId));
 
-        eligibilityRule.validate(application, customer);
+        // CBS: Resolve product for product-driven validation (amount/tenure/rate limits)
+        // Per Finacle PDDEF, each product defines its own eligibility bounds.
+        ProductMaster product = (application.getProductType() != null)
+            ? productRepository.findByTenantIdAndProductCode(tenantId, application.getProductType())
+                .orElse(null)
+            : null;
+        eligibilityRule.validate(application, customer, product);
 
         application.setTenantId(tenantId);
         application.setCustomer(customer);
         application.setBranch(branch);
         application.setApplicationNumber(ReferenceGenerator.generateApplicationNumber(branch.getBranchCode()));
         application.setStatus(ApplicationStatus.SUBMITTED);
-        application.setApplicationDate(LocalDate.now());
+        application.setApplicationDate(businessDateService.getCurrentBusinessDate());
         application.setCreatedBy(currentUser);
 
         LoanApplication saved = applicationRepository.save(application);
@@ -118,7 +137,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         ApplicationStatus previousStatus = app.getStatus();
         app.setStatus(ApplicationStatus.VERIFIED);
         app.setVerifiedBy(currentUser);
-        app.setVerifiedDate(LocalDate.now());
+        app.setVerifiedDate(businessDateService.getCurrentBusinessDate());
         app.setRemarks(remarks);
         app.setUpdatedBy(currentUser);
 
@@ -170,18 +189,34 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
                 "Verifier and approver should be different users");
         }
 
+        // CBS: Re-validate at approval with product-driven limits (defense-in-depth)
         Customer customer = app.getCustomer();
-        eligibilityRule.validate(app, customer);
+        ProductMaster product = (app.getProductType() != null)
+            ? productRepository.findByTenantIdAndProductCode(tenantId, app.getProductType())
+                .orElse(null)
+            : null;
+        eligibilityRule.validate(app, customer, product);
+
+        // CBS: Validate LTV ratio at approval per RBI norms.
+        // If collaterals are registered, LTV must be within type-specific limits.
+        // Gold=75%, Property=80%, Vehicle=85%, FD=90% (per RBI circulars).
+        // Unsecured loans (no collaterals) skip this check.
+        collateralService.validateLtv(app.getId(), app.getRequestedAmount());
 
         ApplicationStatus previousStatus = app.getStatus();
         app.setStatus(ApplicationStatus.APPROVED);
         app.setApprovedAmount(app.getRequestedAmount());
         app.setApprovedBy(currentUser);
-        app.setApprovedDate(LocalDate.now());
+        app.setApprovedDate(businessDateService.getCurrentBusinessDate());
         app.setRemarks(remarks);
         app.setUpdatedBy(currentUser);
 
         LoanApplication saved = applicationRepository.save(app);
+
+        // Resolve the APPROVE workflow — verifyApplication initiated it, approval completes it.
+        // Without this, the workflow stays in PENDING_APPROVAL forever.
+        workflowService.resolveExistingPendingWorkflow(
+            "LoanApplication", saved.getId(), currentUser, "Approved: " + remarks);
 
         auditService.logEvent("LoanApplication", saved.getId(), "APPROVE",
             previousStatus.name(), saved.getStatus().name(), "LOAN_ORIGINATION",
@@ -199,6 +234,14 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
+        // RBI Fair Practices Code 2023: Rejection reason is mandatory and must be
+        // communicated to the borrower. Empty reasons violate regulatory requirements.
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException("REJECTION_REASON_REQUIRED",
+                "Rejection reason is mandatory per RBI Fair Practices Code. "
+                    + "Banks must communicate specific reasons for loan rejection.");
+        }
+
         LoanApplication app = applicationRepository.findById(applicationId)
             .filter(a -> a.getTenantId().equals(tenantId))
             .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND",
@@ -213,7 +256,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         ApplicationStatus previousStatus = app.getStatus();
         app.setStatus(ApplicationStatus.REJECTED);
         app.setRejectedBy(currentUser);
-        app.setRejectedDate(LocalDate.now());
+        app.setRejectedDate(businessDateService.getCurrentBusinessDate());
         app.setRejectionReason(reason);
         app.setUpdatedBy(currentUser);
 

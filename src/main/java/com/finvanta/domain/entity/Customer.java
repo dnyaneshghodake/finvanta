@@ -1,5 +1,6 @@
 package com.finvanta.domain.entity;
 
+import com.finvanta.config.PiiEncryptionConverter;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -30,10 +31,22 @@ public class Customer extends BaseEntity {
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
 
-    @Column(name = "pan_number", length = 10)
+    /**
+     * PAN number — encrypted at rest per RBI IT Governance Direction 2023.
+     * Column length expanded from 10 to 100 to accommodate Base64(IV+ciphertext).
+     * Application code sees plaintext; DB stores AES-256-GCM ciphertext.
+     */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "pan_number", length = 100)
     private String panNumber;
 
-    @Column(name = "aadhaar_number", length = 12)
+    /**
+     * Aadhaar number — encrypted at rest per RBI IT Governance Direction 2023.
+     * Column length expanded from 12 to 100 to accommodate Base64(IV+ciphertext).
+     * Per UIDAI guidelines, Aadhaar must never be stored in plaintext.
+     */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "aadhaar_number", length = 100)
     private String aadhaarNumber;
 
     @Column(name = "mobile_number", length = 15)
@@ -75,6 +88,35 @@ public class Customer extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
+
+    // --- CBS Customer Exposure Limits (per Finacle CIF_LIMIT / RBI Exposure Norms) ---
+
+    /**
+     * Monthly gross income for Debt-to-Income (DTI) ratio calculation.
+     * Per RBI Fair Practices Code: total EMI obligations should not exceed
+     * 50-60% of monthly income. Set during KYC/income verification.
+     */
+    @Column(name = "monthly_income", precision = 18, scale = 2)
+    private java.math.BigDecimal monthlyIncome;
+
+    /**
+     * Maximum borrowing limit for this customer.
+     * Set by the bank based on income assessment, credit score, and risk category.
+     * Per RBI Exposure Norms: single borrower exposure is capped.
+     * Null = no explicit limit (system-wide limits from product_master apply).
+     */
+    @Column(name = "max_borrowing_limit", precision = 18, scale = 2)
+    private java.math.BigDecimal maxBorrowingLimit;
+
+    /**
+     * Employment type for income assessment: SALARIED, SELF_EMPLOYED, BUSINESS, RETIRED, OTHER
+     */
+    @Column(name = "employment_type", length = 30)
+    private String employmentType;
+
+    /** Employer name (for salaried customers) */
+    @Column(name = "employer_name", length = 200)
+    private String employerName;
 
     public String getFullName() {
         return firstName + " " + lastName;

@@ -1,11 +1,11 @@
 package com.finvanta.accounting;
 
+import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.DebitCredit;
-import com.finvanta.repository.LoanAccountRepository;
-import com.finvanta.util.BusinessException;
-import com.finvanta.util.TenantContext;
+import com.finvanta.transaction.TransactionEngine;
+import com.finvanta.transaction.TransactionRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -35,11 +35,11 @@ import java.util.List;
  *   CR Interest Income (4001)          — recognize as income (now actually received)
  *
  * Example:
- *   Loan ₹10,00,000 at 10% — ₹8,333/month interest
- *   Account accrued interest for 3 months before NPA: ₹25,000
+ *   Loan INR 10,00,000 at 10% -- INR 8,333/month interest
+ *   Account accrued interest for 3 months before NPA: INR 25,000
  *   On NPA classification:
- *     DR Interest Income (4001)    ₹25,000
- *     CR Interest Suspense (2100)  ₹25,000
+ *     DR Interest Income (4001)    INR 25,000
+ *     CR Interest Suspense (2100)  INR 25,000
  *   Account's accruedInterest moves to suspense tracking
  */
 @Service
@@ -47,16 +47,16 @@ public class SuspenseService {
 
     private static final Logger log = LoggerFactory.getLogger(SuspenseService.class);
 
-    private final AccountingService accountingService;
-    private final LoanAccountRepository loanAccountRepository;
+    private final TransactionEngine transactionEngine;
     private final AuditService auditService;
+    private final ProductGLResolver glResolver;
 
-    public SuspenseService(AccountingService accountingService,
-                            LoanAccountRepository loanAccountRepository,
-                            AuditService auditService) {
-        this.accountingService = accountingService;
-        this.loanAccountRepository = loanAccountRepository;
+    public SuspenseService(TransactionEngine transactionEngine,
+                            AuditService auditService,
+                            ProductGLResolver glResolver) {
+        this.transactionEngine = transactionEngine;
         this.auditService = auditService;
+        this.glResolver = glResolver;
     }
 
     /**
@@ -66,7 +66,12 @@ public class SuspenseService {
      * Per RBI IRAC: "Interest accrued and credited to income account in the past
      * periods which has not been realized should be reversed."
      *
-     * @param account The loan account that just became NPA
+     * IMPORTANT: This method modifies account.accruedInterest on the passed entity reference
+     * but does NOT save the account. The caller (classifyNPA) is responsible for saving
+     * to avoid the double-save overwrite problem where two saves in the same transaction
+     * with different field modifications cause one to overwrite the other.
+     *
+     * @param account The loan account that just became NPA (modified in-place, not saved)
      * @param businessDate CBS business date
      */
     @Transactional
@@ -78,33 +83,43 @@ public class SuspenseService {
             return;
         }
 
-        // Post GL entry: reverse interest from P&L to suspense
-        List<AccountingService.JournalLineRequest> lines = List.of(
-            new AccountingService.JournalLineRequest(
-                GLConstants.INTEREST_INCOME, DebitCredit.DEBIT, accruedInterest,
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
+        // Suspense reversal is a system-generated GL adjustment during NPA classification.
+        String productType = account.getProductType();
+        List<JournalLineRequest> lines = List.of(
+            new JournalLineRequest(
+                glResolver.getInterestIncomeGL(productType), DebitCredit.DEBIT, accruedInterest,
                 "NPA income reversal - " + account.getAccountNumber()),
-            new AccountingService.JournalLineRequest(
-                GLConstants.INTEREST_SUSPENSE, DebitCredit.CREDIT, accruedInterest,
+            new JournalLineRequest(
+                glResolver.getInterestSuspenseGL(productType), DebitCredit.CREDIT, accruedInterest,
                 "Interest to suspense - " + account.getAccountNumber())
         );
 
-        accountingService.postJournalEntry(
-            businessDate,
-            "RBI IRAC income reversal for NPA account " + account.getAccountNumber(),
-            "SUSPENSE", account.getAccountNumber(),
-            lines
+        transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("SUSPENSE")
+                .transactionType("SUSPENSE_REVERSAL")
+                .accountReference(account.getAccountNumber())
+                .amount(accruedInterest)
+                .valueDate(businessDate)
+                .branchCode(account.getBranch() != null ? account.getBranch().getBranchCode() : null)
+                .productType(productType)
+                .narration("RBI IRAC income reversal for NPA account " + account.getAccountNumber())
+                .journalLines(lines)
+                .systemGenerated(true)
+                .initiatedBy("SYSTEM")
+                .build()
         );
 
-        // Update account: move accrued interest to suspense tracking
-        // The accruedInterest on the account represents what was recognized in P&L
-        // After reversal, it's in suspense — tracked but not in P&L
+        // Update account in-place: move accrued interest to suspense tracking.
+        // The accruedInterest on the account represents what was recognized in P&L.
+        // After reversal, it's in suspense — tracked but not in P&L.
+        // NOTE: Do NOT save here — caller (classifyNPA) saves after all modifications.
         account.setAccruedInterest(BigDecimal.ZERO);
-        account.setUpdatedBy("SYSTEM");
-        loanAccountRepository.save(account);
 
         auditService.logEvent("LoanAccount", account.getId(), "SUSPENSE_REVERSAL",
             accruedInterest.toString(), "0", "SUSPENSE",
-            "Interest reversed to suspense: ₹" + accruedInterest + " for " + account.getAccountNumber());
+            "Interest reversed to suspense: INR " + accruedInterest + " for " + account.getAccountNumber());
 
         log.info("Interest reversed to suspense: accNo={}, amount={}",
             account.getAccountNumber(), accruedInterest);
@@ -125,26 +140,37 @@ public class SuspenseService {
             return;
         }
 
-        // Post GL entry: release from suspense to income
-        List<AccountingService.JournalLineRequest> lines = List.of(
-            new AccountingService.JournalLineRequest(
-                GLConstants.INTEREST_SUSPENSE, DebitCredit.DEBIT, interestCollected,
+        // CBS: ALL financial postings go through TransactionEngine — the single enforcement point.
+        // Suspense release is a system-generated GL adjustment when NPA interest is collected.
+        String productType = account.getProductType();
+        List<JournalLineRequest> lines = List.of(
+            new JournalLineRequest(
+                glResolver.getInterestSuspenseGL(productType), DebitCredit.DEBIT, interestCollected,
                 "Suspense release - " + account.getAccountNumber()),
-            new AccountingService.JournalLineRequest(
-                GLConstants.INTEREST_INCOME, DebitCredit.CREDIT, interestCollected,
+            new JournalLineRequest(
+                glResolver.getInterestIncomeGL(productType), DebitCredit.CREDIT, interestCollected,
                 "NPA interest collected - " + account.getAccountNumber())
         );
 
-        accountingService.postJournalEntry(
-            businessDate,
-            "NPA interest collected for " + account.getAccountNumber(),
-            "SUSPENSE", account.getAccountNumber(),
-            lines
+        transactionEngine.execute(
+            TransactionRequest.builder()
+                .sourceModule("SUSPENSE")
+                .transactionType("SUSPENSE_RELEASE")
+                .accountReference(account.getAccountNumber())
+                .amount(interestCollected)
+                .valueDate(businessDate)
+                .branchCode(account.getBranch() != null ? account.getBranch().getBranchCode() : null)
+                .productType(productType)
+                .narration("NPA interest collected for " + account.getAccountNumber())
+                .journalLines(lines)
+                .systemGenerated(true)
+                .initiatedBy("SYSTEM")
+                .build()
         );
 
         auditService.logEvent("LoanAccount", account.getId(), "SUSPENSE_RELEASE",
             null, interestCollected.toString(), "SUSPENSE",
-            "Interest released from suspense: ₹" + interestCollected + " for " + account.getAccountNumber());
+            "Interest released from suspense: INR " + interestCollected + " for " + account.getAccountNumber());
 
         log.info("Interest released from suspense: accNo={}, amount={}",
             account.getAccountNumber(), interestCollected);

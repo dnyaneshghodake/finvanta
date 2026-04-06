@@ -7,6 +7,7 @@ import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.repository.LoanAccountRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.TenantContext;
@@ -31,17 +32,20 @@ public class CustomerController {
     private final LoanApplicationRepository applicationRepository;
     private final LoanAccountRepository accountRepository;
     private final AuditService auditService;
+    private final BusinessDateService businessDateService;
 
     public CustomerController(CustomerRepository customerRepository,
                                BranchRepository branchRepository,
                                LoanApplicationRepository applicationRepository,
                                LoanAccountRepository accountRepository,
-                               AuditService auditService) {
+                               AuditService auditService,
+                               BusinessDateService businessDateService) {
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.applicationRepository = applicationRepository;
         this.accountRepository = accountRepository;
         this.auditService = auditService;
+        this.businessDateService = businessDateService;
     }
 
     @GetMapping("/list")
@@ -191,7 +195,7 @@ public class CustomerController {
                     "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
 
             customer.setKycVerified(true);
-            customer.setKycVerifiedDate(java.time.LocalDate.now());
+            customer.setKycVerifiedDate(businessDateService.getCurrentBusinessDate());
             customer.setKycVerifiedBy(currentUser);
             customer.setUpdatedBy(currentUser);
             customerRepository.save(customer);

@@ -23,8 +23,29 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, Long> 
         @Param("tenantId") String tenantId,
         org.springframework.data.domain.Pageable pageable);
 
+    /**
+     * Get the latest ledger entry with pessimistic lock to serialize concurrent postings.
+     * Prevents race conditions where two concurrent postings get the same sequence/hash.
+     */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT le FROM LedgerEntry le WHERE le.tenantId = :tenantId " +
+           "ORDER BY le.ledgerSequence DESC")
+    List<LedgerEntry> findTopByTenantIdForUpdate(
+        @Param("tenantId") String tenantId,
+        org.springframework.data.domain.Pageable pageable);
+
     default Optional<LedgerEntry> findLatestByTenantId(String tenantId) {
         List<LedgerEntry> entries = findTopByTenantIdOrderByLedgerSequenceDesc(
+            tenantId, org.springframework.data.domain.PageRequest.of(0, 1));
+        return entries.isEmpty() ? Optional.empty() : Optional.of(entries.get(0));
+    }
+
+    /**
+     * Get the latest ledger entry with pessimistic lock and return sequence + hash.
+     * Used by LedgerService.postToLedger() to serialize concurrent ledger postings.
+     */
+    default Optional<LedgerEntry> findAndLockLatestByTenantId(String tenantId) {
+        List<LedgerEntry> entries = findTopByTenantIdForUpdate(
             tenantId, org.springframework.data.domain.PageRequest.of(0, 1));
         return entries.isEmpty() ? Optional.empty() : Optional.of(entries.get(0));
     }
@@ -32,6 +53,16 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, Long> 
     /** Get the max sequence number for a tenant */
     @Query("SELECT COALESCE(MAX(le.ledgerSequence), 0) FROM LedgerEntry le WHERE le.tenantId = :tenantId")
     long getMaxSequence(@Param("tenantId") String tenantId);
+
+    /**
+     * All ledger entries for a tenant in ascending sequence order (paginated).
+     * Used by LedgerService.verifyChainIntegrity() for full chain verification.
+     */
+    @Query("SELECT le FROM LedgerEntry le WHERE le.tenantId = :tenantId " +
+           "ORDER BY le.ledgerSequence ASC")
+    List<LedgerEntry> findAllByTenantIdOrderByLedgerSequenceAsc(
+        @Param("tenantId") String tenantId,
+        org.springframework.data.domain.Pageable pageable);
 
     /** Ledger entries for a GL code on a business date (for reconciliation) */
     List<LedgerEntry> findByTenantIdAndGlCodeAndBusinessDateOrderByLedgerSequenceAsc(
