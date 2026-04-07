@@ -1,13 +1,9 @@
-<%@ page contentType="text/html;charset=UTF-8" %>
 <%@ taglib prefix="c" uri="jakarta.tags.core" %>
 <%@ taglib prefix="fmt" uri="jakarta.tags.fmt" %>
-<!DOCTYPE html>
-<html><head><title>Account Details - Finvanta CBS</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"/>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"/>
-<link rel="stylesheet" href="${pageContext.request.contextPath}/css/finvanta.css"/>
-</head><body><div class="fv-layout">
-<jsp:include page="/WEB-INF/views/layout/sidebar.jsp"/>
+<c:set var="pageTitle" value="Account Details" />
+<%@ include file="../layout/header.jsp" %>
+<%@ include file="../layout/sidebar.jsp" %>
+
 <div class="fv-main">
 <c:if test="${not empty success}"><div class="alert alert-success"><c:out value="${success}"/></div></c:if>
 <c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
@@ -96,5 +92,6 @@
 </c:forEach>
 <c:if test="${empty transactions}"><tr><td colspan="7" class="text-center text-muted">No transactions</td></tr></c:if>
 </tbody></table>
+</div>
 
-</div></div></body></html>
+<%@ include file="../layout/footer.jsp" %>
