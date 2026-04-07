@@ -250,6 +250,8 @@ public class ChargeEngine {
 
             throw new BusinessException("SLAB_NOT_MATCHED",
                 "No slab matches amount: " + amount);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             throw new BusinessException("SLAB_PARSE_ERROR",
                 "Error parsing slab JSON: " + e.getMessage(), e);

@@ -16,7 +16,9 @@ import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -30,6 +32,9 @@ import java.util.List;
  *
  * Executes the nightly batch cycle in the correct step order with per-account
  * error isolation, step-level tracking, and full audit trail.
+ *
+ * Uses self-proxy pattern (like BatchService) so that per-account methods
+ * get their own transaction boundaries via Spring AOP.
  *
  * EOD Step Sequence:
  *   Step 1: Mark Overdue Installments
@@ -61,6 +66,9 @@ public class EodOrchestrator {
     private final BatchJobRepository batchJobRepository;
     private final AuditService auditService;
 
+    /** Self-proxy for per-account transaction isolation via Spring AOP. */
+    private final EodOrchestrator self;
+
     public EodOrchestrator(LoanAccountService loanAccountService,
                            LoanAccountRepository accountRepository,
                            LoanScheduleService scheduleService,
@@ -70,7 +78,8 @@ public class EodOrchestrator {
                            ClearingService clearingService,
                            BusinessCalendarRepository calendarRepository,
                            BatchJobRepository batchJobRepository,
-                           AuditService auditService) {
+                           AuditService auditService,
+                           @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;
         this.scheduleService = scheduleService;
@@ -81,6 +90,7 @@ public class EodOrchestrator {
         this.calendarRepository = calendarRepository;
         this.batchJobRepository = batchJobRepository;
         this.auditService = auditService;
+        this.self = self;
     }
 
     @Transactional
@@ -139,14 +149,16 @@ public class EodOrchestrator {
         log.info("EOD Step 3: interest accrued for {} accounts", processedCount);
 
         // Step 4: Penal Interest Accrual
+        // CBS: Do NOT guard on in-memory DPD — the activeAccounts list was loaded at Step 0
+        // and Step 2 (DPD update) may have changed DPD in the DB without refreshing the
+        // in-memory objects. applyPenalInterest() re-fetches the account with a pessimistic
+        // lock and has its own DPD > 0 guard, so it safely no-ops for non-overdue accounts.
         eodJob.setStepName("PENAL_ACCRUAL");
         batchJobRepository.save(eodJob);
         for (LoanAccount account : activeAccounts) {
             try {
-                if (account.getDaysPastDue() > 0) {
-                    loanAccountService.applyPenalInterest(
-                        account.getAccountNumber(), businessDate);
-                }
+                loanAccountService.applyPenalInterest(
+                    account.getAccountNumber(), businessDate);
             } catch (Exception e) {
                 failedCount++;
                 appendError(errors, "Penal", account.getAccountNumber(), e);
