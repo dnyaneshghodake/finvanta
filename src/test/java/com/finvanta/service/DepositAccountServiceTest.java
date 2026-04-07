@@ -54,6 +54,7 @@ class DepositAccountServiceTest {
     @Mock private BranchRepository branchRepository;
     @Mock private TransactionEngine transactionEngine;
     @Mock private BusinessDateService businessDateService;
+    @Mock private com.finvanta.audit.AuditService auditService;
 
     private DepositAccountServiceImpl service;
 
@@ -62,7 +63,7 @@ class DepositAccountServiceTest {
         service = new DepositAccountServiceImpl(
             accountRepository, transactionRepository,
             customerRepository, branchRepository, transactionEngine,
-            businessDateService);
+            businessDateService, auditService);
         TenantContext.setCurrentTenant("DEFAULT");
         SecurityContextHolder.getContext().setAuthentication(
             new UsernamePasswordAuthenticationToken("maker1", "pass",
@@ -275,6 +276,50 @@ class DepositAccountServiceTest {
         // Should skip — no save, no balance change
         assertEquals(BigDecimal.ZERO, acct.getAccruedInterest());
         verify(accountRepository, never()).save(any());
+    }
+
+    @Test
+    void closeAccount_shouldRejectWithPendingAccruedInterest() {
+        // Finacle ACCTCLS: must credit accrued interest before closure
+        DepositAccount acct = buildSavingsAccount("DEP001", BigDecimal.ZERO);
+        acct.setLedgerBalance(BigDecimal.ZERO);
+        acct.setAccruedInterest(new BigDecimal("125.50"));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+            service.closeAccount("DEP001", "Customer request"));
+        assertEquals("PENDING_INTEREST", ex.getErrorCode());
+    }
+
+    @Test
+    void closeAccount_shouldRejectWithActiveHold() {
+        // CBS: Cannot close account with active lien/hold (FD collateral, court order)
+        DepositAccount acct = buildSavingsAccount("DEP001", BigDecimal.ZERO);
+        acct.setLedgerBalance(BigDecimal.ZERO);
+        acct.setHoldAmount(new BigDecimal("10000.00"));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+            service.closeAccount("DEP001", "Customer request"));
+        assertEquals("ACTIVE_HOLD", ex.getErrorCode());
+    }
+
+    @Test
+    void withdraw_shouldRejectWhenDailyLimitExceeded() {
+        // Finacle ACCTLIMIT: daily withdrawal limit enforcement
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("500000.00"));
+        acct.setDailyWithdrawalLimit(new BigDecimal("50000.00"));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+        when(transactionRepository.sumDailyDebits("DEFAULT", 1L, LocalDate.of(2026, 4, 1)))
+            .thenReturn(new BigDecimal("45000.00")); // already withdrew 45K today
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+            service.withdraw("DEP001", new BigDecimal("10000.00"),
+                LocalDate.of(2026, 4, 1), "Withdrawal", null, "BRANCH"));
+        assertEquals("DAILY_LIMIT_EXCEEDED", ex.getErrorCode());
     }
 
     @Test

@@ -338,23 +338,49 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
     public com.finvanta.domain.entity.DepositAccount unfreezeAccount(String acn) {
         var acct = lockAccount(com.finvanta.util.TenantContext.getCurrentTenant(), acn);
         if (!acct.isFrozen()) throw new com.finvanta.util.BusinessException("NOT_FROZEN", "Account is not frozen");
+        String prevFreezeType = acct.getFreezeType();
         acct.setAccountStatus("ACTIVE"); acct.setFreezeType(null); acct.setFreezeReason(null);
         acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
+        var saved = accountRepository.save(acct);
+        auditService.logEvent("DepositAccount", saved.getId(), "UNFREEZE",
+            "FROZEN", "ACTIVE", "DEPOSIT",
+            "Account unfrozen: " + acn + " (was " + prevFreezeType + ")");
         log.info("Account unfrozen: {}", acn);
-        return accountRepository.save(acct);
+        return saved;
     }
 
     // === Close ===
+    // Per Finacle ACCTCLS / Temenos ACCOUNT.CLOSURE:
+    // 1. Balance must be zero
+    // 2. Accrued interest must be zero (credit pending interest first)
+    // 3. No active holds/liens
+    // 4. Not already closed
     @Override @org.springframework.transaction.annotation.Transactional
     public com.finvanta.domain.entity.DepositAccount closeAccount(String acn, String reason) {
         var acct = lockAccount(com.finvanta.util.TenantContext.getCurrentTenant(), acn);
         if (acct.isClosed()) throw new com.finvanta.util.BusinessException("ALREADY_CLOSED", "Already closed");
+        // CBS: Force credit pending interest before closure — customer must not lose accrued interest
+        if (acct.getAccruedInterest() != null && acct.getAccruedInterest().signum() > 0)
+            throw new com.finvanta.util.BusinessException("PENDING_INTEREST",
+                "Account has accrued interest INR " + acct.getAccruedInterest()
+                    + ". Credit interest before closure.");
+        // CBS: Block closure if holds/liens exist (FD collateral, cheque clearing, court order)
+        if (acct.getHoldAmount() != null && acct.getHoldAmount().signum() > 0)
+            throw new com.finvanta.util.BusinessException("ACTIVE_HOLD",
+                "Account has active hold/lien INR " + acct.getHoldAmount()
+                    + ". Release all holds before closure.");
         if (acct.getLedgerBalance().signum() != 0)
-            throw new com.finvanta.util.BusinessException("NON_ZERO_BALANCE", "Balance must be zero to close. Current: " + acct.getLedgerBalance());
+            throw new com.finvanta.util.BusinessException("NON_ZERO_BALANCE",
+                "Balance must be zero to close. Current: " + acct.getLedgerBalance());
+        String prevStatus = acct.getAccountStatus();
         acct.setAccountStatus("CLOSED"); acct.setClosedDate(businessDateService.getCurrentBusinessDate()); acct.setClosureReason(reason);
         acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
+        var saved = accountRepository.save(acct);
+        auditService.logEvent("DepositAccount", saved.getId(), "ACCOUNT_CLOSED",
+            prevStatus, "CLOSED", "DEPOSIT",
+            "Account closed: " + acn + " reason=" + reason);
         log.info("Account closed: {}", acn);
-        return accountRepository.save(acct);
+        return saved;
     }
 
     // === Dormancy (EOD batch) ===
@@ -396,7 +422,12 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         return transactionRepository.findByTenantIdAndDepositAccountIdOrderByPostingDateDesc(tid, acct.getId());
     }
     @Override public java.util.List<com.finvanta.domain.entity.DepositTransaction> getMiniStatement(String acn, int count) {
-        var all = getTransactionHistory(acn);
-        return all.size() <= count ? all : all.subList(0, count);
+        // CBS: Use pageable query — do NOT load all transactions into memory.
+        // For accounts with 10,000+ transactions, loading all would cause OOM.
+        String tid = com.finvanta.util.TenantContext.getCurrentTenant();
+        var acct = accountRepository.findByTenantIdAndAccountNumber(tid, acn)
+            .orElseThrow(() -> new com.finvanta.util.BusinessException("ACCOUNT_NOT_FOUND", "Not found: " + acn));
+        return transactionRepository.findRecentTransactions(tid, acct.getId(),
+            org.springframework.data.domain.PageRequest.of(0, count));
     }
 }
