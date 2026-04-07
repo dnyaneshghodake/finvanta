@@ -50,6 +50,16 @@ public class Collateral extends BaseEntity {
     @JoinColumn(name = "loan_application_id", nullable = false)
     private LoanApplication loanApplication;
 
+    /**
+     * Per Finacle COLMAS: Collateral is linked to the loan account (not just the application)
+     * for account-lifecycle operations (lien management, revaluation, release on closure).
+     * Nullable because collateral is registered at application stage before account creation.
+     * Set when the loan account is created from the approved application.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "loan_account_id")
+    private LoanAccount loanAccount;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "customer_id", nullable = false)
     private Customer customer;

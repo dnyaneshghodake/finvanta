@@ -637,8 +637,10 @@ CREATE TABLE collaterals (
     updated_at      DATETIME2,
     created_by      VARCHAR(100),
     updated_by      VARCHAR(100),
+    loan_account_id BIGINT,          -- Nullable: set when loan account is created from approved application
     CONSTRAINT uq_collateral_ref UNIQUE (tenant_id, collateral_ref),
     CONSTRAINT fk_collateral_app FOREIGN KEY (loan_application_id) REFERENCES loan_applications(id),
+    CONSTRAINT fk_collateral_account FOREIGN KEY (loan_account_id) REFERENCES loan_accounts(id),
     CONSTRAINT fk_collateral_cust FOREIGN KEY (customer_id) REFERENCES customers(id)
 );
 CREATE INDEX idx_collateral_tenant_ref ON collaterals (tenant_id, collateral_ref);

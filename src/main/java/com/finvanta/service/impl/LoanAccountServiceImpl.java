@@ -13,6 +13,7 @@ import com.finvanta.domain.entity.LoanTransaction;
 import com.finvanta.domain.enums.*;
 import com.finvanta.domain.rules.InterestCalculationRule;
 import com.finvanta.domain.rules.NpaClassificationRule;
+import com.finvanta.repository.CollateralRepository;
 import com.finvanta.repository.DisbursementScheduleRepository;
 import com.finvanta.repository.InterestAccrualRepository;
 import com.finvanta.repository.LoanAccountRepository;
@@ -67,6 +68,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final LoanTransactionRepository transactionRepository;
     private final InterestAccrualRepository accrualRepository;
     private final DisbursementScheduleRepository disbursementScheduleRepository;
+    private final CollateralRepository collateralRepository;
     private final InterestCalculationRule interestRule;
     private final NpaClassificationRule npaRule;
     private final AuditService auditService;
@@ -82,6 +84,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    LoanTransactionRepository transactionRepository,
                                    InterestAccrualRepository accrualRepository,
                                    DisbursementScheduleRepository disbursementScheduleRepository,
+                                   CollateralRepository collateralRepository,
                                    InterestCalculationRule interestRule,
                                    NpaClassificationRule npaRule,
                                    AuditService auditService,
@@ -96,6 +99,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.transactionRepository = transactionRepository;
         this.accrualRepository = accrualRepository;
         this.disbursementScheduleRepository = disbursementScheduleRepository;
+        this.collateralRepository = collateralRepository;
         this.interestRule = interestRule;
         this.npaRule = npaRule;
         this.auditService = auditService;
@@ -167,6 +171,24 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setEmiAmount(emi);
 
         LoanAccount saved = accountRepository.save(account);
+
+        // CBS: Link collaterals from the application to the newly created account.
+        // Per Finacle COLMAS, collateral must be linked to the loan account for
+        // account-lifecycle operations (lien management, revaluation, release on closure).
+        try {
+            var collaterals = collateralRepository.findByTenantIdAndLoanApplicationId(
+                tenantId, applicationId);
+            for (var collateral : collaterals) {
+                collateral.setLoanAccount(saved);
+                collateral.setUpdatedBy(currentUser);
+                collateralRepository.save(collateral);
+            }
+            if (!collaterals.isEmpty()) {
+                log.info("Linked {} collateral(s) to account {}", collaterals.size(), saved.getAccountNumber());
+            }
+        } catch (Exception e) {
+            log.warn("Collateral linkage failed for {}: {}", saved.getAccountNumber(), e.getMessage());
+        }
 
         auditService.logEvent("LoanAccount", saved.getId(), "CREATE",
             null, saved.getAccountNumber(), "LOAN_ACCOUNTS",

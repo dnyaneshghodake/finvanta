@@ -289,6 +289,51 @@
             </div>
         </div>
         </c:if>
+
+        <!-- CBS Loan Restructuring - ADMIN only, per RBI CDR/SDR Framework -->
+        <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <div class="fv-card">
+            <div class="card-header">Loan Restructuring <span class="badge bg-warning text-dark ms-2">RBI CDR/SDR</span></div>
+            <div class="card-body">
+                <p class="text-muted">Modify loan terms (rate/tenure) for stressed borrowers per RBI CDR framework. Restructured accounts get 5% provisioning for 2 years.</p>
+                <form method="post" action="${pageContext.request.contextPath}/loan/restructure/${account.accountNumber}" class="fv-form">
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">New Interest Rate (% p.a.)</label>
+                            <input type="number" name="newRate" class="form-control" step="0.01" min="0.01" max="50" placeholder="Leave blank for no change" value="" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Extend Tenure (months)</label>
+                            <input type="number" name="additionalMonths" class="form-control" min="0" max="120" value="0" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Reason (mandatory) *</label>
+                            <input type="text" name="reason" class="form-control" required placeholder="e.g., Borrower financial stress — rate reduction" />
+                        </div>
+                    </div>
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-warning" data-confirm="Confirm loan restructuring? This modifies the loan terms and flags the account per RBI CDR norms.">Restructure Loan</button>
+                </form>
+
+                <hr class="my-3" />
+                <p class="text-muted">Apply moratorium (payment holiday). Interest continues to accrue during moratorium per RBI guidelines.</p>
+                <form method="post" action="${pageContext.request.contextPath}/loan/moratorium/${account.accountNumber}" class="fv-form">
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Moratorium Period (months) *</label>
+                            <input type="number" name="moratoriumMonths" class="form-control" min="1" max="24" required value="3" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Reason (mandatory) *</label>
+                            <input type="text" name="reason" class="form-control" required placeholder="e.g., COVID-19 relief — 3 month moratorium" />
+                        </div>
+                    </div>
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-outline-warning" data-confirm="Confirm moratorium? EMI payments will be deferred.">Apply Moratorium</button>
+                </form>
+            </div>
+        </div>
+        </c:if>
     </c:if>
 
     <!-- CBS Amortization Schedule -->
