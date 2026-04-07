@@ -37,6 +37,8 @@ import java.util.List;
  *   POST /deposit/freeze/{accNo}    - Freeze account (ADMIN only)
  *   POST /deposit/unfreeze/{accNo}  - Unfreeze account (ADMIN only)
  *   POST /deposit/close/{accNo}     - Close account (CHECKER/ADMIN)
+ *   POST /deposit/reversal/{txnRef} - Reverse transaction (CHECKER/ADMIN)
+ *   GET  /deposit/statement/{accNo} - Account statement (date range)
  */
 @Controller
 @RequestMapping("/deposit")
@@ -264,5 +266,61 @@ public class DepositController {
             ra.addFlashAttribute("error", e.getMessage());
         }
         return "redirect:/deposit/view/" + accountNumber;
+    }
+
+    /**
+     * CBS Transaction Reversal — CHECKER/ADMIN only (enforced via SecurityConfig).
+     * Per Finacle TRAN_REVERSAL: creates contra GL entries and restores account balance.
+     * Original transaction is marked reversed (never deleted per CBS audit rules).
+     */
+    @PostMapping("/reversal/{transactionRef}")
+    public String reverseTransaction(@PathVariable String transactionRef,
+                                      @RequestParam String reason,
+                                      @RequestParam String accountNumber,
+                                      RedirectAttributes ra) {
+        try {
+            if (reason == null || reason.isBlank()) {
+                throw new com.finvanta.util.BusinessException("REASON_REQUIRED",
+                    "Reversal reason is mandatory");
+            }
+            LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+            depositService.reverseTransaction(transactionRef, reason, businessDate);
+            ra.addFlashAttribute("success", "Transaction reversed: " + transactionRef);
+        } catch (Exception e) {
+            ra.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/deposit/view/" + accountNumber;
+    }
+
+    /**
+     * CBS Account Statement — date-range filtered transaction history.
+     * Per RBI passbook/statement requirements and Finacle STMT_DETAIL.
+     */
+    @GetMapping("/statement/{accountNumber}")
+    public ModelAndView accountStatement(@PathVariable String accountNumber,
+                                          @RequestParam(required = false) String fromDate,
+                                          @RequestParam(required = false) String toDate) {
+        ModelAndView mav = new ModelAndView("deposit/statement");
+        DepositAccount account = depositService.getAccount(accountNumber);
+        mav.addObject("account", account);
+        mav.addObject("pageTitle", "Statement: " + accountNumber);
+
+        if (fromDate != null && toDate != null && !fromDate.isBlank() && !toDate.isBlank()) {
+            LocalDate from = LocalDate.parse(fromDate);
+            LocalDate to = LocalDate.parse(toDate);
+            mav.addObject("transactions",
+                depositService.getStatement(accountNumber, from, to));
+            mav.addObject("fromDate", fromDate);
+            mav.addObject("toDate", toDate);
+        } else {
+            // Default: last 30 days
+            LocalDate to = businessDateService.getCurrentBusinessDate();
+            LocalDate from = to.minusDays(30);
+            mav.addObject("transactions",
+                depositService.getStatement(accountNumber, from, to));
+            mav.addObject("fromDate", from.toString());
+            mav.addObject("toDate", to.toString());
+        }
+        return mav;
     }
 }

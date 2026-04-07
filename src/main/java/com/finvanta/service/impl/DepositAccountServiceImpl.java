@@ -492,4 +492,108 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND", "Not found: " + acn));
         return transactionRepository.findRecentTransactions(tid, acct.getId(), PageRequest.of(0, count));
     }
+
+    @Override public List<DepositTransaction> getStatement(String acn, LocalDate fromDate, LocalDate toDate) {
+        String tid = TenantContext.getCurrentTenant();
+        var acct = accountRepository.findByTenantIdAndAccountNumber(tid, acn)
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND", "Not found: " + acn));
+        return transactionRepository.findByDateRange(tid, acct.getId(), fromDate, toDate);
+    }
+
+    // === Transaction Reversal ===
+    // Per Finacle TRAN_REVERSAL / Temenos REVERSAL:
+    // 1. Find original transaction (must exist, must not already be reversed)
+    // 2. Post contra GL entries via TransactionEngine (swap DR/CR legs)
+    // 3. Restore account balance (add back for debits, subtract for credits)
+    // 4. Mark original as reversed (never delete per CBS audit rules)
+    // 5. Create reversal DepositTransaction linked to original
+    @Override @Transactional
+    public DepositTransaction reverseTransaction(String transactionRef, String reason, LocalDate businessDate) {
+        String tid = TenantContext.getCurrentTenant();
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException("REASON_REQUIRED", "Reversal reason is mandatory per RBI audit norms");
+        }
+
+        // Step 1: Find and validate original transaction
+        DepositTransaction original = transactionRepository.findByTenantIdAndTransactionRef(tid, transactionRef)
+            .orElseThrow(() -> new BusinessException("TRANSACTION_NOT_FOUND",
+                "Transaction not found: " + transactionRef));
+        if (original.isReversed()) {
+            throw new BusinessException("ALREADY_REVERSED",
+                "Transaction " + transactionRef + " is already reversed");
+        }
+
+        // Step 2: Lock the account
+        var acct = lockAccount(tid, original.getDepositAccount().getAccountNumber());
+        if (acct.isClosed()) {
+            throw new BusinessException("ACCOUNT_CLOSED",
+                "Cannot reverse transaction on closed account: " + acct.getAccountNumber());
+        }
+
+        String gl = glForAccount(acct);
+        BigDecimal amount = original.getAmount();
+        boolean wasDebit = "DEBIT".equals(original.getDebitCredit());
+
+        // Step 3: Post contra GL entries (swap DR/CR from original)
+        List<JournalLineRequest> contraLines;
+        if (wasDebit) {
+            // Original was DR Customer Deposits / CR Bank Ops → Reverse: DR Bank Ops / CR Customer Deposits
+            contraLines = List.of(
+                new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, amount,
+                    "Reversal of " + original.getTransactionType() + " " + transactionRef),
+                new JournalLineRequest(gl, DebitCredit.CREDIT, amount,
+                    "Reversal credit " + acct.getAccountNumber())
+            );
+        } else {
+            // Original was DR Bank Ops / CR Customer Deposits → Reverse: DR Customer Deposits / CR Bank Ops
+            contraLines = List.of(
+                new JournalLineRequest(gl, DebitCredit.DEBIT, amount,
+                    "Reversal of " + original.getTransactionType() + " " + transactionRef),
+                new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.CREDIT, amount,
+                    "Reversal debit " + acct.getAccountNumber())
+            );
+        }
+
+        TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
+            .sourceModule("DEPOSIT").transactionType("REVERSAL")
+            .accountReference(acct.getAccountNumber())
+            .amount(amount).valueDate(businessDate)
+            .branchCode(acct.getBranch().getBranchCode())
+            .narration("Reversal of " + transactionRef + ": " + reason)
+            .journalLines(contraLines)
+            .systemGenerated(false)
+            .build());
+
+        // Step 4: Restore account balance
+        if (wasDebit) {
+            // Original debited → reversal credits back
+            acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
+        } else {
+            // Original credited → reversal debits back
+            acct.setLedgerBalance(acct.getLedgerBalance().subtract(amount));
+        }
+        recomputeAvailable(acct);
+        acct.setLastTransactionDate(businessDate);
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        accountRepository.save(acct);
+
+        // Step 5: Mark original as reversed
+        original.setReversed(true);
+        original.setReversedByRef(r.getTransactionRef());
+        original.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        transactionRepository.save(original);
+
+        auditService.logEvent("DepositTransaction", original.getId(), "REVERSAL",
+            original.getTransactionRef(), r.getTransactionRef(), "DEPOSIT",
+            "Transaction reversed: " + transactionRef + " | Reason: " + reason
+                + " | Amount: INR " + amount + " | Account: " + acct.getAccountNumber());
+
+        log.info("Transaction reversed: ref={}, amount={}, account={}, reason={}",
+            transactionRef, amount, acct.getAccountNumber(), reason);
+
+        // Step 6: Create reversal transaction record
+        return buildTxn(acct, amount, "REVERSAL", businessDate,
+            "Reversal of " + transactionRef + ": " + reason,
+            r, r.getTransactionRef(), null, original.getChannel(), null);
+    }
 }

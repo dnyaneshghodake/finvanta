@@ -66,6 +66,7 @@
     <a href="${pageContext.request.contextPath}/deposit/deposit/${account.accountNumber}" class="btn btn-success btn-sm"><i class="bi bi-plus-circle"></i> Deposit</a>
     <a href="${pageContext.request.contextPath}/deposit/withdraw/${account.accountNumber}" class="btn btn-warning btn-sm"><i class="bi bi-dash-circle"></i> Withdraw</a>
     <a href="${pageContext.request.contextPath}/deposit/transfer" class="btn btn-info btn-sm"><i class="bi bi-arrow-left-right"></i> Transfer</a>
+    <a href="${pageContext.request.contextPath}/deposit/statement/${account.accountNumber}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-journal-text"></i> Statement</a>
     <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
     <form method="post" action="${pageContext.request.contextPath}/deposit/freeze/${account.accountNumber}" class="d-inline">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
@@ -101,20 +102,40 @@
 <h5 class="mt-4">Recent Transactions</h5>
 <div class="table-responsive">
 <table class="table fv-table fv-datatable table-sm">
-<thead><tr><th>Date</th><th>Type</th><th>Channel</th><th>Narration</th><th class="text-end">Amount</th><th class="text-end">Balance</th><th>Voucher</th></tr></thead>
+<thead><tr><th>Date</th><th>Type</th><th>Channel</th><th>Narration</th><th class="text-end">Amount</th><th class="text-end">Balance</th><th>Voucher</th><th>Status</th>
+<c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}"><th>Action</th></c:if>
+</tr></thead>
 <tbody>
 <c:forEach var="t" items="${transactions}">
-<tr>
+<tr class="${t.reversed ? 'table-secondary text-decoration-line-through' : ''}">
     <td><c:out value="${t.postingDate}"/></td>
     <td><c:out value="${t.transactionType}"/></td>
     <td><c:out value="${t.channel}"/></td>
     <td><c:out value="${t.narration}"/></td>
     <td class="text-end ${t.debitCredit == 'DEBIT' ? 'text-danger' : 'text-success'}"><fmt:formatNumber value="${t.amount}" type="currency" currencyCode="INR"/></td>
     <td class="text-end"><fmt:formatNumber value="${t.balanceAfter}" type="currency" currencyCode="INR"/></td>
-    <td><small><c:out value="${t.voucherNumber}"/></small></td>
+    <td><small class="font-monospace"><c:out value="${t.voucherNumber}"/></small></td>
+    <td><c:choose>
+        <c:when test="${t.reversed}"><span class="fv-badge fv-badge-npa">REVERSED</span></c:when>
+        <c:when test="${t.transactionType == 'REVERSAL'}"><span class="fv-badge fv-badge-pending">REVERSAL</span></c:when>
+        <c:otherwise><span class="fv-badge fv-badge-active">POSTED</span></c:otherwise>
+    </c:choose></td>
+    <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+    <td><c:if test="${!t.reversed && t.transactionType != 'REVERSAL' && !account.closed}">
+        <form method="post" action="${pageContext.request.contextPath}/deposit/reversal/${t.transactionRef}" style="display:inline">
+            <input type="hidden" name="accountNumber" value="${account.accountNumber}"/>
+            <input type="hidden" name="reason" value="" id="reason_${t.transactionRef}"/>
+            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
+            <button type="submit" class="btn btn-sm btn-outline-danger"
+                onclick="var r=prompt('Reversal reason (mandatory):'); if(!r){return false;} document.getElementById('reason_${t.transactionRef}').value=r; return confirm('Reverse transaction ${t.transactionRef}?');">
+                Reverse
+            </button>
+        </form>
+    </c:if></td>
+    </c:if>
 </tr>
 </c:forEach>
-<c:if test="${empty transactions}"><tr><td colspan="7" class="text-center text-muted">No transactions</td></tr></c:if>
+<c:if test="${empty transactions}"><tr><td colspan="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN') ? 9 : 8}" class="text-center text-muted">No transactions</td></tr></c:if>
 </tbody></table>
 </div>
 </div>

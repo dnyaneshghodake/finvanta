@@ -389,6 +389,64 @@ class DepositAccountServiceTest {
     }
 
     @Test
+    void reverseTransaction_shouldRestoreBalanceAndMarkReversed() {
+        // CBS: Transaction reversal per Finacle TRAN_REVERSAL
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        DepositTransaction original = new DepositTransaction();
+        original.setId(10L);
+        original.setTenantId("DEFAULT");
+        original.setTransactionRef("TXN_ORIG");
+        original.setDepositAccount(acct);
+        original.setTransactionType("CASH_WITHDRAWAL");
+        original.setDebitCredit("DEBIT");
+        original.setAmount(new BigDecimal("5000.00"));
+        original.setReversed(false);
+        original.setChannel("BRANCH");
+
+        when(transactionRepository.findByTenantIdAndTransactionRef("DEFAULT", "TXN_ORIG"))
+            .thenReturn(Optional.of(original));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+        when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        DepositTransaction reversal = service.reverseTransaction("TXN_ORIG", "Teller error",
+            LocalDate.of(2026, 4, 1));
+
+        assertNotNull(reversal);
+        assertEquals("REVERSAL", reversal.getTransactionType());
+        // Original debit of 5000 reversed → balance should increase by 5000
+        assertEquals(new BigDecimal("55000.00"), acct.getLedgerBalance());
+        assertTrue(original.isReversed());
+        assertEquals("TXN001", original.getReversedByRef()); // from mockPostedResult
+    }
+
+    @Test
+    void reverseTransaction_shouldRejectAlreadyReversed() {
+        DepositTransaction original = new DepositTransaction();
+        original.setTenantId("DEFAULT");
+        original.setTransactionRef("TXN_ORIG");
+        original.setReversed(true); // already reversed
+
+        when(transactionRepository.findByTenantIdAndTransactionRef("DEFAULT", "TXN_ORIG"))
+            .thenReturn(Optional.of(original));
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+            service.reverseTransaction("TXN_ORIG", "Duplicate reversal",
+                LocalDate.of(2026, 4, 1)));
+        assertEquals("ALREADY_REVERSED", ex.getErrorCode());
+    }
+
+    @Test
+    void reverseTransaction_shouldRejectWithoutReason() {
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+            service.reverseTransaction("TXN_ORIG", "",
+                LocalDate.of(2026, 4, 1)));
+        assertEquals("REASON_REQUIRED", ex.getErrorCode());
+    }
+
+    @Test
     void accrueInterest_shouldResetYtdOnFinancialYearBoundary() {
         // CBS: YTD counters must reset on April 1 (Indian FY start)
         // Per IT Act Section 194A: TDS threshold is per financial year

@@ -115,4 +115,24 @@ public interface DepositAccountService {
 
     /** Mini statement - last N transactions */
     List<DepositTransaction> getMiniStatement(String accountNumber, int count);
+
+    /**
+     * Account statement for date range per RBI passbook/statement requirements.
+     * Per Finacle STMT_DETAIL / Temenos STMT.ENTRY: all transactions within the
+     * date range, ordered by posting date ascending.
+     */
+    List<DepositTransaction> getStatement(String accountNumber, LocalDate fromDate, LocalDate toDate);
+
+    /**
+     * Reverse a deposit transaction per Finacle TRAN_REVERSAL.
+     * Creates contra GL entries via TransactionEngine and marks original as reversed.
+     * Per CBS audit rules: original transaction is never deleted, only marked reversed.
+     * Only CHECKER/ADMIN can reverse (enforced via SecurityConfig).
+     *
+     * @param transactionRef Original transaction reference to reverse
+     * @param reason Mandatory reversal reason for audit trail
+     * @param businessDate CBS business date for the reversal posting
+     * @return The reversal DepositTransaction record
+     */
+    DepositTransaction reverseTransaction(String transactionRef, String reason, LocalDate businessDate);
 }
