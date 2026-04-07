@@ -1,5 +1,38 @@
 package com.finvanta.service.impl;
 
+import com.finvanta.accounting.AccountingService.JournalLineRequest;
+import com.finvanta.accounting.GLConstants;
+import com.finvanta.audit.AuditService;
+import com.finvanta.domain.entity.Branch;
+import com.finvanta.domain.entity.Customer;
+import com.finvanta.domain.entity.DepositAccount;
+import com.finvanta.domain.entity.DepositTransaction;
+import com.finvanta.domain.enums.DebitCredit;
+import com.finvanta.repository.BranchRepository;
+import com.finvanta.repository.CustomerRepository;
+import com.finvanta.repository.DepositAccountRepository;
+import com.finvanta.repository.DepositTransactionRepository;
+import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.DepositAccountService;
+import com.finvanta.transaction.TransactionEngine;
+import com.finvanta.transaction.TransactionRequest;
+import com.finvanta.transaction.TransactionResult;
+import com.finvanta.util.BusinessException;
+import com.finvanta.util.ReferenceGenerator;
+import com.finvanta.util.SecurityUtil;
+import com.finvanta.util.TenantContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+
 /**
  * CBS CASA Service Implementation per Finacle CUSTACCT / Temenos ACCOUNT.
  *
@@ -17,33 +50,32 @@ package com.finvanta.service.impl;
  * Transfer deadlock prevention: accounts locked in alphabetical order.
  * Interest accrual: idempotent per business date (double-accrual guard).
  */
-@org.springframework.stereotype.Service
-public class DepositAccountServiceImpl implements com.finvanta.service.DepositAccountService {
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DepositAccountServiceImpl.class);
+@Service
+public class DepositAccountServiceImpl implements DepositAccountService {
+    private static final Logger log = LoggerFactory.getLogger(DepositAccountServiceImpl.class);
 
     /** RBI Master Direction on KYC 2016, Section 38: 24 months no customer-initiated txn = DORMANT */
     private static final long DORMANCY_MONTHS = 24;
     /** IT Act Section 194A: TDS threshold for annual interest income (INR 40,000 for non-seniors) */
-    private static final java.math.BigDecimal TDS_THRESHOLD = new java.math.BigDecimal("40000.00");
+    private static final BigDecimal TDS_THRESHOLD = new BigDecimal("40000.00");
     /** TDS rate: 10% per IT Act Section 194A */
-    private static final java.math.BigDecimal TDS_RATE = new java.math.BigDecimal("0.10");
+    private static final BigDecimal TDS_RATE = new BigDecimal("0.10");
 
-    private final com.finvanta.repository.DepositAccountRepository accountRepository;
-    private final com.finvanta.repository.DepositTransactionRepository transactionRepository;
-    private final com.finvanta.repository.CustomerRepository customerRepository;
-    private final com.finvanta.repository.BranchRepository branchRepository;
-    private final com.finvanta.transaction.TransactionEngine transactionEngine;
-    private final com.finvanta.service.BusinessDateService businessDateService;
-    private final com.finvanta.audit.AuditService auditService;
+    private final DepositAccountRepository accountRepository;
+    private final DepositTransactionRepository transactionRepository;
+    private final CustomerRepository customerRepository;
+    private final BranchRepository branchRepository;
+    private final TransactionEngine transactionEngine;
+    private final BusinessDateService businessDateService;
+    private final AuditService auditService;
 
-    public DepositAccountServiceImpl(
-            com.finvanta.repository.DepositAccountRepository accountRepository,
-            com.finvanta.repository.DepositTransactionRepository transactionRepository,
-            com.finvanta.repository.CustomerRepository customerRepository,
-            com.finvanta.repository.BranchRepository branchRepository,
-            com.finvanta.transaction.TransactionEngine transactionEngine,
-            com.finvanta.service.BusinessDateService businessDateService,
-            com.finvanta.audit.AuditService auditService) {
+    public DepositAccountServiceImpl(DepositAccountRepository accountRepository,
+                                      DepositTransactionRepository transactionRepository,
+                                      CustomerRepository customerRepository,
+                                      BranchRepository branchRepository,
+                                      TransactionEngine transactionEngine,
+                                      BusinessDateService businessDateService,
+                                      AuditService auditService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
@@ -54,37 +86,35 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
     }
 
     /** Recompute available balance from ledger balance minus holds and uncleared. */
-    private void recomputeAvailable(com.finvanta.domain.entity.DepositAccount acct) {
+    private void recomputeAvailable(DepositAccount acct) {
         acct.setAvailableBalance(acct.getLedgerBalance()
             .subtract(acct.getHoldAmount())
             .subtract(acct.getUnclearedAmount()));
     }
 
-    private String glForAccount(com.finvanta.domain.entity.DepositAccount a) {
-        return a.isSavings() ? com.finvanta.accounting.GLConstants.SB_DEPOSITS
-                             : com.finvanta.accounting.GLConstants.CA_DEPOSITS;
+    private String glForAccount(DepositAccount a) {
+        return a.isSavings() ? GLConstants.SB_DEPOSITS : GLConstants.CA_DEPOSITS;
     }
 
-    private com.finvanta.domain.entity.DepositAccount lockAccount(String tenantId, String accountNumber) {
+    private DepositAccount lockAccount(String tenantId, String accountNumber) {
         return accountRepository.findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
-            .orElseThrow(() -> new com.finvanta.util.BusinessException("ACCOUNT_NOT_FOUND",
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
                 "Deposit account not found: " + accountNumber));
     }
 
-    private com.finvanta.domain.entity.DepositTransaction buildTxn(
-            com.finvanta.domain.entity.DepositAccount acct, java.math.BigDecimal amount,
-            String txnType, java.time.LocalDate valueDate, String narration,
-            com.finvanta.transaction.TransactionResult result,
-            String idempotencyKey, String channel, String counterparty) {
-        com.finvanta.domain.entity.DepositTransaction txn = new com.finvanta.domain.entity.DepositTransaction();
+    private DepositTransaction buildTxn(DepositAccount acct, BigDecimal amount,
+            String txnType, LocalDate valueDate, String narration,
+            TransactionResult result, String idempotencyKey, String channel, String counterparty) {
+        DepositTransaction txn = new DepositTransaction();
         txn.setTenantId(acct.getTenantId());
         txn.setTransactionRef(result.getTransactionRef());
         txn.setDepositAccount(acct);
         txn.setTransactionType(txnType);
         txn.setAmount(amount);
         txn.setValueDate(valueDate);
-        txn.setPostingDate(java.time.LocalDateTime.now());
-        txn.setDebitCredit(txnType.contains("WITHDRAWAL") || txnType.contains("DEBIT") || txnType.equals("TDS_DEBIT") || txnType.equals("CHARGE_DEBIT") ? "DEBIT" : "CREDIT");
+        txn.setPostingDate(LocalDateTime.now());
+        txn.setDebitCredit(txnType.contains("WITHDRAWAL") || txnType.contains("DEBIT")
+            || txnType.equals("TDS_DEBIT") || txnType.equals("CHARGE_DEBIT") ? "DEBIT" : "CREDIT");
         txn.setBalanceAfter(acct.getLedgerBalance());
         txn.setNarration(narration);
         txn.setJournalEntryId(result.getJournalEntryId());
@@ -92,46 +122,46 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         txn.setIdempotencyKey(idempotencyKey);
         txn.setChannel(channel);
         txn.setCounterpartyAccount(counterparty);
-        txn.setCreatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
-        txn.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
+        txn.setCreatedBy(SecurityUtil.getCurrentUsername());
+        txn.setUpdatedBy(SecurityUtil.getCurrentUsername());
         return transactionRepository.save(txn);
     }
 
     // === Account Opening ===
     @Override
-    @org.springframework.transaction.annotation.Transactional
-    public com.finvanta.domain.entity.DepositAccount openAccount(Long customerId, Long branchId,
-            String accountType, String productCode, java.math.BigDecimal initialDeposit,
+    @Transactional
+    public DepositAccount openAccount(Long customerId, Long branchId,
+            String accountType, String productCode, BigDecimal initialDeposit,
             String nomineeName, String nomineeRelationship) {
-        String tid = com.finvanta.util.TenantContext.getCurrentTenant();
-        String user = com.finvanta.util.SecurityUtil.getCurrentUsername();
-        com.finvanta.domain.entity.Customer cust = customerRepository.findById(customerId)
+        String tid = TenantContext.getCurrentTenant();
+        String user = SecurityUtil.getCurrentUsername();
+        Customer cust = customerRepository.findById(customerId)
             .filter(c -> tid.equals(c.getTenantId()))
-            .orElseThrow(() -> new com.finvanta.util.BusinessException("CUSTOMER_NOT_FOUND", "Not found: " + customerId));
-        if (!cust.isActive()) throw new com.finvanta.util.BusinessException("CUSTOMER_INACTIVE", "Inactive customer");
-        if (!cust.isKycVerified()) throw new com.finvanta.util.BusinessException("KYC_NOT_VERIFIED", "KYC required per RBI");
-        com.finvanta.domain.entity.Branch branch = branchRepository.findById(branchId)
+            .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND", "Not found: " + customerId));
+        if (!cust.isActive()) throw new BusinessException("CUSTOMER_INACTIVE", "Inactive customer");
+        if (!cust.isKycVerified()) throw new BusinessException("KYC_NOT_VERIFIED", "KYC required per RBI");
+        Branch branch = branchRepository.findById(branchId)
             .filter(b -> tid.equals(b.getTenantId()) && b.isActive())
-            .orElseThrow(() -> new com.finvanta.util.BusinessException("BRANCH_NOT_FOUND", "Branch: " + branchId));
+            .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "Branch: " + branchId));
         if (accountType == null || (!accountType.startsWith("SAVINGS") && !accountType.startsWith("CURRENT")))
-            throw new com.finvanta.util.BusinessException("INVALID_ACCOUNT_TYPE", "Must be SAVINGS* or CURRENT*");
+            throw new BusinessException("INVALID_ACCOUNT_TYPE", "Must be SAVINGS* or CURRENT*");
 
-        String accNo = com.finvanta.util.ReferenceGenerator.generateDepositAccountNumber(branch.getBranchCode());
-        com.finvanta.domain.entity.DepositAccount a = new com.finvanta.domain.entity.DepositAccount();
+        String accNo = ReferenceGenerator.generateDepositAccountNumber(branch.getBranchCode());
+        DepositAccount a = new DepositAccount();
         a.setTenantId(tid); a.setAccountNumber(accNo); a.setCustomer(cust); a.setBranch(branch);
         a.setAccountType(accountType); a.setProductCode(productCode != null ? productCode : accountType);
         a.setAccountStatus("ACTIVE"); a.setCurrencyCode("INR");
-        a.setLedgerBalance(java.math.BigDecimal.ZERO); a.setAvailableBalance(java.math.BigDecimal.ZERO);
-        a.setHoldAmount(java.math.BigDecimal.ZERO); a.setUnclearedAmount(java.math.BigDecimal.ZERO);
-        a.setOdLimit(java.math.BigDecimal.ZERO); a.setMinimumBalance(java.math.BigDecimal.ZERO);
-        a.setInterestRate(accountType.startsWith("SAVINGS") ? new java.math.BigDecimal("4.0000") : java.math.BigDecimal.ZERO);
-        a.setAccruedInterest(java.math.BigDecimal.ZERO);
-        a.setYtdInterestCredited(java.math.BigDecimal.ZERO); a.setYtdTdsDeducted(java.math.BigDecimal.ZERO);
-        java.time.LocalDate bizDate = businessDateService.getCurrentBusinessDate();
+        a.setLedgerBalance(BigDecimal.ZERO); a.setAvailableBalance(BigDecimal.ZERO);
+        a.setHoldAmount(BigDecimal.ZERO); a.setUnclearedAmount(BigDecimal.ZERO);
+        a.setOdLimit(BigDecimal.ZERO); a.setMinimumBalance(BigDecimal.ZERO);
+        a.setInterestRate(accountType.startsWith("SAVINGS") ? new BigDecimal("4.0000") : BigDecimal.ZERO);
+        a.setAccruedInterest(BigDecimal.ZERO);
+        a.setYtdInterestCredited(BigDecimal.ZERO); a.setYtdTdsDeducted(BigDecimal.ZERO);
+        LocalDate bizDate = businessDateService.getCurrentBusinessDate();
         a.setOpenedDate(bizDate); a.setLastTransactionDate(bizDate);
         a.setNomineeName(nomineeName); a.setNomineeRelationship(nomineeRelationship);
         a.setCreatedBy(user); a.setUpdatedBy(user);
-        com.finvanta.domain.entity.DepositAccount saved = accountRepository.save(a);
+        DepositAccount saved = accountRepository.save(a);
         auditService.logEvent("DepositAccount", saved.getId(), "ACCOUNT_OPENED",
             null, accNo, "DEPOSIT",
             "CASA account opened: " + accNo + " type=" + accountType
@@ -146,75 +176,75 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
 
     // === Deposit ===
     @Override
-    @org.springframework.transaction.annotation.Transactional
-    public com.finvanta.domain.entity.DepositTransaction deposit(String accountNumber, java.math.BigDecimal amount,
-            java.time.LocalDate businessDate, String narration, String idempotencyKey, String channel) {
-        String tid = com.finvanta.util.TenantContext.getCurrentTenant();
+    @Transactional
+    public DepositTransaction deposit(String accountNumber, BigDecimal amount,
+            LocalDate businessDate, String narration, String idempotencyKey, String channel) {
+        String tid = TenantContext.getCurrentTenant();
         if (idempotencyKey != null) {
-            com.finvanta.domain.entity.DepositTransaction dup = transactionRepository.findByTenantIdAndIdempotencyKey(tid, idempotencyKey).orElse(null);
+            DepositTransaction dup = transactionRepository.findByTenantIdAndIdempotencyKey(tid, idempotencyKey).orElse(null);
             if (dup != null) return dup;
         }
-        com.finvanta.domain.entity.DepositAccount acct = lockAccount(tid, accountNumber);
-        if (!acct.isCreditAllowed()) throw new com.finvanta.util.BusinessException("ACCOUNT_NOT_CREDITABLE", "Status " + acct.getAccountStatus());
+        DepositAccount acct = lockAccount(tid, accountNumber);
+        if (!acct.isCreditAllowed()) throw new BusinessException("ACCOUNT_NOT_CREDITABLE", "Status " + acct.getAccountStatus());
         String gl = glForAccount(acct);
-        com.finvanta.transaction.TransactionResult r = transactionEngine.execute(com.finvanta.transaction.TransactionRequest.builder()
+        TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
             .sourceModule("DEPOSIT").transactionType("CASH_DEPOSIT").accountReference(accountNumber)
             .amount(amount).valueDate(businessDate).branchCode(acct.getBranch().getBranchCode())
             .narration(narration != null ? narration : "Cash deposit").idempotencyKey(idempotencyKey)
-            .journalLines(java.util.List.of(
-                new com.finvanta.accounting.AccountingService.JournalLineRequest(com.finvanta.accounting.GLConstants.BANK_OPERATIONS, com.finvanta.domain.enums.DebitCredit.DEBIT, amount, "Cash deposit"),
-                new com.finvanta.accounting.AccountingService.JournalLineRequest(gl, com.finvanta.domain.enums.DebitCredit.CREDIT, amount, "Credit " + accountNumber)
+            .journalLines(List.of(
+                new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, amount, "Cash deposit"),
+                new JournalLineRequest(gl, DebitCredit.CREDIT, amount, "Credit " + accountNumber)
             )).build());
         if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, idempotencyKey, channel, null);
         acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
         if (acct.isDormant()) { acct.setAccountStatus("ACTIVE"); acct.setDormantDate(null); }
-        acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
         return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, idempotencyKey, channel, null);
     }
 
     // === Withdrawal ===
-    @Override @org.springframework.transaction.annotation.Transactional
-    public com.finvanta.domain.entity.DepositTransaction withdraw(String acn, java.math.BigDecimal amount,
-            java.time.LocalDate bd, String narration, String idk, String channel) {
-        String tid = com.finvanta.util.TenantContext.getCurrentTenant();
+    @Override @Transactional
+    public DepositTransaction withdraw(String acn, BigDecimal amount,
+            LocalDate bd, String narration, String idk, String channel) {
+        String tid = TenantContext.getCurrentTenant();
         if (idk != null) { var dup = transactionRepository.findByTenantIdAndIdempotencyKey(tid, idk).orElse(null); if (dup != null) return dup; }
         var acct = lockAccount(tid, acn);
-        if (!acct.isDebitAllowed()) throw new com.finvanta.util.BusinessException("ACCOUNT_NOT_DEBITABLE", "Status " + acct.getAccountStatus());
-        if (!acct.hasSufficientFunds(amount)) throw new com.finvanta.util.BusinessException("INSUFFICIENT_BALANCE", "Withdrawal " + amount + " > available " + acct.getEffectiveAvailable());
+        if (!acct.isDebitAllowed()) throw new BusinessException("ACCOUNT_NOT_DEBITABLE", "Status " + acct.getAccountStatus());
+        if (!acct.hasSufficientFunds(amount)) throw new BusinessException("INSUFFICIENT_BALANCE", "Withdrawal " + amount + " > available " + acct.getEffectiveAvailable());
         // CBS: Daily withdrawal limit enforcement per Finacle ACCTLIMIT / Temenos LIMIT.CHECK
         if (acct.getDailyWithdrawalLimit() != null && acct.getDailyWithdrawalLimit().signum() > 0) {
-            java.math.BigDecimal dailyDebits = transactionRepository.sumDailyDebits(tid, acct.getId(), bd);
+            BigDecimal dailyDebits = transactionRepository.sumDailyDebits(tid, acct.getId(), bd);
             if (dailyDebits.add(amount).compareTo(acct.getDailyWithdrawalLimit()) > 0)
-                throw new com.finvanta.util.BusinessException("DAILY_LIMIT_EXCEEDED",
+                throw new BusinessException("DAILY_LIMIT_EXCEEDED",
                     "Daily withdrawal limit INR " + acct.getDailyWithdrawalLimit()
                         + " exceeded. Today's debits: " + dailyDebits + ", requested: " + amount);
         }
         String gl = glForAccount(acct);
-        var r = transactionEngine.execute(com.finvanta.transaction.TransactionRequest.builder()
+        var r = transactionEngine.execute(TransactionRequest.builder()
             .sourceModule("DEPOSIT").transactionType("CASH_WITHDRAWAL").accountReference(acn)
             .amount(amount).valueDate(bd).branchCode(acct.getBranch().getBranchCode())
             .narration(narration != null ? narration : "Cash withdrawal").idempotencyKey(idk)
-            .journalLines(java.util.List.of(
-                new com.finvanta.accounting.AccountingService.JournalLineRequest(gl, com.finvanta.domain.enums.DebitCredit.DEBIT, amount, "Debit " + acn),
-                new com.finvanta.accounting.AccountingService.JournalLineRequest(com.finvanta.accounting.GLConstants.BANK_OPERATIONS, com.finvanta.domain.enums.DebitCredit.CREDIT, amount, "Cash withdrawal")
+            .journalLines(List.of(
+                new JournalLineRequest(gl, DebitCredit.DEBIT, amount, "Debit " + acn),
+                new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.CREDIT, amount, "Cash withdrawal")
             )).build());
         if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, idk, channel, null);
         acct.setLedgerBalance(acct.getLedgerBalance().subtract(amount));
         recomputeAvailable(acct);
-        acct.setLastTransactionDate(bd); acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
+        acct.setLastTransactionDate(bd); acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
         return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, idk, channel, null);
     }
 
     // === Transfer ===
-    @Override @org.springframework.transaction.annotation.Transactional
-    public com.finvanta.domain.entity.DepositTransaction transfer(String from, String to,
-            java.math.BigDecimal amount, java.time.LocalDate bd, String narration, String idk) {
-        String tid = com.finvanta.util.TenantContext.getCurrentTenant();
-        if (from.equals(to)) throw new com.finvanta.util.BusinessException("SAME_ACCOUNT", "Cannot transfer to same account");
+    @Override @Transactional
+    public DepositTransaction transfer(String from, String to,
+            BigDecimal amount, LocalDate bd, String narration, String idk) {
+        String tid = TenantContext.getCurrentTenant();
+        if (from.equals(to)) throw new BusinessException("SAME_ACCOUNT", "Cannot transfer to same account");
         // CBS: Lock accounts in deterministic order (alphabetical by account number)
         // to prevent ABBA deadlock when two concurrent transfers happen in opposite directions.
         // Per Finacle TRAN_POSTING / Temenos OFS: all multi-account locks must be ordered.
@@ -223,40 +253,40 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         var secondAcct = lockAccount(tid, fromFirst ? to : from);
         var src = fromFirst ? firstAcct : secondAcct;
         var tgt = fromFirst ? secondAcct : firstAcct;
-        if (!src.isDebitAllowed()) throw new com.finvanta.util.BusinessException("SOURCE_NOT_DEBITABLE", "Source " + src.getAccountStatus());
-        if (!tgt.isCreditAllowed()) throw new com.finvanta.util.BusinessException("TARGET_NOT_CREDITABLE", "Target " + tgt.getAccountStatus());
-        if (!src.hasSufficientFunds(amount)) throw new com.finvanta.util.BusinessException("INSUFFICIENT_BALANCE", "Transfer " + amount + " > available " + src.getEffectiveAvailable());
-        var r = transactionEngine.execute(com.finvanta.transaction.TransactionRequest.builder()
+        if (!src.isDebitAllowed()) throw new BusinessException("SOURCE_NOT_DEBITABLE", "Source " + src.getAccountStatus());
+        if (!tgt.isCreditAllowed()) throw new BusinessException("TARGET_NOT_CREDITABLE", "Target " + tgt.getAccountStatus());
+        if (!src.hasSufficientFunds(amount)) throw new BusinessException("INSUFFICIENT_BALANCE", "Transfer " + amount + " > available " + src.getEffectiveAvailable());
+        var r = transactionEngine.execute(TransactionRequest.builder()
             .sourceModule("DEPOSIT").transactionType("TRANSFER_DEBIT").accountReference(from)
             .amount(amount).valueDate(bd).branchCode(src.getBranch().getBranchCode())
             .narration(narration != null ? narration : "Transfer to " + to).idempotencyKey(idk)
-            .journalLines(java.util.List.of(
-                new com.finvanta.accounting.AccountingService.JournalLineRequest(glForAccount(src), com.finvanta.domain.enums.DebitCredit.DEBIT, amount, "Transfer debit"),
-                new com.finvanta.accounting.AccountingService.JournalLineRequest(glForAccount(tgt), com.finvanta.domain.enums.DebitCredit.CREDIT, amount, "Transfer credit")
+            .journalLines(List.of(
+                new JournalLineRequest(glForAccount(src), DebitCredit.DEBIT, amount, "Transfer debit"),
+                new JournalLineRequest(glForAccount(tgt), DebitCredit.CREDIT, amount, "Transfer credit")
             )).build());
         if (r.isPendingApproval()) return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, idk, "INTERNAL", to);
         src.setLedgerBalance(src.getLedgerBalance().subtract(amount));
         recomputeAvailable(src);
-        src.setLastTransactionDate(bd); src.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername()); accountRepository.save(src);
+        src.setLastTransactionDate(bd); src.setUpdatedBy(SecurityUtil.getCurrentUsername()); accountRepository.save(src);
         tgt.setLedgerBalance(tgt.getLedgerBalance().add(amount));
         recomputeAvailable(tgt);
         tgt.setLastTransactionDate(bd); if (tgt.isDormant()) { tgt.setAccountStatus("ACTIVE"); tgt.setDormantDate(null); }
-        tgt.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername()); accountRepository.save(tgt);
+        tgt.setUpdatedBy(SecurityUtil.getCurrentUsername()); accountRepository.save(tgt);
         buildTxn(tgt, amount, "TRANSFER_CREDIT", bd, "Transfer from " + from, r, null, "INTERNAL", from);
         return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, idk, "INTERNAL", to);
     }
 
     // === Interest Accrual (EOD daily) ===
-    @Override @org.springframework.transaction.annotation.Transactional
-    public void accrueInterest(String acn, java.time.LocalDate bd) {
-        String tid = com.finvanta.util.TenantContext.getCurrentTenant();
+    @Override @Transactional
+    public void accrueInterest(String acn, LocalDate bd) {
+        String tid = TenantContext.getCurrentTenant();
         var acct = lockAccount(tid, acn);
         if (!acct.isSavings() || acct.getInterestRate().signum() <= 0) return;
         // CBS: Guard against double-accrual if EOD reruns or retries for the same date.
         // Per Finacle EOD / Temenos COB: accrual is idempotent per business date.
         if (bd.equals(acct.getLastInterestAccrualDate())) return;
-        var daily = acct.getLedgerBalance().multiply(acct.getInterestRate())
-            .divide(new java.math.BigDecimal("36500"), 2, java.math.RoundingMode.HALF_UP);
+        BigDecimal daily = acct.getLedgerBalance().multiply(acct.getInterestRate())
+            .divide(new BigDecimal("36500"), 2, RoundingMode.HALF_UP);
         if (daily.signum() <= 0) return;
         acct.setAccruedInterest(acct.getAccruedInterest().add(daily));
         acct.setLastInterestAccrualDate(bd);
@@ -264,9 +294,9 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
     }
 
     // === Quarterly Interest Credit with TDS ===
-    @Override @org.springframework.transaction.annotation.Transactional
-    public com.finvanta.domain.entity.DepositTransaction creditInterest(String acn, java.time.LocalDate bd) {
-        String tid = com.finvanta.util.TenantContext.getCurrentTenant();
+    @Override @Transactional
+    public DepositTransaction creditInterest(String acn, LocalDate bd) {
+        String tid = TenantContext.getCurrentTenant();
         var acct = lockAccount(tid, acn);
         var interest = acct.getAccruedInterest();
         if (interest.signum() <= 0) return null;
@@ -276,13 +306,13 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
             return null;
         }
         String gl = glForAccount(acct);
-        var r = transactionEngine.execute(com.finvanta.transaction.TransactionRequest.builder()
+        TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
             .sourceModule("DEPOSIT").transactionType("INTEREST_CREDIT").accountReference(acn)
             .amount(interest).valueDate(bd).branchCode(acct.getBranch().getBranchCode())
             .narration("Quarterly interest credit").systemGenerated(true)
-            .journalLines(java.util.List.of(
-                new com.finvanta.accounting.AccountingService.JournalLineRequest(com.finvanta.accounting.GLConstants.INTEREST_EXPENSE_DEPOSITS, com.finvanta.domain.enums.DebitCredit.DEBIT, interest, "Interest expense"),
-                new com.finvanta.accounting.AccountingService.JournalLineRequest(gl, com.finvanta.domain.enums.DebitCredit.CREDIT, interest, "Interest credit " + acn)
+            .journalLines(List.of(
+                new JournalLineRequest(GLConstants.INTEREST_EXPENSE_DEPOSITS, DebitCredit.DEBIT, interest, "Interest expense"),
+                new JournalLineRequest(gl, DebitCredit.CREDIT, interest, "Interest credit " + acn)
             )).build());
         acct.setLedgerBalance(acct.getLedgerBalance().add(interest));
         acct.setYtdInterestCredited(acct.getYtdInterestCredited().add(interest));
@@ -290,27 +320,27 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         // IT Act Section 194A: TDS deduction at source if YTD interest exceeds threshold.
         // TDS is deducted on the TOTAL quarterly credit amount (not just the excess).
         // Per RBI/IT Act: TDS = 10% of interest if cumulative YTD interest > INR 40,000.
-        java.math.BigDecimal tdsAmount = java.math.BigDecimal.ZERO;
+        BigDecimal tdsAmount = BigDecimal.ZERO;
         if (acct.getYtdInterestCredited().compareTo(TDS_THRESHOLD) > 0) {
-            tdsAmount = interest.multiply(TDS_RATE).setScale(2, java.math.RoundingMode.HALF_UP);
+            tdsAmount = interest.multiply(TDS_RATE).setScale(2, RoundingMode.HALF_UP);
             if (tdsAmount.signum() > 0) {
                 acct.setLedgerBalance(acct.getLedgerBalance().subtract(tdsAmount));
                 acct.setYtdTdsDeducted(acct.getYtdTdsDeducted().add(tdsAmount));
                 // GL: DR Customer Deposits / CR TDS Payable (2500)
-                transactionEngine.execute(com.finvanta.transaction.TransactionRequest.builder()
+                transactionEngine.execute(TransactionRequest.builder()
                     .sourceModule("DEPOSIT").transactionType("TDS_DEBIT").accountReference(acn)
                     .amount(tdsAmount).valueDate(bd).branchCode(acct.getBranch().getBranchCode())
                     .narration("TDS u/s 194A on interest INR " + interest).systemGenerated(true)
-                    .journalLines(java.util.List.of(
-                        new com.finvanta.accounting.AccountingService.JournalLineRequest(gl, com.finvanta.domain.enums.DebitCredit.DEBIT, tdsAmount, "TDS deduction"),
-                        new com.finvanta.accounting.AccountingService.JournalLineRequest(com.finvanta.accounting.GLConstants.TDS_PAYABLE, com.finvanta.domain.enums.DebitCredit.CREDIT, tdsAmount, "TDS payable u/s 194A")
+                    .journalLines(List.of(
+                        new JournalLineRequest(gl, DebitCredit.DEBIT, tdsAmount, "TDS deduction"),
+                        new JournalLineRequest(GLConstants.TDS_PAYABLE, DebitCredit.CREDIT, tdsAmount, "TDS payable u/s 194A")
                     )).build());
                 log.info("TDS deducted: account={}, interest={}, tds={}", acn, interest, tdsAmount);
             }
         }
 
         recomputeAvailable(acct);
-        acct.setAccruedInterest(java.math.BigDecimal.ZERO);
+        acct.setAccruedInterest(BigDecimal.ZERO);
         acct.setLastInterestCreditDate(bd);
         accountRepository.save(acct);
         return buildTxn(acct, interest, "INTEREST_CREDIT", bd,
@@ -318,13 +348,13 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
             r, null, "SYSTEM", null);
     }
     // === Freeze ===
-    @Override @org.springframework.transaction.annotation.Transactional
-    public com.finvanta.domain.entity.DepositAccount freezeAccount(String acn, String freezeType, String reason) {
-        var acct = lockAccount(com.finvanta.util.TenantContext.getCurrentTenant(), acn);
-        if (acct.isClosed()) throw new com.finvanta.util.BusinessException("ACCOUNT_CLOSED", "Cannot freeze closed account");
+    @Override @Transactional
+    public DepositAccount freezeAccount(String acn, String freezeType, String reason) {
+        var acct = lockAccount(TenantContext.getCurrentTenant(), acn);
+        if (acct.isClosed()) throw new BusinessException("ACCOUNT_CLOSED", "Cannot freeze closed account");
         String prevStatus = acct.getAccountStatus();
         acct.setAccountStatus("FROZEN"); acct.setFreezeType(freezeType); acct.setFreezeReason(reason);
-        acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         var saved = accountRepository.save(acct);
         auditService.logEvent("DepositAccount", saved.getId(), "FREEZE",
             prevStatus, "FROZEN", "DEPOSIT",
@@ -334,13 +364,13 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
     }
 
     // === Unfreeze ===
-    @Override @org.springframework.transaction.annotation.Transactional
-    public com.finvanta.domain.entity.DepositAccount unfreezeAccount(String acn) {
-        var acct = lockAccount(com.finvanta.util.TenantContext.getCurrentTenant(), acn);
-        if (!acct.isFrozen()) throw new com.finvanta.util.BusinessException("NOT_FROZEN", "Account is not frozen");
+    @Override @Transactional
+    public DepositAccount unfreezeAccount(String acn) {
+        var acct = lockAccount(TenantContext.getCurrentTenant(), acn);
+        if (!acct.isFrozen()) throw new BusinessException("NOT_FROZEN", "Account is not frozen");
         String prevFreezeType = acct.getFreezeType();
         acct.setAccountStatus("ACTIVE"); acct.setFreezeType(null); acct.setFreezeReason(null);
-        acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         var saved = accountRepository.save(acct);
         auditService.logEvent("DepositAccount", saved.getId(), "UNFREEZE",
             "FROZEN", "ACTIVE", "DEPOSIT",
@@ -355,26 +385,24 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
     // 2. Accrued interest must be zero (credit pending interest first)
     // 3. No active holds/liens
     // 4. Not already closed
-    @Override @org.springframework.transaction.annotation.Transactional
-    public com.finvanta.domain.entity.DepositAccount closeAccount(String acn, String reason) {
-        var acct = lockAccount(com.finvanta.util.TenantContext.getCurrentTenant(), acn);
-        if (acct.isClosed()) throw new com.finvanta.util.BusinessException("ALREADY_CLOSED", "Already closed");
-        // CBS: Force credit pending interest before closure — customer must not lose accrued interest
+    @Override @Transactional
+    public DepositAccount closeAccount(String acn, String reason) {
+        var acct = lockAccount(TenantContext.getCurrentTenant(), acn);
+        if (acct.isClosed()) throw new BusinessException("ALREADY_CLOSED", "Already closed");
         if (acct.getAccruedInterest() != null && acct.getAccruedInterest().signum() > 0)
-            throw new com.finvanta.util.BusinessException("PENDING_INTEREST",
+            throw new BusinessException("PENDING_INTEREST",
                 "Account has accrued interest INR " + acct.getAccruedInterest()
                     + ". Credit interest before closure.");
-        // CBS: Block closure if holds/liens exist (FD collateral, cheque clearing, court order)
         if (acct.getHoldAmount() != null && acct.getHoldAmount().signum() > 0)
-            throw new com.finvanta.util.BusinessException("ACTIVE_HOLD",
+            throw new BusinessException("ACTIVE_HOLD",
                 "Account has active hold/lien INR " + acct.getHoldAmount()
                     + ". Release all holds before closure.");
         if (acct.getLedgerBalance().signum() != 0)
-            throw new com.finvanta.util.BusinessException("NON_ZERO_BALANCE",
+            throw new BusinessException("NON_ZERO_BALANCE",
                 "Balance must be zero to close. Current: " + acct.getLedgerBalance());
         String prevStatus = acct.getAccountStatus();
         acct.setAccountStatus("CLOSED"); acct.setClosedDate(businessDateService.getCurrentBusinessDate()); acct.setClosureReason(reason);
-        acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         var saved = accountRepository.save(acct);
         auditService.logEvent("DepositAccount", saved.getId(), "ACCOUNT_CLOSED",
             prevStatus, "CLOSED", "DEPOSIT",
@@ -384,10 +412,10 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
     }
 
     // === Dormancy (EOD batch) ===
-    @Override @org.springframework.transaction.annotation.Transactional
-    public int markDormantAccounts(java.time.LocalDate businessDate) {
-        String tid = com.finvanta.util.TenantContext.getCurrentTenant();
-        java.time.LocalDate cutoff = businessDate.minusMonths(DORMANCY_MONTHS);
+    @Override @Transactional
+    public int markDormantAccounts(LocalDate businessDate) {
+        String tid = TenantContext.getCurrentTenant();
+        LocalDate cutoff = businessDate.minusMonths(DORMANCY_MONTHS);
         var candidates = accountRepository.findDormancyCandidates(tid, cutoff);
         int count = 0;
         for (var acct : candidates) {
@@ -401,33 +429,30 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
     }
 
     // === Read Operations ===
-    @Override public com.finvanta.domain.entity.DepositAccount getAccount(String acn) {
-        String tid = com.finvanta.util.TenantContext.getCurrentTenant();
+    @Override public DepositAccount getAccount(String acn) {
+        String tid = TenantContext.getCurrentTenant();
         return accountRepository.findByTenantIdAndAccountNumber(tid, acn)
-            .orElseThrow(() -> new com.finvanta.util.BusinessException("ACCOUNT_NOT_FOUND", "Not found: " + acn));
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND", "Not found: " + acn));
     }
-    @Override public java.util.List<com.finvanta.domain.entity.DepositAccount> getActiveAccounts() {
-        return accountRepository.findAllActiveAccounts(com.finvanta.util.TenantContext.getCurrentTenant());
+    @Override public List<DepositAccount> getActiveAccounts() {
+        return accountRepository.findAllActiveAccounts(TenantContext.getCurrentTenant());
     }
-    @Override public java.util.List<com.finvanta.domain.entity.DepositAccount> getAccountsByBranch(Long branchId) {
-        return accountRepository.findByTenantIdAndBranchId(com.finvanta.util.TenantContext.getCurrentTenant(), branchId);
+    @Override public List<DepositAccount> getAccountsByBranch(Long branchId) {
+        return accountRepository.findByTenantIdAndBranchId(TenantContext.getCurrentTenant(), branchId);
     }
-    @Override public java.util.List<com.finvanta.domain.entity.DepositAccount> getAccountsByCustomer(Long customerId) {
-        return accountRepository.findByTenantIdAndCustomerId(com.finvanta.util.TenantContext.getCurrentTenant(), customerId);
+    @Override public List<DepositAccount> getAccountsByCustomer(Long customerId) {
+        return accountRepository.findByTenantIdAndCustomerId(TenantContext.getCurrentTenant(), customerId);
     }
-    @Override public java.util.List<com.finvanta.domain.entity.DepositTransaction> getTransactionHistory(String acn) {
-        String tid = com.finvanta.util.TenantContext.getCurrentTenant();
+    @Override public List<DepositTransaction> getTransactionHistory(String acn) {
+        String tid = TenantContext.getCurrentTenant();
         var acct = accountRepository.findByTenantIdAndAccountNumber(tid, acn)
-            .orElseThrow(() -> new com.finvanta.util.BusinessException("ACCOUNT_NOT_FOUND", "Not found: " + acn));
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND", "Not found: " + acn));
         return transactionRepository.findByTenantIdAndDepositAccountIdOrderByPostingDateDesc(tid, acct.getId());
     }
-    @Override public java.util.List<com.finvanta.domain.entity.DepositTransaction> getMiniStatement(String acn, int count) {
-        // CBS: Use pageable query — do NOT load all transactions into memory.
-        // For accounts with 10,000+ transactions, loading all would cause OOM.
-        String tid = com.finvanta.util.TenantContext.getCurrentTenant();
+    @Override public List<DepositTransaction> getMiniStatement(String acn, int count) {
+        String tid = TenantContext.getCurrentTenant();
         var acct = accountRepository.findByTenantIdAndAccountNumber(tid, acn)
-            .orElseThrow(() -> new com.finvanta.util.BusinessException("ACCOUNT_NOT_FOUND", "Not found: " + acn));
-        return transactionRepository.findRecentTransactions(tid, acct.getId(),
-            org.springframework.data.domain.PageRequest.of(0, count));
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND", "Not found: " + acn));
+        return transactionRepository.findRecentTransactions(tid, acct.getId(), PageRequest.of(0, count));
     }
 }
