@@ -1,13 +1,25 @@
 package com.finvanta.casa;
 
-// TODO: Move to com.finvanta.service.impl package after replacing placeholder file.
-// This file contains the full CASA service implementation.
-// See DepositAccountService interface for method contracts.
-
 /**
- * CBS CASA Service Implementation - Temporary location.
- * Move contents to src/main/java/com/finvanta/service/impl/DepositAccountServiceImpl.java
+ * CBS CASA Service Implementation.
+ * NOTE: The active implementation is at com.finvanta.service.impl.DepositAccountServiceImpl
+ * This file is a reference stub. See DepositAccountService interface for all method contracts.
+ *
+ * Operations implemented:
+ * - openAccount: KYC check, branch validation, auto-number, initial deposit
+ * - activateAccount: PENDING_ACTIVATION -> ACTIVE
+ * - deposit: DR Bank Ops (1100) / CR Customer Deposits (2010/2020) via TransactionEngine
+ * - withdraw: DR Customer Deposits / CR Bank Ops, daily limit check, sufficient funds check
+ * - transfer: Atomic debit+credit across two accounts
+ * - accrueInterest: Daily product method (Balance * Rate / 36500) for savings
+ * - creditInterest: Quarterly credit with TDS (10% above INR 40,000 per Section 194A)
+ * - freezeAccount: DEBIT_FREEZE / CREDIT_FREEZE / TOTAL_FREEZE
+ * - unfreezeAccount: Restore to ACTIVE
+ * - closeAccount: Zero balance required
+ * - markDormantAccounts: 2yr no transaction per RBI
+ * - getAccount/getActiveAccounts/getAccountsByBranch/getAccountsByCustomer
+ * - getTransactionHistory/getMiniStatement
  */
 public class DepositAccountServiceImpl {
-    // Full implementation pending - see DepositAccountService interface
+    // Stub - see com.finvanta.service.impl.DepositAccountServiceImpl
 }
