@@ -33,8 +33,12 @@ public final class GLConstants {
     public static final String INTER_BRANCH_RECEIVABLE = "1300";
 
     // --- LIABILITY GL Codes ---
-    /** Customer Deposits */
+    /** Customer Deposits (legacy — use SB_DEPOSITS / CA_DEPOSITS for CASA module) */
     public static final String CUSTOMER_DEPOSITS = "2001";
+    /** Savings Bank Deposits — Liability GL for CASA Savings accounts */
+    public static final String SB_DEPOSITS = "2010";
+    /** Current Account Deposits — Liability GL for CASA Current accounts */
+    public static final String CA_DEPOSITS = "2020";
     /** CGST Payable — GST liability on service charges (18%) */
     public static final String CGST_PAYABLE = "2200";
     /** SGST Payable — State GST liability on service charges (9%) */
@@ -43,8 +47,12 @@ public final class GLConstants {
     public static final String INTER_BRANCH_PAYABLE = "2300";
     /** Clearing Suspense — Temporary holding for clearing transactions */
     public static final String CLEARING_SUSPENSE = "2400";
+    /** TDS Payable — Tax Deducted at Source on deposit interest per IT Act Section 194A */
+    public static final String TDS_PAYABLE = "2500";
 
     // --- INCOME GL Codes ---
+    /** Interest Income on Deposits — for bank's earning on CASA float */
+    public static final String INTEREST_INCOME_DEPOSITS = "4010";
     /** Interest Income from Loans */
     public static final String INTEREST_INCOME = "4001";
     /** Fee Income */
@@ -77,4 +85,6 @@ public final class GLConstants {
     public static final String PROVISION_EXPENSE = "5001";
     /** Write-Off Expense */
     public static final String WRITE_OFF_EXPENSE = "5002";
+    /** Interest Expense on Deposits — P&L charge for savings interest payouts */
+    public static final String INTEREST_EXPENSE_DEPOSITS = "5010";
 }
