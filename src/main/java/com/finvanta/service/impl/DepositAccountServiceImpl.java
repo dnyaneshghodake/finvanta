@@ -34,6 +34,7 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
     private final com.finvanta.repository.BranchRepository branchRepository;
     private final com.finvanta.transaction.TransactionEngine transactionEngine;
     private final com.finvanta.service.BusinessDateService businessDateService;
+    private final com.finvanta.audit.AuditService auditService;
 
     public DepositAccountServiceImpl(
             com.finvanta.repository.DepositAccountRepository accountRepository,
@@ -41,13 +42,22 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
             com.finvanta.repository.CustomerRepository customerRepository,
             com.finvanta.repository.BranchRepository branchRepository,
             com.finvanta.transaction.TransactionEngine transactionEngine,
-            com.finvanta.service.BusinessDateService businessDateService) {
+            com.finvanta.service.BusinessDateService businessDateService,
+            com.finvanta.audit.AuditService auditService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.transactionEngine = transactionEngine;
         this.businessDateService = businessDateService;
+        this.auditService = auditService;
+    }
+
+    /** Recompute available balance from ledger balance minus holds and uncleared. */
+    private void recomputeAvailable(com.finvanta.domain.entity.DepositAccount acct) {
+        acct.setAvailableBalance(acct.getLedgerBalance()
+            .subtract(acct.getHoldAmount())
+            .subtract(acct.getUnclearedAmount()));
     }
 
     private String glForAccount(com.finvanta.domain.entity.DepositAccount a) {
@@ -122,6 +132,10 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         a.setNomineeName(nomineeName); a.setNomineeRelationship(nomineeRelationship);
         a.setCreatedBy(user); a.setUpdatedBy(user);
         com.finvanta.domain.entity.DepositAccount saved = accountRepository.save(a);
+        auditService.logEvent("DepositAccount", saved.getId(), "ACCOUNT_OPENED",
+            null, accNo, "DEPOSIT",
+            "CASA account opened: " + accNo + " type=" + accountType
+                + " customer=" + cust.getCustomerNumber() + " branch=" + branch.getBranchCode());
         log.info("CASA opened: num={}, type={}, cust={}", accNo, accountType, cust.getCustomerNumber());
         if (initialDeposit != null && initialDeposit.signum() > 0) {
             deposit(accNo, initialDeposit, bizDate, "Initial deposit at account opening", null, "BRANCH");
@@ -153,13 +167,14 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
             )).build());
         if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, idempotencyKey, channel, null);
         acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
-        acct.setAvailableBalance(acct.getLedgerBalance().subtract(acct.getHoldAmount()).subtract(acct.getUnclearedAmount()));
+        recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
         if (acct.isDormant()) { acct.setAccountStatus("ACTIVE"); acct.setDormantDate(null); }
         acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
         return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, idempotencyKey, channel, null);
     }
+
     // === Withdrawal ===
     @Override @org.springframework.transaction.annotation.Transactional
     public com.finvanta.domain.entity.DepositTransaction withdraw(String acn, java.math.BigDecimal amount,
@@ -169,6 +184,14 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         var acct = lockAccount(tid, acn);
         if (!acct.isDebitAllowed()) throw new com.finvanta.util.BusinessException("ACCOUNT_NOT_DEBITABLE", "Status " + acct.getAccountStatus());
         if (!acct.hasSufficientFunds(amount)) throw new com.finvanta.util.BusinessException("INSUFFICIENT_BALANCE", "Withdrawal " + amount + " > available " + acct.getEffectiveAvailable());
+        // CBS: Daily withdrawal limit enforcement per Finacle ACCTLIMIT / Temenos LIMIT.CHECK
+        if (acct.getDailyWithdrawalLimit() != null && acct.getDailyWithdrawalLimit().signum() > 0) {
+            java.math.BigDecimal dailyDebits = transactionRepository.sumDailyDebits(tid, acct.getId(), bd);
+            if (dailyDebits.add(amount).compareTo(acct.getDailyWithdrawalLimit()) > 0)
+                throw new com.finvanta.util.BusinessException("DAILY_LIMIT_EXCEEDED",
+                    "Daily withdrawal limit INR " + acct.getDailyWithdrawalLimit()
+                        + " exceeded. Today's debits: " + dailyDebits + ", requested: " + amount);
+        }
         String gl = glForAccount(acct);
         var r = transactionEngine.execute(com.finvanta.transaction.TransactionRequest.builder()
             .sourceModule("DEPOSIT").transactionType("CASH_WITHDRAWAL").accountReference(acn)
@@ -180,7 +203,7 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
             )).build());
         if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, idk, channel, null);
         acct.setLedgerBalance(acct.getLedgerBalance().subtract(amount));
-        acct.setAvailableBalance(acct.getLedgerBalance().subtract(acct.getHoldAmount()).subtract(acct.getUnclearedAmount()));
+        recomputeAvailable(acct);
         acct.setLastTransactionDate(bd); acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
         return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, idk, channel, null);
@@ -195,11 +218,11 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         // CBS: Lock accounts in deterministic order (alphabetical by account number)
         // to prevent ABBA deadlock when two concurrent transfers happen in opposite directions.
         // Per Finacle TRAN_POSTING / Temenos OFS: all multi-account locks must be ordered.
-        String first = from.compareTo(to) < 0 ? from : to;
-        String second = from.compareTo(to) < 0 ? to : from;
-        lockAccount(tid, first); lockAccount(tid, second);
-        var src = accountRepository.findAndLockByTenantIdAndAccountNumber(tid, from).orElseThrow();
-        var tgt = accountRepository.findAndLockByTenantIdAndAccountNumber(tid, to).orElseThrow();
+        boolean fromFirst = from.compareTo(to) < 0;
+        var firstAcct = lockAccount(tid, fromFirst ? from : to);
+        var secondAcct = lockAccount(tid, fromFirst ? to : from);
+        var src = fromFirst ? firstAcct : secondAcct;
+        var tgt = fromFirst ? secondAcct : firstAcct;
         if (!src.isDebitAllowed()) throw new com.finvanta.util.BusinessException("SOURCE_NOT_DEBITABLE", "Source " + src.getAccountStatus());
         if (!tgt.isCreditAllowed()) throw new com.finvanta.util.BusinessException("TARGET_NOT_CREDITABLE", "Target " + tgt.getAccountStatus());
         if (!src.hasSufficientFunds(amount)) throw new com.finvanta.util.BusinessException("INSUFFICIENT_BALANCE", "Transfer " + amount + " > available " + src.getEffectiveAvailable());
@@ -213,10 +236,10 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
             )).build());
         if (r.isPendingApproval()) return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, idk, "INTERNAL", to);
         src.setLedgerBalance(src.getLedgerBalance().subtract(amount));
-        src.setAvailableBalance(src.getLedgerBalance().subtract(src.getHoldAmount()).subtract(src.getUnclearedAmount()));
+        recomputeAvailable(src);
         src.setLastTransactionDate(bd); src.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername()); accountRepository.save(src);
         tgt.setLedgerBalance(tgt.getLedgerBalance().add(amount));
-        tgt.setAvailableBalance(tgt.getLedgerBalance().subtract(tgt.getHoldAmount()).subtract(tgt.getUnclearedAmount()));
+        recomputeAvailable(tgt);
         tgt.setLastTransactionDate(bd); if (tgt.isDormant()) { tgt.setAccountStatus("ACTIVE"); tgt.setDormantDate(null); }
         tgt.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername()); accountRepository.save(tgt);
         buildTxn(tgt, amount, "TRANSFER_CREDIT", bd, "Transfer from " + from, r, null, "INTERNAL", from);
@@ -247,6 +270,11 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         var acct = lockAccount(tid, acn);
         var interest = acct.getAccruedInterest();
         if (interest.signum() <= 0) return null;
+        // CBS: Idempotency guard — prevent double credit on EOD retry.
+        if (bd.equals(acct.getLastInterestCreditDate())) {
+            log.warn("Interest already credited for {} on {}, skipping", acn, bd);
+            return null;
+        }
         String gl = glForAccount(acct);
         var r = transactionEngine.execute(com.finvanta.transaction.TransactionRequest.builder()
             .sourceModule("DEPOSIT").transactionType("INTEREST_CREDIT").accountReference(acn)
@@ -281,7 +309,7 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
             }
         }
 
-        acct.setAvailableBalance(acct.getLedgerBalance().subtract(acct.getHoldAmount()).subtract(acct.getUnclearedAmount()));
+        recomputeAvailable(acct);
         acct.setAccruedInterest(java.math.BigDecimal.ZERO);
         acct.setLastInterestCreditDate(bd);
         accountRepository.save(acct);
@@ -294,10 +322,15 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
     public com.finvanta.domain.entity.DepositAccount freezeAccount(String acn, String freezeType, String reason) {
         var acct = lockAccount(com.finvanta.util.TenantContext.getCurrentTenant(), acn);
         if (acct.isClosed()) throw new com.finvanta.util.BusinessException("ACCOUNT_CLOSED", "Cannot freeze closed account");
+        String prevStatus = acct.getAccountStatus();
         acct.setAccountStatus("FROZEN"); acct.setFreezeType(freezeType); acct.setFreezeReason(reason);
         acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
+        var saved = accountRepository.save(acct);
+        auditService.logEvent("DepositAccount", saved.getId(), "FREEZE",
+            prevStatus, "FROZEN", "DEPOSIT",
+            "Account frozen: " + acn + " type=" + freezeType + " reason=" + reason);
         log.info("Account frozen: {} type={}", acn, freezeType);
-        return accountRepository.save(acct);
+        return saved;
     }
 
     // === Unfreeze ===
