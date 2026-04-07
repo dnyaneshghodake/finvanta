@@ -28,10 +28,25 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /**
- * CBS End-of-Day Batch Orchestrator per Finacle EOD / Temenos COB.
+ * CBS End-of-Day Batch Orchestrator (Phase 2) per Finacle EOD / Temenos COB.
  *
- * Executes the nightly batch cycle in the correct step order with per-account
- * error isolation, step-level tracking, and full audit trail.
+ * <b>IMPORTANT: This is the Phase 2 EOD orchestrator with inter-branch settlement
+ * and clearing validation. The currently active EOD entry point used by
+ * {@link com.finvanta.controller.BatchController} is {@link BatchService#runEodBatch(java.time.LocalDate)}.
+ * Do NOT wire both into the same controller/scheduler.</b>
+ *
+ * <p>When Phase 2 migration is complete (inter-branch and clearing modules validated),
+ * switch {@code BatchController} to call {@code EodOrchestrator.executeEod()} and
+ * deprecate {@code BatchService.runEodBatch()}.
+ *
+ * <p>Differences from BatchService:
+ * <ul>
+ *   <li>Adds Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)</li>
+ *   <li>Adds Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)</li>
+ *   <li>Uses dedicated ProvisioningService (vs inline ProvisioningRule in BatchService)</li>
+ *   <li>Schedule-based DPD calculation (vs EMI-date-based in BatchService)</li>
+ *   <li>Does NOT auto-close the day (leaves in EOD_RUNNING for manual Day Close)</li>
+ * </ul>
  *
  * Uses self-proxy pattern (like BatchService) so that per-account methods
  * get their own transaction boundaries via Spring AOP.
@@ -278,8 +293,7 @@ public class EodOrchestrator {
 
     private int runStep(BatchJob eodJob, String stepName,
                         Runnable step, StringBuilder errors) {
-        eodJob.setStepName(stepName);
-        batchJobRepository.save(eodJob);
+        self.updateStepName(eodJob.getId(), stepName);
         try {
             step.run();
             return 0;

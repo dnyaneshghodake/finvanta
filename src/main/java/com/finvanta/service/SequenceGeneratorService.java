@@ -25,9 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
  *   5. Lock is released when the enclosing transaction commits
  *
  * Lazy initialization: If the sequence row doesn't exist, it is created with
- * currentValue=0 via native SQL MERGE (upsert), then locked and incremented.
- * The MERGE is idempotent — concurrent first-use threads both execute MERGE
- * safely, with one inserting and the other becoming a no-op.
+ * currentValue=0 via JPA persist (with duplicate-safe catch), then locked and
+ * incremented. Concurrent first-use threads both attempt insert — one succeeds,
+ * the other catches the unique constraint violation and proceeds to lock.
  *
  * Transaction propagation: REQUIRES_NEW ensures the sequence allocation commits
  * independently of the caller's transaction. This prevents sequence gaps when
@@ -100,7 +100,7 @@ public class SequenceGeneratorService {
             seq = sequenceRepository
                 .findAndLockByTenantIdAndSequenceName(tenantId, sequenceName)
                 .orElseThrow(() -> new IllegalStateException(
-                    "Failed to lock sequence after MERGE: " + sequenceName));
+                    "Failed to lock sequence after init: " + sequenceName));
         }
 
         long nextVal = seq.getCurrentValue() + 1;
