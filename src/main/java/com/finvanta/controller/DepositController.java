@@ -79,17 +79,15 @@ public class DepositController {
     public String openAccount(@RequestParam Long customerId,
                                @RequestParam Long branchId,
                                @RequestParam String accountType,
+                               @RequestParam(required = false) String productCode,
                                @RequestParam(required = false) BigDecimal initialDeposit,
-                               @RequestParam(required = false) BigDecimal minimumBalance,
-                               @RequestParam(required = false) BigDecimal interestRate,
                                @RequestParam(required = false) String nomineeName,
                                @RequestParam(required = false) String nomineeRelationship,
                                RedirectAttributes ra) {
         try {
-            LocalDate businessDate = businessDateService.getCurrentBusinessDate();
             DepositAccount account = depositService.openAccount(customerId, branchId,
-                accountType, initialDeposit, minimumBalance, interestRate, businessDate,
-                nomineeName, nomineeRelationship);
+                accountType, productCode != null ? productCode : accountType,
+                initialDeposit, nomineeName, nomineeRelationship);
             ra.addFlashAttribute("success",
                 "Account opened: " + account.getAccountNumber());
             return "redirect:/deposit/view/" + account.getAccountNumber();
@@ -189,10 +187,11 @@ public class DepositController {
 
     @PostMapping("/freeze/{accountNumber}")
     public String freezeAccount(@PathVariable String accountNumber,
+                                 @RequestParam(defaultValue = "TOTAL_FREEZE") String freezeType,
                                  @RequestParam String reason,
                                  RedirectAttributes ra) {
         try {
-            depositService.freezeAccount(accountNumber, reason);
+            depositService.freezeAccount(accountNumber, freezeType, reason);
             ra.addFlashAttribute("success", "Account frozen: " + accountNumber);
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());
@@ -202,10 +201,9 @@ public class DepositController {
 
     @PostMapping("/unfreeze/{accountNumber}")
     public String unfreezeAccount(@PathVariable String accountNumber,
-                                   @RequestParam String reason,
                                    RedirectAttributes ra) {
         try {
-            depositService.unfreezeAccount(accountNumber, reason);
+            depositService.unfreezeAccount(accountNumber);
             ra.addFlashAttribute("success", "Account unfrozen: " + accountNumber);
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());
@@ -215,10 +213,10 @@ public class DepositController {
 
     @PostMapping("/close/{accountNumber}")
     public String closeAccount(@PathVariable String accountNumber,
+                                @RequestParam(defaultValue = "Customer request") String reason,
                                 RedirectAttributes ra) {
         try {
-            LocalDate businessDate = businessDateService.getCurrentBusinessDate();
-            depositService.closeAccount(accountNumber, businessDate);
+            depositService.closeAccount(accountNumber, reason);
             ra.addFlashAttribute("success", "Account closed: " + accountNumber);
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());

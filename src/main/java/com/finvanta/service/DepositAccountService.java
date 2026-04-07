@@ -26,59 +26,93 @@ import java.util.List;
  */
 public interface DepositAccountService {
 
-    /** Open a new savings or current account per Finacle ACCTOPN */
+    /**
+     * Open a new savings or current account per Finacle ACCTOPN.
+     * Validates: KYC verified, active customer, active branch, valid account type.
+     * RBI: Current accounts cannot bear interest. Savings rate floor tracked.
+     * GL: Initial deposit via TransactionEngine if amount > 0.
+     */
     DepositAccount openAccount(Long customerId, Long branchId, String accountType,
                                 String productCode, BigDecimal initialDeposit,
                                 String nomineeName, String nomineeRelationship);
 
-    /** Activate a pending account (maker-checker verified) */
-    DepositAccount activateAccount(String accountNumber);
+    /**
+     * Cash deposit - DR Bank Ops (1100) / CR Customer Deposits (2010/2020).
+     * Credits allowed on ACTIVE, DORMANT (reactivates), FROZEN (unless CREDIT_FREEZE).
+     * All postings via TransactionEngine 10-step chain.
+     */
+    DepositTransaction deposit(String accountNumber, BigDecimal amount, LocalDate businessDate,
+                                String narration, String idempotencyKey, String channel);
 
-    /** Cash deposit - DR Bank Ops (1100) / CR Customer Deposits (2010/2020) */
-    DepositTransaction deposit(String accountNumber, BigDecimal amount,
-                                String narration, String channel);
+    /**
+     * Cash withdrawal - DR Customer Deposits / CR Bank Ops.
+     * Validates: account ACTIVE, not DEBIT_FREEZE/TOTAL_FREEZE, sufficient funds.
+     * Available = ledgerBalance - holdAmount - unclearedAmount + odLimit.
+     */
+    DepositTransaction withdraw(String accountNumber, BigDecimal amount, LocalDate businessDate,
+                                 String narration, String idempotencyKey, String channel);
 
-    /** Cash withdrawal - DR Customer Deposits / CR Bank Ops */
-    DepositTransaction withdraw(String accountNumber, BigDecimal amount,
-                                 String narration, String channel);
-
-    /** Fund transfer between deposit accounts */
+    /**
+     * Fund transfer between deposit accounts (internal).
+     * Atomic: debit source + credit target in single TransactionEngine call.
+     * DR source deposit GL / CR target deposit GL.
+     */
     DepositTransaction transfer(String fromAccountNumber, String toAccountNumber,
-                                 BigDecimal amount, String narration);
+                                 BigDecimal amount, LocalDate businessDate,
+                                 String narration, String idempotencyKey);
 
-    /** Daily interest accrual for savings accounts (EOD) */
+    /**
+     * Daily interest accrual for savings accounts (EOD Step).
+     * Formula: closingBalance * rate / 36500 (Actual/365).
+     * Accumulates in accruedInterest field; NOT credited to balance yet.
+     */
     void accrueInterest(String accountNumber, LocalDate businessDate);
 
-    /** Quarterly interest credit to account (EOD - Mar/Jun/Sep/Dec) */
-    void creditInterest(String accountNumber, LocalDate businessDate);
+    /**
+     * Quarterly interest credit (Mar 31, Jun 30, Sep 30, Dec 31).
+     * GL: DR Interest Expense (5010) / CR Customer Deposits (2010).
+     * TDS: If YTD interest > INR 40,000, deduct 10% per IT Act Section 194A.
+     */
+    DepositTransaction creditInterest(String accountNumber, LocalDate businessDate);
 
-    /** Freeze account (court order, regulatory, AML) */
+    /**
+     * Freeze account per court order, regulatory directive, or AML.
+     * freezeType: DEBIT_FREEZE, CREDIT_FREEZE, TOTAL_FREEZE.
+     * Only ADMIN role can freeze (enforced via SecurityConfig).
+     */
     DepositAccount freezeAccount(String accountNumber, String freezeType, String reason);
 
-    /** Unfreeze account */
+    /** Unfreeze account - restore to ACTIVE. Only ADMIN role. */
     DepositAccount unfreezeAccount(String accountNumber);
 
-    /** Close account (zero balance required) */
+    /**
+     * Close account. Requires zero ledger balance.
+     * Terminal state - no further transactions allowed.
+     */
     DepositAccount closeAccount(String accountNumber, String reason);
 
-    /** Mark dormant accounts (2yr no transaction) - EOD batch */
+    /**
+     * EOD batch: Mark accounts with no customer-initiated txn for 24+ months as DORMANT.
+     * Per RBI Master Direction on KYC 2016, Section 38.
+     * @return count of accounts marked dormant
+     */
     int markDormantAccounts(LocalDate businessDate);
 
-    /** Get account by number */
+    /** Get account by number (read-only, no lock) */
     DepositAccount getAccount(String accountNumber);
 
-    /** Get all active accounts (admin view) */
+    /** All non-closed accounts for tenant */
     List<DepositAccount> getActiveAccounts();
 
-    /** Get accounts by branch (branch isolation) */
+    /** Accounts by branch (branch isolation per Finacle SOL) */
     List<DepositAccount> getAccountsByBranch(Long branchId);
 
-    /** Get accounts by customer */
+    /** Accounts by customer CIF */
     List<DepositAccount> getAccountsByCustomer(Long customerId);
 
-    /** Get transaction history */
+    /** Full transaction history for account */
     List<DepositTransaction> getTransactionHistory(String accountNumber);
 
-    /** Get mini statement (last 10 transactions) */
-    List<DepositTransaction> getMiniStatement(String accountNumber);
+    /** Mini statement - last N transactions */
+    List<DepositTransaction> getMiniStatement(String accountNumber, int count);
 }
