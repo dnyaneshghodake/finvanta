@@ -308,7 +308,7 @@
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Reason (mandatory) *</label>
-                            <input type="text" name="reason" class="form-control" required placeholder="e.g., Borrower financial stress — rate reduction" />
+                            <input type="text" name="reason" class="form-control" required placeholder="e.g., Borrower financial stress - rate reduction" />
                         </div>
                     </div>
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
@@ -325,7 +325,7 @@
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Reason (mandatory) *</label>
-                            <input type="text" name="reason" class="form-control" required placeholder="e.g., COVID-19 relief — 3 month moratorium" />
+                            <input type="text" name="reason" class="form-control" required placeholder="e.g., COVID-19 relief - 3 month moratorium" />
                         </div>
                     </div>
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />

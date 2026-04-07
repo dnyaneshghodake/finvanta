@@ -35,9 +35,9 @@
                             <td><c:out value="${p.currencyCode}" /></td>
                             <td><c:out value="${p.interestMethod}" /></td>
                             <td><c:out value="${p.interestType}" /></td>
-                            <td><fmt:formatNumber value="${p.minInterestRate}" maxFractionDigits="2" />% — <fmt:formatNumber value="${p.maxInterestRate}" maxFractionDigits="2" />%</td>
-                            <td class="amount"><fmt:formatNumber value="${p.minLoanAmount}" type="number" maxFractionDigits="0" /> — <fmt:formatNumber value="${p.maxLoanAmount}" type="number" maxFractionDigits="0" /></td>
-                            <td><c:out value="${p.minTenureMonths}" /> — <c:out value="${p.maxTenureMonths}" /> mo</td>
+                            <td><fmt:formatNumber value="${p.minInterestRate}" maxFractionDigits="2" />% &ndash; <fmt:formatNumber value="${p.maxInterestRate}" maxFractionDigits="2" />%</td>
+                            <td class="amount"><fmt:formatNumber value="${p.minLoanAmount}" type="number" maxFractionDigits="0" /> &ndash; <fmt:formatNumber value="${p.maxLoanAmount}" type="number" maxFractionDigits="0" /></td>
+                            <td><c:out value="${p.minTenureMonths}" /> &ndash; <c:out value="${p.maxTenureMonths}" /> mo</td>
                             <td><fmt:formatNumber value="${p.defaultPenalRate}" maxFractionDigits="2" />%</td>
                             <td>
                                 <c:choose>

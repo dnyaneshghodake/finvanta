@@ -47,7 +47,7 @@
                                     <c:otherwise><span class="fv-badge fv-badge-rejected">INACTIVE</span></c:otherwise>
                                 </c:choose>
                             </td>
-                            <td><c:out value="${limit.description}" default="—" /></td>
+                            <td><c:out value="${limit.description}" default="--" /></td>
                         </tr>
                     </c:forEach>
                     <c:if test="${empty limits}">
