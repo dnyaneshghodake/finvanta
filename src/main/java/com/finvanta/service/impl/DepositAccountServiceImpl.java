@@ -196,14 +196,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, amount, "Cash deposit"),
                 new JournalLineRequest(gl, DebitCredit.CREDIT, amount, "Credit " + accountNumber)
             )).build());
-        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, idempotencyKey, channel, null);
+        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, r.getTransactionRef(), idempotencyKey, channel, null);
         acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
         if (acct.isDormant()) { acct.setAccountStatus("ACTIVE"); acct.setDormantDate(null); }
         acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
-        return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, idempotencyKey, channel, null);
+        return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, r.getTransactionRef(), idempotencyKey, channel, null);
     }
 
     // === Withdrawal ===
@@ -232,12 +232,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 new JournalLineRequest(gl, DebitCredit.DEBIT, amount, "Debit " + acn),
                 new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.CREDIT, amount, "Cash withdrawal")
             )).build());
-        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, idk, channel, null);
+        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, r.getTransactionRef(), idk, channel, null);
         acct.setLedgerBalance(acct.getLedgerBalance().subtract(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(bd); acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
-        return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, idk, channel, null);
+        return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, r.getTransactionRef(), idk, channel, null);
     }
 
     // === Transfer ===
@@ -265,7 +265,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 new JournalLineRequest(glForAccount(src), DebitCredit.DEBIT, amount, "Transfer debit"),
                 new JournalLineRequest(glForAccount(tgt), DebitCredit.CREDIT, amount, "Transfer credit")
             )).build());
-        if (r.isPendingApproval()) return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, idk, "INTERNAL", to);
+        if (r.isPendingApproval()) return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, r.getTransactionRef(), idk, "INTERNAL", to);
         src.setLedgerBalance(src.getLedgerBalance().subtract(amount));
         recomputeAvailable(src);
         src.setLastTransactionDate(bd); src.setUpdatedBy(SecurityUtil.getCurrentUsername()); accountRepository.save(src);
@@ -273,8 +273,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         recomputeAvailable(tgt);
         tgt.setLastTransactionDate(bd); if (tgt.isDormant()) { tgt.setAccountStatus("ACTIVE"); tgt.setDormantDate(null); }
         tgt.setUpdatedBy(SecurityUtil.getCurrentUsername()); accountRepository.save(tgt);
-        buildTxn(tgt, amount, "TRANSFER_CREDIT", bd, "Transfer from " + from, r, null, "INTERNAL", from);
-        return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, idk, "INTERNAL", to);
+        // CBS: TRANSFER_CREDIT leg gets its own unique transactionRef to satisfy
+        // the unique constraint on (tenant_id, transaction_ref) in deposit_transactions.
+        // Per Finacle TRAN_DETAIL: each subledger entry has its own unique reference.
+        String creditTxnRef = ReferenceGenerator.generateTransactionRef();
+        buildTxn(tgt, amount, "TRANSFER_CREDIT", bd, "Transfer from " + from, r, creditTxnRef, null, "INTERNAL", from);
+        return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, r.getTransactionRef(), idk, "INTERNAL", to);
     }
 
     // === Interest Accrual (EOD daily) ===
@@ -346,7 +350,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         accountRepository.save(acct);
         return buildTxn(acct, interest, "INTEREST_CREDIT", bd,
             "Quarterly interest credit" + (tdsAmount.signum() > 0 ? " (TDS INR " + tdsAmount + " deducted)" : ""),
-            r, null, "SYSTEM", null);
+            r, r.getTransactionRef(), null, "SYSTEM", null);
     }
     // === Freeze ===
     @Override @Transactional

@@ -136,12 +136,13 @@ public class EodOrchestrator {
         BatchJob eodJob = self.initializeEod(tenantId, businessDate);
         log.info("EOD started: date={}, tenant={}", businessDate, tenantId);
 
-        List<LoanAccount> activeAccounts = accountRepository.findAllActiveAccounts(tenantId);
-        self.updateJobTotalRecords(eodJob.getId(), activeAccounts.size());
-
         int processedCount = 0;
         int failedCount = 0;
         StringBuilder errors = new StringBuilder();
+
+        try {
+        List<LoanAccount> activeAccounts = accountRepository.findAllActiveAccounts(tenantId);
+        self.updateJobTotalRecords(eodJob.getId(), activeAccounts.size());
 
         // Step 1: Mark Overdue Installments
         failedCount += runStep(eodJob, "MARK_OVERDUE", () -> {
@@ -228,7 +229,11 @@ public class EodOrchestrator {
 
         // Step 8: CASA Savings Interest Accrual (daily product method)
         // Formula: closingBalance * rate / 36500 per RBI directive
-        failedCount += runStep(eodJob, "CASA_INTEREST_ACCRUAL", () -> {
+        // CBS: Individual account failures are tracked and reported in the error log,
+        // not silently swallowed. Per Finacle EOD / Temenos COB: every failure must
+        // be visible in the batch job record for operational review.
+        self.updateStepName(eodJob.getId(), "CASA_INTEREST_ACCRUAL");
+        {
             var savingsAccounts = depositAccountRepository.findActiveSavingsAccounts(tenantId);
             int accrued = 0;
             for (var depAcct : savingsAccounts) {
@@ -236,7 +241,8 @@ public class EodOrchestrator {
                     depositAccountService.accrueInterest(depAcct.getAccountNumber(), businessDate);
                     accrued++;
                 } catch (Exception e) {
-                    log.error("CASA interest accrual failed for {}: {}", depAcct.getAccountNumber(), e.getMessage());
+                    failedCount++;
+                    appendError(errors, "CASA_ACCRUAL", depAcct.getAccountNumber(), e);
                 }
             }
             // Quarterly credit on quarter-end dates (Mar 31, Jun 30, Sep 30, Dec 31)
@@ -251,13 +257,14 @@ public class EodOrchestrator {
                         depositAccountService.creditInterest(depAcct.getAccountNumber(), businessDate);
                         credited++;
                     } catch (Exception e) {
-                        log.error("CASA interest credit failed for {}: {}", depAcct.getAccountNumber(), e.getMessage());
+                        failedCount++;
+                        appendError(errors, "CASA_CREDIT", depAcct.getAccountNumber(), e);
                     }
                 }
                 log.info("EOD Step 8: CASA quarterly interest credited for {} accounts", credited);
             }
             log.info("EOD Step 8: CASA interest accrued for {} savings accounts", accrued);
-        }, errors);
+        }
 
         // Step 9: CASA Dormancy Classification (RBI Master Direction on KYC 2016 Sec 38)
         // Accounts with no customer-initiated txn for 24+ months -> DORMANT
@@ -265,6 +272,15 @@ public class EodOrchestrator {
             int dormantCount = depositAccountService.markDormantAccounts(businessDate);
             log.info("EOD Step 9: {} CASA accounts marked DORMANT", dormantCount);
         }, errors);
+
+        } catch (Exception e) {
+            // CBS: Top-level error handler — prevents calendar stuck in EOD_RUNNING.
+            // Per Finacle DAYCTRL / Temenos COB: EOD failure must be recorded and
+            // the batch job marked FAILED so that operations can investigate and retry.
+            log.error("EOD FATAL: Unrecoverable error during EOD for {}: {}", businessDate, e.getMessage(), e);
+            errors.append("FATAL: ").append(e.getMessage()).append("\n");
+            failedCount++;
+        }
 
         return self.finalizeEod(eodJob.getId(), tenantId, businessDate,
             processedCount, failedCount, errors);
