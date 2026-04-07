@@ -5,6 +5,7 @@ import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.DepositAccountRepository;
+import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
 import com.finvanta.util.SecurityUtil;
@@ -52,17 +53,20 @@ public class DepositController {
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
     private final DepositAccountRepository depositAccountRepository;
+    private final ProductMasterRepository productMasterRepository;
 
     public DepositController(DepositAccountService depositService,
                               BusinessDateService businessDateService,
                               CustomerRepository customerRepository,
                               BranchRepository branchRepository,
-                              DepositAccountRepository depositAccountRepository) {
+                              DepositAccountRepository depositAccountRepository,
+                              ProductMasterRepository productMasterRepository) {
         this.depositService = depositService;
         this.businessDateService = businessDateService;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.depositAccountRepository = depositAccountRepository;
+        this.productMasterRepository = productMasterRepository;
     }
 
     /**
@@ -97,6 +101,7 @@ public class DepositController {
         ModelAndView mav = new ModelAndView("deposit/open");
         mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
         mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+        mav.addObject("products", productMasterRepository.findActiveProducts(tenantId));
         mav.addObject("pageTitle", "Open CASA Account");
         return mav;
     }
