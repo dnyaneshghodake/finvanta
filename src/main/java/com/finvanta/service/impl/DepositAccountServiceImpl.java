@@ -57,7 +57,7 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
             com.finvanta.domain.entity.DepositAccount acct, java.math.BigDecimal amount,
             String txnType, java.time.LocalDate valueDate, String narration,
             com.finvanta.transaction.TransactionResult result,
-            String idempotencyKey, String channel, String counterparty, String status) {
+            String idempotencyKey, String channel, String counterparty) {
         com.finvanta.domain.entity.DepositTransaction txn = new com.finvanta.domain.entity.DepositTransaction();
         txn.setTenantId(acct.getTenantId());
         txn.setTransactionRef(result.getTransactionRef());
@@ -66,14 +66,14 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         txn.setAmount(amount);
         txn.setValueDate(valueDate);
         txn.setPostingDate(java.time.LocalDateTime.now());
-        txn.setBalanceAfter(acct.getCurrentBalance());
+        txn.setDebitCredit(txnType.contains("WITHDRAWAL") || txnType.contains("DEBIT") || txnType.equals("TDS_DEBIT") || txnType.equals("CHARGE_DEBIT") ? "DEBIT" : "CREDIT");
+        txn.setBalanceAfter(acct.getLedgerBalance());
         txn.setNarration(narration);
         txn.setJournalEntryId(result.getJournalEntryId());
         txn.setVoucherNumber(result.getVoucherNumber());
         txn.setIdempotencyKey(idempotencyKey);
         txn.setChannel(channel);
         txn.setCounterpartyAccount(counterparty);
-        txn.setTransactionStatus(status);
         txn.setCreatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
         txn.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
         return transactionRepository.save(txn);
@@ -142,14 +142,14 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
                 new com.finvanta.accounting.AccountingService.JournalLineRequest(com.finvanta.accounting.GLConstants.BANK_OPERATIONS, com.finvanta.domain.enums.DebitCredit.DEBIT, amount, "Cash deposit"),
                 new com.finvanta.accounting.AccountingService.JournalLineRequest(gl, com.finvanta.domain.enums.DebitCredit.CREDIT, amount, "Credit " + accountNumber)
             )).build());
-        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, idempotencyKey, channel, null, "PENDING_APPROVAL");
+        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, idempotencyKey, channel, null);
         acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
         acct.setAvailableBalance(acct.getLedgerBalance().subtract(acct.getHoldAmount()).subtract(acct.getUnclearedAmount()));
         acct.setLastTransactionDate(businessDate);
         if (acct.isDormant()) { acct.setAccountStatus("ACTIVE"); acct.setDormantDate(null); }
         acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
-        return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, idempotencyKey, channel, null, "POSTED");
+        return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, idempotencyKey, channel, null);
     }
     // === Withdrawal ===
     @Override @org.springframework.transaction.annotation.Transactional
@@ -169,12 +169,12 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
                 new com.finvanta.accounting.AccountingService.JournalLineRequest(gl, com.finvanta.domain.enums.DebitCredit.DEBIT, amount, "Debit " + acn),
                 new com.finvanta.accounting.AccountingService.JournalLineRequest(com.finvanta.accounting.GLConstants.BANK_OPERATIONS, com.finvanta.domain.enums.DebitCredit.CREDIT, amount, "Cash withdrawal")
             )).build());
-        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, idk, channel, null, "PENDING_APPROVAL");
+        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, idk, channel, null);
         acct.setLedgerBalance(acct.getLedgerBalance().subtract(amount));
         acct.setAvailableBalance(acct.getLedgerBalance().subtract(acct.getHoldAmount()).subtract(acct.getUnclearedAmount()));
         acct.setLastTransactionDate(bd); acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
-        return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, idk, channel, null, "POSTED");
+        return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, idk, channel, null);
     }
 
     // === Transfer ===

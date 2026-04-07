@@ -24,6 +24,17 @@
         <li><a href="${pageContext.request.contextPath}/loan/accounts" class="nav-link"><i class="bi bi-bank"></i><span class="nav-text">Active Accounts</span></a></li>
         </c:if>
 
+        <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">CASA (Deposits)</li>
+        <li><a href="${pageContext.request.contextPath}/deposit/accounts" class="nav-link"><i class="bi bi-wallet2"></i><span class="nav-text">CASA Accounts</span></a></li>
+        </c:if>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li><a href="${pageContext.request.contextPath}/deposit/open" class="nav-link"><i class="bi bi-person-plus"></i><span class="nav-text">Open Account</span></a></li>
+        </c:if>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li><a href="${pageContext.request.contextPath}/deposit/transfer" class="nav-link"><i class="bi bi-arrow-left-right"></i><span class="nav-text">Fund Transfer</span></a></li>
+        </c:if>
+
         <li class="nav-section">Transaction Inquiry</li>
         <li><a href="${pageContext.request.contextPath}/txn360/search?q=" class="nav-link"><i class="bi bi-diagram-3"></i><span class="nav-text">Transaction 360</span></a></li>
 
