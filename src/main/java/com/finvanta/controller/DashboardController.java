@@ -13,6 +13,9 @@ import org.springframework.web.servlet.ModelAndView;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
 
 @Controller
 public class DashboardController {
@@ -41,20 +44,30 @@ public class DashboardController {
             customerRepository.countByTenantIdAndActiveTrue(tenantId));
         mav.addObject("pendingApplications",
             applicationRepository.countByTenantIdAndStatus(tenantId, ApplicationStatus.SUBMITTED));
-        mav.addObject("activeLoans",
-            accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.ACTIVE)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_0)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_1)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_2)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.RESTRUCTURED));
-        mav.addObject("smaAccounts",
-            accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_0)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_1)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_2));
-        mav.addObject("npaAccounts",
-            accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.NPA_SUBSTANDARD)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.NPA_DOUBTFUL)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.NPA_LOSS));
+
+        // CBS Dashboard: Single GROUP BY query replaces 7 separate count queries.
+        // For 1M+ accounts, this eliminates 7 full table scans.
+        Map<LoanStatus, Long> statusCounts = new EnumMap<>(LoanStatus.class);
+        List<Object[]> rawCounts = accountRepository.countByTenantIdGroupByStatus(tenantId);
+        for (Object[] row : rawCounts) {
+            statusCounts.put((LoanStatus) row[0], (Long) row[1]);
+        }
+
+        long activeLoans = statusCounts.getOrDefault(LoanStatus.ACTIVE, 0L)
+            + statusCounts.getOrDefault(LoanStatus.SMA_0, 0L)
+            + statusCounts.getOrDefault(LoanStatus.SMA_1, 0L)
+            + statusCounts.getOrDefault(LoanStatus.SMA_2, 0L)
+            + statusCounts.getOrDefault(LoanStatus.RESTRUCTURED, 0L);
+        long smaAccounts = statusCounts.getOrDefault(LoanStatus.SMA_0, 0L)
+            + statusCounts.getOrDefault(LoanStatus.SMA_1, 0L)
+            + statusCounts.getOrDefault(LoanStatus.SMA_2, 0L);
+        long npaAccounts = statusCounts.getOrDefault(LoanStatus.NPA_SUBSTANDARD, 0L)
+            + statusCounts.getOrDefault(LoanStatus.NPA_DOUBTFUL, 0L)
+            + statusCounts.getOrDefault(LoanStatus.NPA_LOSS, 0L);
+
+        mav.addObject("activeLoans", activeLoans);
+        mav.addObject("smaAccounts", smaAccounts);
+        mav.addObject("npaAccounts", npaAccounts);
         mav.addObject("pendingApprovals",
             workflowService.getPendingApprovals().size());
         BigDecimal totalOutstanding = accountRepository.calculateTotalOutstandingPrincipal(tenantId);
