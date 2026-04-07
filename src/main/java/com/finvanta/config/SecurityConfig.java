@@ -56,6 +56,7 @@ public class SecurityConfig {
                 .requestMatchers("/batch/txn/**").hasRole("ADMIN")
                 .requestMatchers("/admin/products/**").hasRole("ADMIN")
                 .requestMatchers("/admin/limits/**").hasRole("ADMIN")
+                .requestMatchers("/admin/charges/**").hasRole("ADMIN")
                 .requestMatchers("/workflow/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/reconciliation/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/reports/**").hasAnyRole("CHECKER", "ADMIN")

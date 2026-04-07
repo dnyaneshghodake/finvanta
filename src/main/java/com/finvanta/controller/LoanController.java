@@ -9,6 +9,7 @@ import com.finvanta.domain.enums.CollateralType;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CollateralRepository;
 import com.finvanta.repository.CustomerRepository;
+import com.finvanta.repository.InterestAccrualRepository;
 import com.finvanta.repository.LoanDocumentRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.repository.ProductMasterRepository;
@@ -44,6 +45,7 @@ public class LoanController {
     private final CollateralRepository collateralRepository;
     private final LoanDocumentRepository documentRepository;
     private final LoanTransactionRepository transactionRepository;
+    private final InterestAccrualRepository accrualRepository;
     private final ProductMasterRepository productRepository;
 
     public LoanController(LoanApplicationService applicationService,
@@ -57,6 +59,7 @@ public class LoanController {
                            CollateralRepository collateralRepository,
                            LoanDocumentRepository documentRepository,
                            LoanTransactionRepository transactionRepository,
+                           InterestAccrualRepository accrualRepository,
                            ProductMasterRepository productRepository) {
         this.applicationService = applicationService;
         this.accountService = accountService;
@@ -69,6 +72,7 @@ public class LoanController {
         this.collateralRepository = collateralRepository;
         this.documentRepository = documentRepository;
         this.transactionRepository = transactionRepository;
+        this.accrualRepository = accrualRepository;
         this.productRepository = productRepository;
     }
 
@@ -205,6 +209,13 @@ public class LoanController {
             collateralRepository.findByTenantIdAndLoanApplicationId(tenantId, account.getApplication().getId()));
         mav.addObject("documents",
             documentRepository.findByTenantIdAndLoanApplicationId(tenantId, account.getApplication().getId()));
+
+        // CBS: Interest accrual trail for audit-grade per-day tracking (P0-2)
+        mav.addObject("accrualHistory",
+            accrualRepository.findByTenantIdAndAccountIdAndAccrualDateBetweenOrderByAccrualDateAsc(
+                tenantId, account.getId(),
+                account.getDisbursementDate() != null ? account.getDisbursementDate() : java.time.LocalDate.of(2020, 1, 1),
+                java.time.LocalDate.of(2099, 12, 31)));
 
         // Cross-module linkage: resolve product ID for "View GL Config" link
         productRepository.findByTenantIdAndProductCode(tenantId, account.getProductType())

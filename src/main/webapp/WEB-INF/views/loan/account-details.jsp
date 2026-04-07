@@ -129,6 +129,60 @@
     </div>
     </c:if>
 
+    <!-- CBS Interest Accrual Trail (P0-2: Audit-grade per-day records) -->
+    <c:if test="${not empty accrualHistory}">
+    <div class="fv-card">
+        <div class="card-header">Interest Accrual Trail <span class="badge bg-secondary"><c:out value="${accrualHistory.size()}" /></span></div>
+        <div class="card-body">
+            <div class="table-responsive">
+            <table class="table fv-table fv-datatable">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th class="text-end">Principal Base</th>
+                        <th class="text-end">Rate %</th>
+                        <th>Days</th>
+                        <th class="text-end">Amount</th>
+                        <th>Posted</th>
+                        <th>Txn Ref</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="acc" items="${accrualHistory}">
+                        <tr>
+                            <td><c:out value="${acc.accrualDate}" /></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${acc.accrualType == 'PENAL'}"><span class="fv-badge fv-badge-npa">PENAL</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-active">REGULAR</span></c:otherwise>
+                                </c:choose>
+                            </td>
+                            <td class="amount"><fmt:formatNumber value="${acc.principalBase}" type="number" maxFractionDigits="2" /></td>
+                            <td class="text-end"><fmt:formatNumber value="${acc.rateApplied}" maxFractionDigits="4" />%</td>
+                            <td><c:out value="${acc.daysCount}" /></td>
+                            <td class="amount"><fmt:formatNumber value="${acc.accruedAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${acc.postedFlag}"><span class="fv-badge fv-badge-active">Yes</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-pending">No</span></c:otherwise>
+                                </c:choose>
+                            </td>
+                            <td class="font-monospace small">
+                                <c:if test="${not empty acc.transactionRef}">
+                                    <a href="${pageContext.request.contextPath}/txn360/${acc.transactionRef}"><c:out value="${acc.transactionRef}" /></a>
+                                </c:if>
+                                <c:if test="${empty acc.transactionRef}">--</c:if>
+                            </td>
+                        </tr>
+                    </c:forEach>
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+    </c:if>
+
     <!-- CBS Repayment Schedule Preview (RBI Fair Practices Code 2023) -->
     <c:if test="${not empty schedulePreview}">
     <div class="fv-card">

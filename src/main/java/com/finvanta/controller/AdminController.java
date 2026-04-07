@@ -1,6 +1,7 @@
 package com.finvanta.controller;
 
 import com.finvanta.accounting.ProductGLResolver;
+import com.finvanta.repository.ChargeConfigRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.repository.TransactionLimitRepository;
 import com.finvanta.util.BusinessException;
@@ -11,13 +12,14 @@ import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /**
- * CBS Admin Controller — Product Master and Transaction Limit management.
+ * CBS Admin Controller — Product Master, Transaction Limits, and Charge Config management.
  *
  * ADMIN-only access (enforced in SecurityConfig).
  *
  * Per Finacle/Temenos:
  * - Product Master (PDDEF): configures GL codes, interest methods, limits per product
  * - Transaction Limits: per-role, per-type amount controls for operational risk
+ * - Charge Config (CHRG_MASTER): fee schedules with FLAT/PERCENTAGE/SLAB + GST
  *
  * IMPORTANT: When product_master GL codes are modified, the ProductGLResolver cache
  * must be evicted to prevent stale GL codes from being used in financial postings.
@@ -29,13 +31,16 @@ public class AdminController {
 
     private final ProductMasterRepository productRepository;
     private final TransactionLimitRepository limitRepository;
+    private final ChargeConfigRepository chargeConfigRepository;
     private final ProductGLResolver glResolver;
 
     public AdminController(ProductMasterRepository productRepository,
                             TransactionLimitRepository limitRepository,
+                            ChargeConfigRepository chargeConfigRepository,
                             ProductGLResolver glResolver) {
         this.productRepository = productRepository;
         this.limitRepository = limitRepository;
+        this.chargeConfigRepository = chargeConfigRepository;
         this.glResolver = glResolver;
     }
 
@@ -90,6 +95,20 @@ public class AdminController {
         ModelAndView mav = new ModelAndView("admin/limits");
         mav.addObject("limits",
             limitRepository.findByTenantIdOrderByRoleAscTransactionTypeAsc(tenantId));
+        return mav;
+    }
+
+    // ========================================================================
+    // Charge Configuration Management (Finacle CHRG_MASTER)
+    // ========================================================================
+
+    /** List all charge configurations */
+    @GetMapping("/charges")
+    public ModelAndView listCharges() {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("admin/charges");
+        mav.addObject("charges",
+            chargeConfigRepository.findByTenantIdAndIsActiveTrueOrderByEventTriggerAsc(tenantId));
         return mav;
     }
 }
