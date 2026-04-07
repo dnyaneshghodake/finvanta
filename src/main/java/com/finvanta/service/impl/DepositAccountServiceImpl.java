@@ -298,7 +298,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         src.setLastTransactionDate(bd); src.setUpdatedBy(SecurityUtil.getCurrentUsername()); accountRepository.save(src);
         tgt.setLedgerBalance(tgt.getLedgerBalance().add(amount));
         recomputeAvailable(tgt);
-        tgt.setLastTransactionDate(bd); if (tgt.isDormant()) { tgt.setAccountStatus("ACTIVE"); tgt.setDormantDate(null); }
+        tgt.setLastTransactionDate(bd); if (tgt.isDormant()) { tgt.setAccountStatus(DepositAccountStatus.ACTIVE); tgt.setDormantDate(null); }
         tgt.setUpdatedBy(SecurityUtil.getCurrentUsername()); accountRepository.save(tgt);
         // CBS: TRANSFER_CREDIT leg gets its own unique transactionRef to satisfy
         // the unique constraint on (tenant_id, transaction_ref) in deposit_transactions.
@@ -334,6 +334,25 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         acct.setAccruedInterest(acct.getAccruedInterest().add(daily));
         acct.setLastInterestAccrualDate(bd);
         accountRepository.save(acct);
+
+        // CBS: Per-day interest accrual record for RBI audit trail.
+        // Per RBI IT Governance Direction 2023: all financial calculations must be
+        // logged and reproducible. This enables deterministic accrual replay,
+        // audit reconciliation, and forensic analysis.
+        // Reuses the existing interest_accruals table (shared with loan module).
+        InterestAccrual record = new InterestAccrual();
+        record.setTenantId(tid);
+        record.setAccountId(acct.getId());
+        record.setAccrualDate(bd);
+        record.setPrincipalBase(acct.getLedgerBalance());
+        record.setRateApplied(acct.getInterestRate());
+        record.setDaysCount(1);
+        record.setAccruedAmount(daily);
+        record.setAccrualType("CASA_REGULAR");
+        record.setPostedFlag(false); // Not yet posted to GL — credited quarterly
+        record.setBusinessDate(bd);
+        record.setCreatedBy("SYSTEM_EOD");
+        accrualRepository.save(record);
     }
 
     // === Quarterly Interest Credit with TDS ===
@@ -395,12 +414,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     public DepositAccount freezeAccount(String acn, String freezeType, String reason) {
         var acct = lockAccount(TenantContext.getCurrentTenant(), acn);
         if (acct.isClosed()) throw new BusinessException("ACCOUNT_CLOSED", "Cannot freeze closed account");
-        String prevStatus = acct.getAccountStatus();
-        acct.setAccountStatus("FROZEN"); acct.setFreezeType(freezeType); acct.setFreezeReason(reason);
+        DepositAccountStatus prevStatus = acct.getAccountStatus();
+        acct.setAccountStatus(DepositAccountStatus.FROZEN); acct.setFreezeType(freezeType); acct.setFreezeReason(reason);
         acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         var saved = accountRepository.save(acct);
         auditService.logEvent("DepositAccount", saved.getId(), "FREEZE",
-            prevStatus, "FROZEN", "DEPOSIT",
+            prevStatus.name(), "FROZEN", "DEPOSIT",
             "Account frozen: " + acn + " type=" + freezeType + " reason=" + reason);
         log.info("Account frozen: {} type={}", acn, freezeType);
         return saved;
@@ -412,7 +431,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         var acct = lockAccount(TenantContext.getCurrentTenant(), acn);
         if (!acct.isFrozen()) throw new BusinessException("NOT_FROZEN", "Account is not frozen");
         String prevFreezeType = acct.getFreezeType();
-        acct.setAccountStatus("ACTIVE"); acct.setFreezeType(null); acct.setFreezeReason(null);
+        acct.setAccountStatus(DepositAccountStatus.ACTIVE); acct.setFreezeType(null); acct.setFreezeReason(null);
         acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         var saved = accountRepository.save(acct);
         auditService.logEvent("DepositAccount", saved.getId(), "UNFREEZE",
@@ -443,12 +462,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         if (acct.getLedgerBalance().signum() != 0)
             throw new BusinessException("NON_ZERO_BALANCE",
                 "Balance must be zero to close. Current: " + acct.getLedgerBalance());
-        String prevStatus = acct.getAccountStatus();
-        acct.setAccountStatus("CLOSED"); acct.setClosedDate(businessDateService.getCurrentBusinessDate()); acct.setClosureReason(reason);
+        DepositAccountStatus prevStatus = acct.getAccountStatus();
+        acct.setAccountStatus(DepositAccountStatus.CLOSED); acct.setClosedDate(businessDateService.getCurrentBusinessDate()); acct.setClosureReason(reason);
         acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         var saved = accountRepository.save(acct);
         auditService.logEvent("DepositAccount", saved.getId(), "ACCOUNT_CLOSED",
-            prevStatus, "CLOSED", "DEPOSIT",
+            prevStatus.name(), "CLOSED", "DEPOSIT",
             "Account closed: " + acn + " reason=" + reason);
         log.info("Account closed: {}", acn);
         return saved;
@@ -462,7 +481,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         var candidates = accountRepository.findDormancyCandidates(tid, cutoff);
         int count = 0;
         for (var acct : candidates) {
-            acct.setAccountStatus("DORMANT"); acct.setDormantDate(businessDate);
+            acct.setAccountStatus(DepositAccountStatus.DORMANT); acct.setDormantDate(businessDate);
             acct.setUpdatedBy("SYSTEM_EOD");
             accountRepository.save(acct);
             count++;

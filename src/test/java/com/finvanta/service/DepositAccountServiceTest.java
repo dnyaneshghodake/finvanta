@@ -6,10 +6,12 @@ import com.finvanta.domain.entity.Customer;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.domain.enums.DebitCredit;
+import com.finvanta.domain.enums.DepositAccountStatus;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.DepositTransactionRepository;
+import com.finvanta.repository.InterestAccrualRepository;
 import com.finvanta.service.impl.DepositAccountServiceImpl;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionResult;
@@ -52,6 +54,7 @@ class DepositAccountServiceTest {
     @Mock private DepositTransactionRepository transactionRepository;
     @Mock private CustomerRepository customerRepository;
     @Mock private BranchRepository branchRepository;
+    @Mock private InterestAccrualRepository accrualRepository;
     @Mock private TransactionEngine transactionEngine;
     @Mock private BusinessDateService businessDateService;
     @Mock private com.finvanta.audit.AuditService auditService;
@@ -62,8 +65,8 @@ class DepositAccountServiceTest {
     void setUp() {
         service = new DepositAccountServiceImpl(
             accountRepository, transactionRepository,
-            customerRepository, branchRepository, transactionEngine,
-            businessDateService, auditService);
+            customerRepository, branchRepository, accrualRepository,
+            transactionEngine, businessDateService, auditService);
         TenantContext.setCurrentTenant("DEFAULT");
         SecurityContextHolder.getContext().setAuthentication(
             new UsernamePasswordAuthenticationToken("maker1", "pass",
@@ -76,7 +79,7 @@ class DepositAccountServiceTest {
         a.setTenantId("DEFAULT");
         a.setAccountNumber(accNo);
         a.setAccountType("SAVINGS");
-        a.setAccountStatus("ACTIVE");
+        a.setAccountStatus(DepositAccountStatus.ACTIVE);
         a.setLedgerBalance(balance);
         a.setAvailableBalance(balance);
         a.setHoldAmount(BigDecimal.ZERO);
@@ -151,7 +154,7 @@ class DepositAccountServiceTest {
     @Test
     void withdraw_shouldRejectWhenAccountFrozen() {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
-        acct.setAccountStatus("FROZEN");
+        acct.setAccountStatus(DepositAccountStatus.FROZEN);
         acct.setFreezeType("TOTAL_FREEZE");
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
             .thenReturn(Optional.of(acct));
@@ -207,7 +210,7 @@ class DepositAccountServiceTest {
 
         DepositAccount result = service.freezeAccount("DEP001", "DEBIT_FREEZE", "Court order");
 
-        assertEquals("FROZEN", result.getAccountStatus());
+        assertEquals(DepositAccountStatus.FROZEN, result.getAccountStatus());
         assertEquals("DEBIT_FREEZE", result.getFreezeType());
         assertEquals("Court order", result.getFreezeReason());
     }
@@ -229,7 +232,7 @@ class DepositAccountServiceTest {
     void deposit_shouldAllowCreditOnDebitFreezeAccount() {
         // Per PMLA: DEBIT_FREEZE allows credits, blocks debits only
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
-        acct.setAccountStatus("FROZEN");
+        acct.setAccountStatus(DepositAccountStatus.FROZEN);
         acct.setFreezeType("DEBIT_FREEZE");
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
             .thenReturn(Optional.of(acct));
@@ -248,7 +251,7 @@ class DepositAccountServiceTest {
     void withdraw_shouldAllowDebitOnCreditFreezeAccount() {
         // Per PMLA: CREDIT_FREEZE blocks credits only, debits allowed
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
-        acct.setAccountStatus("FROZEN");
+        acct.setAccountStatus(DepositAccountStatus.FROZEN);
         acct.setFreezeType("CREDIT_FREEZE");
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
             .thenReturn(Optional.of(acct));
@@ -333,7 +336,7 @@ class DepositAccountServiceTest {
         int count = service.markDormantAccounts(LocalDate.of(2026, 4, 1));
 
         assertEquals(1, count);
-        assertEquals("DORMANT", acct.getAccountStatus());
+        assertEquals(DepositAccountStatus.DORMANT, acct.getAccountStatus());
     }
 
     @Test
