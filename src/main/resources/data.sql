@@ -124,6 +124,13 @@ INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance,
 -- Clearing Suspense GL (P1-2)
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2400', 'Clearing Suspense', 'LIABILITY', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
+-- CASA Module GL Codes (Savings/Current Accounts per Finacle CUSTACCT)
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2010', 'Customer Deposits - Savings', 'LIABILITY', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2020', 'Customer Deposits - Current', 'LIABILITY', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2500', 'TDS Payable - Section 194A', 'LIABILITY', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '4010', 'Interest Income - Deposits', 'INCOME', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '5010', 'Interest Expense - Deposits', 'EXPENSE', 0.00, 0.00, true, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
 -- P0-1: CHARGE CONFIGURATIONS (Finacle CHRG_MASTER)
 -- PROCESSING_FEE: 1% of loan amount, GST applicable (18%)
 INSERT INTO charge_config (tenant_id, charge_code, charge_name, event_trigger, calculation_type, percentage, gst_applicable, gst_rate, gl_charge_income, gl_gst_payable, waiver_allowed, max_waiver_percent, product_code, is_active, version, created_at, created_by)
