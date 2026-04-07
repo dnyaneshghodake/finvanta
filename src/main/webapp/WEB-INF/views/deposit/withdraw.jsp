@@ -26,7 +26,7 @@
             <input type="text" name="narration" class="form-control" placeholder="Cash withdrawal" maxlength="500"/>
         </div>
         </div>
-        <button type="submit" class="btn btn-warning"><i class="bi bi-dash-circle"></i> Post Withdrawal</button>
+        <button type="submit" class="btn btn-warning" data-confirm="Confirm cash withdrawal? This will debit the account immediately."><i class="bi bi-dash-circle"></i> Post Withdrawal</button>
         <a href="${pageContext.request.contextPath}/deposit/view/${account.accountNumber}" class="btn btn-secondary">Cancel</a>
     </form>
 </div></div>

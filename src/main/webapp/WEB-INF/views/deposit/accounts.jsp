@@ -16,7 +16,7 @@
 </div>
 
 <div class="table-responsive">
-<table class="table table-striped table-hover table-sm">
+<table class="table fv-table fv-datatable table-sm">
 <thead><tr>
     <th>Account No</th><th>Customer</th><th>Type</th><th>Branch</th>
     <th>Status</th><th class="text-end">Ledger Balance</th><th class="text-end">Available</th><th>Actions</th>

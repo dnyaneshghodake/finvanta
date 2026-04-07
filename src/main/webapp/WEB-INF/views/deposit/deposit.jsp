@@ -25,7 +25,7 @@
             <input type="text" name="narration" class="form-control" placeholder="Cash deposit" maxlength="500"/>
         </div>
         </div>
-        <button type="submit" class="btn btn-success"><i class="bi bi-plus-circle"></i> Post Deposit</button>
+        <button type="submit" class="btn btn-success" data-confirm="Confirm cash deposit? This will credit the account immediately."><i class="bi bi-plus-circle"></i> Post Deposit</button>
         <a href="${pageContext.request.contextPath}/deposit/view/${account.accountNumber}" class="btn btn-secondary">Cancel</a>
     </form>
 </div></div>

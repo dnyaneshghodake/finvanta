@@ -219,7 +219,9 @@ public class LoanController {
                 mav.addObject("accounts",
                     accountRepository.findByTenantIdAndBranchId(tenantId, branchId));
             } else {
-                mav.addObject("accounts", accountService.getActiveAccounts());
+                // CBS: No branch assigned — show empty list per fail-safe principle.
+                // Per RBI Operational Risk: no-branch users must not see all data.
+                mav.addObject("accounts", java.util.Collections.emptyList());
             }
         }
         return mav;

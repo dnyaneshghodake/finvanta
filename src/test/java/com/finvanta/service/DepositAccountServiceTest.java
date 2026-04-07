@@ -335,4 +335,79 @@ class DepositAccountServiceTest {
         assertEquals(1, count);
         assertEquals("DORMANT", acct.getAccountStatus());
     }
+
+    @Test
+    void withdraw_shouldRejectWhenMinimumBalanceBreach() {
+        // CBS: Withdrawal that breaches minimum balance must be rejected
+        // Per Finacle ACCTLIMIT / RBI CASA norms
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("10000.00"));
+        acct.setMinimumBalance(new BigDecimal("5000.00"));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+
+        // Withdrawing 8000 from 10000 would leave 2000 < minBal 5000
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+            service.withdraw("DEP001", new BigDecimal("8000.00"),
+                LocalDate.of(2026, 4, 1), "Withdrawal", null, "BRANCH"));
+        assertEquals("MINIMUM_BALANCE_BREACH", ex.getErrorCode());
+        verify(transactionEngine, never()).execute(any());
+    }
+
+    @Test
+    void withdraw_shouldAllowWhenMinimumBalanceMaintained() {
+        // CBS: Withdrawal that maintains minimum balance should succeed
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("10000.00"));
+        acct.setMinimumBalance(new BigDecimal("5000.00"));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+        when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Withdrawing 4000 from 10000 leaves 6000 >= minBal 5000
+        DepositTransaction txn = service.withdraw("DEP001", new BigDecimal("4000.00"),
+            LocalDate.of(2026, 4, 1), "Withdrawal", null, "BRANCH");
+        assertNotNull(txn);
+        assertEquals("DEBIT", txn.getDebitCredit());
+    }
+
+    @Test
+    void withdraw_shouldAllowPmjdyZeroMinBalance() {
+        // CBS: PMJDY accounts have zero minimum balance — all withdrawals allowed
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("500.00"));
+        acct.setAccountType("SAVINGS_PMJDY");
+        acct.setMinimumBalance(BigDecimal.ZERO); // PMJDY = zero min balance
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+        when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        DepositTransaction txn = service.withdraw("DEP001", new BigDecimal("400.00"),
+            LocalDate.of(2026, 4, 1), "Withdrawal", null, "BRANCH");
+        assertNotNull(txn);
+    }
+
+    @Test
+    void accrueInterest_shouldResetYtdOnFinancialYearBoundary() {
+        // CBS: YTD counters must reset on April 1 (Indian FY start)
+        // Per IT Act Section 194A: TDS threshold is per financial year
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("100000.00"));
+        acct.setLastInterestAccrualDate(LocalDate.of(2026, 3, 31)); // last accrual was Mar 31
+        acct.setYtdInterestCredited(new BigDecimal("35000.00")); // accumulated in FY25-26
+        acct.setYtdTdsDeducted(new BigDecimal("500.00"));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Accrue on April 1 — should trigger FY reset
+        service.accrueInterest("DEP001", LocalDate.of(2026, 4, 1));
+
+        // YTD counters should be reset to zero
+        assertEquals(BigDecimal.ZERO, acct.getYtdInterestCredited());
+        assertEquals(BigDecimal.ZERO, acct.getYtdTdsDeducted());
+        // Interest should still accrue normally
+        assertTrue(acct.getAccruedInterest().compareTo(BigDecimal.ZERO) > 0);
+        assertEquals(LocalDate.of(2026, 4, 1), acct.getLastInterestAccrualDate());
+    }
 }

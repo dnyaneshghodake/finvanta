@@ -66,7 +66,9 @@ public class CustomerController {
                 mav.addObject("customers",
                     customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, branchId));
             } else {
-                mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
+                // CBS: No branch assigned — show empty list per fail-safe principle.
+                // Per RBI Operational Risk: no-branch users must not see all data.
+                mav.addObject("customers", java.util.Collections.emptyList());
             }
         }
         return mav;

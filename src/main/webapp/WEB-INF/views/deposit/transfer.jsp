@@ -42,7 +42,7 @@
         <input type="text" name="narration" class="form-control" placeholder="Fund transfer" maxlength="500"/>
     </div>
     </div>
-    <button type="submit" class="btn btn-info"><i class="bi bi-arrow-left-right"></i> Execute Transfer</button>
+    <button type="submit" class="btn btn-info" onclick="if(document.querySelector('[name=fromAccount]').value === document.querySelector('[name=toAccount]').value){alert('Source and target accounts cannot be the same.');return false;} return confirm('Confirm fund transfer? This will debit the source and credit the target immediately.');"><i class="bi bi-arrow-left-right"></i> Execute Transfer</button>
     <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-secondary">Cancel</a>
 </form>
 </div></div>

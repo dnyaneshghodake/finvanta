@@ -80,14 +80,27 @@
 <div class="card mt-3"><div class="card-body">
     <form method="post" action="${pageContext.request.contextPath}/deposit/unfreeze/${account.accountNumber}" class="d-inline">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-        <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-unlock"></i> Unfreeze Account</button>
+        <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('Unfreeze this account?')"><i class="bi bi-unlock"></i> Unfreeze Account</button>
+    </form>
+</div></div>
+</c:if>
+<c:if test="${(pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')) && !account.closed}">
+<div class="card mt-3"><div class="card-body">
+    <form method="post" action="${pageContext.request.contextPath}/deposit/close/${account.accountNumber}" class="d-inline">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
+        <input type="hidden" name="reason" value="" id="closeReason"/>
+        <button type="submit" class="btn btn-outline-danger btn-sm"
+            onclick="var r=prompt('Closure reason (mandatory):'); if(!r){return false;} document.getElementById('closeReason').value=r; return confirm('Close account ${account.accountNumber}? Balance must be zero.');">
+            <i class="bi bi-x-circle"></i> Close Account
+        </button>
     </form>
 </div></div>
 </c:if>
 </div></div>
 
 <h5 class="mt-4">Recent Transactions</h5>
-<table class="table table-striped table-sm">
+<div class="table-responsive">
+<table class="table fv-table fv-datatable table-sm">
 <thead><tr><th>Date</th><th>Type</th><th>Channel</th><th>Narration</th><th class="text-end">Amount</th><th class="text-end">Balance</th><th>Voucher</th></tr></thead>
 <tbody>
 <c:forEach var="t" items="${transactions}">
@@ -103,6 +116,7 @@
 </c:forEach>
 <c:if test="${empty transactions}"><tr><td colspan="7" class="text-center text-muted">No transactions</td></tr></c:if>
 </tbody></table>
+</div>
 </div>
 
 <%@ include file="../layout/footer.jsp" %>
