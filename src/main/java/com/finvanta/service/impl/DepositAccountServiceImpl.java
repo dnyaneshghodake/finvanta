@@ -104,10 +104,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
 
     private DepositTransaction buildTxn(DepositAccount acct, BigDecimal amount,
             String txnType, LocalDate valueDate, String narration,
-            TransactionResult result, String idempotencyKey, String channel, String counterparty) {
+            TransactionResult result, String txnRef,
+            String idempotencyKey, String channel, String counterparty) {
         DepositTransaction txn = new DepositTransaction();
         txn.setTenantId(acct.getTenantId());
-        txn.setTransactionRef(result.getTransactionRef());
+        txn.setTransactionRef(txnRef);
         txn.setDepositAccount(acct);
         txn.setTransactionType(txnType);
         txn.setAmount(amount);

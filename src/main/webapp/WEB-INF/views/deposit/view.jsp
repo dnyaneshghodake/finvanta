@@ -81,7 +81,7 @@
 <tbody>
 <c:forEach var="t" items="${transactions}">
 <tr>
-    <td><fmt:formatDate value="${t.postingDate}" pattern="yyyy-MM-dd HH:mm"/></td>
+    <td><c:out value="${t.postingDate}"/></td>
     <td><c:out value="${t.transactionType}"/></td>
     <td><c:out value="${t.channel}"/></td>
     <td><c:out value="${t.narration}"/></td>
