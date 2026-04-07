@@ -44,6 +44,7 @@
     <div class="fv-card">
         <div class="card-header">Loan Accounts at this Branch</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
@@ -84,12 +85,14 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 
     <div class="fv-card">
         <div class="card-header">Customers at this Branch</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr><th>Customer No.</th><th>Name</th><th>Type</th><th>KYC</th><th>CIBIL</th><th>Actions</th></tr>
@@ -110,6 +113,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>

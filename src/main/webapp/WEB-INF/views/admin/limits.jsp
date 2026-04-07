@@ -9,6 +9,7 @@
         <div class="card-header">Transaction Limits (CBS Internal Controls)</div>
         <div class="card-body">
             <p class="text-muted">Per RBI guidelines on internal controls: every financial transaction is validated against per-role limits. Transactions exceeding limits require higher authority approval.</p>
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
@@ -55,6 +56,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>

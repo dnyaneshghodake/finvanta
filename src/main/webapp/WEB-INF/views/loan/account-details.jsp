@@ -144,6 +144,7 @@
                 <div class="col-md-3"><div class="fv-stat-card"><div class="stat-value amount"><fmt:formatNumber value="${previewTotalPayable}" type="number" maxFractionDigits="2" /></div><div class="stat-label">Total Payable (INR)</div></div></div>
             </div>
             <p class="text-muted small">Per RBI Fair Practices Code 2023: This schedule is indicative and based on the sanctioned amount at <fmt:formatNumber value="${account.interestRate}" maxFractionDigits="2" />% p.a. for <c:out value="${account.tenureMonths}" /> months. Actual schedule will be generated at disbursement.</p>
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr><th>#</th><th>Due Date</th><th class="text-end">EMI</th><th class="text-end">Principal</th><th class="text-end">Interest</th><th class="text-end">Closing Balance</th></tr>
@@ -161,6 +162,7 @@
                     </c:forEach>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
     </c:if>
@@ -341,6 +343,7 @@
     <div class="fv-card">
         <div class="card-header">Amortization Schedule (${schedule.size()} installments)</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
@@ -380,6 +383,7 @@
                     </c:forEach>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
     </c:if>
@@ -387,6 +391,7 @@
     <div class="fv-card">
         <div class="card-header">Transaction History</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
@@ -446,6 +451,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>
