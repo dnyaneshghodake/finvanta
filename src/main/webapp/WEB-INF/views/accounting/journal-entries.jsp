@@ -19,7 +19,8 @@
                         <input type="date" name="toDate" class="form-control" value="${toDate}" />
                     </div>
                     <div class="col-auto">
-                        <button type="submit" class="btn btn-fv-primary">Filter</button>
+                        <label class="form-label">&nbsp;</label>
+                        <button type="submit" class="btn btn-fv-primary d-block"><i class="bi bi-funnel"></i> Filter</button>
                     </div>
                 </div>
             </form>
