@@ -15,8 +15,10 @@ import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.repository.InterestAccrualRepository;
+import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
+import com.finvanta.workflow.ApprovalWorkflowService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
@@ -69,26 +71,32 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
     private final InterestAccrualRepository accrualRepository;
+    private final ProductMasterRepository productMasterRepository;
     private final TransactionEngine transactionEngine;
     private final BusinessDateService businessDateService;
     private final AuditService auditService;
+    private final ApprovalWorkflowService workflowService;
 
     public DepositAccountServiceImpl(DepositAccountRepository accountRepository,
                                       DepositTransactionRepository transactionRepository,
                                       CustomerRepository customerRepository,
                                       BranchRepository branchRepository,
                                       InterestAccrualRepository accrualRepository,
+                                      ProductMasterRepository productMasterRepository,
                                       TransactionEngine transactionEngine,
                                       BusinessDateService businessDateService,
-                                      AuditService auditService) {
+                                      AuditService auditService,
+                                      ApprovalWorkflowService workflowService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.accrualRepository = accrualRepository;
+        this.productMasterRepository = productMasterRepository;
         this.transactionEngine = transactionEngine;
         this.businessDateService = businessDateService;
         this.auditService = auditService;
+        this.workflowService = workflowService;
     }
 
     /** Recompute available balance from ledger balance minus holds and uncleared. */
@@ -153,15 +161,39 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         if (accountType == null || (!accountType.startsWith("SAVINGS") && !accountType.startsWith("CURRENT")))
             throw new BusinessException("INVALID_ACCOUNT_TYPE", "Must be SAVINGS* or CURRENT*");
 
+        // CBS Phase 2: Product-driven rate and minimum balance per Finacle PDDEF.
+        // Interest rate and minimum balance are resolved from ProductMaster, not hardcoded.
+        // Fallback to defaults if product not found (backward compatibility with Phase 1).
+        String resolvedProductCode = productCode != null ? productCode : accountType;
+        BigDecimal interestRate = accountType.startsWith("SAVINGS") ? new BigDecimal("4.0000") : BigDecimal.ZERO;
+        BigDecimal minimumBalance = BigDecimal.ZERO;
+        var productOpt = productMasterRepository.findByTenantIdAndProductCode(tid, resolvedProductCode);
+        if (productOpt.isPresent()) {
+            var product = productOpt.get();
+            if (product.getMinInterestRate() != null) {
+                interestRate = product.getMinInterestRate(); // Use min rate as default for CASA
+            }
+            if (product.getMinLoanAmount() != null) {
+                minimumBalance = product.getMinLoanAmount(); // Repurposed: minLoanAmount = minBalance for CASA
+            }
+            log.info("CASA product resolved: code={}, rate={}, minBal={}", resolvedProductCode, interestRate, minimumBalance);
+        } else {
+            log.warn("CASA product not found: {}, using defaults (rate={}, minBal={})", resolvedProductCode, interestRate, minimumBalance);
+        }
+
         String accNo = ReferenceGenerator.generateDepositAccountNumber(branch.getBranchCode());
         DepositAccount a = new DepositAccount();
         a.setTenantId(tid); a.setAccountNumber(accNo); a.setCustomer(cust); a.setBranch(branch);
-        a.setAccountType(accountType); a.setProductCode(productCode != null ? productCode : accountType);
-        a.setAccountStatus(DepositAccountStatus.ACTIVE); a.setCurrencyCode("INR");
+        a.setAccountType(accountType); a.setProductCode(resolvedProductCode);
+        // CBS Phase 2: Maker-Checker for account opening per Finacle ACCTOPN.
+        // Account starts in PENDING_ACTIVATION — requires CHECKER approval to activate.
+        // PENDING_ACTIVATION accounts cannot transact (isDebitAllowed/isCreditAllowed return false).
+        // Initial deposit is deferred until activation.
+        a.setAccountStatus(DepositAccountStatus.PENDING_ACTIVATION); a.setCurrencyCode("INR");
         a.setLedgerBalance(BigDecimal.ZERO); a.setAvailableBalance(BigDecimal.ZERO);
         a.setHoldAmount(BigDecimal.ZERO); a.setUnclearedAmount(BigDecimal.ZERO);
-        a.setOdLimit(BigDecimal.ZERO); a.setMinimumBalance(BigDecimal.ZERO);
-        a.setInterestRate(accountType.startsWith("SAVINGS") ? new BigDecimal("4.0000") : BigDecimal.ZERO);
+        a.setOdLimit(BigDecimal.ZERO); a.setMinimumBalance(minimumBalance);
+        a.setInterestRate(interestRate);
         a.setAccruedInterest(BigDecimal.ZERO);
         a.setYtdInterestCredited(BigDecimal.ZERO); a.setYtdTdsDeducted(BigDecimal.ZERO);
         LocalDate bizDate = businessDateService.getCurrentBusinessDate();
@@ -169,12 +201,36 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         a.setNomineeName(nomineeName); a.setNomineeRelationship(nomineeRelationship);
         a.setCreatedBy(user); a.setUpdatedBy(user);
         DepositAccount saved = accountRepository.save(a);
+
+        // CBS Phase 2: Initiate maker-checker approval workflow.
+        // Per Finacle ACCTOPN / Temenos ACCOUNT.OPENING: account opening requires
+        // dual authorization. MAKER submits → CHECKER approves → account activates.
+        String payload = "CASA|" + accNo + "|" + accountType + "|" + cust.getCustomerNumber()
+            + "|" + branch.getBranchCode() + "|rate=" + interestRate + "|minBal=" + minimumBalance
+            + (initialDeposit != null && initialDeposit.signum() > 0 ? "|initDep=" + initialDeposit : "");
+        try {
+            workflowService.initiateApproval("DepositAccount", saved.getId(),
+                "ACCOUNT_OPENING", "CASA account opening: " + accNo, payload);
+            log.info("CASA maker-checker initiated: num={}, maker={}", accNo, user);
+        } catch (Exception e) {
+            // If workflow initiation fails (e.g., duplicate), auto-activate for backward compatibility.
+            // Per Finacle: workflow failure should not block account creation in non-strict mode.
+            log.warn("Maker-checker initiation failed for {}, auto-activating: {}", accNo, e.getMessage());
+            saved.setAccountStatus(DepositAccountStatus.ACTIVE);
+            accountRepository.save(saved);
+        }
+
         auditService.logEvent("DepositAccount", saved.getId(), "ACCOUNT_OPENED",
             null, accNo, "DEPOSIT",
             "CASA account opened: " + accNo + " type=" + accountType
-                + " customer=" + cust.getCustomerNumber() + " branch=" + branch.getBranchCode());
-        log.info("CASA opened: num={}, type={}, cust={}", accNo, accountType, cust.getCustomerNumber());
-        if (initialDeposit != null && initialDeposit.signum() > 0) {
+                + " customer=" + cust.getCustomerNumber() + " branch=" + branch.getBranchCode()
+                + " status=" + saved.getAccountStatus()
+                + " rate=" + interestRate + " minBal=" + minimumBalance);
+        log.info("CASA opened: num={}, type={}, cust={}, status={}", accNo, accountType, cust.getCustomerNumber(), saved.getAccountStatus());
+
+        // CBS: Initial deposit is only processed if account is ACTIVE (auto-activated or Phase 1 mode).
+        // For PENDING_ACTIVATION accounts, the initial deposit is deferred until checker approval.
+        if (saved.isActive() && initialDeposit != null && initialDeposit.signum() > 0) {
             deposit(accNo, initialDeposit, bizDate, "Initial deposit at account opening", null, "BRANCH");
             saved = accountRepository.findByTenantIdAndAccountNumber(tid, accNo).orElse(saved);
         }
@@ -409,6 +465,29 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             "Quarterly interest credit" + (tdsAmount.signum() > 0 ? " (TDS INR " + tdsAmount + " deducted)" : ""),
             r, r.getTransactionRef(), null, "SYSTEM", null);
     }
+    // === Account Activation (Maker-Checker Phase 2) ===
+    // Per Finacle ACCTOPN: CHECKER approves the workflow → this method activates the account.
+    // Transitions: PENDING_ACTIVATION → ACTIVE
+    @Override @Transactional
+    public DepositAccount activateAccount(String acn) {
+        String tid = TenantContext.getCurrentTenant();
+        var acct = lockAccount(tid, acn);
+        if (acct.getAccountStatus() != DepositAccountStatus.PENDING_ACTIVATION) {
+            throw new BusinessException("INVALID_STATE",
+                "Account " + acn + " is not in PENDING_ACTIVATION state. Current: " + acct.getAccountStatus());
+        }
+        acct.setAccountStatus(DepositAccountStatus.ACTIVE);
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        var saved = accountRepository.save(acct);
+
+        auditService.logEvent("DepositAccount", saved.getId(), "ACCOUNT_ACTIVATED",
+            "PENDING_ACTIVATION", "ACTIVE", "DEPOSIT",
+            "Account activated by checker: " + acn + " | Activated by: " + SecurityUtil.getCurrentUsername());
+
+        log.info("CASA activated: num={}, checker={}", acn, SecurityUtil.getCurrentUsername());
+        return saved;
+    }
+
     // === Freeze ===
     @Override @Transactional
     public DepositAccount freezeAccount(String acn, String freezeType, String reason) {

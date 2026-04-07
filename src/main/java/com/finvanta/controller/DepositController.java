@@ -37,6 +37,7 @@ import java.util.List;
  *   POST /deposit/freeze/{accNo}    - Freeze account (ADMIN only)
  *   POST /deposit/unfreeze/{accNo}  - Unfreeze account (ADMIN only)
  *   POST /deposit/close/{accNo}     - Close account (CHECKER/ADMIN)
+ *   POST /deposit/activate/{accNo}  - Activate pending account (CHECKER/ADMIN)
  *   POST /deposit/reversal/{txnRef} - Reverse transaction (CHECKER/ADMIN)
  *   GET  /deposit/statement/{accNo} - Account statement (date range)
  */
@@ -262,6 +263,23 @@ public class DepositController {
         try {
             depositService.closeAccount(accountNumber, reason);
             ra.addFlashAttribute("success", "Account closed: " + accountNumber);
+        } catch (Exception e) {
+            ra.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/deposit/view/" + accountNumber;
+    }
+
+    /**
+     * CBS Account Activation — CHECKER/ADMIN only.
+     * Per Finacle ACCTOPN: activates a PENDING_ACTIVATION account after maker-checker approval.
+     * Transitions the account from PENDING_ACTIVATION → ACTIVE.
+     */
+    @PostMapping("/activate/{accountNumber}")
+    public String activateAccount(@PathVariable String accountNumber,
+                                   RedirectAttributes ra) {
+        try {
+            depositService.activateAccount(accountNumber);
+            ra.addFlashAttribute("success", "Account activated: " + accountNumber);
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());
         }

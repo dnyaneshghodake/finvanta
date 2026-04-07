@@ -69,6 +69,7 @@ public class SecurityConfig {
                 .requestMatchers("/deposit/freeze/**").hasRole("ADMIN")
                 .requestMatchers("/deposit/unfreeze/**").hasRole("ADMIN")
                 .requestMatchers("/deposit/close/**").hasAnyRole("CHECKER", "ADMIN")
+                .requestMatchers("/deposit/activate/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/deposit/reversal/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/deposit/statement/**").hasAnyRole("MAKER", "CHECKER", "ADMIN")
                 .requestMatchers("/loan/apply").hasAnyRole("MAKER", "ADMIN")

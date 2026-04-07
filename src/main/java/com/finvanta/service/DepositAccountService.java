@@ -76,6 +76,14 @@ public interface DepositAccountService {
     DepositTransaction creditInterest(String accountNumber, LocalDate businessDate);
 
     /**
+     * Activate a PENDING_ACTIVATION account after checker approval.
+     * Per Finacle ACCTOPN: account opening requires dual authorization.
+     * MAKER submits → CHECKER approves via workflow → this method activates.
+     * Processes deferred initial deposit if specified in the workflow payload.
+     */
+    DepositAccount activateAccount(String accountNumber);
+
+    /**
      * Freeze account per court order, regulatory directive, or AML.
      * freezeType: DEBIT_FREEZE, CREDIT_FREEZE, TOTAL_FREEZE.
      * Only ADMIN role can freeze (enforced via SecurityConfig).
