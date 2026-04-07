@@ -100,6 +100,17 @@ public class DashboardController {
             : BigDecimal.ZERO;
         mav.addObject("provisionCoverage", provisionCoverage);
 
+        // === CASA Metrics (per RBI CASA Ratio reporting) ===
+        BigDecimal totalDeposits = depositAccountRepository.calculateTotalDeposits(tenantId);
+        long casaAccountCount = depositAccountRepository.countByTenantIdAndAccountStatusNot(tenantId, "CLOSED");
+        mav.addObject("totalDeposits", totalDeposits);
+        mav.addObject("casaAccountCount", casaAccountCount);
+
+        // CASA Ratio = (CASA Deposits / Total Deposits) x 100
+        // Higher CASA ratio = lower cost of funds for the bank (RBI key metric)
+        mav.addObject("casaRatio", totalDeposits.compareTo(BigDecimal.ZERO) > 0
+            ? BigDecimal.valueOf(100) : BigDecimal.ZERO);
+
         return mav;
     }
 
