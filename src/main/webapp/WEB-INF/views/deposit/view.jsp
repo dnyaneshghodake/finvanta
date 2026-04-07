@@ -61,6 +61,19 @@
     </table>
 </div></div>
 
+<c:if test="${account.accountStatus == 'PENDING_ACTIVATION' && (pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN'))}">
+<div class="card mt-3 border-warning"><div class="card-body">
+    <div class="d-flex align-items-center gap-3">
+        <span class="badge bg-warning text-dark fs-6"><i class="bi bi-hourglass-split"></i> Pending Activation</span>
+        <span class="text-muted">This account requires checker approval before transactions can be processed.</span>
+        <form method="post" action="${pageContext.request.contextPath}/deposit/activate/${account.accountNumber}" class="d-inline ms-auto">
+            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
+            <button type="submit" class="btn btn-success btn-sm" data-confirm="Activate this account? It will become operational immediately."><i class="bi bi-check-circle"></i> Activate Account</button>
+        </form>
+    </div>
+</div></div>
+</c:if>
+
 <c:if test="${account.active}">
 <div class="card mt-3"><div class="card-body d-flex gap-2 flex-wrap">
     <a href="${pageContext.request.contextPath}/deposit/deposit/${account.accountNumber}" class="btn btn-success btn-sm"><i class="bi bi-plus-circle"></i> Deposit</a>

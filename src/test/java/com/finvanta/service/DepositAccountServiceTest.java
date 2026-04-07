@@ -55,9 +55,11 @@ class DepositAccountServiceTest {
     @Mock private CustomerRepository customerRepository;
     @Mock private BranchRepository branchRepository;
     @Mock private InterestAccrualRepository accrualRepository;
+    @Mock private com.finvanta.repository.ProductMasterRepository productMasterRepository;
     @Mock private TransactionEngine transactionEngine;
     @Mock private BusinessDateService businessDateService;
     @Mock private com.finvanta.audit.AuditService auditService;
+    @Mock private com.finvanta.workflow.ApprovalWorkflowService workflowService;
 
     private DepositAccountServiceImpl service;
 
@@ -66,7 +68,8 @@ class DepositAccountServiceTest {
         service = new DepositAccountServiceImpl(
             accountRepository, transactionRepository,
             customerRepository, branchRepository, accrualRepository,
-            transactionEngine, businessDateService, auditService);
+            productMasterRepository, transactionEngine, businessDateService,
+            auditService, workflowService);
         TenantContext.setCurrentTenant("DEFAULT");
         SecurityContextHolder.getContext().setAuthentication(
             new UsernamePasswordAuthenticationToken("maker1", "pass",
@@ -447,6 +450,35 @@ class DepositAccountServiceTest {
             service.reverseTransaction("TXN_ORIG", "",
                 LocalDate.of(2026, 4, 1)));
         assertEquals("REASON_REQUIRED", ex.getErrorCode());
+    }
+
+    @Test
+    void activateAccount_shouldTransitionFromPendingToActive() {
+        // CBS Phase 2: Maker-Checker account activation
+        DepositAccount acct = buildSavingsAccount("DEP001", BigDecimal.ZERO);
+        acct.setAccountStatus(DepositAccountStatus.PENDING_ACTIVATION);
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        DepositAccount result = service.activateAccount("DEP001");
+
+        assertEquals(DepositAccountStatus.ACTIVE, result.getAccountStatus());
+        verify(auditService).logEvent(eq("DepositAccount"), any(), eq("ACCOUNT_ACTIVATED"),
+            eq("PENDING_ACTIVATION"), eq("ACTIVE"), eq("DEPOSIT"), any());
+    }
+
+    @Test
+    void activateAccount_shouldRejectAlreadyActiveAccount() {
+        // CBS: Cannot activate an already active account
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        // Already ACTIVE from buildSavingsAccount
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+            service.activateAccount("DEP001"));
+        assertEquals("INVALID_STATE", ex.getErrorCode());
     }
 
     @Test
