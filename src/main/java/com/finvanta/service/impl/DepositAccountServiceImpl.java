@@ -23,6 +23,14 @@ package com.finvanta.service.impl;
 @org.springframework.stereotype.Service
 public class DepositAccountServiceImpl implements com.finvanta.service.DepositAccountService {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DepositAccountServiceImpl.class);
+
+    /** RBI Master Direction on KYC 2016, Section 38: 24 months no customer-initiated txn = DORMANT */
+    private static final long DORMANCY_MONTHS = 24;
+    /** IT Act Section 194A: TDS threshold for annual interest income (INR 40,000 for non-seniors) */
+    private static final java.math.BigDecimal TDS_THRESHOLD = new java.math.BigDecimal("40000.00");
+    /** TDS rate: 10% per IT Act Section 194A */
+    private static final java.math.BigDecimal TDS_RATE = new java.math.BigDecimal("0.10");
+
     private final com.finvanta.repository.DepositAccountRepository accountRepository;
     private final com.finvanta.repository.DepositTransactionRepository transactionRepository;
     private final com.finvanta.repository.CustomerRepository customerRepository;
