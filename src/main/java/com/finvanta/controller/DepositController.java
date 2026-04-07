@@ -95,6 +95,24 @@ public class DepositController {
         return mav;
     }
 
+    /**
+     * CBS CASA Pipeline View per Finacle ACCTOPN workflow stages.
+     * Shows accounts grouped by lifecycle stage — same pattern as /loan/applications.
+     * Stage 1: Pending Activation (MAKER submitted → CHECKER to activate)
+     * Stage 2: Active Accounts (operational)
+     * Stage 3: Attention Required (DORMANT / FROZEN / INOPERATIVE)
+     */
+    @GetMapping("/pipeline")
+    public ModelAndView pipeline() {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("deposit/pipeline");
+        mav.addObject("pendingAccounts", depositAccountRepository.findPendingActivation(tenantId));
+        mav.addObject("activeAccounts", depositAccountRepository.findActiveAccounts(tenantId));
+        mav.addObject("attentionAccounts", depositAccountRepository.findAttentionRequired(tenantId));
+        mav.addObject("pageTitle", "CASA Account Pipeline");
+        return mav;
+    }
+
     @GetMapping("/open")
     public ModelAndView openAccountForm() {
         String tenantId = TenantContext.getCurrentTenant();

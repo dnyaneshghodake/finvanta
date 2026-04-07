@@ -75,4 +75,21 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
     List<Object[]> countByAccountType(@Param("tenantId") String tenantId);
 
     long countByTenantIdAndAccountStatusNot(String tenantId, DepositAccountStatus status);
+
+    // === CASA Pipeline Queries (per Finacle ACCTOPN workflow stages) ===
+
+    /** Stage 1: Accounts pending activation (maker submitted, checker approval required) */
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId " +
+           "AND da.accountStatus = 'PENDING_ACTIVATION' ORDER BY da.createdAt DESC")
+    List<DepositAccount> findPendingActivation(@Param("tenantId") String tenantId);
+
+    /** Stage 2: Active accounts (operational) */
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId " +
+           "AND da.accountStatus = 'ACTIVE' ORDER BY da.accountNumber")
+    List<DepositAccount> findActiveAccounts(@Param("tenantId") String tenantId);
+
+    /** Stage 3: Accounts requiring attention (dormant, frozen, inoperative) */
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId " +
+           "AND da.accountStatus IN ('DORMANT', 'FROZEN', 'INOPERATIVE') ORDER BY da.accountStatus, da.accountNumber")
+    List<DepositAccount> findAttentionRequired(@Param("tenantId") String tenantId);
 }

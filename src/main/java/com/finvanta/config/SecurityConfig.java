@@ -60,6 +60,7 @@ public class SecurityConfig {
                 .requestMatchers("/workflow/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/reconciliation/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/reports/**").hasAnyRole("CHECKER", "ADMIN")
+                .requestMatchers("/deposit/pipeline").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/deposit/accounts").hasAnyRole("MAKER", "CHECKER", "ADMIN")
                 .requestMatchers("/deposit/open").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/deposit/view/**").hasAnyRole("MAKER", "CHECKER", "ADMIN")

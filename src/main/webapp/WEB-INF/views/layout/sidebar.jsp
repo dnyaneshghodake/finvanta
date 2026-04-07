@@ -29,6 +29,7 @@
         <li><a href="${pageContext.request.contextPath}/deposit/accounts" class="nav-link"><i class="bi bi-wallet2"></i><span class="nav-text">CASA Accounts</span></a></li>
         </c:if>
         <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li><a href="${pageContext.request.contextPath}/deposit/pipeline" class="nav-link"><i class="bi bi-kanban"></i><span class="nav-text">Account Pipeline</span></a></li>
         <li><a href="${pageContext.request.contextPath}/deposit/open" class="nav-link"><i class="bi bi-person-plus"></i><span class="nav-text">Open Account</span></a></li>
         </c:if>
         <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
