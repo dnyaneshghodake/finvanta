@@ -25,10 +25,10 @@
                     &mdash; Contact your administrator if you need access to this function.
                 </p>
             </c:if>
-            <a href="${pageContext.request.contextPath}/dashboard" class="btn btn-fv-primary me-2">
+            <a href="${pageContext.request.contextPath}/dashboard" class="btn btn-sm btn-fv-primary me-2">
                 <i class="bi bi-house"></i> Dashboard
             </a>
-            <button onclick="history.back()" class="btn btn-outline-secondary">
+            <button onclick="history.back()" class="btn btn-sm btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Go Back
             </button>
         </div>
