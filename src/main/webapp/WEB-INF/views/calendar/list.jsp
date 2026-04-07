@@ -73,8 +73,8 @@
                                     <c:otherwise>--</c:otherwise>
                                 </c:choose>
                             </td>
-                            <td><c:out value="${cal.dayOpenedBy}" default="—" /></td>
-                            <td><c:out value="${cal.dayClosedBy}" default="—" /></td>
+                            <td><c:out value="${cal.dayOpenedBy}" default="--" /></td>
+                            <td><c:out value="${cal.dayClosedBy}" default="--" /></td>
                             <td>
                                 <c:if test="${cal.dayStatus == 'NOT_OPENED' and not cal.holiday}">
                                     <form method="post" action="${pageContext.request.contextPath}/calendar/day-open" class="d-inline">
@@ -98,6 +98,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>

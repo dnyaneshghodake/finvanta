@@ -14,11 +14,11 @@
 
     <!-- Open New Batch -->
     <div class="fv-card">
-        <div class="card-header">Open New Transaction Batch — <c:out value="${businessDate}" /></div>
+        <div class="card-header">Open New Transaction Batch &mdash; <c:out value="${businessDate}" /></div>
         <div class="card-body">
             <form method="post" action="${pageContext.request.contextPath}/batch/txn/open" class="fv-form">
                 <input type="hidden" name="businessDate" value="${businessDate}" />
-                <div class="row mb-3">
+                <div class="row g-2 align-items-end">
                     <div class="col-md-4">
                         <label class="form-label">Batch Name *</label>
                         <select name="batchName" class="form-select" required>
@@ -37,7 +37,7 @@
                             <option value="SYSTEM">System</option>
                         </select>
                     </div>
-                    <div class="col-md-4 mt-4">
+                    <div class="col-md-4">
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <button type="submit" class="btn btn-fv-primary">Open Batch</button>
                     </div>
@@ -50,6 +50,7 @@
     <div class="fv-card">
         <div class="card-header">Batches for <c:out value="${businessDate}" /></div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table">
                 <thead>
                     <tr>
@@ -83,8 +84,8 @@
                             <td><c:out value="${b.totalTransactions}" /></td>
                             <td class="amount"><fmt:formatNumber value="${b.totalDebit}" type="number" maxFractionDigits="2" /></td>
                             <td class="amount"><fmt:formatNumber value="${b.totalCredit}" type="number" maxFractionDigits="2" /></td>
-                            <td><c:out value="${b.closedBy}" default="—" /></td>
-                            <td><c:out value="${b.closedAt}" default="—" /></td>
+                            <td><c:out value="${b.closedBy}" default="--" /></td>
+                            <td><c:out value="${b.closedAt}" default="--" /></td>
                             <td>
                                 <c:if test="${b.status == 'OPEN'}">
                                     <form method="post" action="${pageContext.request.contextPath}/batch/txn/close/${b.id}" class="d-inline">
@@ -101,6 +102,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>

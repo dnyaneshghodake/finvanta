@@ -8,17 +8,19 @@
     <div class="fv-card">
         <div class="card-header">Filter</div>
         <div class="card-body">
-            <form method="get" action="${pageContext.request.contextPath}/accounting/journal-entries" class="fv-form row g-2 align-items-end">
-                <div class="col-auto">
-                    <label class="form-label">From Date</label>
-                    <input type="date" name="fromDate" class="form-control" value="${fromDate}" />
-                </div>
-                <div class="col-auto">
-                    <label class="form-label">To Date</label>
-                    <input type="date" name="toDate" class="form-control" value="${toDate}" />
-                </div>
-                <div class="col-auto">
-                    <button type="submit" class="btn btn-fv-primary">Filter</button>
+            <form method="get" action="${pageContext.request.contextPath}/accounting/journal-entries" class="fv-form">
+                <div class="row g-2 align-items-end">
+                    <div class="col-auto">
+                        <label class="form-label">From Date</label>
+                        <input type="date" name="fromDate" class="form-control" value="${fromDate}" />
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label">To Date</label>
+                        <input type="date" name="toDate" class="form-control" value="${toDate}" />
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-fv-primary">Filter</button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -27,6 +29,7 @@
     <div class="fv-card">
         <div class="card-header">Journal Entries</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
@@ -61,6 +64,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>

@@ -12,8 +12,9 @@
     </div>
 
     <div class="fv-card">
-        <div class="card-header">Provision Adequacy — Account Level — <c:out value="${businessDate}" /></div>
+        <div class="card-header">Provision Adequacy &mdash; Account Level &mdash; <c:out value="${businessDate}" /></div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
@@ -48,6 +49,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>

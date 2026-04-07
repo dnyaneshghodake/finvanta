@@ -6,7 +6,7 @@
 
 <div class="fv-main">
     <div class="fv-card">
-        <div class="card-header">DPD Distribution Report — <c:out value="${businessDate}" /> (${totalAccounts} accounts)</div>
+        <div class="card-header">DPD Distribution Report &mdash; <c:out value="${businessDate}" /> (${totalAccounts} accounts)</div>
         <div class="card-body">
             <table class="table fv-table">
                 <thead>
