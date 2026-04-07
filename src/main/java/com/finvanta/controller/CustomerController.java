@@ -48,11 +48,27 @@ public class CustomerController {
         this.businessDateService = businessDateService;
     }
 
+    /**
+     * CBS Customer List with branch isolation per Finacle BRANCH_CONTEXT.
+     * MAKER/CHECKER: see only customers at their home branch.
+     * ADMIN: sees all customers across all branches.
+     */
     @GetMapping("/list")
     public ModelAndView listCustomers() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("customer/list");
-        mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
+
+        if (SecurityUtil.isAdminRole()) {
+            mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
+        } else {
+            Long branchId = SecurityUtil.getCurrentUserBranchId();
+            if (branchId != null) {
+                mav.addObject("customers",
+                    customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, branchId));
+            } else {
+                mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
+            }
+        }
         return mav;
     }
 
