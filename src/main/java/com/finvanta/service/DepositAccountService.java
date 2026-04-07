@@ -109,7 +109,17 @@ public interface DepositAccountService {
     /** Get account by number (read-only, no lock) */
     DepositAccount getAccount(String accountNumber);
 
-    /** All non-closed accounts for tenant */
+    /**
+     * All non-closed accounts for tenant (for account list page).
+     * Returns PENDING_ACTIVATION, ACTIVE, DORMANT, FROZEN — excludes only CLOSED.
+     * Per Finacle CUSTACCT: checkers must see PENDING accounts to activate them.
+     */
+    List<DepositAccount> getAllAccounts();
+
+    /**
+     * All ACTIVE accounts only (for transfer dropdown — only transactable accounts).
+     * Excludes PENDING_ACTIVATION, DORMANT, FROZEN, CLOSED.
+     */
     List<DepositAccount> getActiveAccounts();
 
     /** Accounts by branch (branch isolation per Finacle SOL) */

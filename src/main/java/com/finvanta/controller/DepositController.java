@@ -79,7 +79,7 @@ public class DepositController {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("deposit/accounts");
         if (SecurityUtil.isAdminRole()) {
-            mav.addObject("accounts", depositService.getActiveAccounts());
+            mav.addObject("accounts", depositService.getAllAccounts());
         } else {
             Long branchId = SecurityUtil.getCurrentUserBranchId();
             if (branchId != null) {

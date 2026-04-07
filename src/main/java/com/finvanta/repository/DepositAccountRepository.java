@@ -28,9 +28,18 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
         @Param("tenantId") String tenantId,
         @Param("accountNumber") String accountNumber);
 
-    /** All active deposit accounts for a tenant (for EOD interest accrual) */
+    /** All ACTIVE deposit accounts for a tenant (for EOD interest accrual — ACTIVE only) */
     @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId AND da.accountStatus = 'ACTIVE'")
     List<DepositAccount> findAllActiveAccounts(@Param("tenantId") String tenantId);
+
+    /**
+     * All non-closed deposit accounts for a tenant (for account list page).
+     * Per Finacle CUSTACCT: the account list shows all accounts in any operational state
+     * (PENDING_ACTIVATION, ACTIVE, DORMANT, FROZEN) — only CLOSED accounts are excluded.
+     * This is distinct from findAllActiveAccounts which is used by EOD and returns ACTIVE only.
+     */
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId AND da.accountStatus <> 'CLOSED' ORDER BY da.accountNumber")
+    List<DepositAccount> findAllNonClosedAccounts(@Param("tenantId") String tenantId);
 
     /** Active savings accounts (for interest accrual -- current accounts have 0% rate) */
     @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId " +

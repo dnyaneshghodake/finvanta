@@ -575,6 +575,9 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         return accountRepository.findByTenantIdAndAccountNumber(tid, acn)
             .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND", "Not found: " + acn));
     }
+    @Override public List<DepositAccount> getAllAccounts() {
+        return accountRepository.findAllNonClosedAccounts(TenantContext.getCurrentTenant());
+    }
     @Override public List<DepositAccount> getActiveAccounts() {
         return accountRepository.findAllActiveAccounts(TenantContext.getCurrentTenant());
     }
