@@ -1,6 +1,7 @@
 package com.finvanta.controller;
 
 import com.finvanta.repository.CustomerRepository;
+import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.domain.enums.ApplicationStatus;
@@ -24,15 +25,18 @@ public class DashboardController {
     private final LoanAccountRepository accountRepository;
     private final CustomerRepository customerRepository;
     private final ApprovalWorkflowService workflowService;
+    private final DepositAccountRepository depositAccountRepository;
 
     public DashboardController(LoanApplicationRepository applicationRepository,
                                 LoanAccountRepository accountRepository,
                                 CustomerRepository customerRepository,
-                                ApprovalWorkflowService workflowService) {
+                                ApprovalWorkflowService workflowService,
+                                DepositAccountRepository depositAccountRepository) {
         this.applicationRepository = applicationRepository;
         this.accountRepository = accountRepository;
         this.customerRepository = customerRepository;
         this.workflowService = workflowService;
+        this.depositAccountRepository = depositAccountRepository;
     }
 
     @GetMapping("/dashboard")

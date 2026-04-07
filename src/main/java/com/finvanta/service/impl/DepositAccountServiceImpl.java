@@ -195,7 +195,7 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
                 new com.finvanta.accounting.AccountingService.JournalLineRequest(glForAccount(src), com.finvanta.domain.enums.DebitCredit.DEBIT, amount, "Transfer debit"),
                 new com.finvanta.accounting.AccountingService.JournalLineRequest(glForAccount(tgt), com.finvanta.domain.enums.DebitCredit.CREDIT, amount, "Transfer credit")
             )).build());
-        if (r.isPendingApproval()) return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, idk, "INTERNAL", to, "PENDING_APPROVAL");
+        if (r.isPendingApproval()) return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, idk, "INTERNAL", to);
         src.setLedgerBalance(src.getLedgerBalance().subtract(amount));
         src.setAvailableBalance(src.getLedgerBalance().subtract(src.getHoldAmount()).subtract(src.getUnclearedAmount()));
         src.setLastTransactionDate(bd); src.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername()); accountRepository.save(src);
@@ -203,8 +203,8 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         tgt.setAvailableBalance(tgt.getLedgerBalance().subtract(tgt.getHoldAmount()).subtract(tgt.getUnclearedAmount()));
         tgt.setLastTransactionDate(bd); if (tgt.isDormant()) { tgt.setAccountStatus("ACTIVE"); tgt.setDormantDate(null); }
         tgt.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername()); accountRepository.save(tgt);
-        buildTxn(tgt, amount, "TRANSFER_CREDIT", bd, "Transfer from " + from, r, null, "INTERNAL", from, "POSTED");
-        return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, idk, "INTERNAL", to, "POSTED");
+        buildTxn(tgt, amount, "TRANSFER_CREDIT", bd, "Transfer from " + from, r, null, "INTERNAL", from);
+        return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, idk, "INTERNAL", to);
     }
 
     // === Interest Accrual (EOD daily) ===
@@ -243,7 +243,7 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         acct.setYtdInterestCredited(acct.getYtdInterestCredited().add(interest));
         acct.setLastInterestCreditDate(bd);
         accountRepository.save(acct);
-        return buildTxn(acct, interest, "INTEREST_CREDIT", bd, "Quarterly interest credit", r, null, "SYSTEM", null, "POSTED");
+        return buildTxn(acct, interest, "INTEREST_CREDIT", bd, "Quarterly interest credit", r, null, "SYSTEM", null);
     }
     // === Freeze ===
     @Override @org.springframework.transaction.annotation.Transactional
