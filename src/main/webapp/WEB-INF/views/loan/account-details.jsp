@@ -256,11 +256,10 @@
                         <div class="col-md-3">
                             <label class="form-label">Fee Type</label>
                             <select name="feeType" class="form-select" required>
-                                <option value="Processing Fee">Processing Fee</option>
-                                <option value="Documentation Charge">Documentation Charge</option>
-                                <option value="Late Payment Fee">Late Payment Fee</option>
-                                <option value="Stamp Duty">Stamp Duty</option>
-                                <option value="Other">Other</option>
+                                <option value="PROCESSING_FEE">Processing Fee</option>
+                                <option value="DOCUMENTATION_CHARGE">Documentation Charge</option>
+                                <option value="LATE_PAYMENT_FEE">Late Payment Fee</option>
+                                <option value="STAMP_DUTY">Stamp Duty</option>
                             </select>
                         </div>
                         <div class="col-md-3">

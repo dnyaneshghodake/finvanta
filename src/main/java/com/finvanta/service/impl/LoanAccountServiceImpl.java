@@ -1274,7 +1274,16 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         // CBS: Delegate to ChargeEngine per P0-1 refactoring.
         // ChargeEngine.applyCharge() handles GL posting, GST calculation, and audit trail.
         // This eliminates duplicate charge logic and centralizes via Finacle CHRG_MASTER pattern.
-        chargeEngine.applyCharge(accountNumber, feeType, feeAmount, businessDate);
+        //
+        // Per Finacle CHRG_MASTER: the baseAmount for charge calculation depends on the
+        // calculation type configured in charge_config:
+        //   FLAT       → baseAmount is ignored (fixed charge from config)
+        //   PERCENTAGE → baseAmount = loan sanctioned amount (charge = % of loan)
+        //   SLAB       → baseAmount = loan sanctioned amount (slab lookup by amount)
+        // The user-entered feeAmount is used as a fallback baseAmount for FLAT charges
+        // where the config determines the actual amount.
+        BigDecimal chargeBaseAmount = account.getSanctionedAmount();
+        chargeEngine.applyCharge(accountNumber, feeType, chargeBaseAmount, businessDate);
 
         // CBS: Create loan transaction record for module-level tracking
         // This links the charge to the loan account transaction history

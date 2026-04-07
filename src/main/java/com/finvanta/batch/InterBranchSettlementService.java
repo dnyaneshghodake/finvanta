@@ -1,8 +1,10 @@
 package com.finvanta.batch;
 
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
+import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.InterBranchTransaction;
 import com.finvanta.domain.enums.DebitCredit;
+import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.InterBranchSettlementRepository;
 import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.transaction.TransactionEngine;
@@ -37,13 +39,16 @@ public class InterBranchSettlementService {
     private static final Logger log = LoggerFactory.getLogger(InterBranchSettlementService.class);
 
     private final InterBranchSettlementRepository settlementRepository;
+    private final BranchRepository branchRepository;
     private final LedgerEntryRepository ledgerRepository;
     private final TransactionEngine transactionEngine;
 
     public InterBranchSettlementService(InterBranchSettlementRepository settlementRepository,
+                                       BranchRepository branchRepository,
                                        LedgerEntryRepository ledgerRepository,
                                        TransactionEngine transactionEngine) {
         this.settlementRepository = settlementRepository;
+        this.branchRepository = branchRepository;
         this.ledgerRepository = ledgerRepository;
         this.transactionEngine = transactionEngine;
     }
@@ -65,37 +70,49 @@ public class InterBranchSettlementService {
             throw new BusinessException("INVALID_AMOUNT", "Transfer amount must be positive");
         }
 
+        Branch sourceBranch = branchRepository.findById(sourceBranchId)
+            .filter(b -> b.getTenantId().equals(tenantId))
+            .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND",
+                "Source branch not found: " + sourceBranchId));
+        Branch targetBranch = branchRepository.findById(targetBranchId)
+            .filter(b -> b.getTenantId().equals(tenantId))
+            .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND",
+                "Target branch not found: " + targetBranchId));
+
         // CBS: Create inter-branch transaction record
         InterBranchTransaction transaction = new InterBranchTransaction();
         transaction.setTenantId(tenantId);
-        transaction.setSourceBranchId(sourceBranchId);
-        transaction.setTargetBranchId(targetBranchId);
+        transaction.setSourceBranch(sourceBranch);
+        transaction.setTargetBranch(targetBranch);
         transaction.setAmount(amount);
         transaction.setSettlementStatus("PENDING");
         transaction.setBusinessDate(businessDate);
 
         InterBranchTransaction savedTransaction = settlementRepository.save(transaction);
 
+        String sourceCode = sourceBranch.getBranchCode();
+        String targetCode = targetBranch.getBranchCode();
+
         // CBS: Post dual GL entries via TransactionEngine
         // Source branch: DR Customer / CR Inter-Branch Payable
         List<JournalLineRequest> sourceLines = List.of(
             new JournalLineRequest("1100", DebitCredit.DEBIT, amount,
-                "Inter-branch transfer from branch " + sourceBranchId),
+                "Inter-branch transfer from branch " + sourceCode),
             new JournalLineRequest("2300", DebitCredit.CREDIT, amount,
-                "Inter-branch payable to branch " + targetBranchId)
+                "Inter-branch payable to branch " + targetCode)
         );
 
         TransactionResult sourceResult = transactionEngine.execute(
             TransactionRequest.builder()
                 .sourceModule("INTER_BRANCH")
                 .transactionType("IB_TRANSFER_SOURCE")
-                .accountReference("IB-" + sourceBranchId + "-" + targetBranchId)
+                .accountReference("IB-" + sourceCode + "-" + targetCode)
                 .amount(amount)
                 .valueDate(businessDate)
-                .branchCode(null)
-                .narration("Inter-branch transfer source: " + amount + " from branch " + sourceBranchId)
+                .branchCode(sourceCode)
+                .narration("Inter-branch transfer source: " + amount + " from " + sourceCode)
                 .journalLines(sourceLines)
-                .systemGenerated(false)
+                .systemGenerated(true)
                 .initiatedBy("SYSTEM")
                 .build()
         );
@@ -105,22 +122,22 @@ public class InterBranchSettlementService {
         // Target branch: DR Inter-Branch Receivable / CR Customer
         List<JournalLineRequest> targetLines = List.of(
             new JournalLineRequest("1300", DebitCredit.DEBIT, amount,
-                "Inter-branch receivable from branch " + sourceBranchId),
+                "Inter-branch receivable from branch " + sourceCode),
             new JournalLineRequest("1100", DebitCredit.CREDIT, amount,
-                "Inter-branch transfer received from branch " + sourceBranchId)
+                "Inter-branch transfer received from branch " + sourceCode)
         );
 
         TransactionResult targetResult = transactionEngine.execute(
             TransactionRequest.builder()
                 .sourceModule("INTER_BRANCH")
                 .transactionType("IB_TRANSFER_TARGET")
-                .accountReference("IB-" + sourceBranchId + "-" + targetBranchId)
+                .accountReference("IB-" + sourceCode + "-" + targetCode)
                 .amount(amount)
                 .valueDate(businessDate)
-                .branchCode(null)
-                .narration("Inter-branch transfer target: " + amount + " to branch " + targetBranchId)
+                .branchCode(targetCode)
+                .narration("Inter-branch transfer target: " + amount + " to " + targetCode)
                 .journalLines(targetLines)
-                .systemGenerated(false)
+                .systemGenerated(true)
                 .initiatedBy("SYSTEM")
                 .build()
         );
@@ -129,7 +146,7 @@ public class InterBranchSettlementService {
         settlementRepository.save(savedTransaction);
 
         log.info("Inter-branch transfer recorded: source={}, target={}, amount={}, status=PENDING",
-            sourceBranchId, targetBranchId, amount);
+            sourceCode, targetCode, amount);
 
         return savedTransaction;
     }
