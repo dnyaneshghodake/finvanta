@@ -7,11 +7,14 @@ import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
+import com.finvanta.domain.entity.InterestAccrual;
 import com.finvanta.domain.enums.DebitCredit;
+import com.finvanta.domain.enums.DepositAccountStatus;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.DepositTransactionRepository;
+import com.finvanta.repository.InterestAccrualRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
 import com.finvanta.transaction.TransactionEngine;
@@ -65,6 +68,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     private final DepositTransactionRepository transactionRepository;
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
+    private final InterestAccrualRepository accrualRepository;
     private final TransactionEngine transactionEngine;
     private final BusinessDateService businessDateService;
     private final AuditService auditService;
@@ -73,6 +77,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                                       DepositTransactionRepository transactionRepository,
                                       CustomerRepository customerRepository,
                                       BranchRepository branchRepository,
+                                      InterestAccrualRepository accrualRepository,
                                       TransactionEngine transactionEngine,
                                       BusinessDateService businessDateService,
                                       AuditService auditService) {
@@ -80,6 +85,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
+        this.accrualRepository = accrualRepository;
         this.transactionEngine = transactionEngine;
         this.businessDateService = businessDateService;
         this.auditService = auditService;
@@ -151,7 +157,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         DepositAccount a = new DepositAccount();
         a.setTenantId(tid); a.setAccountNumber(accNo); a.setCustomer(cust); a.setBranch(branch);
         a.setAccountType(accountType); a.setProductCode(productCode != null ? productCode : accountType);
-        a.setAccountStatus("ACTIVE"); a.setCurrencyCode("INR");
+        a.setAccountStatus(DepositAccountStatus.ACTIVE); a.setCurrencyCode("INR");
         a.setLedgerBalance(BigDecimal.ZERO); a.setAvailableBalance(BigDecimal.ZERO);
         a.setHoldAmount(BigDecimal.ZERO); a.setUnclearedAmount(BigDecimal.ZERO);
         a.setOdLimit(BigDecimal.ZERO); a.setMinimumBalance(BigDecimal.ZERO);
@@ -200,7 +206,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
-        if (acct.isDormant()) { acct.setAccountStatus("ACTIVE"); acct.setDormantDate(null); }
+        if (acct.isDormant()) { acct.setAccountStatus(DepositAccountStatus.ACTIVE); acct.setDormantDate(null); }
         acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
         return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, r.getTransactionRef(), idempotencyKey, channel, null);

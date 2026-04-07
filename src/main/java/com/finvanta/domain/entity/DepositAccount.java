@@ -1,5 +1,6 @@
 package com.finvanta.domain.entity;
 
+import com.finvanta.domain.enums.DepositAccountStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -129,9 +130,10 @@ public class DepositAccount extends BaseEntity {
 
     // --- Account Status & Lifecycle ---
 
-    /** PENDING_ACTIVATION, ACTIVE, DORMANT, INOPERATIVE, FROZEN, CLOSED, DECEASED */
+    /** Account lifecycle status per RBI Banking Regulation Act and Finacle CUSTACCT */
+    @Enumerated(EnumType.STRING)
     @Column(name = "account_status", nullable = false, length = 30)
-    private String accountStatus = "PENDING_ACTIVATION";
+    private DepositAccountStatus accountStatus = DepositAccountStatus.PENDING_ACTIVATION;
 
     @Column(name = "opened_date")
     private LocalDate openedDate;
@@ -194,19 +196,19 @@ public class DepositAccount extends BaseEntity {
     // --- Helpers ---
 
     public boolean isActive() {
-        return "ACTIVE".equals(accountStatus);
+        return accountStatus == DepositAccountStatus.ACTIVE;
     }
 
     public boolean isFrozen() {
-        return "FROZEN".equals(accountStatus);
+        return accountStatus == DepositAccountStatus.FROZEN;
     }
 
     public boolean isDormant() {
-        return "DORMANT".equals(accountStatus);
+        return accountStatus == DepositAccountStatus.DORMANT;
     }
 
     public boolean isClosed() {
-        return "CLOSED".equals(accountStatus);
+        return accountStatus == DepositAccountStatus.CLOSED;
     }
 
     public boolean isSavings() {
