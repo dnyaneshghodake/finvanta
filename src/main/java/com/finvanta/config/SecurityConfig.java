@@ -51,6 +51,8 @@ public class SecurityConfig {
                 .requestMatchers("/loan/collateral/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/loan/document/**").hasAnyRole("CHECKER", "ADMIN")
                 .requestMatchers("/loan/disburse-tranche/**").hasAnyRole("CHECKER", "ADMIN")
+                .requestMatchers("/loan/restructure/**").hasRole("ADMIN")
+                .requestMatchers("/loan/moratorium/**").hasRole("ADMIN")
                 .requestMatchers("/batch/txn/**").hasRole("ADMIN")
                 .requestMatchers("/admin/products/**").hasRole("ADMIN")
                 .requestMatchers("/admin/limits/**").hasRole("ADMIN")

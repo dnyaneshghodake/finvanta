@@ -16,6 +16,7 @@ import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CollateralService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanApplicationService;
+import com.finvanta.service.LoanRestructuringService;
 import com.finvanta.service.LoanScheduleService;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
@@ -36,6 +37,7 @@ public class LoanController {
     private final LoanAccountService accountService;
     private final LoanScheduleService scheduleService;
     private final CollateralService collateralService;
+    private final LoanRestructuringService restructuringService;
     private final BusinessDateService businessDateService;
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
@@ -48,6 +50,7 @@ public class LoanController {
                            LoanAccountService accountService,
                            LoanScheduleService scheduleService,
                            CollateralService collateralService,
+                           LoanRestructuringService restructuringService,
                            BusinessDateService businessDateService,
                            CustomerRepository customerRepository,
                            BranchRepository branchRepository,
@@ -59,6 +62,7 @@ public class LoanController {
         this.accountService = accountService;
         this.scheduleService = scheduleService;
         this.collateralService = collateralService;
+        this.restructuringService = restructuringService;
         this.businessDateService = businessDateService;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
@@ -507,6 +511,56 @@ public class LoanController {
             accountService.disburseTranche(accountNumber, trancheAmount, narration);
             redirectAttributes.addFlashAttribute("success",
                 "Tranche disbursed: INR " + trancheAmount);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
+    // ================================================================
+    // CBS Loan Restructuring Endpoints (RBI CDR/SDR Framework)
+    // ================================================================
+
+    /**
+     * CBS Loan Restructuring — ADMIN only (enforced in SecurityConfig).
+     * Modifies rate and/or tenure per RBI CDR/SDR framework.
+     * Requires mandatory reason for audit trail.
+     * Per RBI: restructured accounts get 5% provisioning for first 2 years.
+     */
+    @PostMapping("/restructure/{accountNumber}")
+    public String restructureLoan(@PathVariable String accountNumber,
+                                   @RequestParam(required = false) BigDecimal newRate,
+                                   @RequestParam(defaultValue = "0") int additionalMonths,
+                                   @RequestParam String reason,
+                                   RedirectAttributes redirectAttributes) {
+        try {
+            restructuringService.restructureLoan(accountNumber, newRate, additionalMonths,
+                reason, businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success",
+                "Loan restructured: " + accountNumber
+                    + (newRate != null ? " | New rate: " + newRate + "%" : "")
+                    + (additionalMonths > 0 ? " | Extended: +" + additionalMonths + " months" : ""));
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
+    /**
+     * CBS Moratorium — ADMIN only.
+     * Defers EMI payments for a period. Interest continues to accrue.
+     * Per RBI COVID-19 moratorium guidelines and general CDR framework.
+     */
+    @PostMapping("/moratorium/{accountNumber}")
+    public String applyMoratorium(@PathVariable String accountNumber,
+                                   @RequestParam int moratoriumMonths,
+                                   @RequestParam String reason,
+                                   RedirectAttributes redirectAttributes) {
+        try {
+            restructuringService.applyMoratorium(accountNumber, moratoriumMonths,
+                reason, businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success",
+                "Moratorium applied: " + moratoriumMonths + " months for " + accountNumber);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }

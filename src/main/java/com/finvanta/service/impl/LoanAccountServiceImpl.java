@@ -5,6 +5,7 @@ import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.accounting.SuspenseService;
 import com.finvanta.audit.AuditService;
 import com.finvanta.batch.ChargeEngine;
+import com.finvanta.domain.entity.DisbursementSchedule;
 import com.finvanta.domain.entity.InterestAccrual;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.entity.LoanApplication;
@@ -12,6 +13,7 @@ import com.finvanta.domain.entity.LoanTransaction;
 import com.finvanta.domain.enums.*;
 import com.finvanta.domain.rules.InterestCalculationRule;
 import com.finvanta.domain.rules.NpaClassificationRule;
+import com.finvanta.repository.DisbursementScheduleRepository;
 import com.finvanta.repository.InterestAccrualRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanTransactionRepository;
@@ -64,6 +66,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final LoanApplicationRepository applicationRepository;
     private final LoanTransactionRepository transactionRepository;
     private final InterestAccrualRepository accrualRepository;
+    private final DisbursementScheduleRepository disbursementScheduleRepository;
     private final InterestCalculationRule interestRule;
     private final NpaClassificationRule npaRule;
     private final AuditService auditService;
@@ -78,6 +81,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    LoanApplicationRepository applicationRepository,
                                    LoanTransactionRepository transactionRepository,
                                    InterestAccrualRepository accrualRepository,
+                                   DisbursementScheduleRepository disbursementScheduleRepository,
                                    InterestCalculationRule interestRule,
                                    NpaClassificationRule npaRule,
                                    AuditService auditService,
@@ -91,6 +95,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
         this.accrualRepository = accrualRepository;
+        this.disbursementScheduleRepository = disbursementScheduleRepository;
         this.interestRule = interestRule;
         this.npaRule = npaRule;
         this.auditService = auditService;
@@ -290,6 +295,27 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy(currentUser);
         transactionRepository.save(txn);
+
+        // CBS: Create DisbursementSchedule record per Finacle DISB_MASTER.
+        // Each tranche disbursement is tracked with milestone, approval, and GL references.
+        // This enables audit-grade tracking of multi-tranche disbursement progress.
+        DisbursementSchedule disbSchedule = new DisbursementSchedule();
+        disbSchedule.setTenantId(tenantId);
+        disbSchedule.setLoanAccount(account);
+        disbSchedule.setTrancheNumber(trancheNum);
+        disbSchedule.setTrancheAmount(disbursementAmount);
+        disbSchedule.setTranchePercentage(
+            disbursementAmount.multiply(new BigDecimal("100"))
+                .divide(account.getSanctionedAmount(), 2, java.math.RoundingMode.HALF_UP));
+        disbSchedule.setMilestoneDescription(txnNarration);
+        disbSchedule.setActualDate(bizDate);
+        disbSchedule.setStatus("DISBURSED");
+        disbSchedule.setApprovedBy(currentUser);
+        disbSchedule.setApprovedDate(bizDate);
+        disbSchedule.setTransactionRef(txnResult.getTransactionRef());
+        disbSchedule.setVoucherNumber(txnResult.getVoucherNumber());
+        disbSchedule.setCreatedBy(currentUser);
+        disbursementScheduleRepository.save(disbSchedule);
 
         // Update account balances
         account.setDisbursedAmount(account.getDisbursedAmount().add(disbursementAmount));
