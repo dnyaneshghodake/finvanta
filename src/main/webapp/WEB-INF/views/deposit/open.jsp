@@ -74,4 +74,6 @@
     <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-secondary">Cancel</a>
 </form>
 </div></div>
-</div></div></body></html>
+</div>
+
+<%@ include file="../layout/footer.jsp" %>
