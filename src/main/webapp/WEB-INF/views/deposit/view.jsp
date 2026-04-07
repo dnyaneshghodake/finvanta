@@ -10,7 +10,10 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h4>Account: <c:out value="${account.accountNumber}"/></h4>
-    <span class="badge fs-6 ${account.active ? 'bg-success' : account.frozen ? 'bg-danger' : account.dormant ? 'bg-warning' : 'bg-secondary'}"><c:out value="${account.accountStatus}"/></span>
+    <div>
+        <span class="badge fs-6 ${account.active ? 'bg-success' : account.frozen ? 'bg-danger' : account.dormant ? 'bg-warning' : 'bg-secondary'}"><c:out value="${account.accountStatus}"/></span>
+        <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-sm btn-outline-secondary ms-2"><i class="bi bi-arrow-left"></i> Back</a>
+    </div>
 </div>
 
 <div class="row mb-4">
@@ -19,19 +22,27 @@
     <h6 class="card-title">Account Information</h6>
     <table class="table table-sm mb-0">
     <tr><td class="text-muted">Account Type</td><td><strong><c:out value="${account.accountType}"/></strong></td></tr>
-    <tr><td class="text-muted">Customer</td><td><c:out value="${account.customer.firstName}"/> <c:out value="${account.customer.lastName}"/> (<c:out value="${account.customer.customerNumber}"/>)</td></tr>
-    <tr><td class="text-muted">Branch</td><td><c:out value="${account.branch.branchName}"/> (<c:out value="${account.branch.branchCode}"/>)</td></tr>
-    <tr><td class="text-muted">Opened</td><td><c:out value="${account.openedDate}"/></td></tr>
-    <tr><td class="text-muted">Nominee</td><td><c:out value="${account.nomineeName}" default="Not set"/></td></tr>
+    <tr><td class="text-muted">Product Code</td><td><c:out value="${account.productCode}"/></td></tr>
+    <tr><td class="text-muted">Currency</td><td><c:out value="${account.currencyCode}"/></td></tr>
+    <tr><td class="text-muted">Customer</td><td><a href="${pageContext.request.contextPath}/customer/view/${account.customer.id}"><c:out value="${account.customer.firstName}"/> <c:out value="${account.customer.lastName}"/></a> (<c:out value="${account.customer.customerNumber}"/>)</td></tr>
+    <tr><td class="text-muted">Branch</td><td><a href="${pageContext.request.contextPath}/branch/view/${account.branch.id}"><c:out value="${account.branch.branchName}"/></a> (<c:out value="${account.branch.branchCode}"/>)</td></tr>
+    <tr><td class="text-muted">Opened Date</td><td><c:out value="${account.openedDate}"/></td></tr>
+    <tr><td class="text-muted">Last Transaction</td><td><c:out value="${account.lastTransactionDate}" default="--"/></td></tr>
+    <tr><td class="text-muted">Nominee</td><td><c:out value="${account.nomineeName}" default="Not set"/><c:if test="${not empty account.nomineeRelationship}"> (<c:out value="${account.nomineeRelationship}"/>)</c:if></td></tr>
     <c:if test="${account.savings}">
     <tr><td class="text-muted">Interest Rate</td><td><fmt:formatNumber value="${account.interestRate}" maxFractionDigits="4"/>% p.a.</td></tr>
     <tr><td class="text-muted">Accrued Interest</td><td><fmt:formatNumber value="${account.accruedInterest}" type="currency" currencyCode="INR"/></td></tr>
     <tr><td class="text-muted">YTD Interest Credited</td><td><fmt:formatNumber value="${account.ytdInterestCredited}" type="currency" currencyCode="INR"/></td></tr>
+    <tr><td class="text-muted">YTD TDS Deducted</td><td><fmt:formatNumber value="${account.ytdTdsDeducted}" type="currency" currencyCode="INR"/></td></tr>
+    </c:if>
+    <c:if test="${account.dailyWithdrawalLimit != null && account.dailyWithdrawalLimit.signum() > 0}">
+    <tr><td class="text-muted">Daily Withdrawal Limit</td><td><fmt:formatNumber value="${account.dailyWithdrawalLimit}" type="currency" currencyCode="INR"/></td></tr>
     </c:if>
     <c:if test="${account.frozen}">
     <tr><td class="text-muted">Freeze Type</td><td class="text-danger"><c:out value="${account.freezeType}"/></td></tr>
     <tr><td class="text-muted">Freeze Reason</td><td class="text-danger"><c:out value="${account.freezeReason}"/></td></tr>
     </c:if>
+    <tr><td class="text-muted">Opened By</td><td><c:out value="${account.createdBy}" default="--"/></td></tr>
     </table>
 </div></div>
 </div>

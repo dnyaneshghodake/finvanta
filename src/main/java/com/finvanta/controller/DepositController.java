@@ -4,8 +4,10 @@ import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.BranchRepository;
+import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
+import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,21 +48,42 @@ public class DepositController {
     private final BusinessDateService businessDateService;
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
+    private final DepositAccountRepository depositAccountRepository;
 
     public DepositController(DepositAccountService depositService,
                               BusinessDateService businessDateService,
                               CustomerRepository customerRepository,
-                              BranchRepository branchRepository) {
+                              BranchRepository branchRepository,
+                              DepositAccountRepository depositAccountRepository) {
         this.depositService = depositService;
         this.businessDateService = businessDateService;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
+        this.depositAccountRepository = depositAccountRepository;
     }
 
+    /**
+     * CBS CASA Account List with branch isolation per Finacle BRANCH_CONTEXT / SOL.
+     * MAKER/CHECKER: see only accounts at their home branch.
+     * ADMIN: sees all accounts across all branches.
+     */
     @GetMapping("/accounts")
     public ModelAndView listAccounts() {
+        String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("deposit/accounts");
-        mav.addObject("accounts", depositService.getActiveAccounts());
+        if (SecurityUtil.isAdminRole()) {
+            mav.addObject("accounts", depositService.getActiveAccounts());
+        } else {
+            Long branchId = SecurityUtil.getCurrentUserBranchId();
+            if (branchId != null) {
+                mav.addObject("accounts",
+                    depositAccountRepository.findActiveByBranch(tenantId, branchId));
+            } else {
+                // CBS: No branch assigned — show empty list per fail-safe principle.
+                // Per RBI Operational Risk: no-branch users must not see all data.
+                mav.addObject("accounts", java.util.Collections.emptyList());
+            }
+        }
         mav.addObject("pageTitle", "CASA Accounts");
         return mav;
     }
@@ -122,6 +145,11 @@ public class DepositController {
                                   @RequestParam(required = false) String narration,
                                   RedirectAttributes ra) {
         try {
+            // CBS: Server-side validation — defense-in-depth per OWASP / RBI IT Governance
+            if (amount == null || amount.signum() <= 0) {
+                throw new com.finvanta.util.BusinessException("INVALID_AMOUNT",
+                    "Deposit amount must be positive");
+            }
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();
             DepositTransaction txn = depositService.deposit(accountNumber, amount,
                 businessDate, narration, null, "BRANCH");
@@ -147,6 +175,11 @@ public class DepositController {
                                      @RequestParam(required = false) String narration,
                                      RedirectAttributes ra) {
         try {
+            // CBS: Server-side validation — defense-in-depth per OWASP / RBI IT Governance
+            if (amount == null || amount.signum() <= 0) {
+                throw new com.finvanta.util.BusinessException("INVALID_AMOUNT",
+                    "Withdrawal amount must be positive");
+            }
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();
             DepositTransaction txn = depositService.withdraw(accountNumber, amount,
                 businessDate, narration, null, "BRANCH");
@@ -173,6 +206,15 @@ public class DepositController {
                                    @RequestParam(required = false) String narration,
                                    RedirectAttributes ra) {
         try {
+            // CBS: Server-side validation — defense-in-depth per OWASP / RBI IT Governance
+            if (amount == null || amount.signum() <= 0) {
+                throw new com.finvanta.util.BusinessException("INVALID_AMOUNT",
+                    "Transfer amount must be positive");
+            }
+            if (fromAccount == null || fromAccount.isBlank() || toAccount == null || toAccount.isBlank()) {
+                throw new com.finvanta.util.BusinessException("MISSING_ACCOUNT",
+                    "Both source and target accounts are required");
+            }
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();
             DepositTransaction txn = depositService.transfer(fromAccount, toAccount,
                 amount, businessDate, narration, null);

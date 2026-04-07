@@ -215,6 +215,18 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         var acct = lockAccount(tid, acn);
         if (!acct.isDebitAllowed()) throw new BusinessException("ACCOUNT_NOT_DEBITABLE", "Status " + acct.getAccountStatus());
         if (!acct.hasSufficientFunds(amount)) throw new BusinessException("INSUFFICIENT_BALANCE", "Withdrawal " + amount + " > available " + acct.getEffectiveAvailable());
+        // CBS: Minimum balance enforcement per Finacle ACCTLIMIT / RBI CASA norms.
+        // Withdrawal that breaches minimum balance is rejected (PMJDY accounts exempt: minBal=0).
+        // Per Tier-1 CBS: penalty-based breach is a Phase 2 enhancement via ChargeEngine.
+        if (acct.getMinimumBalance().signum() > 0) {
+            BigDecimal postWithdrawalBalance = acct.getLedgerBalance().subtract(amount);
+            if (postWithdrawalBalance.compareTo(acct.getMinimumBalance()) < 0) {
+                throw new BusinessException("MINIMUM_BALANCE_BREACH",
+                    "Withdrawal of INR " + amount + " would breach minimum balance of INR "
+                        + acct.getMinimumBalance() + ". Post-withdrawal balance would be INR "
+                        + postWithdrawalBalance);
+            }
+        }
         // CBS: Daily withdrawal limit enforcement per Finacle ACCTLIMIT / Temenos LIMIT.CHECK
         if (acct.getDailyWithdrawalLimit() != null && acct.getDailyWithdrawalLimit().signum() > 0) {
             BigDecimal dailyDebits = transactionRepository.sumDailyDebits(tid, acct.getId(), bd);
@@ -257,6 +269,15 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         if (!src.isDebitAllowed()) throw new BusinessException("SOURCE_NOT_DEBITABLE", "Source " + src.getAccountStatus());
         if (!tgt.isCreditAllowed()) throw new BusinessException("TARGET_NOT_CREDITABLE", "Target " + tgt.getAccountStatus());
         if (!src.hasSufficientFunds(amount)) throw new BusinessException("INSUFFICIENT_BALANCE", "Transfer " + amount + " > available " + src.getEffectiveAvailable());
+        // CBS: Minimum balance enforcement on transfer source per Finacle ACCTLIMIT
+        if (src.getMinimumBalance().signum() > 0) {
+            BigDecimal postTransferBalance = src.getLedgerBalance().subtract(amount);
+            if (postTransferBalance.compareTo(src.getMinimumBalance()) < 0) {
+                throw new BusinessException("MINIMUM_BALANCE_BREACH",
+                    "Transfer of INR " + amount + " would breach minimum balance of INR "
+                        + src.getMinimumBalance() + " on source account " + from);
+            }
+        }
         var r = transactionEngine.execute(TransactionRequest.builder()
             .sourceModule("DEPOSIT").transactionType("TRANSFER_DEBIT").accountReference(from)
             .amount(amount).valueDate(bd).branchCode(src.getBranch().getBranchCode())
@@ -290,6 +311,17 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // CBS: Guard against double-accrual if EOD reruns or retries for the same date.
         // Per Finacle EOD / Temenos COB: accrual is idempotent per business date.
         if (bd.equals(acct.getLastInterestAccrualDate())) return;
+        // CBS: YTD Reset on Indian Financial Year boundary (April 1).
+        // Per IT Act Section 194A: TDS threshold is per financial year (Apr 1 - Mar 31).
+        // Without reset, YTD accumulates forever and TDS is incorrectly applied in year 2+.
+        if (bd.getMonthValue() == 4 && bd.getDayOfMonth() == 1) {
+            if (acct.getLastInterestAccrualDate() != null
+                    && acct.getLastInterestAccrualDate().getYear() < bd.getYear()) {
+                acct.setYtdInterestCredited(BigDecimal.ZERO);
+                acct.setYtdTdsDeducted(BigDecimal.ZERO);
+                log.info("FY reset: YTD counters reset for {} on {}", acn, bd);
+            }
+        }
         BigDecimal daily = acct.getLedgerBalance().multiply(acct.getInterestRate())
             .divide(new BigDecimal("36500"), 2, RoundingMode.HALF_UP);
         if (daily.signum() <= 0) return;
