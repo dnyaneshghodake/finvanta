@@ -221,8 +221,18 @@ public class DepositAccount extends BaseEntity {
         return isActive() && !"DEBIT_FREEZE".equals(freezeType) && !"TOTAL_FREEZE".equals(freezeType);
     }
 
+    /**
+     * Per PMLA / RBI Freeze Guidelines:
+     * - DEBIT_FREEZE: credits allowed, debits blocked
+     * - CREDIT_FREEZE: debits allowed, credits blocked
+     * - TOTAL_FREEZE: both blocked
+     * - DORMANT: credits allowed (reactivates account)
+     * - CLOSED: nothing allowed
+     */
     public boolean isCreditAllowed() {
-        return (isActive() || isDormant()) && !"CREDIT_FREEZE".equals(freezeType) && !"TOTAL_FREEZE".equals(freezeType);
+        if (isClosed()) return false;
+        if ("CREDIT_FREEZE".equals(freezeType) || "TOTAL_FREEZE".equals(freezeType)) return false;
+        return isActive() || isDormant() || (isFrozen() && "DEBIT_FREEZE".equals(freezeType));
     }
 
     /** Effective available balance including OD limit */

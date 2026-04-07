@@ -1,24 +1,21 @@
 package com.finvanta.service.impl;
 
 /**
- * CBS CASA Service Implementation.
- * NOTE: The active implementation is at com.finvanta.service.impl.DepositAccountServiceImpl
- * This file is a reference stub. See DepositAccountService interface for all method contracts.
+ * CBS CASA Service Implementation per Finacle CUSTACCT / Temenos ACCOUNT.
  *
- * Operations implemented:
- * - openAccount: KYC check, branch validation, auto-number, initial deposit
- * - activateAccount: PENDING_ACTIVATION -> ACTIVE
- * - deposit: DR Bank Ops (1100) / CR Customer Deposits (2010/2020) via TransactionEngine
- * - withdraw: DR Customer Deposits / CR Bank Ops, daily limit check, sufficient funds check
- * - transfer: Atomic debit+credit across two accounts
- * - accrueInterest: Daily product method (Balance * Rate / 36500) for savings
- * - creditInterest: Quarterly credit with TDS (10% above INR 40,000 per Section 194A)
- * - freezeAccount: DEBIT_FREEZE / CREDIT_FREEZE / TOTAL_FREEZE
- * - unfreezeAccount: Restore to ACTIVE
- * - closeAccount: Zero balance required
- * - markDormantAccounts: 2yr no transaction per RBI
- * - getAccount/getActiveAccounts/getAccountsByBranch/getAccountsByCustomer
- * - getTransactionHistory/getMiniStatement
+ * All financial postings route through TransactionEngine (10-step validated pipeline).
+ * This service owns the DEPOSIT subledger: balance updates, interest accrual,
+ * dormancy classification, freeze management, and TDS compliance.
+ *
+ * GL Mapping:
+ *   Savings Deposits  -> GL 2010 (SB Deposits - Liability)
+ *   Current Deposits  -> GL 2020 (CA Deposits - Liability)
+ *   Interest Expense  -> GL 5010 (Interest Expense on Deposits - Expense)
+ *   TDS Payable       -> GL 2500 (TDS Payable - Liability per IT Act Section 194A)
+ *
+ * Concurrency: PESSIMISTIC_WRITE lock on every balance mutation.
+ * Transfer deadlock prevention: accounts locked in alphabetical order.
+ * Interest accrual: idempotent per business date (double-accrual guard).
  */
 @org.springframework.stereotype.Service
 public class DepositAccountServiceImpl implements com.finvanta.service.DepositAccountService {
@@ -36,18 +33,21 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
     private final com.finvanta.repository.CustomerRepository customerRepository;
     private final com.finvanta.repository.BranchRepository branchRepository;
     private final com.finvanta.transaction.TransactionEngine transactionEngine;
+    private final com.finvanta.service.BusinessDateService businessDateService;
 
     public DepositAccountServiceImpl(
             com.finvanta.repository.DepositAccountRepository accountRepository,
             com.finvanta.repository.DepositTransactionRepository transactionRepository,
             com.finvanta.repository.CustomerRepository customerRepository,
             com.finvanta.repository.BranchRepository branchRepository,
-            com.finvanta.transaction.TransactionEngine transactionEngine) {
+            com.finvanta.transaction.TransactionEngine transactionEngine,
+            com.finvanta.service.BusinessDateService businessDateService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.transactionEngine = transactionEngine;
+        this.businessDateService = businessDateService;
     }
 
     private String glForAccount(com.finvanta.domain.entity.DepositAccount a) {
@@ -117,13 +117,14 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         a.setInterestRate(accountType.startsWith("SAVINGS") ? new java.math.BigDecimal("4.0000") : java.math.BigDecimal.ZERO);
         a.setAccruedInterest(java.math.BigDecimal.ZERO);
         a.setYtdInterestCredited(java.math.BigDecimal.ZERO); a.setYtdTdsDeducted(java.math.BigDecimal.ZERO);
-        a.setOpenedDate(java.time.LocalDate.now()); a.setLastTransactionDate(java.time.LocalDate.now());
+        java.time.LocalDate bizDate = businessDateService.getCurrentBusinessDate();
+        a.setOpenedDate(bizDate); a.setLastTransactionDate(bizDate);
         a.setNomineeName(nomineeName); a.setNomineeRelationship(nomineeRelationship);
         a.setCreatedBy(user); a.setUpdatedBy(user);
         com.finvanta.domain.entity.DepositAccount saved = accountRepository.save(a);
         log.info("CASA opened: num={}, type={}, cust={}", accNo, accountType, cust.getCustomerNumber());
         if (initialDeposit != null && initialDeposit.signum() > 0) {
-            deposit(accNo, initialDeposit, java.time.LocalDate.now(), "Initial deposit at account opening", null, "BRANCH");
+            deposit(accNo, initialDeposit, bizDate, "Initial deposit at account opening", null, "BRANCH");
             saved = accountRepository.findByTenantIdAndAccountNumber(tid, accNo).orElse(saved);
         }
         return saved;
@@ -191,7 +192,14 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
             java.math.BigDecimal amount, java.time.LocalDate bd, String narration, String idk) {
         String tid = com.finvanta.util.TenantContext.getCurrentTenant();
         if (from.equals(to)) throw new com.finvanta.util.BusinessException("SAME_ACCOUNT", "Cannot transfer to same account");
-        var src = lockAccount(tid, from); var tgt = lockAccount(tid, to);
+        // CBS: Lock accounts in deterministic order (alphabetical by account number)
+        // to prevent ABBA deadlock when two concurrent transfers happen in opposite directions.
+        // Per Finacle TRAN_POSTING / Temenos OFS: all multi-account locks must be ordered.
+        String first = from.compareTo(to) < 0 ? from : to;
+        String second = from.compareTo(to) < 0 ? to : from;
+        lockAccount(tid, first); lockAccount(tid, second);
+        var src = accountRepository.findAndLockByTenantIdAndAccountNumber(tid, from).orElseThrow();
+        var tgt = accountRepository.findAndLockByTenantIdAndAccountNumber(tid, to).orElseThrow();
         if (!src.isDebitAllowed()) throw new com.finvanta.util.BusinessException("SOURCE_NOT_DEBITABLE", "Source " + src.getAccountStatus());
         if (!tgt.isCreditAllowed()) throw new com.finvanta.util.BusinessException("TARGET_NOT_CREDITABLE", "Target " + tgt.getAccountStatus());
         if (!src.hasSufficientFunds(amount)) throw new com.finvanta.util.BusinessException("INSUFFICIENT_BALANCE", "Transfer " + amount + " > available " + src.getEffectiveAvailable());
@@ -221,6 +229,9 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         String tid = com.finvanta.util.TenantContext.getCurrentTenant();
         var acct = lockAccount(tid, acn);
         if (!acct.isSavings() || acct.getInterestRate().signum() <= 0) return;
+        // CBS: Guard against double-accrual if EOD reruns or retries for the same date.
+        // Per Finacle EOD / Temenos COB: accrual is idempotent per business date.
+        if (bd.equals(acct.getLastInterestAccrualDate())) return;
         var daily = acct.getLedgerBalance().multiply(acct.getInterestRate())
             .divide(new java.math.BigDecimal("36500"), 2, java.math.RoundingMode.HALF_UP);
         if (daily.signum() <= 0) return;
@@ -246,12 +257,37 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
                 new com.finvanta.accounting.AccountingService.JournalLineRequest(gl, com.finvanta.domain.enums.DebitCredit.CREDIT, interest, "Interest credit " + acn)
             )).build());
         acct.setLedgerBalance(acct.getLedgerBalance().add(interest));
+        acct.setYtdInterestCredited(acct.getYtdInterestCredited().add(interest));
+
+        // IT Act Section 194A: TDS deduction at source if YTD interest exceeds threshold.
+        // TDS is deducted on the TOTAL quarterly credit amount (not just the excess).
+        // Per RBI/IT Act: TDS = 10% of interest if cumulative YTD interest > INR 40,000.
+        java.math.BigDecimal tdsAmount = java.math.BigDecimal.ZERO;
+        if (acct.getYtdInterestCredited().compareTo(TDS_THRESHOLD) > 0) {
+            tdsAmount = interest.multiply(TDS_RATE).setScale(2, java.math.RoundingMode.HALF_UP);
+            if (tdsAmount.signum() > 0) {
+                acct.setLedgerBalance(acct.getLedgerBalance().subtract(tdsAmount));
+                acct.setYtdTdsDeducted(acct.getYtdTdsDeducted().add(tdsAmount));
+                // GL: DR Customer Deposits / CR TDS Payable (2500)
+                transactionEngine.execute(com.finvanta.transaction.TransactionRequest.builder()
+                    .sourceModule("DEPOSIT").transactionType("TDS_DEBIT").accountReference(acn)
+                    .amount(tdsAmount).valueDate(bd).branchCode(acct.getBranch().getBranchCode())
+                    .narration("TDS u/s 194A on interest INR " + interest).systemGenerated(true)
+                    .journalLines(java.util.List.of(
+                        new com.finvanta.accounting.AccountingService.JournalLineRequest(gl, com.finvanta.domain.enums.DebitCredit.DEBIT, tdsAmount, "TDS deduction"),
+                        new com.finvanta.accounting.AccountingService.JournalLineRequest(com.finvanta.accounting.GLConstants.TDS_PAYABLE, com.finvanta.domain.enums.DebitCredit.CREDIT, tdsAmount, "TDS payable u/s 194A")
+                    )).build());
+                log.info("TDS deducted: account={}, interest={}, tds={}", acn, interest, tdsAmount);
+            }
+        }
+
         acct.setAvailableBalance(acct.getLedgerBalance().subtract(acct.getHoldAmount()).subtract(acct.getUnclearedAmount()));
         acct.setAccruedInterest(java.math.BigDecimal.ZERO);
-        acct.setYtdInterestCredited(acct.getYtdInterestCredited().add(interest));
         acct.setLastInterestCreditDate(bd);
         accountRepository.save(acct);
-        return buildTxn(acct, interest, "INTEREST_CREDIT", bd, "Quarterly interest credit", r, null, "SYSTEM", null);
+        return buildTxn(acct, interest, "INTEREST_CREDIT", bd,
+            "Quarterly interest credit" + (tdsAmount.signum() > 0 ? " (TDS INR " + tdsAmount + " deducted)" : ""),
+            r, null, "SYSTEM", null);
     }
     // === Freeze ===
     @Override @org.springframework.transaction.annotation.Transactional
@@ -282,7 +318,7 @@ public class DepositAccountServiceImpl implements com.finvanta.service.DepositAc
         if (acct.isClosed()) throw new com.finvanta.util.BusinessException("ALREADY_CLOSED", "Already closed");
         if (acct.getLedgerBalance().signum() != 0)
             throw new com.finvanta.util.BusinessException("NON_ZERO_BALANCE", "Balance must be zero to close. Current: " + acct.getLedgerBalance());
-        acct.setAccountStatus("CLOSED"); acct.setClosedDate(java.time.LocalDate.now()); acct.setClosureReason(reason);
+        acct.setAccountStatus("CLOSED"); acct.setClosedDate(businessDateService.getCurrentBusinessDate()); acct.setClosureReason(reason);
         acct.setUpdatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername());
         log.info("Account closed: {}", acn);
         return accountRepository.save(acct);

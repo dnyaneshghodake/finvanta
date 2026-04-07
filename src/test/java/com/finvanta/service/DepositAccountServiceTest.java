@@ -53,6 +53,7 @@ class DepositAccountServiceTest {
     @Mock private CustomerRepository customerRepository;
     @Mock private BranchRepository branchRepository;
     @Mock private TransactionEngine transactionEngine;
+    @Mock private BusinessDateService businessDateService;
 
     private DepositAccountServiceImpl service;
 
@@ -60,7 +61,8 @@ class DepositAccountServiceTest {
     void setUp() {
         service = new DepositAccountServiceImpl(
             accountRepository, transactionRepository,
-            customerRepository, branchRepository, transactionEngine);
+            customerRepository, branchRepository, transactionEngine,
+            businessDateService);
         TenantContext.setCurrentTenant("DEFAULT");
         SecurityContextHolder.getContext().setAuthentication(
             new UsernamePasswordAuthenticationToken("maker1", "pass",
@@ -214,11 +216,31 @@ class DepositAccountServiceTest {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("100.00"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
             .thenReturn(Optional.of(acct));
-
+        // closeAccount calls businessDateService only AFTER balance check passes,
+        // so no mock needed here — it throws before reaching that line.
         BusinessException ex = assertThrows(BusinessException.class, () ->
             service.closeAccount("DEP001", "Customer request"));
 
         assertEquals("NON_ZERO_BALANCE", ex.getErrorCode());
+    }
+
+    @Test
+    void deposit_shouldAllowCreditOnDebitFreezeAccount() {
+        // Per PMLA: DEBIT_FREEZE allows credits, blocks debits only
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        acct.setAccountStatus("FROZEN");
+        acct.setFreezeType("DEBIT_FREEZE");
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+        when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Should NOT throw — DEBIT_FREEZE allows credits
+        DepositTransaction txn = service.deposit("DEP001", new BigDecimal("5000.00"),
+            LocalDate.of(2026, 4, 1), "Credit to frozen account", null, "BRANCH");
+        assertNotNull(txn);
+        assertEquals("CREDIT", txn.getDebitCredit());
     }
 
     @Test
