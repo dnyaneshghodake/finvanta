@@ -8,7 +8,7 @@
     <div class="fv-card">
         <div class="card-header">
             Product: <c:out value="${product.productCode}" /> &mdash; <c:out value="${product.productName}" />
-            <a href="${pageContext.request.contextPath}/admin/products" class="btn btn-sm btn-outline-secondary float-end">Back</a>
+            <a href="${pageContext.request.contextPath}/admin/products" class="btn btn-sm btn-outline-secondary float-end"><i class="bi bi-arrow-left"></i> Back</a>
         </div>
         <div class="card-body">
             <h6 class="mb-3">Product Configuration</h6>

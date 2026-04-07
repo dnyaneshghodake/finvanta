@@ -25,9 +25,9 @@
         <div class="card-header">Account Information
             <div class="float-end">
                 <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
-                    <a href="${pageContext.request.contextPath}/audit/logs?entityType=LoanAccount&entityId=${account.id}" class="btn btn-sm btn-outline-info me-1">Audit Trail</a>
+                    <a href="${pageContext.request.contextPath}/audit/logs?entityType=LoanAccount&entityId=${account.id}" class="btn btn-sm btn-outline-info me-1"><i class="bi bi-shield-lock"></i> Audit Trail</a>
                 </c:if>
-                <a href="${pageContext.request.contextPath}/loan/accounts" class="btn btn-sm btn-outline-secondary">Back</a>
+                <a href="${pageContext.request.contextPath}/loan/accounts" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
             </div>
         </div>
         <div class="card-body">
@@ -39,7 +39,7 @@
                 <tr><td class="fw-bold">Application</td><td><c:out value="${account.application.applicationNumber}" /></td></tr>
                 <tr><td class="fw-bold">Product Type</td><td><c:out value="${account.productType}" />
                     <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN') && not empty productId}">
-                        <a href="${pageContext.request.contextPath}/admin/products/${productId}" class="btn btn-sm btn-outline-secondary ms-2">View GL Config</a>
+                        <a href="${pageContext.request.contextPath}/admin/products/${productId}" class="btn btn-sm btn-outline-secondary ms-2"><i class="bi bi-diagram-2"></i> GL Config</a>
                     </c:if>
                 </td></tr>
                 <tr><td class="fw-bold">Currency</td><td><c:out value="${account.currencyCode}" /></td></tr>

@@ -8,7 +8,7 @@
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
     <div class="fv-card">
-        <div class="card-header">Customer List <a href="${pageContext.request.contextPath}/customer/add" class="btn btn-sm btn-fv-primary float-end">+ Add Customer</a></div>
+        <div class="card-header">Customer List <a href="${pageContext.request.contextPath}/customer/add" class="btn btn-sm btn-fv-primary float-end"><i class="bi bi-plus-circle"></i> Add Customer</a></div>
         <div class="card-body">
             <div class="table-responsive">
             <table class="table fv-table fv-datatable">
@@ -40,7 +40,7 @@
                             <td><c:out value="${cust.cibilScore}" /></td>
                             <td><c:out value="${cust.branch.branchCode}" /></td>
                             <td>
-                                <a href="${pageContext.request.contextPath}/customer/view/${cust.id}" class="btn btn-sm btn-fv-primary">View</a>
+                                <a href="${pageContext.request.contextPath}/customer/view/${cust.id}" class="btn btn-sm btn-fv-primary"><i class="bi bi-eye"></i> View</a>
                             </td>
                         </tr>
                     </c:forEach>

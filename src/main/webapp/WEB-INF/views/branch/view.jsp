@@ -20,9 +20,9 @@
     <div class="fv-card">
         <div class="card-header">Branch Information
             <div class="float-end">
-                <a href="${pageContext.request.contextPath}/branch/list" class="btn btn-sm btn-outline-secondary">Back</a>
+                <a href="${pageContext.request.contextPath}/branch/list" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
                 <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
-                <a href="${pageContext.request.contextPath}/branch/edit/${branch.id}" class="btn btn-sm btn-fv-primary">Edit</a>
+                <a href="${pageContext.request.contextPath}/branch/edit/${branch.id}" class="btn btn-sm btn-fv-primary"><i class="bi bi-pencil"></i> Edit</a>
                 </c:if>
             </div>
         </div>
@@ -105,7 +105,7 @@
                             <td><c:out value="${cust.customerType}" /></td>
                             <td><c:choose><c:when test="${cust.kycVerified}"><span class="fv-badge fv-badge-active">Verified</span></c:when><c:otherwise><span class="fv-badge fv-badge-rejected">Pending</span></c:otherwise></c:choose></td>
                             <td><c:out value="${cust.cibilScore}" /></td>
-                            <td><a href="${pageContext.request.contextPath}/customer/view/${cust.id}" class="btn btn-sm btn-fv-primary">View</a></td>
+                            <td><a href="${pageContext.request.contextPath}/customer/view/${cust.id}" class="btn btn-sm btn-fv-primary"><i class="bi bi-eye"></i> View</a></td>
                         </tr>
                     </c:forEach>
                     <c:if test="${empty customers}">

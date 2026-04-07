@@ -42,7 +42,7 @@
                                     <c:otherwise><span class="fv-badge fv-badge-rejected">INACTIVE</span></c:otherwise>
                                 </c:choose>
                             </td>
-                            <td><a href="${pageContext.request.contextPath}/admin/products/${p.id}" class="btn btn-sm btn-outline-secondary">GL</a></td>
+                            <td><a href="${pageContext.request.contextPath}/admin/products/${p.id}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-diagram-2"></i> GL</a></td>
                         </tr>
                     </c:forEach>
                     <c:if test="${empty products}">
