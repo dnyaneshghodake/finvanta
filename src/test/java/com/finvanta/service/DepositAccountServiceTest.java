@@ -244,6 +244,40 @@ class DepositAccountServiceTest {
     }
 
     @Test
+    void withdraw_shouldAllowDebitOnCreditFreezeAccount() {
+        // Per PMLA: CREDIT_FREEZE blocks credits only, debits allowed
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        acct.setAccountStatus("FROZEN");
+        acct.setFreezeType("CREDIT_FREEZE");
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+        when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Should NOT throw — CREDIT_FREEZE allows debits
+        DepositTransaction txn = service.withdraw("DEP001", new BigDecimal("1000.00"),
+            LocalDate.of(2026, 4, 1), "Debit from credit-frozen account", null, "BRANCH");
+        assertNotNull(txn);
+        assertEquals("DEBIT", txn.getDebitCredit());
+    }
+
+    @Test
+    void accrueInterest_shouldBeIdempotentForSameDate() {
+        // CBS: EOD retry must not double-accrue interest
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("100000.00"));
+        acct.setLastInterestAccrualDate(LocalDate.of(2026, 4, 1)); // already accrued today
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+            .thenReturn(Optional.of(acct));
+
+        service.accrueInterest("DEP001", LocalDate.of(2026, 4, 1));
+
+        // Should skip — no save, no balance change
+        assertEquals(BigDecimal.ZERO, acct.getAccruedInterest());
+        verify(accountRepository, never()).save(any());
+    }
+
+    @Test
     void dormancy_shouldMarkAccountsWithNoRecentTxn() {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
         acct.setLastTransactionDate(LocalDate.of(2024, 1, 1));
