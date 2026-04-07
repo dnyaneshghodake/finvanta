@@ -75,6 +75,10 @@ public class EodOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(EodOrchestrator.class);
 
+    /** Configurable thread pool size for parallel account processing in Steps 2-5. */
+    @Value("${eod.parallel.threads:4}")
+    private int parallelThreads;
+
     private final LoanAccountService loanAccountService;
     private final LoanAccountRepository accountRepository;
     private final LoanScheduleService scheduleService;
@@ -137,61 +141,51 @@ public class EodOrchestrator {
             log.info("EOD Step 1: {} installments marked overdue", marked);
         }, errors);
 
-        // Step 2: Update Account DPD (each account in its own transaction)
+        // CBS Parallel EOD: Steps 2-5 process accounts in parallel using a configurable
+        // thread pool (eod.parallel.threads, default 4). Each account has its own
+        // REQUIRES_NEW transaction and pessimistic lock, so cross-thread conflicts
+        // are prevented. Per Finacle EOD / Temenos COB parallel batch standards.
+        ExecutorService eodExecutor = Executors.newFixedThreadPool(parallelThreads);
+        String currentTenant = TenantContext.getCurrentTenant();
+        try {
+
+        // Step 2: Update Account DPD (parallel)
         self.updateStepName(eodJob.getId(), "UPDATE_DPD");
-        for (LoanAccount account : activeAccounts) {
-            try {
-                self.updateAccountDpd(account.getAccountNumber(), businessDate);
-            } catch (Exception e) {
-                failedCount++;
-                appendError(errors, "DPD", account.getAccountNumber(), e);
-            }
-        }
-        log.info("EOD Step 2: DPD updated");
+        int[] step2Result = processAccountsParallel(activeAccounts, eodExecutor, currentTenant,
+            "DPD", account -> self.updateAccountDpd(account.getAccountNumber(), businessDate), errors);
+        failedCount += step2Result[1];
+        log.info("EOD Step 2: DPD updated ({} threads)", parallelThreads);
 
-        // Step 3: Interest Accrual
+        // Step 3: Interest Accrual (parallel)
         self.updateStepName(eodJob.getId(), "INTEREST_ACCRUAL");
-        for (LoanAccount account : activeAccounts) {
-            try {
-                loanAccountService.applyInterestAccrual(
-                    account.getAccountNumber(), businessDate);
-                processedCount++;
-            } catch (Exception e) {
-                failedCount++;
-                appendError(errors, "Accrual", account.getAccountNumber(), e);
-            }
-        }
-        log.info("EOD Step 3: interest accrued for {} accounts", processedCount);
+        int[] step3Result = processAccountsParallel(activeAccounts, eodExecutor, currentTenant,
+            "Accrual", account -> loanAccountService.applyInterestAccrual(
+                account.getAccountNumber(), businessDate), errors);
+        processedCount += step3Result[0];
+        failedCount += step3Result[1];
+        log.info("EOD Step 3: interest accrued for {} accounts ({} threads)", step3Result[0], parallelThreads);
 
-        // Step 4: Penal Interest Accrual
-        // CBS: Do NOT guard on in-memory DPD — the activeAccounts list was loaded at Step 0
-        // and Step 2 (DPD update) may have changed DPD in the DB without refreshing the
-        // in-memory objects. applyPenalInterest() re-fetches the account with a pessimistic
-        // lock and has its own DPD > 0 guard, so it safely no-ops for non-overdue accounts.
+        // Step 4: Penal Interest Accrual (parallel)
+        // CBS: Do NOT guard on in-memory DPD -- applyPenalInterest() re-fetches with
+        // pessimistic lock and has its own DPD > 0 guard.
         self.updateStepName(eodJob.getId(), "PENAL_ACCRUAL");
-        for (LoanAccount account : activeAccounts) {
-            try {
-                loanAccountService.applyPenalInterest(
-                    account.getAccountNumber(), businessDate);
-            } catch (Exception e) {
-                failedCount++;
-                appendError(errors, "Penal", account.getAccountNumber(), e);
-            }
-        }
-        log.info("EOD Step 4: penal interest done");
+        int[] step4Result = processAccountsParallel(activeAccounts, eodExecutor, currentTenant,
+            "Penal", account -> loanAccountService.applyPenalInterest(
+                account.getAccountNumber(), businessDate), errors);
+        failedCount += step4Result[1];
+        log.info("EOD Step 4: penal interest done ({} threads)", parallelThreads);
 
-        // Step 5: NPA Classification
+        // Step 5: NPA Classification (parallel)
         self.updateStepName(eodJob.getId(), "NPA_CLASSIFICATION");
-        for (LoanAccount account : activeAccounts) {
-            try {
-                loanAccountService.classifyNPA(
-                    account.getAccountNumber(), businessDate);
-            } catch (Exception e) {
-                failedCount++;
-                appendError(errors, "NPA", account.getAccountNumber(), e);
-            }
+        int[] step5Result = processAccountsParallel(activeAccounts, eodExecutor, currentTenant,
+            "NPA", account -> loanAccountService.classifyNPA(
+                account.getAccountNumber(), businessDate), errors);
+        failedCount += step5Result[1];
+        log.info("EOD Step 5: NPA classification done ({} threads)", parallelThreads);
+
+        } finally {
+            eodExecutor.shutdown();
         }
-        log.info("EOD Step 5: NPA classification done");
 
         // Step 6: Provisioning
         failedCount += runStep(eodJob, "PROVISIONING", () -> {
@@ -396,6 +390,58 @@ public class EodOrchestrator {
             businessDate, processedCount, failedCount, eodJob.getStatus());
 
         return eodJob;
+    }
+
+    /**
+     * CBS Parallel Account Processing per Finacle EOD / Temenos COB batch standards.
+     *
+     * Processes a list of accounts in parallel using the provided ExecutorService.
+     * Each account is processed independently with its own try/catch for error isolation.
+     * The TenantContext is propagated to each thread (ThreadLocal requires explicit set).
+     * Progress is logged every 1000 accounts.
+     *
+     * @param accounts  List of accounts to process
+     * @param executor  Thread pool for parallel execution
+     * @param tenantId  Tenant ID to propagate to worker threads
+     * @param stepName  Step name for error logging
+     * @param action    Per-account action (lambda)
+     * @param errors    Shared error log (synchronized append)
+     * @return int[2]: [0]=processed count, [1]=failed count
+     */
+    private int[] processAccountsParallel(List<LoanAccount> accounts,
+                                           ExecutorService executor,
+                                           String tenantId,
+                                           String stepName,
+                                           java.util.function.Consumer<LoanAccount> action,
+                                           StringBuilder errors) {
+        AtomicInteger processed = new AtomicInteger(0);
+        AtomicInteger failed = new AtomicInteger(0);
+        int total = accounts.size();
+
+        CompletableFuture<?>[] futures = accounts.stream()
+            .map(account -> CompletableFuture.runAsync(() -> {
+                // CBS: Propagate tenant context to worker thread (ThreadLocal)
+                TenantContext.setCurrentTenant(tenantId);
+                try {
+                    action.accept(account);
+                    int done = processed.incrementAndGet();
+                    if (done % 1000 == 0) {
+                        log.info("EOD {} progress: {}/{} accounts processed",
+                            stepName, done, total);
+                    }
+                } catch (Exception e) {
+                    failed.incrementAndGet();
+                    synchronized (errors) {
+                        appendError(errors, stepName, account.getAccountNumber(), e);
+                    }
+                } finally {
+                    TenantContext.clear();
+                }
+            }, executor))
+            .toArray(CompletableFuture[]::new);
+
+        CompletableFuture.allOf(futures).join();
+        return new int[]{processed.get(), failed.get()};
     }
 
     private void appendError(StringBuilder errors, String step,
