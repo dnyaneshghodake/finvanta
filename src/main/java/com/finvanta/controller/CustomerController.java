@@ -93,7 +93,7 @@ public class CustomerController {
                 "Customer created: " + saved.getFullName() + " at branch " + branch.getBranchCode());
 
             redirectAttributes.addFlashAttribute("success",
-                "Customer created: " + saved.getCustomerNumber() + " — " + saved.getFullName());
+                "Customer created: " + saved.getCustomerNumber() + " - " + saved.getFullName());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -166,6 +166,10 @@ public class CustomerController {
             existing.setPinCode(updated.getPinCode());
             existing.setCustomerType(updated.getCustomerType());
             existing.setCibilScore(updated.getCibilScore());
+            existing.setMonthlyIncome(updated.getMonthlyIncome());
+            existing.setMaxBorrowingLimit(updated.getMaxBorrowingLimit());
+            existing.setEmploymentType(updated.getEmploymentType());
+            existing.setEmployerName(updated.getEmployerName());
             existing.setBranch(branch);
             existing.setUpdatedBy(currentUser);
             customerRepository.save(existing);
