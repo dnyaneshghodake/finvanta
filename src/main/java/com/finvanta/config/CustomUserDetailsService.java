@@ -41,10 +41,15 @@ public class CustomUserDetailsService implements UserDetailsService {
             throw new UsernameNotFoundException("User account is locked: " + username);
         }
 
-        return new User(
+        Long branchId = appUser.getBranch() != null ? appUser.getBranch().getId() : null;
+        String branchCode = appUser.getBranch() != null ? appUser.getBranch().getBranchCode() : null;
+
+        return new BranchAwareUserDetails(
             appUser.getUsername(),
             appUser.getPasswordHash(),
-            Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + appUser.getRole().name()))
+            Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + appUser.getRole().name())),
+            branchId,
+            branchCode
         );
     }
 }

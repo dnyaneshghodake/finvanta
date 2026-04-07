@@ -1,5 +1,6 @@
 package com.finvanta.util;
 
+import com.finvanta.config.BranchAwareUserDetails;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
