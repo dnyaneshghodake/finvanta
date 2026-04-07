@@ -93,22 +93,19 @@ public class EodOrchestrator {
         this.self = self;
     }
 
-    @Transactional
+    /**
+     * Main EOD entry point — NOT @Transactional so that per-account operations
+     * get their own transaction boundaries via self-proxy calls through Spring AOP.
+     * Setup/teardown steps use REQUIRES_NEW to commit independently.
+     */
     public BatchJob executeEod(LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
 
-        BusinessCalendar calendar = validateAndLockDay(tenantId, businessDate);
-
-        calendar.setDayStatus(DayStatus.EOD_RUNNING);
-        calendar.setLocked(true);
-        calendar.setUpdatedBy("SYSTEM");
-        calendarRepository.save(calendar);
-
-        BatchJob eodJob = createEodJob(tenantId, businessDate);
+        BatchJob eodJob = self.initializeEod(tenantId, businessDate);
         log.info("EOD started: date={}, tenant={}", businessDate, tenantId);
 
         List<LoanAccount> activeAccounts = accountRepository.findAllActiveAccounts(tenantId);
-        eodJob.setTotalRecords(activeAccounts.size());
+        self.updateJobTotalRecords(eodJob.getId(), activeAccounts.size());
 
         int processedCount = 0;
         int failedCount = 0;
@@ -120,12 +117,11 @@ public class EodOrchestrator {
             log.info("EOD Step 1: {} installments marked overdue", marked);
         }, errors);
 
-        // Step 2: Update Account DPD
-        eodJob.setStepName("UPDATE_DPD");
-        batchJobRepository.save(eodJob);
+        // Step 2: Update Account DPD (each account in its own transaction)
+        self.updateStepName(eodJob.getId(), "UPDATE_DPD");
         for (LoanAccount account : activeAccounts) {
             try {
-                updateAccountDpd(account, businessDate);
+                self.updateAccountDpd(account.getAccountNumber(), businessDate);
             } catch (Exception e) {
                 failedCount++;
                 appendError(errors, "DPD", account.getAccountNumber(), e);
@@ -134,8 +130,7 @@ public class EodOrchestrator {
         log.info("EOD Step 2: DPD updated");
 
         // Step 3: Interest Accrual
-        eodJob.setStepName("INTEREST_ACCRUAL");
-        batchJobRepository.save(eodJob);
+        self.updateStepName(eodJob.getId(), "INTEREST_ACCRUAL");
         for (LoanAccount account : activeAccounts) {
             try {
                 loanAccountService.applyInterestAccrual(
@@ -153,8 +148,7 @@ public class EodOrchestrator {
         // and Step 2 (DPD update) may have changed DPD in the DB without refreshing the
         // in-memory objects. applyPenalInterest() re-fetches the account with a pessimistic
         // lock and has its own DPD > 0 guard, so it safely no-ops for non-overdue accounts.
-        eodJob.setStepName("PENAL_ACCRUAL");
-        batchJobRepository.save(eodJob);
+        self.updateStepName(eodJob.getId(), "PENAL_ACCRUAL");
         for (LoanAccount account : activeAccounts) {
             try {
                 loanAccountService.applyPenalInterest(
@@ -167,8 +161,7 @@ public class EodOrchestrator {
         log.info("EOD Step 4: penal interest done");
 
         // Step 5: NPA Classification
-        eodJob.setStepName("NPA_CLASSIFICATION");
-        batchJobRepository.save(eodJob);
+        self.updateStepName(eodJob.getId(), "NPA_CLASSIFICATION");
         for (LoanAccount account : activeAccounts) {
             try {
                 loanAccountService.classifyNPA(
@@ -209,8 +202,37 @@ public class EodOrchestrator {
             log.info("EOD Step 7.6: clearing suspense validated");
         }, errors);
 
-        return finalizeEod(eodJob, tenantId, businessDate,
+        return self.finalizeEod(eodJob.getId(), tenantId, businessDate,
             processedCount, failedCount, errors);
+    }
+
+    /** Initialize EOD: validate day, set EOD_RUNNING, create batch job. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public BatchJob initializeEod(String tenantId, LocalDate businessDate) {
+        BusinessCalendar calendar = validateAndLockDay(tenantId, businessDate);
+
+        calendar.setDayStatus(DayStatus.EOD_RUNNING);
+        calendar.setLocked(true);
+        calendar.setUpdatedBy("SYSTEM");
+        calendarRepository.save(calendar);
+
+        return createEodJob(tenantId, businessDate);
+    }
+
+    /** Update batch job total records count. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void updateJobTotalRecords(Long jobId, int totalRecords) {
+        BatchJob job = batchJobRepository.findById(jobId).orElseThrow();
+        job.setTotalRecords(totalRecords);
+        batchJobRepository.save(job);
+    }
+
+    /** Update batch job step name for progress tracking. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void updateStepName(Long jobId, String stepName) {
+        BatchJob job = batchJobRepository.findById(jobId).orElseThrow();
+        job.setStepName(stepName);
+        batchJobRepository.save(job);
     }
 
     private BusinessCalendar validateAndLockDay(String tenantId, LocalDate businessDate) {
@@ -269,7 +291,17 @@ public class EodOrchestrator {
         }
     }
 
-    private void updateAccountDpd(LoanAccount account, LocalDate businessDate) {
+    /**
+     * Update DPD for a single account in its own transaction.
+     * Called via self-proxy to get REQUIRES_NEW transaction boundary.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void updateAccountDpd(String accountNumber, LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+        LoanAccount account = accountRepository.findByTenantIdAndAccountNumber(tenantId, accountNumber)
+            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
+                "Loan account not found: " + accountNumber));
+
         List<LoanSchedule> overdueList = scheduleService
             .getOverdueInstallments(account.getId(), businessDate);
 
@@ -304,10 +336,13 @@ public class EodOrchestrator {
         accountRepository.save(account);
     }
 
-    private BatchJob finalizeEod(BatchJob eodJob, String tenantId,
-                                  LocalDate businessDate,
-                                  int processedCount, int failedCount,
-                                  StringBuilder errors) {
+    /** Finalize EOD: update batch job status, mark calendar eodComplete. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public BatchJob finalizeEod(Long jobId, String tenantId,
+                                LocalDate businessDate,
+                                int processedCount, int failedCount,
+                                StringBuilder errors) {
+        BatchJob eodJob = batchJobRepository.findById(jobId).orElseThrow();
         eodJob.setStepName("COMPLETE");
         eodJob.setProcessedRecords(processedCount);
         eodJob.setFailedRecords(failedCount);

@@ -210,7 +210,7 @@ public class LoanController {
         // Show the borrower what their repayment schedule will look like BEFORE committing.
         if (!account.isFullyDisbursed()) {
             try {
-                java.time.LocalDate previewStartDate = java.time.LocalDate.now().plusMonths(1);
+                java.time.LocalDate previewStartDate = businessDateService.getCurrentBusinessDate().plusMonths(1);
                 BigDecimal previewPrincipal = account.getDisbursedAmount().signum() > 0
                     ? account.getSanctionedAmount() // Multi-tranche: preview on full sanctioned
                     : account.getSanctionedAmount();
