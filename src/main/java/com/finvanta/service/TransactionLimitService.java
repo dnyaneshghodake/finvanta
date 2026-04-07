@@ -50,19 +50,10 @@ public class TransactionLimitService {
      * Validates a transaction amount against configured limits for the current user's role.
      * Checks both per-transaction and daily aggregate limits.
      *
-     * @param amount          Transaction amount to validate
-     * @param transactionType Transaction type (REPAYMENT, DISBURSEMENT, PREPAYMENT, etc.)
-     * @throws BusinessException if amount exceeds configured limit
-     */
-    public void validateTransactionLimit(BigDecimal amount, String transactionType) {
-        // CBS: Use business date for daily aggregate, not system date.
-        // In production, inject BusinessDateService. For now, fallback to system date.
-        validateTransactionLimit(amount, transactionType, LocalDate.now());
-    }
-
-    /**
-     * Validates with explicit business date for daily aggregate calculation.
-     * CBS business date may differ from system date (e.g., EOD runs after midnight).
+     * CBS MANDATE: Always pass the business date explicitly. Using LocalDate.now() would
+     * cause incorrect daily aggregate calculation during EOD (which runs after midnight).
+     * All callers must obtain the business date from BusinessDateService or from the
+     * TransactionRequest.valueDate (which is already validated by TransactionEngine Step 2).
      *
      * Per RBI Internal Controls Guidelines and Finacle TRAN_AUTH:
      * - Users with a transactional role (MAKER/CHECKER/ADMIN) are validated against limits
