@@ -920,3 +920,106 @@ GO
 --
 GO
 
+-- ============================================================
+-- CASA MODULE: DEPOSIT ACCOUNTS (Finacle CUSTACCT / Temenos ACCOUNT)
+-- Savings, Current, NRI, Minor, Joint, PMJDY, OD
+-- ============================================================
+CREATE TABLE deposit_accounts (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    account_number  VARCHAR(40)     NOT NULL,
+    customer_id     BIGINT          NOT NULL,
+    branch_id       BIGINT          NOT NULL,
+    account_type    VARCHAR(30)     NOT NULL,   -- SAVINGS, SAVINGS_NRI, SAVINGS_MINOR, SAVINGS_JOINT, SAVINGS_PMJDY, CURRENT, CURRENT_OD
+    product_code    VARCHAR(50)     NOT NULL,
+    currency_code   VARCHAR(3)      NOT NULL DEFAULT 'INR',
+    -- Balances
+    available_balance DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    ledger_balance  DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
+    hold_amount     DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
+    uncleared_amount DECIMAL(18,2)  NOT NULL DEFAULT 0.00,
+    od_limit        DECIMAL(18,2)   DEFAULT 0.00,
+    minimum_balance DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
+    -- Interest
+    interest_rate   DECIMAL(8,4)    NOT NULL DEFAULT 0.0000,
+    accrued_interest DECIMAL(18,2)  NOT NULL DEFAULT 0.00,
+    last_interest_accrual_date DATE,
+    last_interest_credit_date DATE,
+    ytd_interest_credited DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+    ytd_tds_deducted DECIMAL(18,2)  NOT NULL DEFAULT 0.00,
+    -- Lifecycle
+    account_status  VARCHAR(30)     NOT NULL DEFAULT 'PENDING_ACTIVATION',
+    opened_date     DATE,
+    closed_date     DATE,
+    closure_reason  VARCHAR(500),
+    last_transaction_date DATE,
+    dormant_date    DATE,
+    freeze_reason   VARCHAR(500),
+    freeze_type     VARCHAR(20),    -- DEBIT_FREEZE, CREDIT_FREEZE, TOTAL_FREEZE
+    -- Nomination
+    nominee_name    VARCHAR(200),
+    nominee_relationship VARCHAR(30),
+    joint_holder_mode VARCHAR(30),   -- EITHER_SURVIVOR, FORMER_SURVIVOR, JOINTLY
+    -- Cheque/Card
+    cheque_book_enabled BIT         NOT NULL DEFAULT 0,
+    last_cheque_number VARCHAR(20),
+    debit_card_enabled BIT          NOT NULL DEFAULT 0,
+    daily_withdrawal_limit DECIMAL(18,2),
+    daily_transfer_limit DECIMAL(18,2),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_depacc_tenant_accno UNIQUE (tenant_id, account_number),
+    CONSTRAINT fk_depacc_customer FOREIGN KEY (customer_id) REFERENCES customers(id),
+    CONSTRAINT fk_depacc_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX idx_depacc_tenant_accno ON deposit_accounts (tenant_id, account_number);
+CREATE INDEX idx_depacc_tenant_customer ON deposit_accounts (tenant_id, customer_id);
+CREATE INDEX idx_depacc_tenant_status ON deposit_accounts (tenant_id, account_status);
+CREATE INDEX idx_depacc_tenant_branch ON deposit_accounts (tenant_id, branch_id);
+CREATE INDEX idx_depacc_tenant_type ON deposit_accounts (tenant_id, account_type);
+GO
+
+-- ============================================================
+-- CASA MODULE: DEPOSIT TRANSACTIONS (Finacle TRAN_DETAIL / Temenos STMT.ENTRY)
+-- ============================================================
+CREATE TABLE deposit_transactions (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    transaction_ref VARCHAR(40)     NOT NULL,
+    deposit_account_id BIGINT       NOT NULL,
+    transaction_type VARCHAR(30)    NOT NULL,   -- CASH_DEPOSIT, CASH_WITHDRAWAL, TRANSFER_CREDIT, etc.
+    debit_credit    VARCHAR(10)     NOT NULL,   -- DEBIT, CREDIT
+    amount          DECIMAL(18,2)   NOT NULL,
+    balance_after   DECIMAL(18,2)   NOT NULL,
+    value_date      DATE            NOT NULL,
+    posting_date    DATETIME2       NOT NULL,
+    narration       VARCHAR(500),
+    counterparty_account VARCHAR(40),
+    counterparty_name VARCHAR(200),
+    channel         VARCHAR(20),    -- BRANCH, ATM, INTERNET, MOBILE, UPI, NEFT, RTGS, IMPS
+    cheque_number   VARCHAR(20),
+    is_reversed     BIT             NOT NULL DEFAULT 0,
+    reversed_by_ref VARCHAR(40),
+    journal_entry_id BIGINT,
+    voucher_number  VARCHAR(40),
+    idempotency_key VARCHAR(100),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_deptxn_ref UNIQUE (tenant_id, transaction_ref),
+    CONSTRAINT fk_deptxn_account FOREIGN KEY (deposit_account_id) REFERENCES deposit_accounts(id)
+);
+CREATE INDEX idx_deptxn_tenant_account ON deposit_transactions (tenant_id, deposit_account_id);
+CREATE INDEX idx_deptxn_tenant_ref ON deposit_transactions (tenant_id, transaction_ref);
+CREATE INDEX idx_deptxn_value_date ON deposit_transactions (tenant_id, value_date);
+CREATE INDEX idx_deptxn_type ON deposit_transactions (tenant_id, transaction_type);
+CREATE INDEX idx_deptxn_voucher ON deposit_transactions (tenant_id, voucher_number);
+CREATE UNIQUE INDEX uq_deptxn_idempotency ON deposit_transactions (tenant_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+GO
+
