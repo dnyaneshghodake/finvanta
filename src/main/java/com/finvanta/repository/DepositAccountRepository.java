@@ -1,6 +1,7 @@
 package com.finvanta.repository;
 
 import com.finvanta.domain.entity.DepositAccount;
+import com.finvanta.domain.enums.DepositAccountStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -64,5 +65,5 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
            "WHERE da.tenantId = :tenantId AND da.accountStatus NOT IN ('CLOSED') GROUP BY da.accountType")
     List<Object[]> countByAccountType(@Param("tenantId") String tenantId);
 
-    long countByTenantIdAndAccountStatusNot(String tenantId, String status);
+    long countByTenantIdAndAccountStatusNot(String tenantId, DepositAccountStatus status);
 }

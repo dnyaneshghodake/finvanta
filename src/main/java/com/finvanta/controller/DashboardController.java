@@ -5,6 +5,7 @@ import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.domain.enums.ApplicationStatus;
+import com.finvanta.domain.enums.DepositAccountStatus;
 import com.finvanta.domain.enums.LoanStatus;
 import com.finvanta.util.TenantContext;
 import com.finvanta.workflow.ApprovalWorkflowService;
@@ -102,7 +103,7 @@ public class DashboardController {
 
         // === CASA Metrics (per RBI CASA Ratio reporting) ===
         BigDecimal totalDeposits = depositAccountRepository.calculateTotalDeposits(tenantId);
-        long casaAccountCount = depositAccountRepository.countByTenantIdAndAccountStatusNot(tenantId, "CLOSED");
+        long casaAccountCount = depositAccountRepository.countByTenantIdAndAccountStatusNot(tenantId, DepositAccountStatus.CLOSED);
         mav.addObject("totalDeposits", totalDeposits);
         mav.addObject("casaAccountCount", casaAccountCount);
 
