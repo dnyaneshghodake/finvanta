@@ -262,9 +262,14 @@ public class BatchService {
 
     /**
      * Validates and locks the business date for EOD processing.
-     * Sets dayStatus to EOD_RUNNING per documented lifecycle:
-     *   NOT_OPENED → DAY_OPEN → EOD_RUNNING → DAY_CLOSED
-     * This prevents new transactions during EOD and signals the system state.
+     *
+     * Per Finacle/Temenos Day Control lifecycle:
+     *   NOT_OPENED -> DAY_OPEN -> EOD_RUNNING -> DAY_CLOSED
+     *
+     * EOD can ONLY start from DAY_OPEN status. This prevents:
+     * - Running EOD on a day that was never opened (NOT_OPENED)
+     * - Running EOD on a day that is already closed (DAY_CLOSED)
+     * - Running EOD while another EOD is in progress (EOD_RUNNING)
      */
     @Transactional
     protected BusinessCalendar validateAndLockBusinessDate(String tenantId, LocalDate businessDate) {
@@ -281,6 +286,16 @@ public class BatchService {
         if (calendar.isHoliday()) {
             throw new BusinessException("BATCH_HOLIDAY",
                 "Cannot run EOD on a holiday: " + businessDate);
+        }
+
+        // CBS Day Control: EOD can only start from DAY_OPEN status.
+        // Per Finacle DAYCTRL / Temenos COB: the day must be explicitly opened
+        // by ADMIN before any financial operations (including EOD) can proceed.
+        if (!calendar.getDayStatus().canStartEod()) {
+            throw new BusinessException("DAY_NOT_OPEN",
+                "Cannot run EOD for " + businessDate
+                    + ". Day status is " + calendar.getDayStatus()
+                    + ". The day must be opened first via Business Calendar.");
         }
 
         calendar.setLocked(true);
