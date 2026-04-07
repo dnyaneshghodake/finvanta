@@ -185,7 +185,7 @@
 
                 <c:if test="${account.multiDisbursement}">
                 <!-- Multi-tranche: specify tranche amount -->
-                <form method="post" action="${pageContext.request.contextPath}/loan/disburse-tranche/${account.accountNumber}" class="fv-form">
+                <form method="post" action="${pageContext.request.contextPath}/loan/disburse-tranche/${account.accountNumber}" class="fv-form mb-2">
                     <div class="row mb-2">
                         <div class="col-md-4">
                             <label class="form-label">Tranche Amount (INR) *</label>
@@ -198,10 +198,10 @@
                     </div>
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                     <button type="submit" class="btn btn-success" data-confirm="Confirm tranche disbursement?">Disburse Tranche</button>
-                    <form method="post" action="${pageContext.request.contextPath}/loan/disburse/${account.accountNumber}" class="d-inline ms-2">
-                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                        <button type="submit" class="btn btn-outline-success" data-confirm="Disburse all remaining INR ${account.undisbursedAmount}?">Disburse All Remaining</button>
-                    </form>
+                </form>
+                <form method="post" action="${pageContext.request.contextPath}/loan/disburse/${account.accountNumber}" class="d-inline">
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-outline-success" data-confirm="Disburse all remaining INR ${account.undisbursedAmount}?">Disburse All Remaining</button>
                 </form>
                 </c:if>
             </div>
