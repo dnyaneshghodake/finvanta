@@ -203,9 +203,18 @@ public class TransactionEngine {
         if (!request.isSystemGenerated()) {
             var openBatches = batchRepository.findOpenBatches(tenantId, request.getValueDate());
             if (openBatches.isEmpty()) {
+                // CBS: Enhanced diagnostics — log tenant + date + total batch count for troubleshooting.
+                // Common causes: (1) batches created for different date, (2) tenant mismatch,
+                // (3) all batches already closed, (4) day status changed after batch creation.
+                long totalBatches = batchRepository.findByTenantIdAndBusinessDateOrderByOpenedAtAsc(
+                    tenantId, request.getValueDate()).size();
+                log.error("BATCH_NOT_OPEN: tenant={}, valueDate={}, totalBatchesForDate={}, module={}, type={}",
+                    tenantId, request.getValueDate(), totalBatches,
+                    request.getSourceModule(), request.getTransactionType());
                 throw new BusinessException("BATCH_NOT_OPEN",
                     "No open transaction batch for business date " + request.getValueDate()
-                        + ". Open a batch via Transaction Batches before posting transactions.");
+                        + " (tenant=" + tenantId + ", totalBatches=" + totalBatches
+                        + "). Open a batch via Transaction Batches before posting transactions.");
             }
         }
 
