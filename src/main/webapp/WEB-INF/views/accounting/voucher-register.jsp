@@ -25,7 +25,7 @@
 
     <!-- Ledger Entries (GL Postings) -->
     <div class="fv-card mb-3">
-        <div class="card-header"><i class="bi bi-receipt-cutoff"></i> GL Ledger Entries &mdash; <c:out value="${reportDate}"/> <span class="badge bg-secondary"><c:out value="${ledgerEntries.size()}"/></span></div>
+        <div class="card-header"><i class="bi bi-receipt-cutoff"></i> GL Ledger Entries &mdash; <c:out value="${reportDate}" /> <span class="badge bg-secondary"><c:out value="${ledgerEntries.size()}" /></span></div>
         <div class="card-body">
             <div class="table-responsive">
             <table class="table fv-table fv-datatable table-sm">
@@ -36,15 +36,15 @@
                 <tbody>
                 <c:forEach var="le" items="${ledgerEntries}">
                     <tr>
-                        <td><c:out value="${le.ledgerSequence}"/></td>
-                        <td class="font-monospace small"><c:out value="${le.journalRef}"/></td>
-                        <td><c:out value="${le.glCode}"/></td>
-                        <td><c:out value="${le.glName}"/></td>
-                        <td class="font-monospace small"><c:out value="${le.accountReference}" default="--"/></td>
-                        <td class="text-end amount"><c:if test="${le.debitAmount.signum() > 0}"><fmt:formatNumber value="${le.debitAmount}" type="number" maxFractionDigits="2"/></c:if></td>
-                        <td class="text-end amount"><c:if test="${le.creditAmount.signum() > 0}"><fmt:formatNumber value="${le.creditAmount}" type="number" maxFractionDigits="2"/></c:if></td>
-                        <td><c:out value="${le.moduleCode}" default="--"/></td>
-                        <td class="small"><c:out value="${le.narration}"/></td>
+                        <td><c:out value="${le.ledgerSequence}" /></td>
+                        <td class="font-monospace small"><c:out value="${le.journalRef}" /></td>
+                        <td><c:out value="${le.glCode}" /></td>
+                        <td><c:out value="${le.glName}" /></td>
+                        <td class="font-monospace small"><c:out value="${le.accountReference}" default="--" /></td>
+                        <td class="text-end amount"><c:if test="${le.debitAmount.signum() > 0}"><fmt:formatNumber value="${le.debitAmount}" type="number" maxFractionDigits="2" /></c:if></td>
+                        <td class="text-end amount"><c:if test="${le.creditAmount.signum() > 0}"><fmt:formatNumber value="${le.creditAmount}" type="number" maxFractionDigits="2" /></c:if></td>
+                        <td><c:out value="${le.moduleCode}" default="--" /></td>
+                        <td class="small"><c:out value="${le.narration}" /></td>
                     </tr>
                 </c:forEach>
                 <c:if test="${empty ledgerEntries}"><tr><td colspan="9" class="text-center text-muted">No ledger entries for this date</td></tr></c:if>
