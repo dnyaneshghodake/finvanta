@@ -5,6 +5,7 @@ import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.entity.StandingInstruction;
 import com.finvanta.domain.enums.SIFrequency;
 import com.finvanta.domain.enums.SIStatus;
+import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.StandingInstructionRepository;
@@ -49,6 +50,7 @@ public class StandingInstructionServiceImpl {
     private final StandingInstructionRepository siRepository;
     private final LoanAccountRepository loanAccountRepository;
     private final DepositAccountRepository depositAccountRepository;
+    private final BusinessCalendarRepository calendarRepository;
     private final LoanAccountService loanAccountService;
     private final DepositAccountService depositAccountService;
     private final AuditService auditService;
@@ -64,6 +66,7 @@ public class StandingInstructionServiceImpl {
     public StandingInstructionServiceImpl(StandingInstructionRepository siRepository,
                                            LoanAccountRepository loanAccountRepository,
                                            DepositAccountRepository depositAccountRepository,
+                                           BusinessCalendarRepository calendarRepository,
                                            LoanAccountService loanAccountService,
                                            DepositAccountService depositAccountService,
                                            AuditService auditService,
@@ -71,6 +74,7 @@ public class StandingInstructionServiceImpl {
         this.siRepository = siRepository;
         this.loanAccountRepository = loanAccountRepository;
         this.depositAccountRepository = depositAccountRepository;
+        this.calendarRepository = calendarRepository;
         this.loanAccountService = loanAccountService;
         this.depositAccountService = depositAccountService;
         this.auditService = auditService;
@@ -236,15 +240,103 @@ public class StandingInstructionServiceImpl {
         siRepository.save(si);
     }
 
+    /**
+     * Compute next execution date with holiday awareness per Finacle SI_MASTER.
+     *
+     * Per RBI Payment Systems Act 2007 and Finacle SI_MASTER:
+     *   1. Calculate raw next date from frequency (plusMonths/plusDays)
+     *   2. Adjust to execution day of month (capped at month length)
+     *   3. If the date falls on a holiday → shift to next business day
+     *   4. If calendar data is unavailable → use raw date (graceful fallback)
+     *
+     * This ensures the customer sees the correct next execution date on their
+     * CASA statement and the SI dashboard. Without holiday adjustment, the
+     * displayed date would be wrong even though execution would still happen
+     * on the next business day (due to findDueSIs using <= comparison).
+     */
     private LocalDate computeNextDate(StandingInstruction si, LocalDate currentDate) {
         SIFrequency freq = si.getFrequency();
+        LocalDate rawNext;
         if (freq.getMonthsIncrement() > 0) {
             LocalDate next = currentDate.plusMonths(freq.getMonthsIncrement());
-            return next.withDayOfMonth(Math.min(si.getExecutionDay(), next.lengthOfMonth()));
+            rawNext = next.withDayOfMonth(Math.min(si.getExecutionDay(), next.lengthOfMonth()));
         } else if (freq.getDaysIncrement() > 0) {
-            return currentDate.plusDays(freq.getDaysIncrement());
+            rawNext = currentDate.plusDays(freq.getDaysIncrement());
+        } else {
+            rawNext = currentDate.plusMonths(1);
         }
-        return currentDate.plusMonths(1);
+
+        // CBS: Holiday-aware adjustment per Finacle SI_MASTER / RBI Payment Systems.
+        // If the raw next date falls on a holiday, shift to the next business day.
+        // Graceful fallback: if calendar data is unavailable, use raw date.
+        try {
+            String tenantId = si.getTenantId();
+            return calendarRepository.findNextBusinessDayOnOrAfter(tenantId, rawNext)
+                .orElse(rawNext);
+        } catch (Exception e) {
+            // Calendar lookup failure should not break SI processing
+            log.debug("Holiday lookup failed for {}, using raw date {}", si.getSiReference(), rawNext);
+            return rawNext;
+        }
+    }
+
+    // ========================================================================
+    // SI LIFECYCLE MANAGEMENT (Gap 4: Amendment support)
+    // ========================================================================
+
+    /**
+     * Amend an active SI — modify amount, frequency, or execution day.
+     * Per Finacle SI_MASTER: amendment creates an audit trail with before/after values.
+     * Only ACTIVE or PAUSED SIs can be amended.
+     * Per RBI Payment Systems: customer can modify SI at any time.
+     */
+    @Transactional
+    public StandingInstruction amendSI(String siReference, BigDecimal newAmount,
+                                        SIFrequency newFrequency, Integer newExecutionDay) {
+        String tenantId = TenantContext.getCurrentTenant();
+        StandingInstruction si = siRepository.findByTenantIdAndSiReference(tenantId, siReference)
+            .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
+        if (si.getStatus().isTerminal()) {
+            throw new BusinessException("SI_TERMINAL", "Cannot amend terminal SI: " + si.getStatus());
+        }
+        if (si.isLoanEmi() && newAmount != null) {
+            throw new BusinessException("SI_LOAN_EMI_AMOUNT_FIXED",
+                "LOAN_EMI SI amount cannot be amended — it is resolved dynamically from LoanAccount.emiAmount");
+        }
+
+        StringBuilder changes = new StringBuilder();
+        if (newAmount != null && !si.isLoanEmi()) {
+            changes.append("amount: ").append(si.getAmount()).append(" → ").append(newAmount).append("; ");
+            si.setAmount(newAmount);
+        }
+        if (newFrequency != null && newFrequency != si.getFrequency()) {
+            changes.append("frequency: ").append(si.getFrequency()).append(" → ").append(newFrequency).append("; ");
+            si.setFrequency(newFrequency);
+        }
+        if (newExecutionDay != null && newExecutionDay != si.getExecutionDay()) {
+            if (newExecutionDay < 1 || newExecutionDay > 28) {
+                throw new BusinessException("INVALID_EXECUTION_DAY", "Execution day must be 1-28");
+            }
+            changes.append("executionDay: ").append(si.getExecutionDay()).append(" → ").append(newExecutionDay).append("; ");
+            si.setExecutionDay(newExecutionDay);
+        }
+
+        if (changes.length() == 0) {
+            throw new BusinessException("NO_CHANGES", "No amendment fields provided");
+        }
+
+        // Recompute next execution date with new parameters
+        if (si.getLastExecutionDate() != null) {
+            si.setNextExecutionDate(computeNextDate(si, si.getLastExecutionDate()));
+        }
+
+        si.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        StandingInstruction saved = siRepository.save(si);
+        auditService.logEvent("StandingInstruction", si.getId(), "SI_AMENDED",
+            siReference, changes.toString(), "STANDING_INSTRUCTION",
+            "SI amended: " + siReference + " | Changes: " + changes + " by " + SecurityUtil.getCurrentUsername());
+        log.info("SI amended: si={}, changes={}", siReference, changes);
+        return saved;
     }
 
     /** Pause an active SI — per RBI Customer Rights, customer can pause at any time. */

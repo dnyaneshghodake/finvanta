@@ -6,6 +6,8 @@ import com.finvanta.domain.entity.LoanApplication;
 import com.finvanta.domain.entity.LoanDocument;
 import com.finvanta.domain.enums.ApplicationStatus;
 import com.finvanta.domain.enums.CollateralType;
+import com.finvanta.domain.enums.SIFrequency;
+import com.finvanta.domain.enums.SIStatus;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CollateralRepository;
 import com.finvanta.repository.CustomerRepository;
@@ -626,6 +628,62 @@ public class LoanController {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
         return "redirect:/loan/account/" + accountNumber;
+    }
+
+    /** Amend a Standing Instruction — modify amount/frequency/execution day (Gap 4) */
+    @PostMapping("/si/amend/{siReference}")
+    public String amendSI(@PathVariable String siReference,
+                           @RequestParam String accountNumber,
+                           @RequestParam(required = false) BigDecimal newAmount,
+                           @RequestParam(required = false) String newFrequency,
+                           @RequestParam(required = false) Integer newExecutionDay,
+                           RedirectAttributes redirectAttributes) {
+        try {
+            SIFrequency freq = (newFrequency != null && !newFrequency.isBlank())
+                ? SIFrequency.valueOf(newFrequency) : null;
+            siService.amendSI(siReference, newAmount, freq, newExecutionDay);
+            redirectAttributes.addFlashAttribute("success", "Standing Instruction amended: " + siReference);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
+    /**
+     * CBS Standing Instruction Operations Dashboard (Gap 6: Finacle SI_MONITOR).
+     * Shows all SIs, failed SIs requiring attention, upcoming execution forecast,
+     * and summary metrics. CHECKER/ADMIN access per Finacle operations module.
+     */
+    @GetMapping("/si/dashboard")
+    public ModelAndView siDashboard() {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("loan/si-dashboard");
+        mav.addObject("pageTitle", "Standing Instruction Dashboard");
+
+        // All SIs for full view
+        mav.addObject("allSIs", siRepository.findAllForDashboard(tenantId));
+
+        // Failed SIs requiring operations attention
+        mav.addObject("failedSIs", siRepository.findFailedActiveSIs(tenantId));
+
+        // Summary metrics
+        mav.addObject("totalActive", siRepository.countByTenantIdAndStatus(tenantId, SIStatus.ACTIVE));
+        mav.addObject("totalPaused", siRepository.countByTenantIdAndStatus(tenantId, SIStatus.PAUSED));
+        mav.addObject("totalFailed", siRepository.countFailedSIs(tenantId));
+
+        // Active SIs by type breakdown
+        mav.addObject("sisByType", siRepository.countActiveSIsByType(tenantId));
+
+        // Upcoming execution forecast (next 7 business days)
+        java.time.LocalDate today = businessDateService.getCurrentBusinessDate();
+        java.util.Map<String, Long> forecast = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < 7; i++) {
+            java.time.LocalDate date = today.plusDays(i);
+            forecast.put(date.toString(), siRepository.countDueOnDate(tenantId, date));
+        }
+        mav.addObject("executionForecast", forecast);
+
+        return mav;
     }
 
     // ================================================================

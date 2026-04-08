@@ -23,6 +23,9 @@
         <li class="nav-section">Loan Accounts</li>
         <li><a href="${pageContext.request.contextPath}/loan/accounts" class="nav-link"><i class="bi bi-bank"></i><span class="nav-text">Active Accounts</span></a></li>
         </c:if>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li><a href="${pageContext.request.contextPath}/loan/si/dashboard" class="nav-link"><i class="bi bi-arrow-repeat"></i><span class="nav-text">SI Dashboard</span></a></li>
+        </c:if>
 
         <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <li class="nav-section">CASA (Deposits)</li>

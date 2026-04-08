@@ -70,4 +70,30 @@ public interface StandingInstructionRepository extends JpaRepository<StandingIns
     @Query("SELECT COUNT(si) FROM StandingInstruction si WHERE si.tenantId = :tenantId " +
            "AND si.status = 'ACTIVE' AND si.lastExecutionStatus LIKE 'FAILED%'")
     long countFailedSIs(@Param("tenantId") String tenantId);
+
+    // === Operations Dashboard Queries (Finacle SI_MONITOR) ===
+
+    /** Count of active SIs by destination type for dashboard summary */
+    @Query("SELECT si.destinationType, COUNT(si) FROM StandingInstruction si " +
+           "WHERE si.tenantId = :tenantId AND si.status = 'ACTIVE' GROUP BY si.destinationType")
+    List<Object[]> countActiveSIsByType(@Param("tenantId") String tenantId);
+
+    /** Total active SIs count */
+    long countByTenantIdAndStatus(String tenantId, SIStatus status);
+
+    /** SIs due for execution on a specific date (for upcoming execution forecast) */
+    @Query("SELECT COUNT(si) FROM StandingInstruction si WHERE si.tenantId = :tenantId " +
+           "AND si.status = 'ACTIVE' AND si.nextExecutionDate = :date")
+    long countDueOnDate(@Param("tenantId") String tenantId, @Param("date") LocalDate date);
+
+    /** All active SIs with recent failures (for operations attention) */
+    @Query("SELECT si FROM StandingInstruction si WHERE si.tenantId = :tenantId " +
+           "AND si.status = 'ACTIVE' AND si.lastExecutionStatus LIKE 'FAILED%' " +
+           "ORDER BY si.lastExecutionDate DESC")
+    List<StandingInstruction> findFailedActiveSIs(@Param("tenantId") String tenantId);
+
+    /** All SIs regardless of status for full dashboard view */
+    @Query("SELECT si FROM StandingInstruction si WHERE si.tenantId = :tenantId " +
+           "ORDER BY si.status ASC, si.priority ASC, si.nextExecutionDate ASC")
+    List<StandingInstruction> findAllForDashboard(@Param("tenantId") String tenantId);
 }
