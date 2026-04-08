@@ -630,6 +630,65 @@ public class LoanController {
         return "redirect:/loan/account/" + accountNumber;
     }
 
+    /**
+     * Register a manual Standing Instruction (INTERNAL_TRANSFER, UTILITY, SIP, RD).
+     * Per Finacle SI_MASTER: manually registered SIs require maker-checker approval.
+     * MAKER submits → status = PENDING_APPROVAL → CHECKER approves → ACTIVE.
+     */
+    @PostMapping("/si/register")
+    public String registerManualSI(@RequestParam Long customerId,
+                                    @RequestParam String sourceAccountNumber,
+                                    @RequestParam String destinationType,
+                                    @RequestParam String destinationAccountNumber,
+                                    @RequestParam BigDecimal amount,
+                                    @RequestParam String frequency,
+                                    @RequestParam int executionDay,
+                                    @RequestParam String startDate,
+                                    @RequestParam(required = false) String endDate,
+                                    @RequestParam(required = false) String narration,
+                                    RedirectAttributes redirectAttributes) {
+        try {
+            SIFrequency freq = SIFrequency.valueOf(frequency);
+            java.time.LocalDate start = java.time.LocalDate.parse(startDate);
+            java.time.LocalDate end = (endDate != null && !endDate.isBlank())
+                ? java.time.LocalDate.parse(endDate) : null;
+            siService.registerManualSI(customerId, sourceAccountNumber, destinationType,
+                destinationAccountNumber, amount, freq, executionDay, start, end, narration);
+            redirectAttributes.addFlashAttribute("success",
+                "Standing Instruction registered (pending approval)");
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/deposit/view/" + sourceAccountNumber;
+    }
+
+    /** Approve a PENDING_APPROVAL SI — CHECKER activates per maker-checker workflow */
+    @PostMapping("/si/approve/{siReference}")
+    public String approveSI(@PathVariable String siReference,
+                             RedirectAttributes redirectAttributes) {
+        try {
+            siService.approveSI(siReference);
+            redirectAttributes.addFlashAttribute("success", "Standing Instruction approved: " + siReference);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/si/dashboard";
+    }
+
+    /** Reject a PENDING_APPROVAL SI — CHECKER rejects with reason */
+    @PostMapping("/si/reject/{siReference}")
+    public String rejectSI(@PathVariable String siReference,
+                            @RequestParam String reason,
+                            RedirectAttributes redirectAttributes) {
+        try {
+            siService.rejectSI(siReference, reason);
+            redirectAttributes.addFlashAttribute("success", "Standing Instruction rejected: " + siReference);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/si/dashboard";
+    }
+
     /** Amend a Standing Instruction — modify amount/frequency/execution day (Gap 4) */
     @PostMapping("/si/amend/{siReference}")
     public String amendSI(@PathVariable String siReference,
@@ -666,7 +725,11 @@ public class LoanController {
         // Failed SIs requiring operations attention
         mav.addObject("failedSIs", siRepository.findFailedActiveSIs(tenantId));
 
+        // Pending SIs requiring approval (maker-checker)
+        mav.addObject("pendingSIs", siRepository.findPendingApproval(tenantId));
+
         // Summary metrics
+        mav.addObject("totalPending", siRepository.countByTenantIdAndStatus(tenantId, SIStatus.PENDING_APPROVAL));
         mav.addObject("totalActive", siRepository.countByTenantIdAndStatus(tenantId, SIStatus.ACTIVE));
         mav.addObject("totalPaused", siRepository.countByTenantIdAndStatus(tenantId, SIStatus.PAUSED));
         mav.addObject("totalFailed", siRepository.countFailedSIs(tenantId));

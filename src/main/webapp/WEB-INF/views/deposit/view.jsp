@@ -112,6 +112,113 @@
 </c:if>
 </div></div>
 
+<!-- CBS Standing Instructions on this CASA Account -->
+<c:if test="${not empty standingInstructions}">
+<div class="fv-card mt-3">
+    <div class="card-header"><i class="bi bi-arrow-repeat"></i> Standing Instructions <span class="badge bg-secondary"><c:out value="${standingInstructions.size()}" /></span></div>
+    <div class="card-body">
+        <div class="table-responsive">
+        <table class="table fv-table table-sm">
+            <thead><tr><th>SI Ref</th><th>Type</th><th>Destination</th><th>Amount</th><th>Frequency</th><th>Next Exec</th><th>Last Status</th><th>Status</th></tr></thead>
+            <tbody>
+            <c:forEach var="si" items="${standingInstructions}">
+                <tr>
+                    <td class="font-monospace small"><c:out value="${si.siReference}" /></td>
+                    <td><span class="badge ${si.destinationType == 'LOAN_EMI' ? 'bg-primary' : 'bg-info'}"><c:out value="${si.destinationType}" /></span></td>
+                    <td><c:out value="${si.destinationAccountNumber}" default="--" /></td>
+                    <td><c:if test="${si.amount != null}"><fmt:formatNumber value="${si.amount}" type="currency" currencyCode="INR"/></c:if><c:if test="${si.amount == null}"><span class="text-muted">Dynamic (EMI)</span></c:if></td>
+                    <td><c:out value="${si.frequency}" /></td>
+                    <td><c:out value="${si.nextExecutionDate}" default="--" /></td>
+                    <td><c:choose>
+                        <c:when test="${si.lastExecutionStatus == 'SUCCESS'}"><span class="fv-badge fv-badge-active">SUCCESS</span></c:when>
+                        <c:when test="${si.lastExecutionStatus != null && si.lastExecutionStatus.startsWith('FAILED')}"><span class="fv-badge fv-badge-npa"><c:out value="${si.lastExecutionStatus}" /></span></c:when>
+                        <c:otherwise><span class="text-muted">--</span></c:otherwise>
+                    </c:choose></td>
+                    <td><c:choose>
+                        <c:when test="${si.status == 'ACTIVE'}"><span class="fv-badge fv-badge-active">ACTIVE</span></c:when>
+                        <c:when test="${si.status == 'PAUSED'}"><span class="fv-badge fv-badge-pending">PAUSED</span></c:when>
+                        <c:when test="${si.status == 'PENDING_APPROVAL'}"><span class="fv-badge fv-badge-pending">PENDING</span></c:when>
+                        <c:otherwise><span class="fv-badge fv-badge-closed"><c:out value="${si.status}" /></span></c:otherwise>
+                    </c:choose></td>
+                </tr>
+            </c:forEach>
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+</c:if>
+
+<!-- CBS: Register New Standing Instruction (MAKER/ADMIN) -->
+<c:if test="${account.active && (pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN'))}">
+<div class="fv-card mt-3">
+    <div class="card-header"><i class="bi bi-plus-circle"></i> Register Standing Instruction</div>
+    <div class="card-body">
+        <p class="text-muted small">Register a recurring auto-debit from this CASA account. Per RBI Payment Systems: requires checker approval before activation.</p>
+        <form method="post" action="${pageContext.request.contextPath}/loan/si/register" class="fv-form">
+            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
+            <input type="hidden" name="customerId" value="${account.customer.id}"/>
+            <input type="hidden" name="sourceAccountNumber" value="${account.accountNumber}"/>
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <label class="form-label">Destination Type *</label>
+                    <select name="destinationType" class="form-select" required>
+                        <option value="INTERNAL_TRANSFER">Internal Transfer</option>
+                        <option value="RD_CONTRIBUTION">RD Contribution</option>
+                        <option value="SIP">SIP (Mutual Fund)</option>
+                        <option value="UTILITY">Utility Payment</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Target Account *</label>
+                    <select name="destinationAccountNumber" class="form-select" required>
+                        <option value="">-- Select --</option>
+                        <c:forEach var="acct" items="${activeAccounts}">
+                            <c:if test="${acct.accountNumber != account.accountNumber}">
+                            <option value="${acct.accountNumber}"><c:out value="${acct.accountNumber}" /> (<c:out value="${acct.accountType}" />)</option>
+                            </c:if>
+                        </c:forEach>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Amount (INR) *</label>
+                    <input type="number" name="amount" class="form-control" step="0.01" min="1" required/>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Frequency *</label>
+                    <select name="frequency" class="form-select" required>
+                        <option value="MONTHLY">Monthly</option>
+                        <option value="QUARTERLY">Quarterly</option>
+                        <option value="WEEKLY">Weekly</option>
+                        <option value="DAILY">Daily</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Exec Day (1-28) *</label>
+                    <input type="number" name="executionDay" class="form-control" min="1" max="28" value="5" required/>
+                </div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <label class="form-label">Start Date *</label>
+                    <input type="date" name="startDate" class="form-control" required/>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">End Date</label>
+                    <input type="date" name="endDate" class="form-control"/>
+                    <small class="text-muted">Leave blank for perpetual</small>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Narration</label>
+                    <input type="text" name="narration" class="form-control" placeholder="e.g., Monthly SIP to MF account" maxlength="200"/>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-fv-primary btn-sm" data-confirm="Register this Standing Instruction? It will require checker approval."><i class="bi bi-plus-circle"></i> Register SI (Pending Approval)</button>
+        </form>
+    </div>
+</div>
+</c:if>
+
 <h5 class="mt-4">Recent Transactions</h5>
 <div class="table-responsive">
 <table class="table fv-table fv-datatable table-sm">

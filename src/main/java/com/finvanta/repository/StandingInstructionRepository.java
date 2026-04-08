@@ -96,4 +96,9 @@ public interface StandingInstructionRepository extends JpaRepository<StandingIns
     @Query("SELECT si FROM StandingInstruction si WHERE si.tenantId = :tenantId " +
            "ORDER BY si.status ASC, si.priority ASC, si.nextExecutionDate ASC")
     List<StandingInstruction> findAllForDashboard(@Param("tenantId") String tenantId);
+
+    /** Pending SIs awaiting checker approval (for maker-checker dashboard) */
+    @Query("SELECT si FROM StandingInstruction si WHERE si.tenantId = :tenantId " +
+           "AND si.status = 'PENDING_APPROVAL' ORDER BY si.createdAt ASC")
+    List<StandingInstruction> findPendingApproval(@Param("tenantId") String tenantId);
 }

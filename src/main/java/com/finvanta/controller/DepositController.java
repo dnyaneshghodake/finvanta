@@ -5,6 +5,7 @@ import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.DepositAccountRepository;
+import com.finvanta.repository.StandingInstructionRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
@@ -53,6 +54,7 @@ public class DepositController {
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
     private final DepositAccountRepository depositAccountRepository;
+    private final StandingInstructionRepository siRepository;
     private final ProductMasterRepository productMasterRepository;
 
     public DepositController(DepositAccountService depositService,
@@ -60,12 +62,14 @@ public class DepositController {
                               CustomerRepository customerRepository,
                               BranchRepository branchRepository,
                               DepositAccountRepository depositAccountRepository,
+                              StandingInstructionRepository siRepository,
                               ProductMasterRepository productMasterRepository) {
         this.depositService = depositService;
         this.businessDateService = businessDateService;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.depositAccountRepository = depositAccountRepository;
+        this.siRepository = siRepository;
         this.productMasterRepository = productMasterRepository;
     }
 
@@ -148,12 +152,20 @@ public class DepositController {
 
     @GetMapping("/view/{accountNumber}")
     public ModelAndView viewAccount(@PathVariable String accountNumber) {
+        String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("deposit/view");
         DepositAccount account = depositService.getAccount(accountNumber);
         List<DepositTransaction> transactions = depositService.getMiniStatement(accountNumber, 20);
         mav.addObject("account", account);
         mav.addObject("transactions", transactions);
         mav.addObject("pageTitle", "Account: " + accountNumber);
+
+        // CBS: Standing Instructions linked to this CASA account (for SI list + registration form)
+        mav.addObject("standingInstructions",
+            siRepository.findByTenantIdAndSourceAccountNumberOrderByPriorityAsc(tenantId, accountNumber));
+        // Active CASA accounts for SI target selection (internal transfer destination)
+        mav.addObject("activeAccounts", depositService.getActiveAccounts());
+
         return mav;
     }
 
