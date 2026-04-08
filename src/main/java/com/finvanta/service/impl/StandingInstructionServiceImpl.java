@@ -269,7 +269,7 @@ public class StandingInstructionServiceImpl {
                 "ACTIVE", "EXPIRED", "STANDING_INSTRUCTION",
                 "SI expired (end date reached): " + si.getSiReference()
                     + " | End date: " + si.getEndDate()
-                    + " | Total executions: " + (si.getTotalExecutions() + 1));
+                    + " | Total executions: " + si.getTotalExecutions());
         }
         siRepository.save(si);
     }

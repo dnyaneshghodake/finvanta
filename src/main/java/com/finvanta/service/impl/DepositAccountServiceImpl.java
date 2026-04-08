@@ -346,6 +346,10 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     public DepositTransaction transfer(String from, String to,
             BigDecimal amount, LocalDate bd, String narration, String idk) {
         String tid = TenantContext.getCurrentTenant();
+        if (idk != null) {
+            var dup = transactionRepository.findByTenantIdAndIdempotencyKey(tid, idk).orElse(null);
+            if (dup != null) return dup;
+        }
         if (from.equals(to)) throw new BusinessException("SAME_ACCOUNT", "Cannot transfer to same account");
         // CBS: Lock accounts in deterministic order (alphabetical by account number)
         // to prevent ABBA deadlock when two concurrent transfers happen in opposite directions.
