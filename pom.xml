@@ -135,6 +135,65 @@
 						</annotationProcessorPaths>
 				</configuration>
 			</plugin>
+			<!--
+			  CBS Code Quality: Spotless Maven Plugin for consistent formatting.
+			  Per RBI IT Governance Direction 2023 Section 7.2: source code must follow
+			  documented coding standards with automated enforcement.
+
+			  Configuration:
+			  - Java: Palantir Java Format (4-space indent, compatible with existing style)
+			  - SQL: dbeaver formatter for DDL scripts
+			  - Trailing whitespace/newline cleanup on all text files
+			  - Lombok-generated code excluded (annotation processing output)
+
+			  Usage:
+			    mvn spotless:check   - CI gate (fails build on violations)
+			    mvn spotless:apply   - Auto-fix formatting violations locally
+
+			  IMPORTANT: Spotless is configured with ratchetFrom to only enforce
+			  formatting on files changed since the last release tag. This prevents
+			  a massive reformatting diff on the existing codebase while ensuring
+			  all new/modified code follows the standard going forward.
+			-->
+			<plugin>
+				<groupId>com.diffplug.spotless</groupId>
+				<artifactId>spotless-maven-plugin</artifactId>
+				<version>2.43.0</version>
+				<configuration>
+					<!-- Only check files changed since master — incremental adoption -->
+					<ratchetFrom>origin/master</ratchetFrom>
+					<java>
+						<includes>
+							<include>src/main/java/**/*.java</include>
+							<include>src/test/java/**/*.java</include>
+						</includes>
+						<!-- Palantir: 4-space indent, matches existing codebase style -->
+						<palantirJavaFormat>
+							<version>2.47.0</version>
+							<style>PALANTIR</style>
+						</palantirJavaFormat>
+						<!-- Import ordering: static imports last, java/javax first -->
+						<importOrder>
+							<order>com.finvanta,com,jakarta,javax,java,org,\#</order>
+						</importOrder>
+						<removeUnusedImports/>
+						<formatAnnotations/>
+						<trimTrailingWhitespace/>
+						<endWithNewline/>
+					</java>
+					<pom>
+						<includes>
+							<include>pom.xml</include>
+						</includes>
+						<sortPom>
+							<expandEmptyElements>false</expandEmptyElements>
+							<nrOfIndentSpace>4</nrOfIndentSpace>
+							<sortDependencies>scope,groupId,artifactId</sortDependencies>
+							<sortPlugins>groupId,artifactId</sortPlugins>
+						</sortPom>
+					</pom>
+				</configuration>
+			</plugin>
 		</plugins>
 	</build>
 

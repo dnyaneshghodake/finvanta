@@ -27,16 +27,18 @@ public interface InterBranchSettlementRepository extends JpaRepository<InterBran
     /**
      * Find transactions for a business date.
      */
-    List<InterBranchTransaction> findByTenantIdAndBusinessDateOrderBySourceBranchIdAsc(
-        String tenantId,
-        LocalDate businessDate
+    @Query("SELECT i FROM InterBranchTransaction i WHERE i.tenantId = :tenantId " +
+           "AND i.businessDate = :businessDate ORDER BY i.sourceBranch.id ASC")
+    List<InterBranchTransaction> findByTenantIdAndBusinessDateOrderBySourceBranchAsc(
+        @Param("tenantId") String tenantId,
+        @Param("businessDate") LocalDate businessDate
     );
 
     /**
      * Sum outgoing receivables (what target branches owe us).
      */
-    @Query("SELECT SUM(i.amount) FROM InterBranchTransaction i " +
-           "WHERE i.tenantId = :tenantId AND i.targetBranchId = :branchId " +
+    @Query("SELECT COALESCE(SUM(i.amount), 0) FROM InterBranchTransaction i " +
+           "WHERE i.tenantId = :tenantId AND i.targetBranch.id = :branchId " +
            "AND i.settlementStatus = 'SETTLED'")
     BigDecimal sumReceivablesByBranch(
         @Param("tenantId") String tenantId,
@@ -46,8 +48,8 @@ public interface InterBranchSettlementRepository extends JpaRepository<InterBran
     /**
      * Sum outgoing payables (what we owe source branches).
      */
-    @Query("SELECT SUM(i.amount) FROM InterBranchTransaction i " +
-           "WHERE i.tenantId = :tenantId AND i.sourceBranchId = :branchId " +
+    @Query("SELECT COALESCE(SUM(i.amount), 0) FROM InterBranchTransaction i " +
+           "WHERE i.tenantId = :tenantId AND i.sourceBranch.id = :branchId " +
            "AND i.settlementStatus = 'SETTLED'")
     BigDecimal sumPayablesByBranch(
         @Param("tenantId") String tenantId,

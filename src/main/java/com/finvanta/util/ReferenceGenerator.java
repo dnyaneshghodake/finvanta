@@ -80,6 +80,11 @@ public final class ReferenceGenerator {
         return "COL" + timestamp() + nextSequence();
     }
 
+    /** Generates deposit account number per CBS CASA convention: SB/CA + branchCode + timestamp + seq */
+    public static String generateDepositAccountNumber(String branchCode) {
+        return "DEP" + branchCode + timestamp() + nextSequence();
+    }
+
     private static String timestamp() {
         return LocalDateTime.now().format(FORMATTER);
     }

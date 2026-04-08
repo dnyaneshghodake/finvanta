@@ -15,9 +15,9 @@
     <div class="fv-card">
         <div class="card-header">Customer Details
             <div class="float-end">
-                <a href="${pageContext.request.contextPath}/customer/list" class="btn btn-sm btn-outline-secondary">Back</a>
+                <a href="${pageContext.request.contextPath}/customer/list" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
                 <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
-                <a href="${pageContext.request.contextPath}/customer/edit/${customer.id}" class="btn btn-sm btn-fv-primary">Edit</a>
+                <a href="${pageContext.request.contextPath}/customer/edit/${customer.id}" class="btn btn-sm btn-fv-primary"><i class="bi bi-pencil"></i> Edit</a>
                 </c:if>
             </div>
         </div>
@@ -38,15 +38,20 @@
                         <c:when test="${customer.kycVerified}"><span class="fv-badge fv-badge-active">Verified</span> (by <c:out value="${customer.kycVerifiedBy}" /> on <c:out value="${customer.kycVerifiedDate}" />)</c:when>
                         <c:otherwise>
                             <span class="fv-badge fv-badge-rejected">Not Verified</span>
+                            <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
                             <form method="post" action="${pageContext.request.contextPath}/customer/verify-kyc/${customer.id}" class="d-inline ms-2">
                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                <button type="submit" class="btn btn-sm btn-success" data-confirm="Confirm KYC verification for this customer?">Verify KYC</button>
+                                <button type="submit" class="btn btn-sm btn-success" data-confirm="Confirm KYC verification for this customer?"><i class="bi bi-patch-check"></i> Verify KYC</button>
                             </form>
+                            </c:if>
                         </c:otherwise>
                     </c:choose>
                 </td></tr>
                 <tr><td class="fw-bold">CIBIL Score</td><td><c:out value="${customer.cibilScore}" /></td></tr>
                 <tr><td class="fw-bold">Branch</td><td><a href="${pageContext.request.contextPath}/branch/view/${customer.branch.id}"><c:out value="${customer.branch.branchCode}" /> - <c:out value="${customer.branch.branchName}" /></a></td></tr>
+                <tr><td class="fw-bold">Monthly Income</td><td class="amount"><c:if test="${customer.monthlyIncome != null}"><fmt:formatNumber value="${customer.monthlyIncome}" type="number" maxFractionDigits="2" /> INR</c:if><c:if test="${customer.monthlyIncome == null}">--</c:if></td></tr>
+                <tr><td class="fw-bold">Max Borrowing Limit</td><td class="amount"><c:if test="${customer.maxBorrowingLimit != null}"><fmt:formatNumber value="${customer.maxBorrowingLimit}" type="number" maxFractionDigits="2" /> INR</c:if><c:if test="${customer.maxBorrowingLimit == null}">--</c:if></td></tr>
+                <tr><td class="fw-bold">Employment</td><td><c:out value="${customer.employmentType}" default="--" /><c:if test="${not empty customer.employerName}"> &mdash; <c:out value="${customer.employerName}" /></c:if></td></tr>
                 <tr><td class="fw-bold">Status</td><td>
                     <c:choose>
                         <c:when test="${customer.active}"><span class="fv-badge fv-badge-active">Active</span></c:when>
@@ -62,6 +67,7 @@
     <div class="fv-card">
         <div class="card-header">Loan Applications</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table">
                 <thead>
                     <tr>
@@ -89,6 +95,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 
@@ -96,6 +103,7 @@
     <div class="fv-card">
         <div class="card-header">Loan Accounts</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table">
                 <thead>
                     <tr>
@@ -130,6 +138,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 
@@ -139,14 +148,14 @@
         <div class="card-body">
             <c:if test="${customer.active and customer.kycVerified}">
                 <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
-                <a href="${pageContext.request.contextPath}/loan/apply?customerId=${customer.id}" class="btn btn-sm btn-fv-primary me-1">Apply for Loan</a>
+                <a href="${pageContext.request.contextPath}/loan/apply?customerId=${customer.id}" class="btn btn-sm btn-fv-primary me-1"><i class="bi bi-plus-circle"></i> Apply for Loan</a>
                 </c:if>
             </c:if>
             <c:if test="${customer.active}">
                 <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
                 <form method="post" action="${pageContext.request.contextPath}/customer/deactivate/${customer.id}" class="d-inline">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                    <button type="submit" class="btn btn-sm btn-danger" data-confirm="Deactivate this customer? This action cannot be undone.">Deactivate Customer</button>
+                    <button type="submit" class="btn btn-sm btn-danger" data-confirm="Deactivate this customer? This action cannot be undone."><i class="bi bi-person-x"></i> Deactivate Customer</button>
                 </form>
                 </c:if>
             </c:if>

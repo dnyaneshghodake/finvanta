@@ -46,6 +46,20 @@ public interface LoanAccountService {
     LoanTransaction processRepayment(String accountNumber, BigDecimal amount, LocalDate valueDate);
 
     /**
+     * CBS Repayment with idempotency key support per Finacle UNIQUE.REF pattern.
+     * Used by Standing Instruction engine for EMI auto-debit to prevent double-debit
+     * on EOD retry. If idempotencyKey matches an existing transaction, returns it.
+     *
+     * @param accountNumber  Loan account number
+     * @param amount         Repayment amount
+     * @param valueDate      CBS business date
+     * @param idempotencyKey Client-supplied unique key (null = no idempotency protection)
+     * @return Transaction record (existing if idempotent retry, new otherwise)
+     */
+    LoanTransaction processRepayment(String accountNumber, BigDecimal amount,
+                                      LocalDate valueDate, String idempotencyKey);
+
+    /**
      * CBS NPA Classification per RBI IRAC norms.
      * Must receive CBS business date — never use LocalDate.now() for financial operations.
      *

@@ -7,8 +7,8 @@
 <div class="fv-main">
     <div class="fv-card">
         <div class="card-header">
-            Product: <c:out value="${product.productCode}" /> — <c:out value="${product.productName}" />
-            <a href="${pageContext.request.contextPath}/admin/products" class="btn btn-sm btn-outline-secondary float-end">Back</a>
+            Product: <c:out value="${product.productCode}" /> &mdash; <c:out value="${product.productName}" />
+            <a href="${pageContext.request.contextPath}/admin/products" class="btn btn-sm btn-outline-secondary float-end"><i class="bi bi-arrow-left"></i> Back</a>
         </div>
         <div class="card-body">
             <h6 class="mb-3">Product Configuration</h6>
@@ -25,10 +25,10 @@
                 <tr><td class="fw-bold">Prepayment Penalty</td><td><c:out value="${product.prepaymentPenaltyApplicable ? 'Yes' : 'No'}" /></td></tr>
                 <tr><td class="fw-bold">Processing Fee</td><td><fmt:formatNumber value="${product.processingFeePct}" maxFractionDigits="2" />%</td></tr>
                 <tr><td class="fw-bold">Default Penal Rate</td><td><fmt:formatNumber value="${product.defaultPenalRate}" maxFractionDigits="2" />% p.a.</td></tr>
-                <tr><td class="fw-bold">Interest Rate Range</td><td><fmt:formatNumber value="${product.minInterestRate}" maxFractionDigits="2" />% — <fmt:formatNumber value="${product.maxInterestRate}" maxFractionDigits="2" />%</td></tr>
-                <tr><td class="fw-bold">Loan Amount Range</td><td class="amount"><fmt:formatNumber value="${product.minLoanAmount}" type="number" maxFractionDigits="0" /> — <fmt:formatNumber value="${product.maxLoanAmount}" type="number" maxFractionDigits="0" /></td></tr>
-                <tr><td class="fw-bold">Tenure Range</td><td><c:out value="${product.minTenureMonths}" /> — <c:out value="${product.maxTenureMonths}" /> months</td></tr>
-                <tr><td class="fw-bold">Description</td><td><c:out value="${product.description}" default="—" /></td></tr>
+                <tr><td class="fw-bold">Interest Rate Range</td><td><fmt:formatNumber value="${product.minInterestRate}" maxFractionDigits="2" />% &ndash; <fmt:formatNumber value="${product.maxInterestRate}" maxFractionDigits="2" />%</td></tr>
+                <tr><td class="fw-bold">Loan Amount Range</td><td class="amount"><fmt:formatNumber value="${product.minLoanAmount}" type="number" maxFractionDigits="0" /> &ndash; <fmt:formatNumber value="${product.maxLoanAmount}" type="number" maxFractionDigits="0" /></td></tr>
+                <tr><td class="fw-bold">Tenure Range</td><td><c:out value="${product.minTenureMonths}" /> &ndash; <c:out value="${product.maxTenureMonths}" /> months</td></tr>
+                <tr><td class="fw-bold">Description</td><td><c:out value="${product.description}" default="--" /></td></tr>
                 <tr><td class="fw-bold">Status</td><td>
                     <c:choose>
                         <c:when test="${product.active}"><span class="fv-badge fv-badge-active">ACTIVE</span></c:when>
@@ -38,7 +38,7 @@
                 </tbody>
             </table>
 
-            <h6 class="mt-4 mb-3">GL Code Mapping (Product → GL)</h6>
+            <h6 class="mt-4 mb-3">GL Code Mapping (Product &rarr; GL)</h6>
             <table class="table fv-table table-bordered">
                 <thead class="table-light">
                     <tr><th>Transaction Type</th><th>GL Code</th><th>Description</th></tr>

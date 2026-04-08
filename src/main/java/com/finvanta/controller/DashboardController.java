@@ -1,9 +1,11 @@
 package com.finvanta.controller;
 
 import com.finvanta.repository.CustomerRepository;
+import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.domain.enums.ApplicationStatus;
+import com.finvanta.domain.enums.DepositAccountStatus;
 import com.finvanta.domain.enums.LoanStatus;
 import com.finvanta.util.TenantContext;
 import com.finvanta.workflow.ApprovalWorkflowService;
@@ -13,6 +15,9 @@ import org.springframework.web.servlet.ModelAndView;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
 
 @Controller
 public class DashboardController {
@@ -21,15 +26,18 @@ public class DashboardController {
     private final LoanAccountRepository accountRepository;
     private final CustomerRepository customerRepository;
     private final ApprovalWorkflowService workflowService;
+    private final DepositAccountRepository depositAccountRepository;
 
     public DashboardController(LoanApplicationRepository applicationRepository,
                                 LoanAccountRepository accountRepository,
                                 CustomerRepository customerRepository,
-                                ApprovalWorkflowService workflowService) {
+                                ApprovalWorkflowService workflowService,
+                                DepositAccountRepository depositAccountRepository) {
         this.applicationRepository = applicationRepository;
         this.accountRepository = accountRepository;
         this.customerRepository = customerRepository;
         this.workflowService = workflowService;
+        this.depositAccountRepository = depositAccountRepository;
     }
 
     @GetMapping("/dashboard")
@@ -41,20 +49,30 @@ public class DashboardController {
             customerRepository.countByTenantIdAndActiveTrue(tenantId));
         mav.addObject("pendingApplications",
             applicationRepository.countByTenantIdAndStatus(tenantId, ApplicationStatus.SUBMITTED));
-        mav.addObject("activeLoans",
-            accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.ACTIVE)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_0)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_1)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_2)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.RESTRUCTURED));
-        mav.addObject("smaAccounts",
-            accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_0)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_1)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.SMA_2));
-        mav.addObject("npaAccounts",
-            accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.NPA_SUBSTANDARD)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.NPA_DOUBTFUL)
-            + accountRepository.countByTenantIdAndStatus(tenantId, LoanStatus.NPA_LOSS));
+
+        // CBS Dashboard: Single GROUP BY query replaces 7 separate count queries.
+        // For 1M+ accounts, this eliminates 7 full table scans.
+        Map<LoanStatus, Long> statusCounts = new EnumMap<>(LoanStatus.class);
+        List<Object[]> rawCounts = accountRepository.countByTenantIdGroupByStatus(tenantId);
+        for (Object[] row : rawCounts) {
+            statusCounts.put((LoanStatus) row[0], (Long) row[1]);
+        }
+
+        long activeLoans = statusCounts.getOrDefault(LoanStatus.ACTIVE, 0L)
+            + statusCounts.getOrDefault(LoanStatus.SMA_0, 0L)
+            + statusCounts.getOrDefault(LoanStatus.SMA_1, 0L)
+            + statusCounts.getOrDefault(LoanStatus.SMA_2, 0L)
+            + statusCounts.getOrDefault(LoanStatus.RESTRUCTURED, 0L);
+        long smaAccounts = statusCounts.getOrDefault(LoanStatus.SMA_0, 0L)
+            + statusCounts.getOrDefault(LoanStatus.SMA_1, 0L)
+            + statusCounts.getOrDefault(LoanStatus.SMA_2, 0L);
+        long npaAccounts = statusCounts.getOrDefault(LoanStatus.NPA_SUBSTANDARD, 0L)
+            + statusCounts.getOrDefault(LoanStatus.NPA_DOUBTFUL, 0L)
+            + statusCounts.getOrDefault(LoanStatus.NPA_LOSS, 0L);
+
+        mav.addObject("activeLoans", activeLoans);
+        mav.addObject("smaAccounts", smaAccounts);
+        mav.addObject("npaAccounts", npaAccounts);
         mav.addObject("pendingApprovals",
             workflowService.getPendingApprovals().size());
         BigDecimal totalOutstanding = accountRepository.calculateTotalOutstandingPrincipal(tenantId);
@@ -82,6 +100,34 @@ public class DashboardController {
                 .min(BigDecimal.valueOf(100))
             : BigDecimal.ZERO;
         mav.addObject("provisionCoverage", provisionCoverage);
+
+        // === CASA Metrics (per RBI CASA Ratio reporting) ===
+        BigDecimal totalDeposits = depositAccountRepository.calculateTotalDeposits(tenantId);
+        long casaAccountCount = depositAccountRepository.countByTenantIdAndAccountStatusNot(tenantId, DepositAccountStatus.CLOSED);
+        mav.addObject("totalDeposits", totalDeposits);
+        mav.addObject("casaAccountCount", casaAccountCount);
+
+        // CASA Ratio = (CASA Deposits / Total Deposits) x 100
+        // Higher CASA ratio = lower cost of funds for the bank (RBI key metric)
+        // Per RBI regulatory reporting: CASA deposits = SB + CA balances.
+        //
+        // Currently only CASA module exists (no FD/term deposits), so CASA ratio
+        // is always 100%. When FD module is added:
+        //   - totalDeposits must include FD balances (query all deposit types)
+        //   - casaDeposits stays as-is (CASA-only from depositAccountRepository)
+        //   - Ratio will then be meaningful (sub-100%)
+        //
+        // For now, we display the CASA deposits total and a fixed 100% ratio.
+        // The ratio computation is kept correct so it works when FD is added —
+        // just update totalDeposits to include FD balances.
+        BigDecimal casaDeposits = totalDeposits; // CASA-only sum (currently == totalDeposits)
+        // TODO: When FD module is added, compute totalDeposits = casaDeposits + fdDeposits
+        BigDecimal totalDepositsAllTypes = totalDeposits; // Will include FD when module is added
+        BigDecimal casaRatio = totalDepositsAllTypes.compareTo(BigDecimal.ZERO) > 0
+            ? casaDeposits.multiply(BigDecimal.valueOf(100))
+                .divide(totalDepositsAllTypes, 2, RoundingMode.HALF_UP)
+            : BigDecimal.ZERO;
+        mav.addObject("casaRatio", casaRatio);
 
         return mav;
     }

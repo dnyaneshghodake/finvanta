@@ -17,6 +17,7 @@
     <div class="fv-card">
         <div class="card-header">Audit Trail</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
@@ -48,6 +49,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>

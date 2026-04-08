@@ -91,4 +91,24 @@ public class LoanApplication extends BaseEntity {
     /** RBI Fair Lending: Penal rate (% p.a.) applied on overdue EMIs */
     @Column(name = "penal_rate", precision = 8, scale = 4)
     private BigDecimal penalRate;
+
+    /**
+     * CBS Disbursement Account per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT.
+     *
+     * The borrower's CASA (Savings/Current) account number where loan proceeds
+     * will be credited on disbursement. Per Tier-1 CBS standards:
+     *   - Loan disbursement MUST credit the borrower's operating account (not cash)
+     *   - GL: DR Loan Asset (1001) / CR Customer Deposits (2010/2020)
+     *   - CASA subledger is updated atomically within the same transaction
+     *   - Account must belong to the same customer (CIF linkage validation)
+     *   - Account must be ACTIVE at the time of disbursement
+     *
+     * Per RBI KYC/AML: Disbursement to third-party accounts is prohibited for
+     * retail loans. The CASA account must be in the borrower's name.
+     *
+     * Nullable: If null, disbursement falls back to Bank Operations GL (1100)
+     * for backward compatibility (cash disbursement / demand draft mode).
+     */
+    @Column(name = "disbursement_account_number", length = 40)
+    private String disbursementAccountNumber;
 }

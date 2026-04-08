@@ -137,10 +137,13 @@ body {
     box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 .fv-card .card-header {
+    display: flex; align-items: center; justify-content: space-between;
     padding: 10px 16px; background: #f8f9fa;
     border-bottom: 1px solid var(--fv-border);
     font-size: 13px; font-weight: 600; color: var(--fv-primary);
+    min-height: 42px; flex-wrap: wrap; gap: 6px;
 }
+.fv-card .card-header .float-end { display: flex; align-items: center; gap: 6px; float: none; }
 .fv-card .card-body { padding: 16px; }
 
 /* Stat Cards */
@@ -198,6 +201,14 @@ body {
 .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter,
 .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { font-size: 12px; padding: 8px 0; }
 .dataTables_wrapper .dataTables_filter input { font-size: 12px; padding: 4px 8px; border: 1px solid var(--fv-border); border-radius: 3px; }
+/* DataTables sort arrow alignment — prevent arrows from overlapping header text */
+.fv-table.dataTable thead th { padding-right: 24px; position: relative; }
+.fv-table.dataTable thead th.sorting::after,
+.fv-table.dataTable thead th.sorting_asc::after,
+.fv-table.dataTable thead th.sorting_desc::after { right: 8px; top: 50%; transform: translateY(-50%); position: absolute; }
+.fv-table.dataTable thead th.sorting::before,
+.fv-table.dataTable thead th.sorting_asc::before,
+.fv-table.dataTable thead th.sorting_desc::before { right: 8px; bottom: auto; top: 50%; transform: translateY(-70%); position: absolute; }
 
 /* Login Page */
 .fv-login-wrapper { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--fv-sidebar-bg) 0%, var(--fv-primary) 100%); }

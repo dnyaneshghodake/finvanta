@@ -48,11 +48,73 @@ public class CustomerController {
         this.businessDateService = businessDateService;
     }
 
+    /**
+     * CBS Customer List with branch isolation per Finacle BRANCH_CONTEXT.
+     * MAKER/CHECKER: see only customers at their home branch.
+     * ADMIN: sees all customers across all branches.
+     */
     @GetMapping("/list")
     public ModelAndView listCustomers() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("customer/list");
-        mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
+
+        if (SecurityUtil.isAdminRole()) {
+            mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
+        } else {
+            Long branchId = SecurityUtil.getCurrentUserBranchId();
+            if (branchId != null) {
+                mav.addObject("customers",
+                    customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, branchId));
+            } else {
+                // CBS: No branch assigned — show empty list per fail-safe principle.
+                // Per RBI Operational Risk: no-branch users must not see all data.
+                mav.addObject("customers", java.util.Collections.emptyList());
+            }
+        }
+        return mav;
+    }
+
+    /**
+     * CBS Customer Search with branch isolation per Finacle CIF_SEARCH + BRANCH_CONTEXT.
+     * Searches by name, customer number, mobile, or PAN.
+     * MAKER/CHECKER: search restricted to their home branch.
+     * ADMIN: searches across all branches.
+     * Essential for branch operations — staff must locate customers quickly.
+     */
+    @GetMapping("/search")
+    public ModelAndView searchCustomers(@RequestParam(required = false) String q) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("customer/list");
+        if (q != null && !q.isBlank() && q.length() >= 2) {
+            // CBS: Apply branch isolation to search results per Finacle BRANCH_CONTEXT.
+            // Without this, MAKER/CHECKER could search across all branches, bypassing
+            // the branch isolation enforced in listCustomers().
+            if (SecurityUtil.isAdminRole()) {
+                mav.addObject("customers", customerRepository.searchCustomers(tenantId, q.trim()));
+            } else {
+                Long branchId = SecurityUtil.getCurrentUserBranchId();
+                if (branchId != null) {
+                    mav.addObject("customers",
+                        customerRepository.searchCustomersByBranch(tenantId, branchId, q.trim()));
+                } else {
+                    mav.addObject("customers", java.util.Collections.emptyList());
+                }
+            }
+            mav.addObject("searchQuery", q);
+        } else {
+            // Show all if no query (same as list)
+            if (SecurityUtil.isAdminRole()) {
+                mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
+            } else {
+                Long branchId = SecurityUtil.getCurrentUserBranchId();
+                if (branchId != null) {
+                    mav.addObject("customers",
+                        customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, branchId));
+                } else {
+                    mav.addObject("customers", java.util.Collections.emptyList());
+                }
+            }
+        }
         return mav;
     }
 
@@ -82,6 +144,22 @@ public class CustomerController {
                 .orElseThrow(() -> new BusinessException(
                     "BRANCH_NOT_FOUND", "Branch not found: " + branchId));
 
+            // P1 Gap 5.2: Duplicate CIF detection per RBI KYC norms.
+            // Per RBI: one PAN = one CIF. Duplicate CIFs cause exposure miscalculation.
+            if (customer.getPanNumber() != null && !customer.getPanNumber().isBlank()) {
+                if (customerRepository.existsByTenantIdAndPanNumber(tenantId, customer.getPanNumber())) {
+                    throw new BusinessException("DUPLICATE_PAN",
+                        "Customer with PAN " + customer.getPanNumber() + " already exists. "
+                            + "Per RBI KYC norms, one PAN = one CIF.");
+                }
+            }
+            if (customer.getAadhaarNumber() != null && !customer.getAadhaarNumber().isBlank()) {
+                if (customerRepository.existsByTenantIdAndAadhaarNumber(tenantId, customer.getAadhaarNumber())) {
+                    throw new BusinessException("DUPLICATE_AADHAAR",
+                        "Customer with Aadhaar already exists. Duplicate CIFs are prohibited per RBI KYC.");
+                }
+            }
+
             customer.setCustomerNumber(ReferenceGenerator.generateCustomerNumber(branch.getBranchCode()));
             customer.setTenantId(tenantId);
             customer.setBranch(branch);
@@ -93,7 +171,7 @@ public class CustomerController {
                 "Customer created: " + saved.getFullName() + " at branch " + branch.getBranchCode());
 
             redirectAttributes.addFlashAttribute("success",
-                "Customer created: " + saved.getCustomerNumber() + " — " + saved.getFullName());
+                "Customer created: " + saved.getCustomerNumber() + " - " + saved.getFullName());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -166,6 +244,10 @@ public class CustomerController {
             existing.setPinCode(updated.getPinCode());
             existing.setCustomerType(updated.getCustomerType());
             existing.setCibilScore(updated.getCibilScore());
+            existing.setMonthlyIncome(updated.getMonthlyIncome());
+            existing.setMaxBorrowingLimit(updated.getMaxBorrowingLimit());
+            existing.setEmploymentType(updated.getEmploymentType());
+            existing.setEmployerName(updated.getEmployerName());
             existing.setBranch(branch);
             existing.setUpdatedBy(currentUser);
             customerRepository.save(existing);

@@ -34,8 +34,9 @@
 
     <!-- Calendar Table with Day Control -->
     <div class="fv-card">
-        <div class="card-header">Business Calendar — Day Lifecycle</div>
+        <div class="card-header">Business Calendar &mdash; Day Lifecycle</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
@@ -69,11 +70,11 @@
                             <td>
                                 <c:choose>
                                     <c:when test="${cal.eodComplete}"><span class="fv-badge fv-badge-active">Complete</span></c:when>
-                                    <c:otherwise>—</c:otherwise>
+                                    <c:otherwise>--</c:otherwise>
                                 </c:choose>
                             </td>
-                            <td><c:out value="${cal.dayOpenedBy}" default="—" /></td>
-                            <td><c:out value="${cal.dayClosedBy}" default="—" /></td>
+                            <td><c:out value="${cal.dayOpenedBy}" default="--" /></td>
+                            <td><c:out value="${cal.dayClosedBy}" default="--" /></td>
                             <td>
                                 <c:if test="${cal.dayStatus == 'NOT_OPENED' and not cal.holiday}">
                                     <form method="post" action="${pageContext.request.contextPath}/calendar/day-open" class="d-inline">
@@ -97,6 +98,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>

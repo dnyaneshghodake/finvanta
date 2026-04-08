@@ -5,7 +5,7 @@
 
 <div class="fv-main">
     <div class="fv-card">
-        <div class="card-header">Edit Branch — <c:out value="${branch.branchCode}" /> <a href="${pageContext.request.contextPath}/branch/view/${branch.id}" class="btn btn-sm btn-outline-secondary float-end">Cancel</a></div>
+        <div class="card-header">Edit Branch &mdash; <c:out value="${branch.branchCode}" /> <a href="${pageContext.request.contextPath}/branch/view/${branch.id}" class="btn btn-sm btn-outline-secondary float-end"><i class="bi bi-x-circle"></i> Cancel</a></div>
         <div class="card-body">
             <form method="post" action="${pageContext.request.contextPath}/branch/edit/${branch.id}" class="fv-form">
                 <!-- Branch code is immutable after creation -->

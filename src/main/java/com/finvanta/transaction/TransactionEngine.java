@@ -6,6 +6,7 @@ import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.BranchRepository;
+import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.service.MakerCheckerService;
 import com.finvanta.service.SequenceGeneratorService;
 import com.finvanta.service.TransactionLimitService;
@@ -71,6 +72,7 @@ public class TransactionEngine {
     private final MakerCheckerService makerCheckerService;
     private final BusinessCalendarRepository calendarRepository;
     private final BranchRepository branchRepository;
+    private final TransactionBatchRepository batchRepository;
     private final AuditService auditService;
     private final SequenceGeneratorService sequenceGenerator;
 
@@ -79,6 +81,7 @@ public class TransactionEngine {
                               MakerCheckerService makerCheckerService,
                               BusinessCalendarRepository calendarRepository,
                               BranchRepository branchRepository,
+                              TransactionBatchRepository batchRepository,
                               AuditService auditService,
                               SequenceGeneratorService sequenceGenerator) {
         this.accountingService = accountingService;
@@ -86,6 +89,7 @@ public class TransactionEngine {
         this.makerCheckerService = makerCheckerService;
         this.calendarRepository = calendarRepository;
         this.branchRepository = branchRepository;
+        this.batchRepository = batchRepository;
         this.auditService = auditService;
         this.sequenceGenerator = sequenceGenerator;
     }
@@ -186,6 +190,32 @@ public class TransactionEngine {
                 .filter(b -> b.isActive())
                 .orElseThrow(() -> new BusinessException("INVALID_BRANCH",
                     "Branch not found or inactive: " + request.getBranchCode()));
+        }
+
+        // ================================================================
+        // STEP 5.5: Transaction Batch Validation
+        // Per Finacle/Temenos batch control: user-initiated transactions require
+        // an OPEN transaction batch for the business date. Without a batch,
+        // transactions cannot be tracked for intra-day reconciliation.
+        // System-generated EOD transactions are exempt (batches are closed
+        // before EOD starts per Step 0 of BatchService.runEodBatch).
+        // ================================================================
+        if (!request.isSystemGenerated()) {
+            var openBatches = batchRepository.findOpenBatches(tenantId, request.getValueDate());
+            if (openBatches.isEmpty()) {
+                // CBS: Enhanced diagnostics — log tenant + date + total batch count for troubleshooting.
+                // Common causes: (1) batches created for different date, (2) tenant mismatch,
+                // (3) all batches already closed, (4) day status changed after batch creation.
+                long totalBatches = batchRepository.findByTenantIdAndBusinessDateOrderByOpenedAtAsc(
+                    tenantId, request.getValueDate()).size();
+                log.error("BATCH_NOT_OPEN: tenant={}, valueDate={}, totalBatchesForDate={}, module={}, type={}",
+                    tenantId, request.getValueDate(), totalBatches,
+                    request.getSourceModule(), request.getTransactionType());
+                throw new BusinessException("BATCH_NOT_OPEN",
+                    "No open transaction batch for business date " + request.getValueDate()
+                        + " (tenant=" + tenantId + ", totalBatches=" + totalBatches
+                        + "). Open a batch via Transaction Batches before posting transactions.");
+            }
         }
 
         // ================================================================

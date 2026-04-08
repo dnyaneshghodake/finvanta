@@ -25,9 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
  *   5. Lock is released when the enclosing transaction commits
  *
  * Lazy initialization: If the sequence row doesn't exist, it is created with
- * currentValue=0 via native SQL MERGE (upsert), then locked and incremented.
- * The MERGE is idempotent — concurrent first-use threads both execute MERGE
- * safely, with one inserting and the other becoming a no-op.
+ * currentValue=0 via JPA persist (with duplicate-safe catch), then locked and
+ * incremented. Concurrent first-use threads both attempt insert — one succeeds,
+ * the other catches the unique constraint violation and proceeds to lock.
  *
  * Transaction propagation: REQUIRES_NEW ensures the sequence allocation commits
  * independently of the caller's transaction. This prevents sequence gaps when
@@ -71,29 +71,38 @@ public class SequenceGeneratorService {
             .orElse(null);
 
         if (seq == null) {
-            // Lazy init: ensure the sequence row exists using MERGE INTO (upsert).
-            // This is idempotent and safe under concurrent first-use:
-            //   - Thread A and B both find null and both execute MERGE
-            //   - One inserts, the other matches and does nothing
-            //   - No DataIntegrityViolationException, no poisoned persistence context
+            // Lazy init: ensure the sequence row exists using a native INSERT that
+            // is safe under concurrent first-use (duplicate key is silently ignored).
             //
-            // Uses H2-native MERGE KEY syntax which is compatible with both H2 (dev/test)
-            // and SQL Server (prod via ddl-sqlserver.sql). The KEY clause specifies the
-            // unique constraint columns — H2 performs upsert based on these columns.
-            // Per Finacle SEQ_MASTER: sequence lazy-init must be idempotent across engines.
-            entityManager.createNativeQuery(
-                "MERGE INTO db_sequences (tenant_id, sequence_name, current_value, version) "
-                + "KEY (tenant_id, sequence_name) "
-                + "VALUES (:tenantId, :seqName, 0, 0)")
-                .setParameter("tenantId", tenantId)
-                .setParameter("seqName", sequenceName)
-                .executeUpdate();
+            // Concurrent first-use safety:
+            //   - Thread A and B both find null and both attempt insert
+            //   - One succeeds, the other gets a duplicate key error (silently ignored)
+            //   - Both threads then proceed to lock-and-increment
+            //
+            // Uses native SQL to avoid poisoning the Hibernate Session/persistence context.
+            // A failed JPA persist() + flush() marks the Session as rollback-only on some
+            // databases (SQL Server, PostgreSQL), making subsequent operations fail.
+            // Native SQL operates outside the persistence context and does not affect it.
+            //
+            // Per Finacle SEQ_MASTER: sequence lazy-init must be idempotent across DB engines.
+            try {
+                entityManager.createNativeQuery(
+                    "INSERT INTO db_sequences (tenant_id, sequence_name, current_value, version) "
+                    + "VALUES (:tenantId, :seqName, 0, 0)")
+                    .setParameter("tenantId", tenantId)
+                    .setParameter("seqName", sequenceName)
+                    .executeUpdate();
+            } catch (Exception e) {
+                // Unique constraint violation — another thread already created it.
+                // Native SQL does not poison the persistence context, so no clear() needed.
+                log.debug("Sequence {} already exists (concurrent init), proceeding to lock", sequenceName);
+            }
 
-            // Now lock the row — guaranteed to exist after MERGE
+            // Now lock the row — guaranteed to exist after insert or concurrent insert
             seq = sequenceRepository
                 .findAndLockByTenantIdAndSequenceName(tenantId, sequenceName)
                 .orElseThrow(() -> new IllegalStateException(
-                    "Failed to lock sequence after MERGE: " + sequenceName));
+                    "Failed to lock sequence after init: " + sequenceName));
         }
 
         long nextVal = seq.getCurrentValue() + 1;

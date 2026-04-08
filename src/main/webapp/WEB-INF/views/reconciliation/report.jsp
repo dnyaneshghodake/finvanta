@@ -36,8 +36,9 @@
     <!-- Variance Details -->
     <c:if test="${not empty reconResult.variances}">
     <div class="fv-card">
-        <div class="card-header text-danger">GL Variances — Requires Resolution Before Day Close</div>
+        <div class="card-header text-danger">GL Variances &mdash; Requires Resolution Before Day Close</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table">
                 <thead>
                     <tr>
@@ -68,6 +69,7 @@
                     </c:forEach>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
     </c:if>

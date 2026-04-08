@@ -25,9 +25,9 @@
         <div class="card-header">Account Information
             <div class="float-end">
                 <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
-                    <a href="${pageContext.request.contextPath}/audit/logs?entityType=LoanAccount&entityId=${account.id}" class="btn btn-sm btn-outline-info me-1">Audit Trail</a>
+                    <a href="${pageContext.request.contextPath}/audit/logs?entityType=LoanAccount&entityId=${account.id}" class="btn btn-sm btn-outline-info me-1"><i class="bi bi-shield-lock"></i> Audit Trail</a>
                 </c:if>
-                <a href="${pageContext.request.contextPath}/loan/accounts" class="btn btn-sm btn-outline-secondary">Back</a>
+                <a href="${pageContext.request.contextPath}/loan/accounts" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
             </div>
         </div>
         <div class="card-body">
@@ -39,7 +39,7 @@
                 <tr><td class="fw-bold">Application</td><td><c:out value="${account.application.applicationNumber}" /></td></tr>
                 <tr><td class="fw-bold">Product Type</td><td><c:out value="${account.productType}" />
                     <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN') && not empty productId}">
-                        <a href="${pageContext.request.contextPath}/admin/products/${productId}" class="btn btn-sm btn-outline-secondary ms-2">View GL Config</a>
+                        <a href="${pageContext.request.contextPath}/admin/products/${productId}" class="btn btn-sm btn-outline-secondary ms-2"><i class="bi bi-diagram-2"></i> GL Config</a>
                     </c:if>
                 </td></tr>
                 <tr><td class="fw-bold">Currency</td><td><c:out value="${account.currencyCode}" /></td></tr>
@@ -129,6 +129,147 @@
     </div>
     </c:if>
 
+    <!-- CBS Standing Instructions (Finacle SI_MASTER / Temenos STANDING.ORDER) -->
+    <c:if test="${not empty standingInstructions}">
+    <div class="fv-card">
+        <div class="card-header"><i class="bi bi-arrow-repeat"></i> Standing Instructions <span class="badge bg-secondary"><c:out value="${standingInstructions.size()}" /></span></div>
+        <div class="card-body">
+            <div class="table-responsive">
+            <table class="table fv-table">
+                <thead>
+                    <tr>
+                        <th>SI Reference</th>
+                        <th>Type</th>
+                        <th>Source CASA</th>
+                        <th>Frequency</th>
+                        <th>Next Execution</th>
+                        <th>Last Status</th>
+                        <th>Executions</th>
+                        <th>Failures</th>
+                        <th>Status</th>
+                        <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                        <th>Action</th>
+                        </c:if>
+                    </tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="si" items="${standingInstructions}">
+                        <tr>
+                            <td class="font-monospace small"><c:out value="${si.siReference}" /></td>
+                            <td><span class="badge ${si.destinationType == 'LOAN_EMI' ? 'bg-primary' : 'bg-info'}"><c:out value="${si.destinationType}" /></span></td>
+                            <td><a href="${pageContext.request.contextPath}/deposit/view/${si.sourceAccountNumber}"><c:out value="${si.sourceAccountNumber}" /></a></td>
+                            <td><c:out value="${si.frequency}" /></td>
+                            <td><c:out value="${si.nextExecutionDate}" default="--" /></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${si.lastExecutionStatus == 'SUCCESS'}"><span class="fv-badge fv-badge-active">SUCCESS</span></c:when>
+                                    <c:when test="${si.lastExecutionStatus != null && si.lastExecutionStatus.startsWith('FAILED')}"><span class="fv-badge fv-badge-npa"><c:out value="${si.lastExecutionStatus}" /></span></c:when>
+                                    <c:when test="${si.lastExecutionStatus == 'SKIPPED'}"><span class="fv-badge fv-badge-pending">SKIPPED</span></c:when>
+                                    <c:otherwise><span class="text-muted">--</span></c:otherwise>
+                                </c:choose>
+                            </td>
+                            <td><c:out value="${si.totalExecutions}" /></td>
+                            <td><c:if test="${si.totalFailures > 0}"><span class="text-danger"><c:out value="${si.totalFailures}" /></span></c:if><c:if test="${si.totalFailures == 0}">0</c:if></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${si.status == 'ACTIVE'}"><span class="fv-badge fv-badge-active">ACTIVE</span></c:when>
+                                    <c:when test="${si.status == 'PAUSED'}"><span class="fv-badge fv-badge-pending">PAUSED</span></c:when>
+                                    <c:when test="${si.status == 'EXPIRED'}"><span class="fv-badge fv-badge-closed">EXPIRED</span></c:when>
+                                    <c:when test="${si.status == 'CANCELLED'}"><span class="fv-badge fv-badge-rejected">CANCELLED</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-pending"><c:out value="${si.status}" /></span></c:otherwise>
+                                </c:choose>
+                            </td>
+                            <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                            <td>
+                                <c:if test="${si.status == 'ACTIVE'}">
+                                    <form method="post" action="${pageContext.request.contextPath}/loan/si/pause/${si.siReference}" class="d-inline">
+                                        <input type="hidden" name="accountNumber" value="${account.accountNumber}" />
+                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                                        <button type="submit" class="btn btn-sm btn-outline-warning" data-confirm="Pause SI ${si.siReference}? EMI auto-debit will stop until resumed."><i class="bi bi-pause-circle"></i> Pause</button>
+                                    </form>
+                                    <form method="post" action="${pageContext.request.contextPath}/loan/si/cancel/${si.siReference}" class="d-inline">
+                                        <input type="hidden" name="accountNumber" value="${account.accountNumber}" />
+                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Cancel SI ${si.siReference}? This is permanent."><i class="bi bi-x-circle"></i> Cancel</button>
+                                    </form>
+                                </c:if>
+                                <c:if test="${si.status == 'PAUSED'}">
+                                    <form method="post" action="${pageContext.request.contextPath}/loan/si/resume/${si.siReference}" class="d-inline">
+                                        <input type="hidden" name="accountNumber" value="${account.accountNumber}" />
+                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                                        <button type="submit" class="btn btn-sm btn-outline-success" data-confirm="Resume SI ${si.siReference}? EMI auto-debit will restart."><i class="bi bi-play-circle"></i> Resume</button>
+                                    </form>
+                                </c:if>
+                            </td>
+                            </c:if>
+                        </tr>
+                    </c:forEach>
+                </tbody>
+            </table>
+            </div>
+            <c:forEach var="si" items="${standingInstructions}">
+                <c:if test="${si.lastFailureReason != null}">
+                    <div class="alert alert-warning mt-2 small"><strong>Last failure (${si.siReference}):</strong> <c:out value="${si.lastFailureReason}" /></div>
+                </c:if>
+            </c:forEach>
+        </div>
+    </div>
+    </c:if>
+
+    <!-- CBS Interest Accrual Trail (P0-2: Audit-grade per-day records) -->
+    <c:if test="${not empty accrualHistory}">
+    <div class="fv-card">
+        <div class="card-header">Interest Accrual Trail <span class="badge bg-secondary"><c:out value="${accrualHistory.size()}" /></span></div>
+        <div class="card-body">
+            <div class="table-responsive">
+            <table class="table fv-table fv-datatable">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th class="text-end">Principal Base</th>
+                        <th class="text-end">Rate %</th>
+                        <th>Days</th>
+                        <th class="text-end">Amount</th>
+                        <th>Posted</th>
+                        <th>Txn Ref</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="acc" items="${accrualHistory}">
+                        <tr>
+                            <td><c:out value="${acc.accrualDate}" /></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${acc.accrualType == 'PENAL'}"><span class="fv-badge fv-badge-npa">PENAL</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-active">REGULAR</span></c:otherwise>
+                                </c:choose>
+                            </td>
+                            <td class="amount"><fmt:formatNumber value="${acc.principalBase}" type="number" maxFractionDigits="2" /></td>
+                            <td class="text-end"><fmt:formatNumber value="${acc.rateApplied}" maxFractionDigits="4" />%</td>
+                            <td><c:out value="${acc.daysCount}" /></td>
+                            <td class="amount"><fmt:formatNumber value="${acc.accruedAmount}" type="number" maxFractionDigits="2" /></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${acc.postedFlag}"><span class="fv-badge fv-badge-active">Yes</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-pending">No</span></c:otherwise>
+                                </c:choose>
+                            </td>
+                            <td class="font-monospace small">
+                                <c:if test="${not empty acc.transactionRef}">
+                                    <a href="${pageContext.request.contextPath}/txn360/${acc.transactionRef}"><c:out value="${acc.transactionRef}" /></a>
+                                </c:if>
+                                <c:if test="${empty acc.transactionRef}">--</c:if>
+                            </td>
+                        </tr>
+                    </c:forEach>
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+    </c:if>
+
     <!-- CBS Repayment Schedule Preview (RBI Fair Practices Code 2023) -->
     <c:if test="${not empty schedulePreview}">
     <div class="fv-card">
@@ -144,6 +285,7 @@
                 <div class="col-md-3"><div class="fv-stat-card"><div class="stat-value amount"><fmt:formatNumber value="${previewTotalPayable}" type="number" maxFractionDigits="2" /></div><div class="stat-label">Total Payable (INR)</div></div></div>
             </div>
             <p class="text-muted small">Per RBI Fair Practices Code 2023: This schedule is indicative and based on the sanctioned amount at <fmt:formatNumber value="${account.interestRate}" maxFractionDigits="2" />% p.a. for <c:out value="${account.tenureMonths}" /> months. Actual schedule will be generated at disbursement.</p>
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr><th>#</th><th>Due Date</th><th class="text-end">EMI</th><th class="text-end">Principal</th><th class="text-end">Interest</th><th class="text-end">Closing Balance</th></tr>
@@ -161,6 +303,7 @@
                     </c:forEach>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
     </c:if>
@@ -185,7 +328,7 @@
 
                 <c:if test="${account.multiDisbursement}">
                 <!-- Multi-tranche: specify tranche amount -->
-                <form method="post" action="${pageContext.request.contextPath}/loan/disburse-tranche/${account.accountNumber}" class="fv-form">
+                <form method="post" action="${pageContext.request.contextPath}/loan/disburse-tranche/${account.accountNumber}" class="fv-form mb-2">
                     <div class="row mb-2">
                         <div class="col-md-4">
                             <label class="form-label">Tranche Amount (INR) *</label>
@@ -198,10 +341,10 @@
                     </div>
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                     <button type="submit" class="btn btn-success" data-confirm="Confirm tranche disbursement?">Disburse Tranche</button>
-                    <form method="post" action="${pageContext.request.contextPath}/loan/disburse/${account.accountNumber}" class="d-inline ms-2">
-                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                        <button type="submit" class="btn btn-outline-success" data-confirm="Disburse all remaining INR ${account.undisbursedAmount}?">Disburse All Remaining</button>
-                    </form>
+                </form>
+                <form method="post" action="${pageContext.request.contextPath}/loan/disburse/${account.accountNumber}" class="d-inline">
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-outline-success" data-confirm="Disburse all remaining INR ${account.undisbursedAmount}?">Disburse All Remaining</button>
                 </form>
                 </c:if>
             </div>
@@ -256,11 +399,10 @@
                         <div class="col-md-3">
                             <label class="form-label">Fee Type</label>
                             <select name="feeType" class="form-select" required>
-                                <option value="Processing Fee">Processing Fee</option>
-                                <option value="Documentation Charge">Documentation Charge</option>
-                                <option value="Late Payment Fee">Late Payment Fee</option>
-                                <option value="Stamp Duty">Stamp Duty</option>
-                                <option value="Other">Other</option>
+                                <option value="PROCESSING_FEE">Processing Fee</option>
+                                <option value="DOCUMENTATION_CHARGE">Documentation Charge</option>
+                                <option value="LATE_PAYMENT_FEE">Late Payment Fee</option>
+                                <option value="STAMP_DUTY">Stamp Duty</option>
                             </select>
                         </div>
                         <div class="col-md-3">
@@ -290,6 +432,51 @@
             </div>
         </div>
         </c:if>
+
+        <!-- CBS Loan Restructuring - ADMIN only, per RBI CDR/SDR Framework -->
+        <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <div class="fv-card">
+            <div class="card-header">Loan Restructuring <span class="badge bg-warning text-dark ms-2">RBI CDR/SDR</span></div>
+            <div class="card-body">
+                <p class="text-muted">Modify loan terms (rate/tenure) for stressed borrowers per RBI CDR framework. Restructured accounts get 5% provisioning for 2 years.</p>
+                <form method="post" action="${pageContext.request.contextPath}/loan/restructure/${account.accountNumber}" class="fv-form">
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">New Interest Rate (% p.a.)</label>
+                            <input type="number" name="newRate" class="form-control" step="0.01" min="0.01" max="50" placeholder="Leave blank for no change" value="" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Extend Tenure (months)</label>
+                            <input type="number" name="additionalMonths" class="form-control" min="0" max="120" value="0" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Reason (mandatory) *</label>
+                            <input type="text" name="reason" class="form-control" required placeholder="e.g., Borrower financial stress - rate reduction" />
+                        </div>
+                    </div>
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-warning" data-confirm="Confirm loan restructuring? This modifies the loan terms and flags the account per RBI CDR norms.">Restructure Loan</button>
+                </form>
+
+                <hr class="my-3" />
+                <p class="text-muted">Apply moratorium (payment holiday). Interest continues to accrue during moratorium per RBI guidelines.</p>
+                <form method="post" action="${pageContext.request.contextPath}/loan/moratorium/${account.accountNumber}" class="fv-form">
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Moratorium Period (months) *</label>
+                            <input type="number" name="moratoriumMonths" class="form-control" min="1" max="24" required value="3" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Reason (mandatory) *</label>
+                            <input type="text" name="reason" class="form-control" required placeholder="e.g., COVID-19 relief - 3 month moratorium" />
+                        </div>
+                    </div>
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-outline-warning" data-confirm="Confirm moratorium? EMI payments will be deferred.">Apply Moratorium</button>
+                </form>
+            </div>
+        </div>
+        </c:if>
     </c:if>
 
     <!-- CBS Amortization Schedule -->
@@ -297,6 +484,7 @@
     <div class="fv-card">
         <div class="card-header">Amortization Schedule (${schedule.size()} installments)</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
@@ -336,6 +524,7 @@
                     </c:forEach>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
     </c:if>
@@ -343,6 +532,7 @@
     <div class="fv-card">
         <div class="card-header">Transaction History</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
@@ -402,6 +592,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>

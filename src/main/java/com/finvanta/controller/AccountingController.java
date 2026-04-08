@@ -1,7 +1,13 @@
 package com.finvanta.controller;
 
 import com.finvanta.accounting.AccountingService;
+import com.finvanta.domain.entity.GLMaster;
+import com.finvanta.domain.enums.GLAccountType;
+import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.JournalEntryRepository;
+import com.finvanta.repository.LedgerEntryRepository;
+import com.finvanta.repository.LoanTransactionRepository;
+import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.util.TenantContext;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,7 +15,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.ModelAndView;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 @Controller
 @RequestMapping("/accounting")
@@ -17,11 +27,23 @@ public class AccountingController {
 
     private final AccountingService accountingService;
     private final JournalEntryRepository journalEntryRepository;
+    private final GLMasterRepository glMasterRepository;
+    private final LedgerEntryRepository ledgerEntryRepository;
+    private final LoanTransactionRepository loanTransactionRepository;
+    private final DepositTransactionRepository depositTransactionRepository;
 
     public AccountingController(AccountingService accountingService,
-                                 JournalEntryRepository journalEntryRepository) {
+                                 JournalEntryRepository journalEntryRepository,
+                                 GLMasterRepository glMasterRepository,
+                                 LedgerEntryRepository ledgerEntryRepository,
+                                 LoanTransactionRepository loanTransactionRepository,
+                                 DepositTransactionRepository depositTransactionRepository) {
         this.accountingService = accountingService;
         this.journalEntryRepository = journalEntryRepository;
+        this.glMasterRepository = glMasterRepository;
+        this.ledgerEntryRepository = ledgerEntryRepository;
+        this.loanTransactionRepository = loanTransactionRepository;
+        this.depositTransactionRepository = depositTransactionRepository;
     }
 
     @GetMapping("/trial-balance")
@@ -45,6 +67,109 @@ public class AccountingController {
         mav.addObject("fromDate", from);
         mav.addObject("toDate", to);
 
+        return mav;
+    }
+
+    /**
+     * CBS Balance Sheet & Income Statement per Finacle BALSHEET / Temenos FINANCIAL.STATEMENT.
+     *
+     * Per RBI regulatory reporting and Ind AS:
+     * - Balance Sheet: Assets = Liabilities + Equity (must balance)
+     * - Income Statement: Income - Expenses = Net Profit/Loss
+     *
+     * Generated from GL Master balances (net balance = debit - credit for assets/expenses,
+     * credit - debit for liabilities/equity/income).
+     */
+    @GetMapping("/financial-statements")
+    public ModelAndView financialStatements() {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("accounting/financial-statements");
+        mav.addObject("pageTitle", "Financial Statements");
+
+        List<GLMaster> allGLs = glMasterRepository.findAllPostableAccounts(tenantId);
+
+        // Balance Sheet: Assets, Liabilities, Equity
+        Map<String, BigDecimal> assets = new LinkedHashMap<>();
+        Map<String, BigDecimal> liabilities = new LinkedHashMap<>();
+        Map<String, BigDecimal> equity = new LinkedHashMap<>();
+        // Income Statement: Income, Expenses
+        Map<String, BigDecimal> income = new LinkedHashMap<>();
+        Map<String, BigDecimal> expenses = new LinkedHashMap<>();
+
+        BigDecimal totalAssets = BigDecimal.ZERO;
+        BigDecimal totalLiabilities = BigDecimal.ZERO;
+        BigDecimal totalEquity = BigDecimal.ZERO;
+        BigDecimal totalIncome = BigDecimal.ZERO;
+        BigDecimal totalExpenses = BigDecimal.ZERO;
+
+        for (GLMaster gl : allGLs) {
+            BigDecimal netBalance;
+            String label = gl.getGlCode() + " — " + gl.getGlName();
+
+            if (gl.getAccountType() == GLAccountType.ASSET || gl.getAccountType() == GLAccountType.EXPENSE) {
+                netBalance = gl.getDebitBalance().subtract(gl.getCreditBalance());
+            } else {
+                netBalance = gl.getCreditBalance().subtract(gl.getDebitBalance());
+            }
+
+            // Skip zero-balance GLs for cleaner display
+            if (netBalance.signum() == 0) continue;
+
+            switch (gl.getAccountType()) {
+                case ASSET -> { assets.put(label, netBalance); totalAssets = totalAssets.add(netBalance); }
+                case LIABILITY -> { liabilities.put(label, netBalance); totalLiabilities = totalLiabilities.add(netBalance); }
+                case EQUITY -> { equity.put(label, netBalance); totalEquity = totalEquity.add(netBalance); }
+                case INCOME -> { income.put(label, netBalance); totalIncome = totalIncome.add(netBalance); }
+                case EXPENSE -> { expenses.put(label, netBalance); totalExpenses = totalExpenses.add(netBalance); }
+            }
+        }
+
+        BigDecimal netProfit = totalIncome.subtract(totalExpenses);
+
+        mav.addObject("assets", assets);
+        mav.addObject("liabilities", liabilities);
+        mav.addObject("equity", equity);
+        mav.addObject("income", income);
+        mav.addObject("expenses", expenses);
+        mav.addObject("totalAssets", totalAssets);
+        mav.addObject("totalLiabilities", totalLiabilities);
+        mav.addObject("totalEquity", totalEquity);
+        mav.addObject("totalIncome", totalIncome);
+        mav.addObject("totalExpenses", totalExpenses);
+        mav.addObject("netProfit", netProfit);
+        // Balance check: Assets should equal Liabilities + Equity + Net Profit
+        mav.addObject("balanceCheck", totalAssets.subtract(totalLiabilities).subtract(totalEquity).subtract(netProfit));
+
+        return mav;
+    }
+
+    /**
+     * CBS Voucher Register per Finacle VCHREGISTER / Temenos STMT.ENTRY.
+     * Daily report of all vouchers posted on a business date.
+     * Essential for branch-level daily reconciliation.
+     */
+    @GetMapping("/voucher-register")
+    public ModelAndView voucherRegister(@RequestParam(required = false) String businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("accounting/voucher-register");
+        mav.addObject("pageTitle", "Voucher Register");
+
+        LocalDate date = (businessDate != null && !businessDate.isBlank())
+            ? LocalDate.parse(businessDate) : LocalDate.now();
+
+        // Ledger entries for the date (all vouchers)
+        mav.addObject("ledgerEntries",
+            ledgerEntryRepository.findByTenantIdAndBusinessDateOrderByLedgerSequenceAsc(tenantId, date));
+
+        // Loan transactions for the date
+        mav.addObject("loanTransactions",
+            loanTransactionRepository.findByTenantIdAndValueDateBetween(tenantId, date, date));
+
+        // Deposit transactions for the date
+        mav.addObject("depositTransactions",
+            depositTransactionRepository.findByTenantIdAndValueDate(tenantId, date));
+
+        mav.addObject("reportDate", date);
         return mav;
     }
 }

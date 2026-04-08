@@ -33,11 +33,13 @@ import java.time.LocalDate;
 @Setter
 public class InterBranchTransaction extends BaseEntity {
 
-    @Column(name = "source_branch_id", nullable = false)
-    private Long sourceBranchId; // FK to branches
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "source_branch_id", nullable = false)
+    private Branch sourceBranch;
 
-    @Column(name = "target_branch_id", nullable = false)
-    private Long targetBranchId; // FK to branches
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "target_branch_id", nullable = false)
+    private Branch targetBranch;
 
     @Column(name = "amount", precision = 18, scale = 2, nullable = false)
     private BigDecimal amount; // Transfer amount (gross)

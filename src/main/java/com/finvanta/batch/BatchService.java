@@ -19,6 +19,7 @@ import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
 import com.finvanta.service.TransactionBatchService;
+import com.finvanta.service.impl.StandingInstructionServiceImpl;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
@@ -64,6 +65,7 @@ public class BatchService {
     private final LoanScheduleService scheduleService;
     private final TransactionBatchService transactionBatchService;
     private final ProductGLResolver glResolver;
+    private final StandingInstructionServiceImpl standingInstructionService;
 
     /**
      * Self-reference to invoke @Transactional methods through the Spring proxy.
@@ -83,7 +85,8 @@ public class BatchService {
                         TransactionEngine transactionEngine,
                         LoanScheduleService scheduleService,
                         TransactionBatchService transactionBatchService,
-                        ProductGLResolver glResolver) {
+                        ProductGLResolver glResolver,
+                        StandingInstructionServiceImpl standingInstructionService) {
         this.batchJobRepository = batchJobRepository;
         this.calendarRepository = calendarRepository;
         this.loanAccountRepository = loanAccountRepository;
@@ -95,6 +98,7 @@ public class BatchService {
         this.scheduleService = scheduleService;
         this.transactionBatchService = transactionBatchService;
         this.glResolver = glResolver;
+        this.standingInstructionService = standingInstructionService;
     }
 
     /**
@@ -234,6 +238,26 @@ public class BatchService {
             self.updateBatchStep(eodJob, "GL_RECONCILIATION");
             validateGlBalance(businessDate);
 
+            // Step 7.5: Standing Instruction Execution (per Finacle SI_MASTER)
+            // Executes all due SIs: LOAN_EMI auto-debit, recurring transfers, etc.
+            // Per Finacle EOD: SI execution runs AFTER interest accrual and NPA classification
+            // (so interest is current and loan status is up-to-date before EMI split).
+            // Each SI runs in its own REQUIRES_NEW transaction for isolation.
+            // CASA debit + loan repayment are ATOMIC within each SI transaction.
+            self.updateBatchStep(eodJob, "STANDING_INSTRUCTION_EXECUTION");
+            try {
+                int[] siResult = standingInstructionService.executeAllDueSIs(businessDate);
+                processedRecords += siResult[0];
+                if (siResult[1] > 0) {
+                    errorLog.append("SI execution: ").append(siResult[1]).append(" failed\n");
+                }
+                log.info("EOD Step 7.5: SI execution — executed={}, failed={}",
+                    siResult[0], siResult[1]);
+            } catch (Exception e) {
+                errorLog.append("SI execution failed: ").append(e.getMessage()).append("\n");
+                log.error("SI execution step failed: date={}", businessDate, e);
+            }
+
             // Step 8: Mark EOD complete (own transaction)
             BatchStatus finalStatus = failedRecords > 0
                 ? BatchStatus.PARTIALLY_COMPLETED : BatchStatus.COMPLETED;
@@ -262,9 +286,14 @@ public class BatchService {
 
     /**
      * Validates and locks the business date for EOD processing.
-     * Sets dayStatus to EOD_RUNNING per documented lifecycle:
-     *   NOT_OPENED → DAY_OPEN → EOD_RUNNING → DAY_CLOSED
-     * This prevents new transactions during EOD and signals the system state.
+     *
+     * Per Finacle/Temenos Day Control lifecycle:
+     *   NOT_OPENED -> DAY_OPEN -> EOD_RUNNING -> DAY_CLOSED
+     *
+     * EOD can ONLY start from DAY_OPEN status. This prevents:
+     * - Running EOD on a day that was never opened (NOT_OPENED)
+     * - Running EOD on a day that is already closed (DAY_CLOSED)
+     * - Running EOD while another EOD is in progress (EOD_RUNNING)
      */
     @Transactional
     protected BusinessCalendar validateAndLockBusinessDate(String tenantId, LocalDate businessDate) {
@@ -281,6 +310,16 @@ public class BatchService {
         if (calendar.isHoliday()) {
             throw new BusinessException("BATCH_HOLIDAY",
                 "Cannot run EOD on a holiday: " + businessDate);
+        }
+
+        // CBS Day Control: EOD can only start from DAY_OPEN status.
+        // Per Finacle DAYCTRL / Temenos COB: the day must be explicitly opened
+        // by ADMIN before any financial operations (including EOD) can proceed.
+        if (!calendar.getDayStatus().canStartEod()) {
+            throw new BusinessException("DAY_NOT_OPEN",
+                "Cannot run EOD for " + businessDate
+                    + ". Day status is " + calendar.getDayStatus()
+                    + ". The day must be opened first via Business Calendar.");
         }
 
         calendar.setLocked(true);
@@ -372,6 +411,18 @@ public class BatchService {
         freshCal.setLocked(false);
         freshCal.setDayStatus(DayStatus.DAY_OPEN);
         calendarRepository.save(freshCal);
+
+        // CBS: Audit trail for EOD failure per RBI IT Governance Direction 2023.
+        // EOD failure is a critical operational event that requires investigation.
+        // Per REVIEW.md: every state change must be logged via AuditService.
+        auditService.logEvent("BatchJob", fresh.getId(), "EOD_FAILED",
+            "RUNNING", "FAILED", "BATCH",
+            "EOD FAILED: date=" + fresh.getBusinessDate()
+                + " | processed=" + processedRecords + "/" + totalRecords
+                + " | failed=" + failedRecords
+                + " | Calendar restored to DAY_OPEN for retry"
+                + " | Error: " + (errorMessage != null && errorMessage.length() > 500
+                    ? errorMessage.substring(0, 500) + "..." : errorMessage));
     }
 
     /**

@@ -65,4 +65,53 @@ public class CalendarController {
         }
         return "redirect:/calendar/list";
     }
+
+    /**
+     * CBS Calendar Generation — generates calendar for a month with auto-weekend detection.
+     * Per Finacle DAYCTRL / RBI NI Act: every date in the month gets an entry.
+     * Saturdays and Sundays are auto-marked as holidays.
+     * Idempotent — safe to call multiple times (skips existing entries).
+     */
+    @PostMapping("/generate")
+    public String generateCalendar(@RequestParam int year,
+                                    @RequestParam int month,
+                                    RedirectAttributes redirectAttributes) {
+        try {
+            int created = businessDateService.generateCalendarForMonth(year, month);
+            redirectAttributes.addFlashAttribute("success",
+                "Calendar generated for " + year + "-" + String.format("%02d", month)
+                    + ": " + created + " new days created");
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/calendar/list";
+    }
+
+    /** Add a gazetted holiday per RBI NI Act */
+    @PostMapping("/add-holiday")
+    public String addHoliday(@RequestParam String date,
+                              @RequestParam String description,
+                              RedirectAttributes redirectAttributes) {
+        try {
+            businessDateService.addHoliday(LocalDate.parse(date), description);
+            redirectAttributes.addFlashAttribute("success",
+                "Holiday added: " + date + " — " + description);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/calendar/list";
+    }
+
+    /** Remove holiday flag (make it a working day) */
+    @PostMapping("/remove-holiday")
+    public String removeHoliday(@RequestParam String date,
+                                 RedirectAttributes redirectAttributes) {
+        try {
+            businessDateService.removeHoliday(LocalDate.parse(date));
+            redirectAttributes.addFlashAttribute("success", "Holiday removed: " + date);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/calendar/list";
+    }
 }

@@ -8,8 +8,9 @@
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
     <div class="fv-card">
-        <div class="card-header">Branch List <a href="${pageContext.request.contextPath}/branch/add" class="btn btn-sm btn-fv-primary float-end">+ Add Branch</a></div>
+        <div class="card-header">Branch List <a href="${pageContext.request.contextPath}/branch/add" class="btn btn-sm btn-fv-primary float-end"><i class="bi bi-plus-circle"></i> Add Branch</a></div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
@@ -33,11 +34,12 @@
                             <td><c:out value="${branch.state}" /></td>
                             <td><c:out value="${branch.region}" /></td>
                             <td><span class="fv-badge fv-badge-active">Active</span></td>
-                            <td><a href="${pageContext.request.contextPath}/branch/view/${branch.id}" class="btn btn-sm btn-fv-primary">View</a></td>
+                            <td><a href="${pageContext.request.contextPath}/branch/view/${branch.id}" class="btn btn-sm btn-fv-primary"><i class="bi bi-eye"></i> View</a></td>
                         </tr>
                     </c:forEach>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>

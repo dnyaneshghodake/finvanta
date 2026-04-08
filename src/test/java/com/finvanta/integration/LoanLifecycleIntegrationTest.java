@@ -44,6 +44,7 @@ class LoanLifecycleIntegrationTest {
     @Autowired private BranchRepository branchRepository;
     @Autowired private GLMasterRepository glMasterRepository;
     @Autowired private BusinessCalendarRepository calendarRepository;
+    @Autowired private TransactionBatchRepository batchRepository;
 
     private static final String TENANT = "TEST_TENANT";
     private static final LocalDate BIZ_DATE = LocalDate.of(2026, 4, 1);
@@ -121,6 +122,31 @@ class LoanLifecycleIntegrationTest {
         createGL("4003", "Penal Interest Income", GLAccountType.INCOME);
         createGL("5001", "Provision Expense", GLAccountType.EXPENSE);
         createGL("5002", "Write-Off Expense", GLAccountType.EXPENSE);
+
+        // CBS Batch Control: TransactionEngine Step 5.5 requires an OPEN batch
+        // for user-initiated transactions. Create one for the business date.
+        TransactionBatch batch = new TransactionBatch();
+        batch.setTenantId(TENANT);
+        batch.setBusinessDate(BIZ_DATE);
+        batch.setBatchName("TEST_BATCH");
+        batch.setBatchType("INTRA_DAY");
+        batch.setStatus("OPEN");
+        batch.setOpenedBy("admin");
+        batch.setOpenedAt(java.time.LocalDateTime.now());
+        batch.setCreatedBy("SYSTEM");
+        batchRepository.save(batch);
+
+        // Also create batch for next day (for accrual/repayment tests)
+        TransactionBatch batch2 = new TransactionBatch();
+        batch2.setTenantId(TENANT);
+        batch2.setBusinessDate(BIZ_DATE.plusDays(1));
+        batch2.setBatchName("TEST_BATCH");
+        batch2.setBatchType("INTRA_DAY");
+        batch2.setStatus("OPEN");
+        batch2.setOpenedBy("admin");
+        batch2.setOpenedAt(java.time.LocalDateTime.now());
+        batch2.setCreatedBy("SYSTEM");
+        batchRepository.save(batch2);
     }
 
     private void createGL(String code, String name, GLAccountType type) {

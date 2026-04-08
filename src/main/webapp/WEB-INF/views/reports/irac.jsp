@@ -13,7 +13,7 @@
     </div>
 
     <div class="fv-card">
-        <div class="card-header">RBI IRAC Asset Classification — <c:out value="${businessDate}" /></div>
+        <div class="card-header">RBI IRAC Asset Classification &mdash; <c:out value="${businessDate}" /></div>
         <div class="card-body">
             <table class="table fv-table">
                 <thead>

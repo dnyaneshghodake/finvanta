@@ -1,5 +1,6 @@
 package com.finvanta.util;
 
+import com.finvanta.config.BranchAwareUserDetails;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -12,9 +13,15 @@ import java.util.stream.Collectors;
  * CBS Security Utility — extracts current user context from Spring Security.
  *
  * Per Finacle/Temenos standards, every financial operation must be traceable
- * to a specific user and role. This utility provides:
+ * to a specific user, role, and branch. This utility provides:
  * - Username for audit trail (who performed the action)
  * - Role for transaction limit validation (what limits apply)
+ * - Branch ID/Code for branch-level data isolation
+ *
+ * Branch isolation rule per Finacle BRANCH_CONTEXT:
+ * - MAKER/CHECKER: restricted to their home branch
+ * - ADMIN: exempt from branch filtering (sees all branches)
+ * - AUDITOR: read-only, sees all branches
  */
 public final class SecurityUtil {
 
@@ -71,5 +78,40 @@ public final class SecurityUtil {
             .filter(userRoles::contains)
             .findFirst()
             .orElse(null);
+    }
+
+    /**
+     * Returns the current user's home branch ID from the security context.
+     * Per Finacle BRANCH_CONTEXT: every user is assigned to a home branch at creation.
+     * This ID is used for branch-level data isolation in MAKER/CHECKER queries.
+     *
+     * @return Branch ID, or null if not available (system user or no branch assigned)
+     */
+    public static Long getCurrentUserBranchId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof BranchAwareUserDetails) {
+            return ((BranchAwareUserDetails) auth.getPrincipal()).getBranchId();
+        }
+        return null;
+    }
+
+    /**
+     * Returns the current user's home branch code.
+     * Used for display, voucher generation, and audit trail.
+     */
+    public static String getCurrentUserBranchCode() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof BranchAwareUserDetails) {
+            return ((BranchAwareUserDetails) auth.getPrincipal()).getBranchCode();
+        }
+        return null;
+    }
+
+    /**
+     * Returns true if the current user has ADMIN role.
+     * ADMIN is exempt from branch-level data isolation per Finacle standards.
+     */
+    public static boolean isAdminRole() {
+        return "ADMIN".equals(getCurrentUserRole());
     }
 }

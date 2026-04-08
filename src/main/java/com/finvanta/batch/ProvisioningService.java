@@ -83,7 +83,7 @@ public class ProvisioningService {
 
         for (LoanAccount account : accounts) {
             try {
-                BigDecimal required = calculateRequiredProvision(account);
+                BigDecimal required = calculateRequiredProvision(account, businessDate);
                 BigDecimal existing = account.getProvisioningAmount();
                 BigDecimal delta = required.subtract(existing);
 
@@ -120,13 +120,13 @@ public class ProvisioningService {
     /**
      * Calculates the required provision amount per RBI IRAC norms.
      */
-    public BigDecimal calculateRequiredProvision(LoanAccount account) {
+    public BigDecimal calculateRequiredProvision(LoanAccount account, LocalDate businessDate) {
         BigDecimal outstanding = account.getOutstandingPrincipal();
         if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
 
-        BigDecimal rate = getProvisioningRate(account);
+        BigDecimal rate = getProvisioningRate(account, businessDate);
         return outstanding.multiply(rate)
             .divide(HUNDRED, 2, RoundingMode.HALF_UP);
     }
@@ -135,7 +135,7 @@ public class ProvisioningService {
      * Returns the RBI IRAC provisioning rate based on asset classification.
      * Uses collateral reference as a proxy for secured/unsecured distinction.
      */
-    public BigDecimal getProvisioningRate(LoanAccount account) {
+    public BigDecimal getProvisioningRate(LoanAccount account, LocalDate businessDate) {
         LoanStatus status = account.getStatus();
         boolean isSecured = account.getCollateralReference() != null
             && !account.getCollateralReference().isBlank();
@@ -144,18 +144,18 @@ public class ProvisioningService {
             case ACTIVE, SMA_0, SMA_1, SMA_2, RESTRUCTURED -> STANDARD_RATE;
             case NPA_SUBSTANDARD -> isSecured
                 ? SUB_STANDARD_SECURED_RATE : SUB_STANDARD_UNSECURED_RATE;
-            case NPA_DOUBTFUL -> getDoubtfulRate(account);
+            case NPA_DOUBTFUL -> getDoubtfulRate(account, businessDate);
             case NPA_LOSS -> LOSS_RATE;
             default -> BigDecimal.ZERO;
         };
     }
 
-    private BigDecimal getDoubtfulRate(LoanAccount account) {
+    private BigDecimal getDoubtfulRate(LoanAccount account, LocalDate businessDate) {
         if (account.getNpaDate() == null) {
             return DOUBTFUL_1YR_RATE;
         }
         long monthsInNpa = java.time.temporal.ChronoUnit.MONTHS.between(
-            account.getNpaDate(), LocalDate.now());
+            account.getNpaDate(), businessDate);
         if (monthsInNpa <= 12) {
             return DOUBTFUL_1YR_RATE;
         } else if (monthsInNpa <= 36) {

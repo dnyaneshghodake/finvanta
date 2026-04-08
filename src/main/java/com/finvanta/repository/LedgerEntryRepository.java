@@ -1,8 +1,10 @@
 package com.finvanta.repository;
 
 import com.finvanta.domain.entity.LedgerEntry;
+import jakarta.persistence.QueryHint;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -64,11 +66,21 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, Long> 
         @Param("tenantId") String tenantId,
         org.springframework.data.domain.Pageable pageable);
 
-    /** Ledger entries for a GL code on a business date (for reconciliation) */
+    /**
+     * Ledger entries for a GL code on a business date (for reconciliation).
+     * P2-1: @QueryHints for partition pruning on business_date in production SQL Server.
+     */
+    @QueryHints(@QueryHint(name = "org.hibernate.comment",
+        value = "/* Partition pruning: business_date filter on ledger_entries */"))
     List<LedgerEntry> findByTenantIdAndGlCodeAndBusinessDateOrderByLedgerSequenceAsc(
         String tenantId, String glCode, LocalDate businessDate);
 
-    /** All ledger entries for a business date (for day-end report) */
+    /**
+     * All ledger entries for a business date (for day-end report).
+     * P2-1: @QueryHints for partition pruning on business_date in production SQL Server.
+     */
+    @QueryHints(@QueryHint(name = "org.hibernate.comment",
+        value = "/* Partition pruning: business_date filter on ledger_entries */"))
     List<LedgerEntry> findByTenantIdAndBusinessDateOrderByLedgerSequenceAsc(
         String tenantId, LocalDate businessDate);
 

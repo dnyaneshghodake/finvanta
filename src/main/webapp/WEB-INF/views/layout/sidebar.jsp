@@ -23,6 +23,21 @@
         <li class="nav-section">Loan Accounts</li>
         <li><a href="${pageContext.request.contextPath}/loan/accounts" class="nav-link"><i class="bi bi-bank"></i><span class="nav-text">Active Accounts</span></a></li>
         </c:if>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li><a href="${pageContext.request.contextPath}/loan/si/dashboard" class="nav-link"><i class="bi bi-arrow-repeat"></i><span class="nav-text">SI Dashboard</span></a></li>
+        </c:if>
+
+        <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">CASA (Deposits)</li>
+        <li><a href="${pageContext.request.contextPath}/deposit/accounts" class="nav-link"><i class="bi bi-wallet2"></i><span class="nav-text">CASA Accounts</span></a></li>
+        </c:if>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li><a href="${pageContext.request.contextPath}/deposit/pipeline" class="nav-link"><i class="bi bi-kanban"></i><span class="nav-text">Account Pipeline</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/deposit/open" class="nav-link"><i class="bi bi-person-plus"></i><span class="nav-text">Open Account</span></a></li>
+        </c:if>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li><a href="${pageContext.request.contextPath}/deposit/transfer" class="nav-link"><i class="bi bi-arrow-left-right"></i><span class="nav-text">Fund Transfer</span></a></li>
+        </c:if>
 
         <li class="nav-section">Transaction Inquiry</li>
         <li><a href="${pageContext.request.contextPath}/txn360/search?q=" class="nav-link"><i class="bi bi-diagram-3"></i><span class="nav-text">Transaction 360</span></a></li>
@@ -30,7 +45,9 @@
         <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <li class="nav-section">Accounting</li>
         <li><a href="${pageContext.request.contextPath}/accounting/trial-balance" class="nav-link"><i class="bi bi-journal-bookmark"></i><span class="nav-text">Trial Balance</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/accounting/financial-statements" class="nav-link"><i class="bi bi-file-earmark-bar-graph"></i><span class="nav-text">Financial Statements</span></a></li>
         <li><a href="${pageContext.request.contextPath}/accounting/journal-entries" class="nav-link"><i class="bi bi-journal-text"></i><span class="nav-text">Journal Entries</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/accounting/voucher-register" class="nav-link"><i class="bi bi-receipt-cutoff"></i><span class="nav-text">Voucher Register</span></a></li>
         <li><a href="${pageContext.request.contextPath}/reconciliation/report" class="nav-link"><i class="bi bi-arrow-up-right"></i><span class="nav-text">GL Reconciliation</span></a></li>
         </c:if>
 
@@ -55,8 +72,10 @@
 
         <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <li class="nav-section">Administration</li>
+        <li><a href="${pageContext.request.contextPath}/admin/users" class="nav-link"><i class="bi bi-person-gear"></i><span class="nav-text">User Management</span></a></li>
         <li><a href="${pageContext.request.contextPath}/calendar/list" class="nav-link"><i class="bi bi-calendar-check"></i><span class="nav-text">Business Calendar</span></a></li>
         <li><a href="${pageContext.request.contextPath}/admin/products" class="nav-link"><i class="bi bi-box-seam"></i><span class="nav-text">Product Master</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/admin/charges" class="nav-link"><i class="bi bi-receipt"></i><span class="nav-text">Charge Config</span></a></li>
         <li><a href="${pageContext.request.contextPath}/admin/limits" class="nav-link"><i class="bi bi-sliders"></i><span class="nav-text">Transaction Limits</span></a></li>
         </c:if>
 

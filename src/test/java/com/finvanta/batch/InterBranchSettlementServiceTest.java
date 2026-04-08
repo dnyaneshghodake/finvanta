@@ -1,5 +1,6 @@
 package com.finvanta.batch;
 
+import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.InterBranchTransaction;
 import com.finvanta.repository.InterBranchSettlementRepository;
 import com.finvanta.util.TenantContext;
@@ -36,21 +37,33 @@ public class InterBranchSettlementServiceTest {
         MockitoAnnotations.openMocks(this);
         settlementService = new InterBranchSettlementService(
             settlementRepository,
-            null,  // TransactionEngine can be null for entity tests
-            null   // ProductGLResolver can be null for entity tests
+            null,  // BranchRepository can be null for entity tests
+            null,  // LedgerEntryRepository can be null for entity tests
+            null   // TransactionEngine can be null for entity tests
         );
         TenantContext.setCurrentTenant("DEFAULT");
     }
 
     @Test
-    @DisplayName("InterBranchTransaction has required fields")
+    @DisplayName("InterBranchTransaction has required fields with Branch entities")
     void testInterBranchTransactionFields() {
-        // Arrange & Act
+        // Arrange
+        Branch sourceBranch = new Branch();
+        sourceBranch.setId(1L);
+        sourceBranch.setBranchCode("HQ001");
+        sourceBranch.setBranchName("Head Office");
+
+        Branch targetBranch = new Branch();
+        targetBranch.setId(2L);
+        targetBranch.setBranchCode("DEL001");
+        targetBranch.setBranchName("New Delhi Main");
+
+        // Act
         InterBranchTransaction txn = new InterBranchTransaction();
         txn.setId(1L);
         txn.setTenantId("DEFAULT");
-        txn.setSourceBranchId(1L);
-        txn.setTargetBranchId(2L);
+        txn.setSourceBranch(sourceBranch);
+        txn.setTargetBranch(targetBranch);
         txn.setAmount(new BigDecimal("500000.00"));
         txn.setSettlementStatus("PENDING");
         txn.setBusinessDate(LocalDate.of(2026, 4, 7));
@@ -58,8 +71,8 @@ public class InterBranchSettlementServiceTest {
         // Assert
         assertEquals(1L, txn.getId());
         assertEquals("DEFAULT", txn.getTenantId());
-        assertEquals(1L, txn.getSourceBranchId());
-        assertEquals(2L, txn.getTargetBranchId());
+        assertEquals("HQ001", txn.getSourceBranch().getBranchCode());
+        assertEquals("DEL001", txn.getTargetBranch().getBranchCode());
         assertEquals(new BigDecimal("500000.00"), txn.getAmount());
         assertEquals("PENDING", txn.getSettlementStatus());
         assertEquals(LocalDate.of(2026, 4, 7), txn.getBusinessDate());
@@ -91,16 +104,16 @@ public class InterBranchSettlementServiceTest {
         String tenantId = "DEFAULT";
         LocalDate businessDate = LocalDate.of(2026, 4, 7);
 
-        when(settlementRepository.findByTenantIdAndBusinessDateOrderBySourceBranchIdAsc(tenantId, businessDate))
+        when(settlementRepository.findByTenantIdAndBusinessDateOrderBySourceBranchAsc(tenantId, businessDate))
             .thenReturn(java.util.Collections.emptyList());
 
         // Act
-        var result = settlementRepository.findByTenantIdAndBusinessDateOrderBySourceBranchIdAsc(tenantId, businessDate);
+        var result = settlementRepository.findByTenantIdAndBusinessDateOrderBySourceBranchAsc(tenantId, businessDate);
 
         // Assert
         assertTrue(result.isEmpty());
         verify(settlementRepository, times(1))
-            .findByTenantIdAndBusinessDateOrderBySourceBranchIdAsc(tenantId, businessDate);
+            .findByTenantIdAndBusinessDateOrderBySourceBranchAsc(tenantId, businessDate);
     }
 }
 

@@ -123,8 +123,22 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
             log.debug("PII field appears to be plaintext (pre-encryption data): {}", maskPii(dbData));
             return dbData;
         } catch (Exception e) {
-            log.warn("PII decryption failed — returning raw value. Possible key mismatch.", e);
-            return dbData;
+            // Per RBI IT Governance Direction 2023 Section 8.3: encryption failures must
+            // be fail-fast. Returning ciphertext as if it were a PAN/Aadhaar would silently
+            // expose garbled data to users and downstream systems.
+            //
+            // If this exception fires in production, it indicates:
+            //   1. Key rotation without re-encryption batch (most common)
+            //   2. Corrupted ciphertext in DB
+            //   3. Algorithm mismatch between encryption and decryption
+            //
+            // Resolution: Run PII re-encryption batch with the correct key, or restore
+            // the previous key via FINVANTA_PII_KEY environment variable.
+            log.error("PII decryption failed — REFUSING to return corrupted data. "
+                + "Possible key rotation without re-encryption. "
+                + "Set correct FINVANTA_PII_KEY or run re-encryption batch.", e);
+            throw new RuntimeException("PII decryption failed — data integrity compromised. "
+                + "Check FINVANTA_PII_KEY configuration and run re-encryption if key was rotated.", e);
         }
     }
 

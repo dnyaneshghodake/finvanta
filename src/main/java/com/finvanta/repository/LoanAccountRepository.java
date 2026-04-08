@@ -43,6 +43,14 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
 
     long countByTenantIdAndStatus(String tenantId, LoanStatus status);
 
+    /**
+     * CBS Dashboard: Count accounts grouped by status in a single query.
+     * Eliminates N+1 problem of calling countByTenantIdAndStatus() per status.
+     * Returns List of [LoanStatus, Long] arrays.
+     */
+    @Query("SELECT la.status, COUNT(la) FROM LoanAccount la WHERE la.tenantId = :tenantId GROUP BY la.status")
+    List<Object[]> countByTenantIdGroupByStatus(@Param("tenantId") String tenantId);
+
     boolean existsByTenantIdAndApplicationId(String tenantId, Long applicationId);
 
     @Query("SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.branch.id = :branchId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")

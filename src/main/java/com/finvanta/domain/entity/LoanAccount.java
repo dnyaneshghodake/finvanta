@@ -148,6 +148,25 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "risk_category", length = 20)
     private String riskCategory;
 
+    /**
+     * CBS Disbursement Account per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT.
+     *
+     * The borrower's CASA (Savings/Current) account number where loan proceeds
+     * are credited on disbursement. Copied from LoanApplication at account creation.
+     *
+     * Per Tier-1 CBS (Finacle/Temenos/BNP):
+     *   - Disbursement credits the borrower's operating account (not Bank Ops GL)
+     *   - GL: DR Loan Asset (1001) / CR Customer Deposits (SB 2010 / CA 2020)
+     *   - CASA subledger balance is updated atomically
+     *   - Same account used for all tranches in multi-disbursement mode
+     *   - Also used as default debit account for EMI auto-debit (Standing Instruction)
+     *
+     * Per RBI KYC/AML: Must belong to the same customer CIF.
+     * Nullable: If null, falls back to Bank Ops GL (1100) — cash/DD disbursement.
+     */
+    @Column(name = "disbursement_account_number", length = 40)
+    private String disbursementAccountNumber;
+
     // --- Multi-Disbursement Support (per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT) ---
 
     /**

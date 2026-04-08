@@ -5,6 +5,7 @@ import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.accounting.SuspenseService;
 import com.finvanta.audit.AuditService;
 import com.finvanta.batch.ChargeEngine;
+import com.finvanta.domain.entity.DisbursementSchedule;
 import com.finvanta.domain.entity.InterestAccrual;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.entity.LoanApplication;
@@ -12,13 +13,19 @@ import com.finvanta.domain.entity.LoanTransaction;
 import com.finvanta.domain.enums.*;
 import com.finvanta.domain.rules.InterestCalculationRule;
 import com.finvanta.domain.rules.NpaClassificationRule;
+import com.finvanta.repository.CollateralRepository;
+import com.finvanta.repository.DisbursementScheduleRepository;
 import com.finvanta.repository.InterestAccrualRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.DepositAccountService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
+import com.finvanta.repository.DepositAccountRepository;
+import com.finvanta.domain.entity.DepositAccount;
+import com.finvanta.accounting.GLConstants;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
@@ -28,6 +35,7 @@ import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,6 +72,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final LoanApplicationRepository applicationRepository;
     private final LoanTransactionRepository transactionRepository;
     private final InterestAccrualRepository accrualRepository;
+    private final DisbursementScheduleRepository disbursementScheduleRepository;
+    private final CollateralRepository collateralRepository;
     private final InterestCalculationRule interestRule;
     private final NpaClassificationRule npaRule;
     private final AuditService auditService;
@@ -73,11 +83,16 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final ProductGLResolver glResolver;
     private final TransactionEngine transactionEngine;
     private final ChargeEngine chargeEngine;
+    private final DepositAccountRepository depositAccountRepository;
+    private final DepositAccountService depositAccountService;
+    private final StandingInstructionServiceImpl standingInstructionService;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
                                    LoanApplicationRepository applicationRepository,
                                    LoanTransactionRepository transactionRepository,
                                    InterestAccrualRepository accrualRepository,
+                                   DisbursementScheduleRepository disbursementScheduleRepository,
+                                   CollateralRepository collateralRepository,
                                    InterestCalculationRule interestRule,
                                    NpaClassificationRule npaRule,
                                    AuditService auditService,
@@ -86,11 +101,16 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    BusinessDateService businessDateService,
                                    ProductGLResolver glResolver,
                                    TransactionEngine transactionEngine,
-                                   ChargeEngine chargeEngine) {
+                                   ChargeEngine chargeEngine,
+                                   DepositAccountRepository depositAccountRepository,
+                                   DepositAccountService depositAccountService,
+                                   @Lazy StandingInstructionServiceImpl standingInstructionService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
         this.accrualRepository = accrualRepository;
+        this.disbursementScheduleRepository = disbursementScheduleRepository;
+        this.collateralRepository = collateralRepository;
         this.interestRule = interestRule;
         this.npaRule = npaRule;
         this.auditService = auditService;
@@ -100,6 +120,9 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.glResolver = glResolver;
         this.transactionEngine = transactionEngine;
         this.chargeEngine = chargeEngine;
+        this.depositAccountRepository = depositAccountRepository;
+        this.depositAccountService = depositAccountService;
+        this.standingInstructionService = standingInstructionService;
     }
 
     @Override
@@ -151,6 +174,10 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setCollateralReference(application.getCollateralReference());
         account.setRiskCategory(application.getRiskCategory() != null
             ? application.getRiskCategory() : "MEDIUM");
+        // CBS: Copy disbursement CASA account from application per Finacle DISB_MASTER.
+        // Per Tier-1 CBS: loan proceeds credit the borrower's operating account.
+        // Validated at disbursement time (account must be ACTIVE, same CIF).
+        account.setDisbursementAccountNumber(application.getDisbursementAccountNumber());
         account.setStatus(LoanStatus.ACTIVE);
         account.setCreatedBy(currentUser);
 
@@ -162,6 +189,24 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setEmiAmount(emi);
 
         LoanAccount saved = accountRepository.save(account);
+
+        // CBS: Link collaterals from the application to the newly created account.
+        // Per Finacle COLMAS, collateral must be linked to the loan account for
+        // account-lifecycle operations (lien management, revaluation, release on closure).
+        try {
+            var collaterals = collateralRepository.findByTenantIdAndLoanApplicationId(
+                tenantId, applicationId);
+            for (var collateral : collaterals) {
+                collateral.setLoanAccount(saved);
+                collateral.setUpdatedBy(currentUser);
+                collateralRepository.save(collateral);
+            }
+            if (!collaterals.isEmpty()) {
+                log.info("Linked {} collateral(s) to account {}", collaterals.size(), saved.getAccountNumber());
+            }
+        } catch (Exception e) {
+            log.warn("Collateral linkage failed for {}: {}", saved.getAccountNumber(), e.getMessage());
+        }
 
         auditService.logEvent("LoanAccount", saved.getId(), "CREATE",
             null, saved.getAccountNumber(), "LOAN_ACCOUNTS",
@@ -251,14 +296,78 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 ? "Tranche " + trancheNum + " disbursement for " + accountNumber
                 : "Loan disbursement for account " + accountNumber);
 
+        // ====================================================================
+        // CBS CASA-Linked Disbursement per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT
+        //
+        // Per Tier-1 CBS (Finacle/Temenos/BNP) and RBI KYC/AML guidelines:
+        //   - Loan disbursement MUST credit the borrower's operating CASA account
+        //   - GL flow (2-step via Bank Ops bridge):
+        //     Step 1 (Loan side): DR Loan Asset (1001) / CR Bank Ops (1100)
+        //     Step 2 (CASA side): DR Bank Ops (1100) / CR Customer Deposits (2010/2020)
+        //   - Bank Ops GL (1100) acts as the settlement bridge between modules
+        //   - CASA subledger (ledger_balance, available_balance) updated atomically
+        //   - DepositTransaction record created for CASA mini-statement
+        //   - Validation: CASA account must be ACTIVE, same CIF, same tenant
+        //
+        // The loan-side GL ALWAYS credits Bank Ops (1100). When CASA is linked,
+        // depositAccountService.deposit() posts the CASA-side GL (DR Bank Ops / CR Deposits)
+        // and updates the CASA subledger. This avoids double-crediting Customer Deposits.
+        //
+        // Fallback: If no CASA account is linked (disbursementAccountNumber is null),
+        // disbursement credits Bank Operations GL (1100) — cash/DD mode.
+        // ====================================================================
+        String creditGl;
+        DepositAccount casaAccount = null;
+        String disbAcctNum = account.getDisbursementAccountNumber();
+
+        if (disbAcctNum != null && !disbAcctNum.isBlank()) {
+            // CBS: Validate the CASA account at disbursement time (not just at application).
+            // Per Finacle DISB_MASTER: account can become FROZEN/CLOSED between approval and disbursement.
+            casaAccount = depositAccountRepository
+                .findByTenantIdAndAccountNumber(tenantId, disbAcctNum)
+                .orElseThrow(() -> new BusinessException("CASA_ACCOUNT_NOT_FOUND",
+                    "Disbursement CASA account not found: " + disbAcctNum
+                        + ". Link a valid CASA account before disbursement."));
+
+            // RBI KYC/AML: CASA account must belong to the same customer (CIF linkage).
+            // Per RBI: retail loan disbursement to third-party accounts is prohibited.
+            if (!casaAccount.getCustomer().getId().equals(account.getCustomer().getId())) {
+                throw new BusinessException("CASA_CIF_MISMATCH",
+                    "Disbursement account " + disbAcctNum + " belongs to customer "
+                        + casaAccount.getCustomer().getCustomerNumber()
+                        + " but loan belongs to " + account.getCustomer().getCustomerNumber()
+                        + ". Per RBI KYC/AML, loan proceeds must credit the borrower's own account.");
+            }
+
+            // CBS: CASA account must be ACTIVE to receive credit.
+            if (!casaAccount.isCreditAllowed()) {
+                throw new BusinessException("CASA_NOT_CREDITABLE",
+                    "Disbursement account " + disbAcctNum + " is not creditable (status: "
+                        + casaAccount.getAccountStatus()
+                        + "). Account must be ACTIVE to receive loan disbursement.");
+            }
+
+            // CBS: Loan-side GL always credits Bank Ops (bridge GL).
+            // The CASA-side GL (DR Bank Ops / CR Customer Deposits) is posted by
+            // depositAccountService.deposit() below, which also updates the CASA subledger.
+            // This 2-step approach prevents double-crediting Customer Deposits GL.
+            creditGl = glResolver.getBankOperationsGL(productType);
+            log.info("CASA-linked disbursement: loan={}, casa={}, bridgeGl={}", accountNumber, disbAcctNum, creditGl);
+        } else {
+            // Fallback: No CASA linked — credit Bank Operations GL (cash/DD mode)
+            creditGl = glResolver.getBankOperationsGL(productType);
+            log.info("Cash/DD disbursement: loan={}, gl={} (no CASA linked)", accountNumber, creditGl);
+        }
+
         // CBS: ALL financial postings go through TransactionEngine
         List<JournalLineRequest> journalLines = List.of(
             new JournalLineRequest(glResolver.getLoanAssetGL(productType),
                 DebitCredit.DEBIT, disbursementAmount,
                 "Disbursement T" + trancheNum + " - " + accountNumber),
-            new JournalLineRequest(glResolver.getBankOperationsGL(productType),
+            new JournalLineRequest(creditGl,
                 DebitCredit.CREDIT, disbursementAmount,
-                "Bank credit T" + trancheNum + " - " + accountNumber)
+                (casaAccount != null ? "Credit CASA " + disbAcctNum : "Bank credit")
+                    + " T" + trancheNum + " - " + accountNumber)
         );
 
         TransactionResult txnResult = transactionEngine.execute(
@@ -275,6 +384,26 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 .build()
         );
 
+        // CBS: Update CASA subledger atomically within the same @Transactional boundary.
+        // Per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT:
+        //   - CASA ledger_balance increased by disbursement amount
+        //   - CASA available_balance recomputed
+        //   - DepositTransaction (LOAN_DISBURSEMENT) created for CASA mini-statement
+        //   - CASA last_transaction_date updated for dormancy tracking
+        // This ensures GL and subledger stay in perfect sync — any rollback reverses both.
+        if (casaAccount != null) {
+            depositAccountService.deposit(
+                disbAcctNum,
+                disbursementAmount,
+                bizDate,
+                "Loan disbursement " + accountNumber + " T" + trancheNum
+                    + " | Voucher: " + txnResult.getVoucherNumber(),
+                "DISB-" + txnResult.getTransactionRef(), // Idempotency key prevents double-credit on retry
+                "LOAN_DISBURSEMENT"
+            );
+            log.info("CASA credited: casa={}, amount={}, loan={}", disbAcctNum, disbursementAmount, accountNumber);
+        }
+
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
@@ -290,6 +419,27 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setVoucherNumber(txnResult.getVoucherNumber());
         txn.setCreatedBy(currentUser);
         transactionRepository.save(txn);
+
+        // CBS: Create DisbursementSchedule record per Finacle DISB_MASTER.
+        // Each tranche disbursement is tracked with milestone, approval, and GL references.
+        // This enables audit-grade tracking of multi-tranche disbursement progress.
+        DisbursementSchedule disbSchedule = new DisbursementSchedule();
+        disbSchedule.setTenantId(tenantId);
+        disbSchedule.setLoanAccount(account);
+        disbSchedule.setTrancheNumber(trancheNum);
+        disbSchedule.setTrancheAmount(disbursementAmount);
+        disbSchedule.setTranchePercentage(
+            disbursementAmount.multiply(new BigDecimal("100"))
+                .divide(account.getSanctionedAmount(), 2, java.math.RoundingMode.HALF_UP));
+        disbSchedule.setMilestoneDescription(txnNarration);
+        disbSchedule.setActualDate(bizDate);
+        disbSchedule.setStatus("DISBURSED");
+        disbSchedule.setApprovedBy(currentUser);
+        disbSchedule.setApprovedDate(bizDate);
+        disbSchedule.setTransactionRef(txnResult.getTransactionRef());
+        disbSchedule.setVoucherNumber(txnResult.getVoucherNumber());
+        disbSchedule.setCreatedBy(currentUser);
+        disbursementScheduleRepository.save(disbSchedule);
 
         // Update account balances
         account.setDisbursedAmount(account.getDisbursedAmount().add(disbursementAmount));
@@ -327,6 +477,25 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 scheduleService.generateSchedule(account, bizDate);
             } catch (Exception e) {
                 log.warn("Schedule generation skipped: {}", e.getMessage());
+            }
+
+            // CBS: Auto-create Standing Instruction for EMI auto-debit per Finacle SI_MASTER.
+            // Per Tier-1 CBS (Finacle/Temenos/BNP): when a CASA-linked loan is fully disbursed,
+            // a LOAN_EMI Standing Instruction is automatically registered to collect EMI from
+            // the borrower's CASA account on the due date. The SI:
+            //   - Source: borrower's CASA (disbursementAccountNumber)
+            //   - Amount: dynamic from LoanAccount.emiAmount (changes after restructuring)
+            //   - Frequency: MONTHLY (aligned with repaymentFrequency)
+            //   - First execution: nextEmiDate
+            //   - End date: maturityDate (auto-expires when loan closes)
+            // Per RBI Payment Systems Act 2007: SI requires customer mandate (implicit at
+            // loan sanction — the loan agreement includes auto-debit authorization clause).
+            try {
+                standingInstructionService.createLoanEmiSI(account, bizDate);
+            } catch (Exception e) {
+                // SI creation failure must NOT block disbursement (best-effort).
+                // Operations can manually create SI later via SI management screen.
+                log.warn("SI auto-creation failed for loan {}: {}", accountNumber, e.getMessage());
             }
         }
 
@@ -590,6 +759,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
      * @param idempotencyKey Client-supplied unique key (null = no idempotency protection)
      * @return Transaction record (existing if idempotent retry, new otherwise)
      */
+    @Override
     @Transactional
     public LoanTransaction processRepayment(String accountNumber, BigDecimal amount,
                                              LocalDate valueDate, String idempotencyKey) {
@@ -1274,7 +1444,24 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         // CBS: Delegate to ChargeEngine per P0-1 refactoring.
         // ChargeEngine.applyCharge() handles GL posting, GST calculation, and audit trail.
         // This eliminates duplicate charge logic and centralizes via Finacle CHRG_MASTER pattern.
-        chargeEngine.applyCharge(accountNumber, feeType, feeAmount, businessDate);
+        //
+        // Per Finacle CHRG_MASTER: the baseAmount for charge calculation depends on the
+        // calculation type configured in charge_config:
+        //   FLAT       → baseAmount is ignored (fixed charge from config)
+        //   PERCENTAGE → baseAmount = loan sanctioned amount (charge = % of loan)
+        //   SLAB       → baseAmount = loan sanctioned amount (slab lookup by amount)
+        // The user-entered feeAmount is used as a fallback baseAmount for FLAT charges
+        // where the config determines the actual amount.
+        BigDecimal chargeBaseAmount = account.getSanctionedAmount();
+        ChargeEngine.ChargeResult chargeResult = chargeEngine.applyCharge(
+            accountNumber, feeType, chargeBaseAmount, businessDate);
+
+        // CBS: Use the ACTUAL calculated amount from ChargeEngine (not the user-entered feeAmount).
+        // Per Finacle CHRG_MASTER: the ChargeEngine determines the real charge based on
+        // FLAT/PERCENTAGE/SLAB config + min/max bounds + GST. The user-entered feeAmount
+        // was only used for validation (positive check above); the GL posting uses chargeResult.
+        // The LoanTransaction record MUST match what was posted to GL for reconciliation.
+        BigDecimal actualChargeTotal = chargeResult.totalAmount();
 
         // CBS: Create loan transaction record for module-level tracking
         // This links the charge to the loan account transaction history
@@ -1283,19 +1470,24 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.FEE_CHARGE);
-        txn.setAmount(feeAmount);
+        txn.setAmount(actualChargeTotal);
         txn.setValueDate(businessDate);
         txn.setPostingDate(LocalDateTime.now());
         txn.setBalanceAfter(account.getTotalOutstanding());
-        txn.setNarration(feeType + ": " + feeAmount);
+        txn.setNarration(feeType + ": INR " + actualChargeTotal
+            + " (charge=" + chargeResult.chargeAmount()
+            + ", GST=" + chargeResult.gstAmount() + ")");
         txn.setCreatedBy(currentUser);
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
         auditService.logEvent("LoanAccount", account.getId(), "FEE_CHARGE",
             null, savedTxn.getTransactionRef(), "LOAN_ACCOUNTS",
-            feeType + ": " + feeAmount + " for " + accountNumber);
+            feeType + ": INR " + actualChargeTotal + " for " + accountNumber
+                + " (charge=" + chargeResult.chargeAmount() + ", GST=" + chargeResult.gstAmount() + ")");
 
-        log.info("Fee charged: accNo={}, type={}, amount={}", accountNumber, feeType, feeAmount);
+        log.info("Fee charged: accNo={}, type={}, actualAmount={}, charge={}, gst={}",
+            accountNumber, feeType, actualChargeTotal,
+            chargeResult.chargeAmount(), chargeResult.gstAmount());
 
         return savedTxn;
     }
