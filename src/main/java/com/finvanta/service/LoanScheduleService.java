@@ -146,6 +146,114 @@ public class LoanScheduleService {
     }
 
     /**
+     * Regenerates the amortization schedule after loan restructuring.
+     *
+     * Per Finacle/Temenos restructuring standards:
+     * 1. Cancel all future SCHEDULED installments (PAID/PARTIALLY_PAID are kept)
+     * 2. Generate new installments from the restructuring date using revised terms
+     * 3. New installments use the account's current outstandingPrincipal, interestRate,
+     *    and remainingTenure (already updated by LoanRestructuringService)
+     *
+     * This ensures DPD calculation and overdue marking use the correct EMI amounts
+     * after restructuring. Without regeneration, EOD would compare payments against
+     * stale pre-restructuring installment amounts.
+     *
+     * @param account      The restructured loan account (terms already updated)
+     * @param businessDate CBS business date (restructuring effective date)
+     * @return List of newly generated schedule lines
+     */
+    @Transactional
+    public List<LoanSchedule> regenerateSchedule(LoanAccount account, LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+
+        // Step 1: Cancel future unpaid installments
+        List<LoanSchedule> futureUnpaid = scheduleRepository.findFutureUnpaidInstallments(
+            tenantId, account.getId(), businessDate);
+        for (LoanSchedule inst : futureUnpaid) {
+            inst.setStatus("CANCELLED");
+            inst.setUpdatedBy("SYSTEM");
+        }
+        if (!futureUnpaid.isEmpty()) {
+            scheduleRepository.saveAll(futureUnpaid);
+            log.info("Cancelled {} future installments for restructured account {}",
+                futureUnpaid.size(), account.getAccountNumber());
+        }
+
+        // Step 2: Generate new schedule from restructuring date
+        BigDecimal outstanding = account.getOutstandingPrincipal();
+        BigDecimal annualRate = account.getInterestRate();
+        int remainingTenure = account.getRemainingTenure() != null
+            ? account.getRemainingTenure() : 1;
+        BigDecimal emi = account.getEmiAmount();
+
+        if (emi == null || emi.compareTo(BigDecimal.ZERO) <= 0) {
+            emi = interestRule.calculateEmi(outstanding, annualRate, remainingTenure);
+        }
+
+        // Determine next installment number (continue from last existing)
+        int lastInstNum = scheduleRepository.findMaxInstallmentNumber(tenantId, account.getId());
+
+        BigDecimal monthlyRate = annualRate
+            .divide(BigDecimal.valueOf(100), MC)
+            .divide(BigDecimal.valueOf(12), MC);
+
+        BigDecimal openingBalance = outstanding;
+        LocalDate dueDate = businessDate.plusMonths(1);
+        List<LoanSchedule> newLines = new ArrayList<>();
+
+        for (int i = 1; i <= remainingTenure; i++) {
+            BigDecimal interestComponent = openingBalance
+                .multiply(monthlyRate, MC)
+                .setScale(SCALE, RoundingMode.HALF_UP);
+
+            BigDecimal principalComponent;
+            if (i == remainingTenure) {
+                principalComponent = openingBalance;
+                interestComponent = emi.subtract(principalComponent)
+                    .max(BigDecimal.ZERO)
+                    .setScale(SCALE, RoundingMode.HALF_UP);
+            } else {
+                principalComponent = emi.subtract(interestComponent)
+                    .setScale(SCALE, RoundingMode.HALF_UP);
+            }
+
+            BigDecimal closingBalance = openingBalance.subtract(principalComponent)
+                .max(BigDecimal.ZERO)
+                .setScale(SCALE, RoundingMode.HALF_UP);
+
+            LoanSchedule line = new LoanSchedule();
+            line.setTenantId(tenantId);
+            line.setLoanAccount(account);
+            line.setInstallmentNumber(lastInstNum + i);
+            line.setDueDate(dueDate);
+            line.setEmiAmount(emi);
+            line.setPrincipalAmount(principalComponent);
+            line.setInterestAmount(interestComponent);
+            line.setClosingBalance(closingBalance);
+            line.setStatus("SCHEDULED");
+            line.setBusinessDate(businessDate);
+            line.setCreatedBy("SYSTEM");
+
+            newLines.add(line);
+            openingBalance = closingBalance;
+            dueDate = dueDate.plusMonths(1);
+        }
+
+        List<LoanSchedule> saved = scheduleRepository.saveAll(newLines);
+
+        auditService.logEvent("LoanSchedule", account.getId(), "REGENERATE",
+            null, account.getAccountNumber(), "LOAN_SCHEDULE",
+            "Schedule regenerated after restructuring: " + remainingTenure
+                + " new installments, EMI: " + emi
+                + ", cancelled: " + futureUnpaid.size() + " old installments");
+
+        log.info("Schedule regenerated: accNo={}, newInstallments={}, cancelledOld={}, emi={}",
+            account.getAccountNumber(), saved.size(), futureUnpaid.size(), emi);
+
+        return saved;
+    }
+
+    /**
      * Updates schedule installments when a repayment is received.
      * Per Finacle/Temenos, repayment is allocated to the oldest unpaid installment first (FIFO).
      * Installment status transitions: SCHEDULED/OVERDUE → PARTIALLY_PAID → PAID

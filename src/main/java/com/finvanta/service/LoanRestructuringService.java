@@ -136,6 +136,24 @@ public class LoanRestructuringService {
         );
         account.setEmiAmount(newEmi);
 
+        // CBS: Regenerate amortization schedule from restructuring date.
+        // Per Finacle/Temenos: restructuring invalidates the existing schedule.
+        // Future unpaid installments must be cancelled and new ones generated
+        // with the revised EMI, rate, and tenure. Without this, the schedule
+        // shows stale amounts that don't match the restructured terms, causing
+        // DPD miscalculation and incorrect overdue marking during EOD.
+        try {
+            scheduleService.regenerateSchedule(account, businessDate);
+            log.info("Schedule regenerated after restructuring: accNo={}, newEmi={}",
+                accountNumber, newEmi);
+        } catch (Exception e) {
+            // Schedule regeneration failure should not block restructuring.
+            // The restructured terms (rate, tenure, EMI) are already saved on the account.
+            // Schedule can be regenerated manually via admin action.
+            log.warn("Schedule regeneration failed after restructuring for {}: {}",
+                accountNumber, e.getMessage());
+        }
+
         // Mark as RESTRUCTURED per RBI CDR (unless already NPA)
         // NPA accounts remain NPA per RBI norms -- restructuring does not
         // auto-upgrade NPA to standard. The RESTRUCTURED flag is tracked

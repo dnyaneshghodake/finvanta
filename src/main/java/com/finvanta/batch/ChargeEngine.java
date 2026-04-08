@@ -208,7 +208,12 @@ public class ChargeEngine {
                 .productType(account.getProductType())
                 .narration("Charge: " + chargeCode + " on account " + accountNumber)
                 .journalLines(lines)
-                .systemGenerated(false) // Client-initiated (may require approval if above limit)
+                .systemGenerated(true) // System-initiated: charge application is an operational
+                // action by bank staff, not a customer-initiated financial transaction.
+                // Per Finacle CHRG_MASTER: charge posting must succeed atomically —
+                // if it went through maker-checker, the LoanTransaction record in
+                // chargeFee() would reference an unposted GL entry, causing
+                // GL vs subledger reconciliation mismatch.
                 .initiatedBy("SYSTEM")
                 .build()
         );
