@@ -57,7 +57,7 @@
     <!-- Loan Transactions -->
     <c:if test="${not empty loanTransactions}">
     <div class="fv-card mb-3">
-        <div class="card-header">Loan Transactions <span class="badge bg-secondary"><c:out value="${loanTransactions.size()}"/></span></div>
+        <div class="card-header">Loan Transactions <span class="badge bg-secondary"><c:out value="${loanTransactions.size()}" /></span></div>
         <div class="card-body">
             <div class="table-responsive">
             <table class="table fv-table table-sm">
@@ -65,12 +65,12 @@
                 <tbody>
                 <c:forEach var="t" items="${loanTransactions}">
                     <tr class="${t.reversed ? 'table-secondary' : ''}">
-                        <td class="font-monospace small"><c:out value="${t.transactionRef}"/></td>
-                        <td><c:out value="${t.transactionType}"/></td>
-                        <td class="text-end amount"><fmt:formatNumber value="${t.amount}" type="number" maxFractionDigits="2"/></td>
-                        <td class="font-monospace small"><c:out value="${t.voucherNumber}" default="--"/></td>
-                        <td><c:out value="${t.loanAccount.accountNumber}"/></td>
-                        <td class="small"><c:out value="${t.narration}"/></td>
+                        <td class="font-monospace small"><c:out value="${t.transactionRef}" /></td>
+                        <td><c:out value="${t.transactionType}" /></td>
+                        <td class="text-end amount"><fmt:formatNumber value="${t.amount}" type="number" maxFractionDigits="2" /></td>
+                        <td class="font-monospace small"><c:out value="${t.voucherNumber}" default="--" /></td>
+                        <td><c:out value="${t.loanAccount.accountNumber}" /></td>
+                        <td class="small"><c:out value="${t.narration}" /></td>
                     </tr>
                 </c:forEach>
                 </tbody>
@@ -83,7 +83,7 @@
     <!-- Deposit Transactions -->
     <c:if test="${not empty depositTransactions}">
     <div class="fv-card">
-        <div class="card-header">Deposit Transactions <span class="badge bg-secondary"><c:out value="${depositTransactions.size()}"/></span></div>
+        <div class="card-header">Deposit Transactions <span class="badge bg-secondary"><c:out value="${depositTransactions.size()}" /></span></div>
         <div class="card-body">
             <div class="table-responsive">
             <table class="table fv-table table-sm">
@@ -91,13 +91,13 @@
                 <tbody>
                 <c:forEach var="t" items="${depositTransactions}">
                     <tr class="${t.reversed ? 'table-secondary' : ''}">
-                        <td class="font-monospace small"><c:out value="${t.transactionRef}"/></td>
-                        <td><c:out value="${t.transactionType}"/></td>
-                        <td><span class="${t.debitCredit == 'DEBIT' ? 'text-danger' : 'text-success'}"><c:out value="${t.debitCredit}"/></span></td>
-                        <td class="text-end amount"><fmt:formatNumber value="${t.amount}" type="number" maxFractionDigits="2"/></td>
-                        <td class="font-monospace small"><c:out value="${t.voucherNumber}" default="--"/></td>
-                        <td><c:out value="${t.channel}" default="--"/></td>
-                        <td class="small"><c:out value="${t.narration}"/></td>
+                        <td class="font-monospace small"><c:out value="${t.transactionRef}" /></td>
+                        <td><c:out value="${t.transactionType}" /></td>
+                        <td><span class="${t.debitCredit == 'DEBIT' ? 'text-danger' : 'text-success'}"><c:out value="${t.debitCredit}" /></span></td>
+                        <td class="text-end amount"><fmt:formatNumber value="${t.amount}" type="number" maxFractionDigits="2" /></td>
+                        <td class="font-monospace small"><c:out value="${t.voucherNumber}" default="--" /></td>
+                        <td><c:out value="${t.channel}" default="--" /></td>
+                        <td class="small"><c:out value="${t.narration}" /></td>
                     </tr>
                 </c:forEach>
                 </tbody>
