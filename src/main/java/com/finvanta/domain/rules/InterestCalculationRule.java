@@ -143,9 +143,10 @@ public class InterestCalculationRule {
             return BigDecimal.ZERO;
         }
 
+        // Penal interest always uses Actual/365 per RBI Fair Lending Code 2023
         BigDecimal ratePerDay = penalRate
             .divide(BigDecimal.valueOf(100), MC)
-            .divide(BigDecimal.valueOf(DAYS_IN_YEAR), MC);
+            .divide(BigDecimal.valueOf(365), MC);
 
         return overduePrincipal
             .multiply(ratePerDay, MC)
