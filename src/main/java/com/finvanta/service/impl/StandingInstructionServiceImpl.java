@@ -183,6 +183,17 @@ public class StandingInstructionServiceImpl {
         loanAccountService.processRepayment(loan.getAccountNumber(), emiAmount, businessDate, idempotencyKey + "-LOAN");
 
         markSuccess(si, businessDate, emiAmount);
+
+        // Gap 2: CBS Notification per RBI Digital Banking Framework 2023.
+        // Per RBI: bank MUST notify customer on every SI execution (success or failure).
+        // In Tier-1 CBS (Finacle/Temenos), the core records a notification event and
+        // an external gateway (SMS/email microservice) picks it up asynchronously.
+        // Here we log the notification event for the gateway to consume.
+        logNotification(si, "SI_EXECUTION_SUCCESS",
+            "EMI of INR " + emiAmount + " debited from A/c " + si.getSourceAccountNumber()
+                + " towards loan " + loan.getAccountNumber() + " on " + businessDate
+                + ". Ref: " + si.getSiReference());
+
         log.info("SI LOAN_EMI: si={}, loan={}, emi={}", si.getSiReference(), loan.getAccountNumber(), emiAmount);
         return true;
     }
@@ -224,6 +235,13 @@ public class StandingInstructionServiceImpl {
             si.setRetriesDone(0);
         }
         siRepository.save(si);
+
+        // Gap 2: Notify customer on SI failure per RBI Digital Banking Framework 2023.
+        logNotification(si, "SI_EXECUTION_FAILED",
+            "Standing Instruction " + si.getSiReference() + " failed on " + businessDate
+                + ". Reason: " + msg + ". Please ensure sufficient balance in A/c "
+                + si.getSourceAccountNumber() + ".");
+
         log.warn("SI failed: si={}, code={}, retries={}/{}", si.getSiReference(), code, si.getRetriesDone(), si.getMaxRetries());
         return false;
     }
@@ -238,6 +256,179 @@ public class StandingInstructionServiceImpl {
         si.setNextExecutionDate(computeNextDate(si, bd));
         si.setUpdatedBy("SYSTEM_EOD");
         siRepository.save(si);
+    }
+
+    // ========================================================================
+    // GAP 2: NOTIFICATION LOGGING (RBI Digital Banking Framework 2023)
+    // ========================================================================
+
+    /**
+     * Log a customer notification event for the external SMS/email gateway.
+     *
+     * Per RBI Digital Banking Framework 2023 and NPCI NACH rules:
+     * - Bank MUST notify customer on every SI execution (success or failure)
+     * - Notification must include: amount, account, date, reference
+     *
+     * In Tier-1 CBS (Finacle/Temenos), the core records notification events in the
+     * audit log with a specific module code ("NOTIFICATION"). An external gateway
+     * service (SMS/email microservice) polls or subscribes to these events and
+     * delivers the actual notification. This decouples the CBS from the delivery
+     * channel and ensures the financial transaction is never blocked by notification
+     * delivery failures.
+     *
+     * For production: replace this with a dedicated notification_queue table or
+     * message broker (Kafka/RabbitMQ) for guaranteed delivery.
+     */
+    private void logNotification(StandingInstruction si, String eventType, String message) {
+        try {
+            auditService.logEvent("StandingInstruction", si.getId(), eventType,
+                si.getSiReference(), message, "NOTIFICATION",
+                "Customer: " + (si.getCustomer() != null ? si.getCustomer().getId() : "N/A")
+                    + " | Mobile: " + (si.getCustomer() != null ? si.getCustomer().getMobileNumber() : "N/A")
+                    + " | Message: " + message);
+            log.debug("SI notification logged: si={}, event={}", si.getSiReference(), eventType);
+        } catch (Exception e) {
+            // Notification logging failure must NEVER block financial processing
+            log.warn("SI notification logging failed (non-blocking): si={}, error={}",
+                si.getSiReference(), e.getMessage());
+        }
+    }
+
+    // ========================================================================
+    // GAP 3: MANUAL SI REGISTRATION WITH MAKER-CHECKER
+    // ========================================================================
+
+    /**
+     * Register a manual Standing Instruction (INTERNAL_TRANSFER, UTILITY, SIP, RD).
+     * Per Finacle SI_MASTER: manually registered SIs require maker-checker approval.
+     * Auto-created SIs (LOAN_EMI at disbursement) are ACTIVE immediately.
+     *
+     * Per RBI Payment Systems Act 2007: SI requires explicit customer mandate.
+     * The maker-checker workflow ensures dual authorization before activation.
+     *
+     * @param customerId Customer CIF
+     * @param sourceAccountNumber CASA account to debit
+     * @param destinationType INTERNAL_TRANSFER, UTILITY, SIP, RD_CONTRIBUTION
+     * @param destinationAccountNumber Target account
+     * @param amount Fixed SI amount
+     * @param frequency Execution frequency
+     * @param executionDay Day of month (1-28)
+     * @param startDate SI start date
+     * @param endDate SI end date (null = perpetual)
+     * @param narration Custom narration
+     * @return SI in PENDING_APPROVAL status (requires checker activation)
+     */
+    @Transactional
+    public StandingInstruction registerManualSI(Long customerId, String sourceAccountNumber,
+                                                 String destinationType, String destinationAccountNumber,
+                                                 BigDecimal amount, SIFrequency frequency,
+                                                 int executionDay, LocalDate startDate,
+                                                 LocalDate endDate, String narration) {
+        String tenantId = TenantContext.getCurrentTenant();
+
+        if ("LOAN_EMI".equals(destinationType)) {
+            throw new BusinessException("USE_AUTO_SI",
+                "LOAN_EMI SIs are auto-created at disbursement. Use the disbursement flow instead.");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            throw new BusinessException("INVALID_AMOUNT", "SI amount must be positive for manual SIs");
+        }
+        if (executionDay < 1 || executionDay > 28) {
+            throw new BusinessException("INVALID_EXECUTION_DAY", "Execution day must be 1-28");
+        }
+
+        // Validate source CASA exists and belongs to the customer
+        var casaOpt = depositAccountRepository.findByTenantIdAndAccountNumber(tenantId, sourceAccountNumber);
+        if (casaOpt.isEmpty()) {
+            throw new BusinessException("CASA_NOT_FOUND", "Source CASA not found: " + sourceAccountNumber);
+        }
+        var casa = casaOpt.get();
+        if (!casa.getCustomer().getId().equals(customerId)) {
+            throw new BusinessException("CIF_MISMATCH",
+                "CASA " + sourceAccountNumber + " does not belong to customer " + customerId);
+        }
+
+        var customer = casa.getCustomer();
+
+        StandingInstruction si = new StandingInstruction();
+        si.setTenantId(tenantId);
+        si.setSiReference(ReferenceGenerator.generateTransactionRef().replace("TXN", "SI"));
+        si.setCustomer(customer);
+        si.setSourceAccountNumber(sourceAccountNumber);
+        si.setDestinationType(destinationType);
+        si.setDestinationAccountNumber(destinationAccountNumber);
+        si.setAmount(amount);
+        si.setFrequency(frequency);
+        si.setExecutionDay(executionDay);
+        si.setStartDate(startDate);
+        si.setEndDate(endDate);
+        si.setNextExecutionDate(startDate);
+        // Gap 3: Manual SIs require maker-checker — starts in PENDING_APPROVAL
+        si.setStatus(SIStatus.PENDING_APPROVAL);
+        si.setPriority(destinationType.equals("INTERNAL_TRANSFER") ? 4 : 5);
+        si.setNarration(narration != null ? narration : destinationType + " SI for " + sourceAccountNumber);
+        si.setCreatedBy(SecurityUtil.getCurrentUsername());
+
+        StandingInstruction saved = siRepository.save(si);
+        auditService.logEvent("StandingInstruction", saved.getId(), "SI_REGISTERED",
+            null, saved.getSiReference(), "STANDING_INSTRUCTION",
+            "Manual SI registered (PENDING_APPROVAL): " + saved.getSiReference()
+                + " | Type: " + destinationType + " | Amount: INR " + amount
+                + " | Source: " + sourceAccountNumber + " | Maker: " + SecurityUtil.getCurrentUsername());
+        log.info("Manual SI registered: si={}, type={}, status=PENDING_APPROVAL, maker={}",
+            saved.getSiReference(), destinationType, SecurityUtil.getCurrentUsername());
+        return saved;
+    }
+
+    /**
+     * Approve a PENDING_APPROVAL SI — CHECKER activates it per maker-checker workflow.
+     * Per Finacle SI_MASTER: checker cannot be the same user as maker.
+     */
+    @Transactional
+    public StandingInstruction approveSI(String siReference) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String checker = SecurityUtil.getCurrentUsername();
+        StandingInstruction si = siRepository.findByTenantIdAndSiReference(tenantId, siReference)
+            .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
+        if (si.getStatus() != SIStatus.PENDING_APPROVAL) {
+            throw new BusinessException("SI_NOT_PENDING", "SI is not in PENDING_APPROVAL: " + si.getStatus());
+        }
+        // Maker-checker: checker must be different from maker
+        if (checker.equals(si.getCreatedBy())) {
+            throw new BusinessException("SELF_APPROVAL",
+                "Maker and checker must be different users per RBI dual-authorization norms");
+        }
+        si.setStatus(SIStatus.ACTIVE);
+        si.setUpdatedBy(checker);
+        StandingInstruction saved = siRepository.save(si);
+        auditService.logEvent("StandingInstruction", si.getId(), "SI_APPROVED",
+            "PENDING_APPROVAL", "ACTIVE", "STANDING_INSTRUCTION",
+            "SI approved by checker: " + siReference + " | Checker: " + checker
+                + " | Maker: " + si.getCreatedBy());
+        log.info("SI approved: si={}, checker={}, maker={}", siReference, checker, si.getCreatedBy());
+        return saved;
+    }
+
+    /**
+     * Reject a PENDING_APPROVAL SI — CHECKER rejects it.
+     */
+    @Transactional
+    public StandingInstruction rejectSI(String siReference, String reason) {
+        String tenantId = TenantContext.getCurrentTenant();
+        StandingInstruction si = siRepository.findByTenantIdAndSiReference(tenantId, siReference)
+            .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
+        if (si.getStatus() != SIStatus.PENDING_APPROVAL) {
+            throw new BusinessException("SI_NOT_PENDING", "SI is not in PENDING_APPROVAL: " + si.getStatus());
+        }
+        si.setStatus(SIStatus.REJECTED);
+        si.setLastFailureReason(reason);
+        si.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        StandingInstruction saved = siRepository.save(si);
+        auditService.logEvent("StandingInstruction", si.getId(), "SI_REJECTED",
+            "PENDING_APPROVAL", "REJECTED", "STANDING_INSTRUCTION",
+            "SI rejected: " + siReference + " | Reason: " + reason
+                + " | By: " + SecurityUtil.getCurrentUsername());
+        return saved;
     }
 
     /**
