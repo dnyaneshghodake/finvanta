@@ -164,6 +164,20 @@ public class CustomerController {
             customer.setTenantId(tenantId);
             customer.setBranch(branch);
             customer.setCreatedBy(currentUser);
+
+            // CBS: Compute PII hashes for de-duplication per RBI KYC norms.
+            // Since PAN/Aadhaar are encrypted (AES-256-GCM), ciphertext comparison
+            // doesn't work for duplicate detection. SHA-256 hash enables DB-level
+            // uniqueness checks without decryption.
+            customer.computePanHash();
+            customer.computeAadhaarHash();
+
+            // CBS: Set default KYC risk category based on customer type.
+            // PEP customers are always HIGH risk per FATF Recommendation 12.
+            if (customer.isPep()) {
+                customer.setKycRiskCategory("HIGH");
+            }
+
             Customer saved = customerRepository.save(customer);
 
             auditService.logEvent("Customer", saved.getId(), "CREATE",
@@ -279,12 +293,21 @@ public class CustomerController {
             customer.setKycVerified(true);
             customer.setKycVerifiedDate(businessDateService.getCurrentBusinessDate());
             customer.setKycVerifiedBy(currentUser);
+
+            // CBS: Compute KYC expiry based on risk category per RBI KYC Section 16.
+            // LOW=10yr, MEDIUM=8yr, HIGH=2yr from verification date.
+            // This enables EOD batch to detect expired KYC customers for re-verification.
+            customer.computeKycExpiry();
+            customer.setRekycDue(false); // Clear re-KYC flag on fresh verification
+
             customer.setUpdatedBy(currentUser);
             customerRepository.save(customer);
 
             auditService.logEvent("Customer", customer.getId(), "KYC_VERIFY",
                 "KYC_PENDING", "KYC_VERIFIED", "CIF",
-                "KYC verified by " + currentUser);
+                "KYC verified by " + currentUser
+                    + " | Risk: " + customer.getKycRiskCategory()
+                    + " | Expiry: " + customer.getKycExpiryDate());
 
             redirectAttributes.addFlashAttribute("success",
                 "KYC verified for customer: " + customer.getCustomerNumber());

@@ -70,6 +70,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   Step 8: CASA Savings Interest Accrual + Quarterly Credit (per RBI directive)
  *   Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER — LOAN_EMI auto-debit)
  *   Step 9: CASA Dormancy Classification (per RBI Master Direction on KYC 2016 Sec 38)
+ *   Step 10: KYC Expiry Flagging (per RBI Master Direction on KYC 2016 Sec 16)
  *
  * Day status: DAY_OPEN -> EOD_RUNNING -> (eodComplete=true)
  * Day close is a separate admin action after EOD completes.
@@ -97,6 +98,7 @@ public class EodOrchestrator {
     private final com.finvanta.service.DepositAccountService depositAccountService;
     private final com.finvanta.repository.DepositAccountRepository depositAccountRepository;
     private final com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService;
+    private final com.finvanta.repository.CustomerRepository customerRepository;
 
     /** Self-proxy for per-account transaction isolation via Spring AOP. */
     private final EodOrchestrator self;
@@ -115,6 +117,7 @@ public class EodOrchestrator {
                            com.finvanta.service.DepositAccountService depositAccountService,
                            com.finvanta.repository.DepositAccountRepository depositAccountRepository,
                            com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService,
+                           com.finvanta.repository.CustomerRepository customerRepository,
                            @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;
@@ -130,6 +133,7 @@ public class EodOrchestrator {
         this.depositAccountService = depositAccountService;
         this.depositAccountRepository = depositAccountRepository;
         this.standingInstructionService = standingInstructionService;
+        this.customerRepository = customerRepository;
         this.self = self;
     }
 
@@ -317,6 +321,36 @@ public class EodOrchestrator {
         failedCount += runStep(eodJob, "CASA_DORMANCY", () -> {
             int dormantCount = depositAccountService.markDormantAccounts(businessDate);
             log.info("EOD Step 9: {} CASA accounts marked DORMANT", dormantCount);
+        }, errors);
+
+        // Step 10: KYC Expiry Flagging (RBI Master Direction on KYC 2016 Section 16)
+        // Identifies customers with expired or expiring-soon KYC and flags them for
+        // re-verification outreach. Per RBI: expired KYC must be flagged and tracked.
+        // Non-blocking: flags customers but doesn't block transactions (that's a P1 enhancement).
+        failedCount += runStep(eodJob, "KYC_EXPIRY_CHECK", () -> {
+            String tid = TenantContext.getCurrentTenant();
+            // Flag customers with expired KYC
+            var expiredCustomers = customerRepository.findKycExpiredCustomers(tid, businessDate);
+            for (var customer : expiredCustomers) {
+                customer.setRekycDue(true);
+                customer.setUpdatedBy("SYSTEM_EOD");
+                customerRepository.save(customer);
+            }
+            // Flag customers with KYC expiring within 90 days (proactive outreach)
+            var expiringSoon = customerRepository.findKycExpiringSoonCustomers(
+                tid, businessDate, businessDate.plusDays(90));
+            for (var customer : expiringSoon) {
+                customer.setRekycDue(true);
+                customer.setUpdatedBy("SYSTEM_EOD");
+                customerRepository.save(customer);
+            }
+            int total = expiredCustomers.size() + expiringSoon.size();
+            if (total > 0) {
+                log.info("EOD Step 10: {} customers flagged for re-KYC ({} expired, {} expiring soon)",
+                    total, expiredCustomers.size(), expiringSoon.size());
+            } else {
+                log.info("EOD Step 10: no KYC expiry issues detected");
+            }
         }, errors);
 
         } catch (Exception e) {
