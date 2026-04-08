@@ -70,6 +70,7 @@
 
         <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <li class="nav-section">Administration</li>
+        <li><a href="${pageContext.request.contextPath}/admin/users" class="nav-link"><i class="bi bi-person-gear"></i><span class="nav-text">User Management</span></a></li>
         <li><a href="${pageContext.request.contextPath}/calendar/list" class="nav-link"><i class="bi bi-calendar-check"></i><span class="nav-text">Business Calendar</span></a></li>
         <li><a href="${pageContext.request.contextPath}/admin/products" class="nav-link"><i class="bi bi-box-seam"></i><span class="nav-text">Product Master</span></a></li>
         <li><a href="${pageContext.request.contextPath}/admin/charges" class="nav-link"><i class="bi bi-receipt"></i><span class="nav-text">Charge Config</span></a></li>
