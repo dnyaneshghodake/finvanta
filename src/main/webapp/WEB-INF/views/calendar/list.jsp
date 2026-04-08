@@ -42,6 +42,7 @@
                     <tr>
                         <th>Business Date</th>
                         <th>Holiday</th>
+                        <th>Holiday Type</th>
                         <th>Day Status</th>
                         <th>EOD</th>
                         <th>Opened By</th>
@@ -58,6 +59,13 @@
                                     <c:when test="${cal.holiday}"><span class="fv-badge fv-badge-rejected">Holiday</span></c:when>
                                     <c:otherwise><span class="fv-badge fv-badge-active">Working</span></c:otherwise>
                                 </c:choose>
+                            </td>
+                            <td>
+                                <c:if test="${not empty cal.holidayType}">
+                                    <c:out value="${cal.holidayType}" />
+                                    <c:if test="${not empty cal.holidayRegion}"> <small class="text-muted">(<c:out value="${cal.holidayRegion}" />)</small></c:if>
+                                </c:if>
+                                <c:if test="${empty cal.holidayType}">--</c:if>
                             </td>
                             <td>
                                 <c:choose>
@@ -94,7 +102,7 @@
                         </tr>
                     </c:forEach>
                     <c:if test="${empty calendarDates}">
-                        <tr><td colspan="7" class="text-center text-muted">No calendar dates configured</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted">No calendar dates configured</td></tr>
                     </c:if>
                 </tbody>
             </table>

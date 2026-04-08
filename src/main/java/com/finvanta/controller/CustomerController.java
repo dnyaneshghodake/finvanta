@@ -9,6 +9,7 @@ import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.BusinessException;
+import com.finvanta.util.PiiMaskingUtil;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.TenantContext;
 import com.finvanta.util.SecurityUtil;
@@ -201,6 +202,11 @@ public class CustomerController {
             .orElseThrow(() -> new BusinessException(
                 "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
         mav.addObject("customer", customer);
+        // CBS: PII masking per RBI IT Governance Direction 2023 / UIDAI Aadhaar Act 2016.
+        // Full PII is never exposed in UI — only masked values (last 4 digits visible).
+        mav.addObject("maskedPan", PiiMaskingUtil.maskPan(customer.getPanNumber()));
+        mav.addObject("maskedAadhaar", PiiMaskingUtil.maskAadhaar(customer.getAadhaarNumber()));
+        mav.addObject("maskedMobile", PiiMaskingUtil.maskMobile(customer.getMobileNumber()));
         mav.addObject("loanApplications",
             applicationRepository.findByTenantIdAndCustomerId(tenantId, id));
         mav.addObject("loanAccounts",
@@ -218,6 +224,9 @@ public class CustomerController {
                 "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
         ModelAndView mav = new ModelAndView("customer/edit");
         mav.addObject("customer", customer);
+        // CBS: PII masking for immutable disabled fields in edit form
+        mav.addObject("maskedPan", PiiMaskingUtil.maskPan(customer.getPanNumber()));
+        mav.addObject("maskedAadhaar", PiiMaskingUtil.maskAadhaar(customer.getAadhaarNumber()));
         mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
         return mav;
     }
@@ -262,6 +271,17 @@ public class CustomerController {
             existing.setMaxBorrowingLimit(updated.getMaxBorrowingLimit());
             existing.setEmploymentType(updated.getEmploymentType());
             existing.setEmployerName(updated.getEmployerName());
+            // CBS Sprint 1.2: KYC risk category and PEP flag from edit form
+            if (updated.getKycRiskCategory() != null) {
+                existing.setKycRiskCategory(updated.getKycRiskCategory());
+                // Recompute KYC expiry if risk category changed (different renewal period)
+                existing.computeKycExpiry();
+            }
+            existing.setPep(updated.isPep());
+            if (updated.isPep()) {
+                existing.setKycRiskCategory("HIGH"); // PEP always HIGH per FATF
+                existing.computeKycExpiry();
+            }
             existing.setBranch(branch);
             existing.setUpdatedBy(currentUser);
             customerRepository.save(existing);

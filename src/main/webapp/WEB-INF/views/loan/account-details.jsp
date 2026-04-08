@@ -51,7 +51,15 @@
                         <c:otherwise><span class="fv-badge fv-badge-pending"><c:out value="${account.status}" /></span></c:otherwise>
                     </c:choose>
                 </td></tr>
-                <tr><td class="fw-bold">Interest Rate</td><td><fmt:formatNumber value="${account.interestRate}" maxFractionDigits="2" />% p.a.</td></tr>
+                <tr><td class="fw-bold">Interest Rate</td><td><fmt:formatNumber value="${account.interestRate}" maxFractionDigits="2" />% p.a.
+                    <c:if test="${account.floatingRate}"> <span class="badge bg-info">FLOATING</span></c:if>
+                    <c:if test="${not account.floatingRate}"> <span class="badge bg-secondary">FIXED</span></c:if>
+                </td></tr>
+                <%-- CBS Sprint 1.4: Floating rate details per RBI EBLR/MCLR Framework --%>
+                <c:if test="${account.floatingRate}">
+                <tr><td class="fw-bold">Benchmark</td><td><c:out value="${account.benchmarkRateName}" /> @ <fmt:formatNumber value="${account.benchmarkRate}" maxFractionDigits="4" />% + Spread <fmt:formatNumber value="${account.spread}" maxFractionDigits="4" />%</td></tr>
+                <tr><td class="fw-bold">Rate Reset</td><td><c:out value="${account.rateResetFrequency}" default="--" /> | Next: <c:out value="${account.nextRateResetDate}" default="--" /> | Last: <c:out value="${account.lastRateResetDate}" default="--" /></td></tr>
+                </c:if>
                 <tr><td class="fw-bold">Penal Rate</td><td><fmt:formatNumber value="${account.penalRate}" maxFractionDigits="2" />% p.a.</td></tr>
                 <tr><td class="fw-bold">Repayment Frequency</td><td><c:out value="${account.repaymentFrequency}" /></td></tr>
                 <tr><td class="fw-bold">Tenure</td><td><c:out value="${account.tenureMonths}" /> months (Remaining: <c:out value="${account.remainingTenure}" />)</td></tr>
