@@ -22,7 +22,7 @@
                 <select name="fromAccount" id="fromAccount" class="form-select" required>
                     <option value="">-- Select Source Account --</option>
                     <c:forEach var="a" items="${accounts}">
-                    <option value="${a.accountNumber}" data-bal="${a.ledgerBalance}" data-avail="${a.effectiveAvailable}" data-type="${a.accountType}" data-branch="${a.branch.branchCode}" data-cust="${a.customer.firstName} ${a.customer.lastName}"><c:out value="${a.accountNumber}"/> &mdash; <c:out value="${a.customer.firstName}"/> <c:out value="${a.customer.lastName}"/> | <c:out value="${a.accountType}"/> | <c:out value="${a.branch.branchCode}"/> | Bal: <fmt:formatNumber value="${a.ledgerBalance}" type="number" maxFractionDigits="2"/></option>
+                    <option value="<c:out value='${a.accountNumber}'/>" data-bal="${a.ledgerBalance}" data-avail="${a.effectiveAvailable}" data-type="<c:out value='${a.accountType}'/>" data-branch="<c:out value='${a.branch.branchCode}'/>" data-cust="<c:out value='${a.customer.firstName}'/> <c:out value='${a.customer.lastName}'/>"><c:out value="${a.accountNumber}"/> &mdash; <c:out value="${a.customer.firstName}"/> <c:out value="${a.customer.lastName}"/> | <c:out value="${a.accountType}"/> | <c:out value="${a.branch.branchCode}"/> | Bal: <fmt:formatNumber value="${a.ledgerBalance}" type="number" maxFractionDigits="2"/></option>
                     </c:forEach>
                 </select>
             </div>
@@ -43,7 +43,7 @@
                 <select name="toAccount" id="toAccount" class="form-select" required>
                     <option value="">-- Select Target Account --</option>
                     <c:forEach var="a" items="${accounts}">
-                    <option value="${a.accountNumber}" data-cust="${a.customer.firstName} ${a.customer.lastName}" data-type="${a.accountType}" data-branch="${a.branch.branchCode}"><c:out value="${a.accountNumber}"/> &mdash; <c:out value="${a.customer.firstName}"/> <c:out value="${a.customer.lastName}"/> | <c:out value="${a.accountType}"/> | <c:out value="${a.branch.branchCode}"/></option>
+                    <option value="<c:out value='${a.accountNumber}'/>" data-cust="<c:out value='${a.customer.firstName}'/> <c:out value='${a.customer.lastName}'/>" data-type="<c:out value='${a.accountType}'/>" data-branch="<c:out value='${a.branch.branchCode}'/>"><c:out value="${a.accountNumber}"/> &mdash; <c:out value="${a.customer.firstName}"/> <c:out value="${a.customer.lastName}"/> | <c:out value="${a.accountType}"/> | <c:out value="${a.branch.branchCode}"/></option>
                     </c:forEach>
                 </select>
             </div>
