@@ -1027,3 +1027,56 @@ CREATE UNIQUE INDEX uq_deptxn_idempotency ON deposit_transactions (tenant_id, id
     WHERE idempotency_key IS NOT NULL;
 GO
 
+-- ============================================================
+-- STANDING INSTRUCTIONS (Finacle SI_MASTER / Temenos STANDING.ORDER)
+-- Recurring automated payment mandates on CASA accounts.
+-- Primary use case: Loan EMI auto-debit from borrower's CASA.
+-- Per RBI Payment Systems Act 2007 and NPCI NACH framework.
+-- ============================================================
+CREATE TABLE standing_instructions (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id       VARCHAR(20)     NOT NULL,
+    si_reference    VARCHAR(40)     NOT NULL,
+    customer_id     BIGINT          NOT NULL,
+    -- Source (CASA account to debit)
+    source_account_number VARCHAR(40) NOT NULL,
+    -- Destination
+    destination_type VARCHAR(30)    NOT NULL,   -- LOAN_EMI, INTERNAL_TRANSFER, RD_CONTRIBUTION, SIP, UTILITY
+    destination_account_number VARCHAR(40),
+    loan_account_number VARCHAR(40),            -- For LOAN_EMI: linked loan account
+    -- Amount (NULL for LOAN_EMI — resolved dynamically from LoanAccount.emiAmount)
+    amount          DECIMAL(18,2),
+    -- Schedule
+    frequency       VARCHAR(20)     NOT NULL,   -- DAILY, WEEKLY, MONTHLY, QUARTERLY, HALF_YEARLY, ANNUAL
+    execution_day   INT             NOT NULL,   -- Day of month (1-28)
+    start_date      DATE            NOT NULL,
+    end_date        DATE,                       -- NULL = perpetual until cancelled
+    next_execution_date DATE,
+    -- Status & Tracking
+    status          VARCHAR(30)     NOT NULL DEFAULT 'PENDING_APPROVAL',
+    priority        INT             NOT NULL DEFAULT 3,  -- 1=LOAN_EMI (highest), 5=UTILITY (lowest)
+    max_retries     INT             NOT NULL DEFAULT 3,
+    retries_done    INT             NOT NULL DEFAULT 0,
+    last_execution_date DATE,
+    last_execution_status VARCHAR(50),           -- SUCCESS, FAILED_INSUFFICIENT_BALANCE, SKIPPED
+    last_failure_reason VARCHAR(500),
+    total_executions INT            NOT NULL DEFAULT 0,
+    total_failures  INT             NOT NULL DEFAULT 0,
+    last_transaction_ref VARCHAR(40),
+    -- Narration
+    narration       VARCHAR(200),
+    version         BIGINT          NOT NULL DEFAULT 0,
+    created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at      DATETIME2,
+    created_by      VARCHAR(100),
+    updated_by      VARCHAR(100),
+    CONSTRAINT uq_si_tenant_ref UNIQUE (tenant_id, si_reference),
+    CONSTRAINT fk_si_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
+);
+CREATE INDEX idx_si_tenant_ref ON standing_instructions (tenant_id, si_reference);
+CREATE INDEX idx_si_tenant_status_nextdate ON standing_instructions (tenant_id, status, next_execution_date);
+CREATE INDEX idx_si_tenant_source ON standing_instructions (tenant_id, source_account_number);
+CREATE INDEX idx_si_tenant_customer ON standing_instructions (tenant_id, customer_id);
+CREATE INDEX idx_si_tenant_loan ON standing_instructions (tenant_id, loan_account_number);
+GO
+

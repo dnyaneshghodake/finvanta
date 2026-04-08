@@ -84,6 +84,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final ChargeEngine chargeEngine;
     private final DepositAccountRepository depositAccountRepository;
     private final DepositAccountService depositAccountService;
+    private final StandingInstructionServiceImpl standingInstructionService;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
                                    LoanApplicationRepository applicationRepository,
@@ -101,7 +102,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    TransactionEngine transactionEngine,
                                    ChargeEngine chargeEngine,
                                    DepositAccountRepository depositAccountRepository,
-                                   DepositAccountService depositAccountService) {
+                                   DepositAccountService depositAccountService,
+                                   StandingInstructionServiceImpl standingInstructionService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
@@ -119,6 +121,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.chargeEngine = chargeEngine;
         this.depositAccountRepository = depositAccountRepository;
         this.depositAccountService = depositAccountService;
+        this.standingInstructionService = standingInstructionService;
     }
 
     @Override
@@ -465,6 +468,25 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             } catch (Exception e) {
                 log.warn("Schedule generation skipped: {}", e.getMessage());
             }
+
+            // CBS: Auto-create Standing Instruction for EMI auto-debit per Finacle SI_MASTER.
+            // Per Tier-1 CBS (Finacle/Temenos/BNP): when a CASA-linked loan is fully disbursed,
+            // a LOAN_EMI Standing Instruction is automatically registered to collect EMI from
+            // the borrower's CASA account on the due date. The SI:
+            //   - Source: borrower's CASA (disbursementAccountNumber)
+            //   - Amount: dynamic from LoanAccount.emiAmount (changes after restructuring)
+            //   - Frequency: MONTHLY (aligned with repaymentFrequency)
+            //   - First execution: nextEmiDate
+            //   - End date: maturityDate (auto-expires when loan closes)
+            // Per RBI Payment Systems Act 2007: SI requires customer mandate (implicit at
+            // loan sanction — the loan agreement includes auto-debit authorization clause).
+            try {
+                standingInstructionService.createLoanEmiSI(account, bizDate);
+            } catch (Exception e) {
+                // SI creation failure must NOT block disbursement (best-effort).
+                // Operations can manually create SI later via SI management screen.
+                log.warn("SI auto-creation failed for loan {}: {}", accountNumber, e.getMessage());
+            }
         }
 
         LoanAccount saved = accountRepository.save(account);
@@ -727,6 +749,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
      * @param idempotencyKey Client-supplied unique key (null = no idempotency protection)
      * @return Transaction record (existing if idempotent retry, new otherwise)
      */
+    @Override
     @Transactional
     public LoanTransaction processRepayment(String accountNumber, BigDecimal amount,
                                              LocalDate valueDate, String idempotencyKey) {
