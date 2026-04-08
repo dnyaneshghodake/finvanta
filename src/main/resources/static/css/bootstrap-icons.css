@@ -1,28 +1,60 @@
 /* Bootstrap Icons 1.11 Subset — Finvanta CBS Offline Build */
 /* CSS-only icons using Unicode symbols — no font files required */
+/* All icons used across sidebar, tables, buttons, and badges */
 .bi{display:inline-block;font-style:normal;font-weight:normal;font-size:inherit;line-height:1;vertical-align:-.125em}
 .bi::before{display:inline-block;font-family:'Segoe UI Symbol','Apple Color Emoji',sans-serif}
+
+/* Sidebar Navigation Icons */
 .bi-speedometer2::before{content:"\2699"}
 .bi-plus-circle::before{content:"\2295"}
 .bi-file-earmark-text::before{content:"\1F4C4"}
 .bi-clipboard-check::before{content:"\2611"}
 .bi-check2-square::before{content:"\2705"}
 .bi-bank::before{content:"\1F3E6"}
+.bi-arrow-repeat::before{content:"\1F504"}
+.bi-wallet2::before{content:"\1F4B3"}
+.bi-kanban::before{content:"\2630"}
+.bi-person-plus::before{content:"\2795"}
+.bi-arrow-left-right::before{content:"\2194"}
+.bi-diagram-3::before{content:"\2442"}
+.bi-file-earmark-bar-graph::before{content:"\1F4CA"}
 .bi-journal-bookmark::before{content:"\1F4D2"}
 .bi-journal-text::before{content:"\1F4D3"}
+.bi-receipt-cutoff::before{content:"\1F9FE"}
+.bi-arrow-up-right::before{content:"\2197"}
+.bi-clock-history::before{content:"\1F552"}
+.bi-exclamation-triangle::before{content:"\26A0"}
+.bi-percent::before{content:"\0025"}
+.bi-cash-stack::before{content:"\1F4B0"}
 .bi-gear-wide-connected::before{content:"\2699"}
-.bi-hourglass-split::before{content:"\231B"}
 .bi-people::before{content:"\1F465"}
 .bi-building::before{content:"\1F3E2"}
+.bi-person-gear::before{content:"\2699"}
+.bi-calendar-check::before{content:"\1F4C5"}
+.bi-box-seam::before{content:"\1F4E6"}
+.bi-receipt::before{content:"\1F9FE"}
+.bi-sliders::before{content:"\2630"}
 .bi-shield-lock::before{content:"\1F512"}
-.bi-exclamation-triangle::before{content:"\26A0"}
+
+/* Action Button Icons */
+.bi-eye::before{content:"\1F441"}
+.bi-pencil::before{content:"\270F"}
+.bi-arrow-left::before{content:"\2190"}
+.bi-key::before{content:"\1F511"}
+.bi-unlock::before{content:"\1F513"}
+.bi-person-x::before{content:"\2716"}
+.bi-person-check::before{content:"\2714"}
+.bi-patch-check::before{content:"\2714"}
+.bi-x-circle::before{content:"\2716"}
+.bi-check-circle::before{content:"\2714"}
+.bi-pause-circle::before{content:"\23F8"}
+.bi-play-circle::before{content:"\25B6"}
+.bi-trash::before{content:"\1F5D1"}
+
+/* Status & Alert Icons */
 .bi-exclamation-circle::before{content:"\2757"}
 .bi-exclamation-octagon::before{content:"\26D4"}
 .bi-currency-rupee::before{content:"\20B9"}
-.bi-cash-stack::before{content:"\1F4B0"}
-.bi-percent::before{content:"\0025"}
-.bi-calendar-check::before{content:"\1F4C5"}
-.bi-clock-history::before{content:"\1F552"}
-.bi-arrow-up-right::before{content:"\2197"}
+.bi-hourglass-split::before{content:"\231B"}
 .bi-arrow-down-left::before{content:"\2199"}
-.bi-check-circle::before{content:"\2714"}
+.bi-arrow-left-right::before{content:"\2194"}
