@@ -2,8 +2,10 @@ package com.finvanta.service;
 
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BusinessCalendar;
+import com.finvanta.domain.entity.TransactionBatch;
 import com.finvanta.domain.enums.DayStatus;
 import com.finvanta.repository.BusinessCalendarRepository;
+import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
@@ -42,11 +44,14 @@ public class BusinessDateService {
     private static final Logger log = LoggerFactory.getLogger(BusinessDateService.class);
 
     private final BusinessCalendarRepository calendarRepository;
+    private final TransactionBatchRepository batchRepository;
     private final AuditService auditService;
 
     public BusinessDateService(BusinessCalendarRepository calendarRepository,
+                                TransactionBatchRepository batchRepository,
                                 AuditService auditService) {
         this.calendarRepository = calendarRepository;
+        this.batchRepository = batchRepository;
         this.auditService = auditService;
     }
 
@@ -119,6 +124,26 @@ public class BusinessDateService {
         calendar.setUpdatedBy(currentUser);
 
         BusinessCalendar saved = calendarRepository.save(calendar);
+
+        // CBS SOD: Auto-create a default INTRA_DAY transaction batch for the business date.
+        // Per Finacle/Temenos Day Control: TransactionEngine Step 5.5 requires an OPEN batch
+        // for all user-initiated transactions. Without this, every deposit/withdrawal/transfer
+        // would fail with BATCH_NOT_OPEN until an admin manually opens a batch.
+        // Auto-creating on Day Open ensures seamless SOD operations.
+        if (!batchRepository.existsByTenantIdAndBusinessDate(tenantId, businessDate)) {
+            TransactionBatch defaultBatch = new TransactionBatch();
+            defaultBatch.setTenantId(tenantId);
+            defaultBatch.setBusinessDate(businessDate);
+            defaultBatch.setBatchName("DEFAULT_BATCH");
+            defaultBatch.setBatchType("INTRA_DAY");
+            defaultBatch.setStatus("OPEN");
+            defaultBatch.setOpenedBy(currentUser);
+            defaultBatch.setOpenedAt(LocalDateTime.now());
+            defaultBatch.setMakerId(currentUser);
+            defaultBatch.setCreatedBy(currentUser);
+            batchRepository.save(defaultBatch);
+            log.info("Default transaction batch auto-created for {}", businessDate);
+        }
 
         auditService.logEvent("BusinessCalendar", saved.getId(), "DAY_OPEN",
             "NOT_OPENED", "DAY_OPEN", "DAY_CONTROL",
