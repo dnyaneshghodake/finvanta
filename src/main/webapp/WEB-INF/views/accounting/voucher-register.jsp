@@ -34,17 +34,17 @@
                     <th class="text-end">Debit</th><th class="text-end">Credit</th><th>Module</th><th>Narration</th>
                 </tr></thead>
                 <tbody>
-                <c:forEach var="le" items="${ledgerEntries}">
+                <c:forEach var="entry" items="${ledgerEntries}">
                     <tr>
-                        <td><c:out value="${le.ledgerSequence}" /></td>
-                        <td class="font-monospace small"><c:out value="${le.journalRef}" /></td>
-                        <td><c:out value="${le.glCode}" /></td>
-                        <td><c:out value="${le.glName}" /></td>
-                        <td class="font-monospace small"><c:out value="${le.accountReference}" default="--" /></td>
-                        <td class="text-end amount"><c:if test="${le.debitAmount.signum() > 0}"><fmt:formatNumber value="${le.debitAmount}" type="number" maxFractionDigits="2" /></c:if></td>
-                        <td class="text-end amount"><c:if test="${le.creditAmount.signum() > 0}"><fmt:formatNumber value="${le.creditAmount}" type="number" maxFractionDigits="2" /></c:if></td>
-                        <td><c:out value="${le.moduleCode}" default="--" /></td>
-                        <td class="small"><c:out value="${le.narration}" /></td>
+                        <td><c:out value="${entry.ledgerSequence}" /></td>
+                        <td class="font-monospace small"><c:out value="${entry.journalRef}" /></td>
+                        <td><c:out value="${entry.glCode}" /></td>
+                        <td><c:out value="${entry.glName}" /></td>
+                        <td class="font-monospace small"><c:out value="${entry.accountReference}" default="--" /></td>
+                        <td class="text-end amount"><c:if test="${entry.debitAmount.signum() > 0}"><fmt:formatNumber value="${entry.debitAmount}" type="number" maxFractionDigits="2" /></c:if></td>
+                        <td class="text-end amount"><c:if test="${entry.creditAmount.signum() > 0}"><fmt:formatNumber value="${entry.creditAmount}" type="number" maxFractionDigits="2" /></c:if></td>
+                        <td><c:out value="${entry.moduleCode}" default="--" /></td>
+                        <td class="small"><c:out value="${entry.narration}" /></td>
                     </tr>
                 </c:forEach>
                 <c:if test="${empty ledgerEntries}"><tr><td colspan="9" class="text-center text-muted">No ledger entries for this date</td></tr></c:if>
