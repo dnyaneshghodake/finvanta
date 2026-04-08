@@ -148,6 +148,52 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "risk_category", length = 20)
     private String riskCategory;
 
+    // === Floating Rate Support (per RBI EBLR/MCLR Framework) ===
+
+    /**
+     * Benchmark rate name for floating rate loans: EBLR, MCLR, RLLR, T_BILL.
+     * Per RBI: all new floating rate retail loans must be linked to an external benchmark
+     * (EBLR) since October 2019. Older loans may still be on MCLR.
+     * Null for fixed-rate loans.
+     */
+    @Column(name = "benchmark_rate_name", length = 20)
+    private String benchmarkRateName;
+
+    /**
+     * Current benchmark rate value (% p.a.).
+     * interestRate = benchmarkRate + spread.
+     * Updated during periodic rate reset.
+     */
+    @Column(name = "benchmark_rate", precision = 8, scale = 4)
+    private BigDecimal benchmarkRate;
+
+    /**
+     * Spread over benchmark (% p.a.). Fixed at sanction, does not change on reset.
+     * Per RBI EBLR framework: spread can only change on credit event (NPA, upgrade).
+     */
+    @Column(name = "spread", precision = 8, scale = 4)
+    private BigDecimal spread;
+
+    /**
+     * Rate reset frequency: QUARTERLY, HALF_YEARLY, YEARLY.
+     * Per RBI: EBLR-linked loans must reset at least once every 3 months.
+     */
+    @Column(name = "rate_reset_frequency", length = 20)
+    private String rateResetFrequency;
+
+    /** Next rate reset date — when the benchmark rate will be refreshed */
+    @Column(name = "next_rate_reset_date")
+    private LocalDate nextRateResetDate;
+
+    /** Last rate reset date — when the benchmark rate was last refreshed */
+    @Column(name = "last_rate_reset_date")
+    private LocalDate lastRateResetDate;
+
+    /** Whether this is a floating rate loan (derived from product) */
+    public boolean isFloatingRate() {
+        return benchmarkRateName != null && !benchmarkRateName.isBlank();
+    }
+
     /**
      * CBS Disbursement Account per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT.
      *

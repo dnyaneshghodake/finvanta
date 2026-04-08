@@ -154,4 +154,48 @@ public class ProductMaster extends BaseEntity {
     /** Processing fee percentage (charged at disbursement) */
     @Column(name = "processing_fee_pct", precision = 8, scale = 4)
     private BigDecimal processingFeePct = BigDecimal.ZERO;
+
+    // === Floating Rate Configuration (per RBI EBLR/MCLR Framework) ===
+
+    /**
+     * Default benchmark rate name for floating rate products: EBLR, MCLR, RLLR, T_BILL.
+     * Per RBI: all new floating rate retail loans must be linked to an external benchmark
+     * (EBLR) since October 2019. Null for fixed-rate products.
+     */
+    @Column(name = "default_benchmark_name", length = 20)
+    private String defaultBenchmarkName;
+
+    /**
+     * Default rate reset frequency for floating rate products.
+     * Per RBI EBLR framework: reset at least quarterly for EBLR-linked loans.
+     * Values: QUARTERLY, HALF_YEARLY, YEARLY. Null for fixed-rate products.
+     */
+    @Column(name = "default_rate_reset_frequency", length = 20)
+    private String defaultRateResetFrequency;
+
+    /**
+     * Default spread over benchmark (% p.a.) for this product.
+     * Actual spread per account may differ based on credit assessment.
+     */
+    @Column(name = "default_spread", precision = 8, scale = 4)
+    private BigDecimal defaultSpread;
+
+    // === CASA Interest Tiering (per Finacle INTDEF) ===
+
+    /**
+     * Whether this product uses balance-based interest tiering.
+     * If true, interest rates vary by balance slab (e.g., 3% on first 1L, 3.5% on 1-5L).
+     * Tiering slabs are stored in a separate configuration (future enhancement).
+     * If false, the flat rate from minInterestRate is used.
+     */
+    @Column(name = "interest_tiering_enabled", nullable = false)
+    private boolean interestTieringEnabled = false;
+
+    /**
+     * Interest tiering slabs as JSON for CASA products.
+     * Format: [{"min":0,"max":100000,"rate":3.0},{"min":100001,"max":500000,"rate":3.5}]
+     * Null if interestTieringEnabled = false.
+     */
+    @Column(name = "interest_tiering_json", length = 2000)
+    private String interestTieringJson;
 }
