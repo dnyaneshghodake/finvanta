@@ -1,21 +1,25 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.LoanStatus;
+
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 @Entity
-@Table(name = "loan_accounts", indexes = {
-    @Index(name = "idx_loacc_tenant_accno", columnList = "tenant_id, account_number", unique = true),
-    @Index(name = "idx_loacc_status", columnList = "tenant_id, status"),
-    @Index(name = "idx_loacc_customer", columnList = "tenant_id, customer_id"),
-    @Index(name = "idx_loacc_npa", columnList = "tenant_id, status, days_past_due")
-})
+@Table(
+        name = "loan_accounts",
+        indexes = {
+            @Index(name = "idx_loacc_tenant_accno", columnList = "tenant_id, account_number", unique = true),
+            @Index(name = "idx_loacc_status", columnList = "tenant_id, status"),
+            @Index(name = "idx_loacc_customer", columnList = "tenant_id, customer_id"),
+            @Index(name = "idx_loacc_npa", columnList = "tenant_id, status, days_past_due")
+        })
 @Getter
 @Setter
 @NoArgsConstructor
@@ -257,7 +261,10 @@ public class LoanAccount extends BaseEntity {
     }
 
     public BigDecimal getTotalOutstanding() {
-        return outstandingPrincipal.add(outstandingInterest).add(accruedInterest).add(penalInterestAccrued);
+        return outstandingPrincipal
+                .add(outstandingInterest)
+                .add(accruedInterest)
+                .add(penalInterestAccrued);
     }
 
     public boolean isMultiDisbursement() {

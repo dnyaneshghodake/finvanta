@@ -1,20 +1,24 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.ApplicationStatus;
+
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 @Entity
-@Table(name = "loan_applications", indexes = {
-    @Index(name = "idx_loanapp_tenant_appno", columnList = "tenant_id, application_number", unique = true),
-    @Index(name = "idx_loanapp_status", columnList = "tenant_id, status"),
-    @Index(name = "idx_loanapp_customer", columnList = "tenant_id, customer_id")
-})
+@Table(
+        name = "loan_applications",
+        indexes = {
+            @Index(name = "idx_loanapp_tenant_appno", columnList = "tenant_id, application_number", unique = true),
+            @Index(name = "idx_loanapp_status", columnList = "tenant_id, status"),
+            @Index(name = "idx_loanapp_customer", columnList = "tenant_id, customer_id")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

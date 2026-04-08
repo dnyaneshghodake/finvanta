@@ -1,20 +1,24 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import org.hibernate.annotations.Filter;
 
 import java.time.LocalDateTime;
 
+import org.hibernate.annotations.Filter;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 @Entity
 @Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
-@Table(name = "audit_logs", indexes = {
-    @Index(name = "idx_audit_tenant_entity", columnList = "tenant_id, entity_type, entity_id"),
-    @Index(name = "idx_audit_timestamp", columnList = "tenant_id, event_timestamp"),
-    @Index(name = "idx_audit_user", columnList = "tenant_id, performed_by")
-})
+@Table(
+        name = "audit_logs",
+        indexes = {
+            @Index(name = "idx_audit_tenant_entity", columnList = "tenant_id, entity_type, entity_id"),
+            @Index(name = "idx_audit_timestamp", columnList = "tenant_id, event_timestamp"),
+            @Index(name = "idx_audit_user", columnList = "tenant_id, performed_by")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

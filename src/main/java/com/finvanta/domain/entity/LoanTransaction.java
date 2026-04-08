@@ -1,33 +1,36 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.TransactionType;
+
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 @Entity
-@Table(name = "loan_transactions",
-    indexes = {
-        @Index(name = "idx_loantxn_tenant_account", columnList = "tenant_id, loan_account_id"),
-        @Index(name = "idx_loantxn_txnref", columnList = "tenant_id, transaction_ref", unique = true),
-        @Index(name = "idx_loantxn_value_date", columnList = "tenant_id, value_date"),
-        @Index(name = "idx_loantxn_type", columnList = "tenant_id, transaction_type"),
-        @Index(name = "idx_loantxn_voucher", columnList = "tenant_id, voucher_number")
-    }
-    // CBS Idempotency: unique constraint on (tenant_id, idempotency_key) for non-null keys.
-    // NOT enforced via JPA @UniqueConstraint because H2 (used in tests) treats NULL as a
-    // value in unique indexes — two system-generated transactions with idempotency_key=NULL
-    // would collide. The SQL standard says NULL != NULL, but H2 does not follow this.
-    //
-    // Production enforcement:
-    //   SQL Server: filtered unique index in DDL (WHERE idempotency_key IS NOT NULL)
-    //   Application: LoanAccountServiceImpl.processRepayment() checks before insert
-)
+@Table(
+        name = "loan_transactions",
+        indexes = {
+            @Index(name = "idx_loantxn_tenant_account", columnList = "tenant_id, loan_account_id"),
+            @Index(name = "idx_loantxn_txnref", columnList = "tenant_id, transaction_ref", unique = true),
+            @Index(name = "idx_loantxn_value_date", columnList = "tenant_id, value_date"),
+            @Index(name = "idx_loantxn_type", columnList = "tenant_id, transaction_type"),
+            @Index(name = "idx_loantxn_voucher", columnList = "tenant_id, voucher_number")
+        }
+        // CBS Idempotency: unique constraint on (tenant_id, idempotency_key) for non-null keys.
+        // NOT enforced via JPA @UniqueConstraint because H2 (used in tests) treats NULL as a
+        // value in unique indexes — two system-generated transactions with idempotency_key=NULL
+        // would collide. The SQL standard says NULL != NULL, but H2 does not follow this.
+        //
+        // Production enforcement:
+        //   SQL Server: filtered unique index in DDL (WHERE idempotency_key IS NOT NULL)
+        //   Application: LoanAccountServiceImpl.processRepayment() checks before insert
+        )
 @Getter
 @Setter
 @NoArgsConstructor

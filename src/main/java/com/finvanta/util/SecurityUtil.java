@@ -1,13 +1,14 @@
 package com.finvanta.util;
 
 import com.finvanta.config.BranchAwareUserDetails;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * CBS Security Utility — extracts current user context from Spring Security.
@@ -25,8 +26,7 @@ import java.util.stream.Collectors;
  */
 public final class SecurityUtil {
 
-    private SecurityUtil() {
-    }
+    private SecurityUtil() {}
 
     public static String getCurrentUsername() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -69,15 +69,15 @@ public final class SecurityUtil {
         // Returning AUDITOR would cause limit lookup to find nothing → bypass all limits.
         List<String> leastPrivilegeFirst = List.of("MAKER", "CHECKER", "ADMIN");
         Set<String> userRoles = auth.getAuthorities().stream()
-            .map(GrantedAuthority::getAuthority)
-            .filter(a -> a.startsWith("ROLE_"))
-            .map(a -> a.substring(5))
-            .collect(Collectors.toSet());
+                .map(GrantedAuthority::getAuthority)
+                .filter(a -> a.startsWith("ROLE_"))
+                .map(a -> a.substring(5))
+                .collect(Collectors.toSet());
 
         return leastPrivilegeFirst.stream()
-            .filter(userRoles::contains)
-            .findFirst()
-            .orElse(null);
+                .filter(userRoles::contains)
+                .findFirst()
+                .orElse(null);
     }
 
     /**

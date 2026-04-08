@@ -1,10 +1,10 @@
 package com.finvanta.util;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-
 import java.util.HashSet;
 import java.util.Set;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -66,16 +66,11 @@ class ReferenceGeneratorTest {
         String txnRef = ReferenceGenerator.generateTransactionRef();
         String jrnRef = ReferenceGenerator.generateJournalRef();
 
-        assertTrue(accNo.length() <= 40,
-            "Account number length " + accNo.length() + " exceeds VARCHAR(40)");
-        assertTrue(appNo.length() <= 40,
-            "Application number length " + appNo.length() + " exceeds VARCHAR(40)");
-        assertTrue(custNo.length() <= 40,
-            "Customer number length " + custNo.length() + " exceeds VARCHAR(40)");
-        assertTrue(txnRef.length() <= 40,
-            "Transaction ref length " + txnRef.length() + " exceeds VARCHAR(40)");
-        assertTrue(jrnRef.length() <= 40,
-            "Journal ref length " + jrnRef.length() + " exceeds VARCHAR(40)");
+        assertTrue(accNo.length() <= 40, "Account number length " + accNo.length() + " exceeds VARCHAR(40)");
+        assertTrue(appNo.length() <= 40, "Application number length " + appNo.length() + " exceeds VARCHAR(40)");
+        assertTrue(custNo.length() <= 40, "Customer number length " + custNo.length() + " exceeds VARCHAR(40)");
+        assertTrue(txnRef.length() <= 40, "Transaction ref length " + txnRef.length() + " exceeds VARCHAR(40)");
+        assertTrue(jrnRef.length() <= 40, "Journal ref length " + jrnRef.length() + " exceeds VARCHAR(40)");
     }
 
     @Test

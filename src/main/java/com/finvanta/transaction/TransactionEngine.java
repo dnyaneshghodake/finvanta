@@ -4,8 +4,8 @@ import com.finvanta.accounting.AccountingService;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.JournalEntry;
-import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.BranchRepository;
+import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.MakerCheckerService;
@@ -15,13 +15,14 @@ import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 /**
  * CBS Generic Transaction Engine per Finacle TRAN_POSTING / Temenos TRANSACTION framework.
@@ -86,15 +87,16 @@ public class TransactionEngine {
     private final AuditService auditService;
     private final SequenceGeneratorService sequenceGenerator;
 
-    public TransactionEngine(AccountingService accountingService,
-                              TransactionLimitService limitService,
-                              MakerCheckerService makerCheckerService,
-                              BusinessDateService businessDateService,
-                              BusinessCalendarRepository calendarRepository,
-                              BranchRepository branchRepository,
-                              TransactionBatchRepository batchRepository,
-                              AuditService auditService,
-                              SequenceGeneratorService sequenceGenerator) {
+    public TransactionEngine(
+            AccountingService accountingService,
+            TransactionLimitService limitService,
+            MakerCheckerService makerCheckerService,
+            BusinessDateService businessDateService,
+            BusinessCalendarRepository calendarRepository,
+            BranchRepository branchRepository,
+            TransactionBatchRepository batchRepository,
+            AuditService auditService,
+            SequenceGeneratorService sequenceGenerator) {
         this.accountingService = accountingService;
         this.limitService = limitService;
         this.makerCheckerService = makerCheckerService;
@@ -119,12 +121,16 @@ public class TransactionEngine {
     @Transactional
     public TransactionResult execute(TransactionRequest request) {
         String tenantId = TenantContext.getCurrentTenant();
-        String currentUser = request.getInitiatedBy() != null
-            ? request.getInitiatedBy() : SecurityUtil.getCurrentUsername();
+        String currentUser =
+                request.getInitiatedBy() != null ? request.getInitiatedBy() : SecurityUtil.getCurrentUsername();
 
-        log.info("Transaction engine: module={}, type={}, amount={}, account={}, user={}",
-            request.getSourceModule(), request.getTransactionType(),
-            request.getAmount(), request.getAccountReference(), currentUser);
+        log.info(
+                "Transaction engine: module={}, type={}, amount={}, account={}, user={}",
+                request.getSourceModule(),
+                request.getTransactionType(),
+                request.getAmount(),
+                request.getAccountReference(),
+                currentUser);
 
         // ================================================================
         // STEP 1: Idempotency Check
@@ -139,13 +145,14 @@ public class TransactionEngine {
         // Value date must exist in the business calendar
         // ================================================================
         BusinessCalendar calendar = calendarRepository
-            .findByTenantIdAndBusinessDate(tenantId, request.getValueDate())
-            .orElseThrow(() -> new BusinessException("INVALID_VALUE_DATE",
-                "Value date " + request.getValueDate() + " not found in business calendar"));
+                .findByTenantIdAndBusinessDate(tenantId, request.getValueDate())
+                .orElseThrow(() -> new BusinessException(
+                        "INVALID_VALUE_DATE",
+                        "Value date " + request.getValueDate() + " not found in business calendar"));
 
         if (calendar.isHoliday()) {
-            throw new BusinessException("HOLIDAY_POSTING",
-                "Cannot post transactions on a holiday: " + request.getValueDate());
+            throw new BusinessException(
+                    "HOLIDAY_POSTING", "Cannot post transactions on a holiday: " + request.getValueDate());
         }
 
         // ================================================================
@@ -160,8 +167,7 @@ public class TransactionEngine {
             try {
                 LocalDate currentBizDate = businessDateService.getCurrentBusinessDate();
                 businessDateService.validateValueDateWindow(
-                    request.getValueDate(), currentBizDate,
-                    valueDateBackDays, valueDateForwardDays);
+                        request.getValueDate(), currentBizDate, valueDateBackDays, valueDateForwardDays);
             } catch (BusinessException e) {
                 if ("NO_OPEN_DAY".equals(e.getErrorCode())) {
                     // No day open — let Step 3 handle this (DAY_NOT_OPEN error)
@@ -178,16 +184,17 @@ public class TransactionEngine {
         // ================================================================
         if (!request.isSystemGenerated()) {
             if (!calendar.getDayStatus().isTransactionAllowed()) {
-                throw new BusinessException("DAY_NOT_OPEN",
-                    "Business date " + request.getValueDate() + " is in "
-                        + calendar.getDayStatus() + " state. Transactions not allowed.");
+                throw new BusinessException(
+                        "DAY_NOT_OPEN",
+                        "Business date " + request.getValueDate() + " is in " + calendar.getDayStatus()
+                                + " state. Transactions not allowed.");
             }
         } else {
             // System-generated: allowed during DAY_OPEN and EOD_RUNNING
             if (!calendar.getDayStatus().isTransactionAllowed() && !calendar.isEodRunning()) {
-                throw new BusinessException("DAY_NOT_OPEN",
-                    "Business date " + request.getValueDate() + " is in "
-                        + calendar.getDayStatus() + " state.");
+                throw new BusinessException(
+                        "DAY_NOT_OPEN",
+                        "Business date " + request.getValueDate() + " is in " + calendar.getDayStatus() + " state.");
             }
         }
 
@@ -198,8 +205,8 @@ public class TransactionEngine {
         // Already validated by TransactionRequest.Builder, but defense-in-depth.
         // ================================================================
         if (request.getAmount() == null || request.getAmount().signum() <= 0) {
-            throw new BusinessException("INVALID_AMOUNT",
-                "Transaction amount must be positive: " + request.getAmount());
+            throw new BusinessException(
+                    "INVALID_AMOUNT", "Transaction amount must be positive: " + request.getAmount());
         }
         // CBS: Use stripTrailingZeros() before scale check to avoid false positives.
         // BigDecimal("1000.000").scale()=3 but is logically 0 decimal places.
@@ -207,14 +214,15 @@ public class TransactionEngine {
         // Without this, amounts constructed from JSON/String with trailing zeros are rejected.
         java.math.BigDecimal normalizedAmount = request.getAmount().stripTrailingZeros();
         if (normalizedAmount.scale() > 2) {
-            throw new BusinessException("INVALID_AMOUNT_PRECISION",
-                "Transaction amount cannot have more than 2 decimal places: "
-                    + request.getAmount() + " (scale=" + normalizedAmount.scale() + ")");
+            throw new BusinessException(
+                    "INVALID_AMOUNT_PRECISION",
+                    "Transaction amount cannot have more than 2 decimal places: " + request.getAmount() + " (scale="
+                            + normalizedAmount.scale() + ")");
         }
         if (normalizedAmount.precision() - normalizedAmount.scale() > 16) {
-            throw new BusinessException("INVALID_AMOUNT_OVERFLOW",
-                "Transaction amount exceeds CBS maximum (16 integer digits): "
-                    + request.getAmount());
+            throw new BusinessException(
+                    "INVALID_AMOUNT_OVERFLOW",
+                    "Transaction amount exceeds CBS maximum (16 integer digits): " + request.getAmount());
         }
 
         // ================================================================
@@ -222,10 +230,11 @@ public class TransactionEngine {
         // Branch must exist and be active (if specified)
         // ================================================================
         if (request.getBranchCode() != null && !request.getBranchCode().isBlank()) {
-            branchRepository.findByTenantIdAndBranchCode(tenantId, request.getBranchCode())
-                .filter(b -> b.isActive())
-                .orElseThrow(() -> new BusinessException("INVALID_BRANCH",
-                    "Branch not found or inactive: " + request.getBranchCode()));
+            branchRepository
+                    .findByTenantIdAndBranchCode(tenantId, request.getBranchCode())
+                    .filter(b -> b.isActive())
+                    .orElseThrow(() -> new BusinessException(
+                            "INVALID_BRANCH", "Branch not found or inactive: " + request.getBranchCode()));
         }
 
         // ================================================================
@@ -242,15 +251,21 @@ public class TransactionEngine {
                 // CBS: Enhanced diagnostics — log tenant + date + total batch count for troubleshooting.
                 // Common causes: (1) batches created for different date, (2) tenant mismatch,
                 // (3) all batches already closed, (4) day status changed after batch creation.
-                long totalBatches = batchRepository.findByTenantIdAndBusinessDateOrderByOpenedAtAsc(
-                    tenantId, request.getValueDate()).size();
-                log.error("BATCH_NOT_OPEN: tenant={}, valueDate={}, totalBatchesForDate={}, module={}, type={}",
-                    tenantId, request.getValueDate(), totalBatches,
-                    request.getSourceModule(), request.getTransactionType());
-                throw new BusinessException("BATCH_NOT_OPEN",
-                    "No open transaction batch for business date " + request.getValueDate()
-                        + " (tenant=" + tenantId + ", totalBatches=" + totalBatches
-                        + "). Open a batch via Transaction Batches before posting transactions.");
+                long totalBatches = batchRepository
+                        .findByTenantIdAndBusinessDateOrderByOpenedAtAsc(tenantId, request.getValueDate())
+                        .size();
+                log.error(
+                        "BATCH_NOT_OPEN: tenant={}, valueDate={}, totalBatchesForDate={}, module={}, type={}",
+                        tenantId,
+                        request.getValueDate(),
+                        totalBatches,
+                        request.getSourceModule(),
+                        request.getTransactionType());
+                throw new BusinessException(
+                        "BATCH_NOT_OPEN",
+                        "No open transaction batch for business date " + request.getValueDate()
+                                + " (tenant=" + tenantId + ", totalBatches=" + totalBatches
+                                + "). Open a batch via Transaction Batches before posting transactions.");
             }
         }
 
@@ -261,7 +276,7 @@ public class TransactionEngine {
         // ================================================================
         if (!request.isSystemGenerated()) {
             limitService.validateTransactionLimit(
-                request.getAmount(), request.getTransactionType(), request.getValueDate());
+                    request.getAmount(), request.getTransactionType(), request.getValueDate());
         }
 
         // ================================================================
@@ -279,35 +294,47 @@ public class TransactionEngine {
         // ================================================================
         String postingStatus = "POSTED";
         if (!request.isSystemGenerated()
-                && makerCheckerService.requiresApproval(
-                    request.getAmount(), request.getTransactionType())) {
+                && makerCheckerService.requiresApproval(request.getAmount(), request.getTransactionType())) {
             postingStatus = "PENDING_APPROVAL";
 
             // Create approval workflow -- no GL posting yet
             makerCheckerService.createPendingApproval(
-                "Transaction", 0L,
-                request.getTransactionType(),
-                request.getSourceModule() + "|" + request.getAccountReference()
-                    + "|" + request.getAmount() + "|" + request.getTransactionType());
+                    "Transaction",
+                    0L,
+                    request.getTransactionType(),
+                    request.getSourceModule() + "|" + request.getAccountReference() + "|" + request.getAmount() + "|"
+                            + request.getTransactionType());
 
             String txnRef = ReferenceGenerator.generateTransactionRef();
-            auditService.logEvent("Transaction", 0L,
-                "PENDING_APPROVAL", null, txnRef, request.getSourceModule(),
-                "Transaction pending approval: " + request.getTransactionType()
-                    + " INR " + request.getAmount()
-                    + " for " + request.getAccountReference()
-                    + " | User: " + currentUser);
+            auditService.logEvent(
+                    "Transaction",
+                    0L,
+                    "PENDING_APPROVAL",
+                    null,
+                    txnRef,
+                    request.getSourceModule(),
+                    "Transaction pending approval: " + request.getTransactionType()
+                            + " INR " + request.getAmount()
+                            + " for " + request.getAccountReference()
+                            + " | User: " + currentUser);
 
-            log.info("Transaction pending maker-checker approval: type={}, amount={}, account={}, user={}",
-                request.getTransactionType(), request.getAmount(),
-                request.getAccountReference(), currentUser);
+            log.info(
+                    "Transaction pending maker-checker approval: type={}, amount={}, account={}, user={}",
+                    request.getTransactionType(),
+                    request.getAmount(),
+                    request.getAccountReference(),
+                    currentUser);
 
             return new TransactionResult(
-                txnRef, null, null, null,
-                request.getAmount(), request.getAmount(),
-                request.getValueDate(), LocalDateTime.now(),
-                postingStatus
-            );
+                    txnRef,
+                    null,
+                    null,
+                    null,
+                    request.getAmount(),
+                    request.getAmount(),
+                    request.getValueDate(),
+                    LocalDateTime.now(),
+                    postingStatus);
         }
 
         // ================================================================
@@ -340,27 +367,28 @@ public class TransactionEngine {
                 JournalEntry firstEntry = null;
                 for (TransactionRequest.CompoundJournalGroup group : request.getCompoundJournalGroups()) {
                     JournalEntry entry = accountingService.postJournalEntry(
-                        request.getValueDate(),
-                        group.narration(),
-                        request.getSourceModule(),
-                        request.getAccountReference(),
-                        group.lines()
-                    );
+                            request.getValueDate(),
+                            group.narration(),
+                            request.getSourceModule(),
+                            request.getAccountReference(),
+                            group.lines());
                     if (firstEntry == null) {
                         firstEntry = entry;
                     }
-                    log.debug("Compound journal group posted: ref={}, debit={}, credit={}",
-                        entry.getJournalRef(), entry.getTotalDebit(), entry.getTotalCredit());
+                    log.debug(
+                            "Compound journal group posted: ref={}, debit={}, credit={}",
+                            entry.getJournalRef(),
+                            entry.getTotalDebit(),
+                            entry.getTotalCredit());
                 }
                 journalEntry = firstEntry;
             } else {
                 journalEntry = accountingService.postJournalEntry(
-                    request.getValueDate(),
-                    request.getNarration(),
-                    request.getSourceModule(),
-                    request.getAccountReference(),
-                    request.getJournalLines()
-                );
+                        request.getValueDate(),
+                        request.getNarration(),
+                        request.getSourceModule(),
+                        request.getAccountReference(),
+                        request.getJournalLines());
             }
         } finally {
             // Always clear the engine context token — prevents stale tokens on thread pool reuse
@@ -372,8 +400,7 @@ public class TransactionEngine {
         // Unique voucher number per branch per date
         // Format: VCH/branchCode/YYYYMMDD/sequence
         // ================================================================
-        String voucherNumber = generateVoucherNumber(
-            request.getBranchCode(), request.getValueDate());
+        String voucherNumber = generateVoucherNumber(request.getBranchCode(), request.getValueDate());
 
         // ================================================================
         // STEP 10: Audit Trail
@@ -382,31 +409,39 @@ public class TransactionEngine {
         String txnRef = ReferenceGenerator.generateTransactionRef();
         LocalDateTime postingDate = LocalDateTime.now();
 
-        auditService.logEvent("Transaction", journalEntry.getId(),
-            request.getTransactionType(),
-            null, txnRef, request.getSourceModule(),
-            "Transaction posted: " + request.getTransactionType()
-                + " INR " + request.getAmount()
-                + " for " + request.getAccountReference()
-                + " | Journal: " + journalEntry.getJournalRef()
-                + " | Voucher: " + voucherNumber
-                + " | User: " + currentUser);
+        auditService.logEvent(
+                "Transaction",
+                journalEntry.getId(),
+                request.getTransactionType(),
+                null,
+                txnRef,
+                request.getSourceModule(),
+                "Transaction posted: " + request.getTransactionType()
+                        + " INR " + request.getAmount()
+                        + " for " + request.getAccountReference()
+                        + " | Journal: " + journalEntry.getJournalRef()
+                        + " | Voucher: " + voucherNumber
+                        + " | User: " + currentUser);
 
-        log.info("Transaction engine completed: ref={}, voucher={}, journal={}, module={}, type={}, amount={}",
-            txnRef, voucherNumber, journalEntry.getJournalRef(),
-            request.getSourceModule(), request.getTransactionType(), request.getAmount());
+        log.info(
+                "Transaction engine completed: ref={}, voucher={}, journal={}, module={}, type={}, amount={}",
+                txnRef,
+                voucherNumber,
+                journalEntry.getJournalRef(),
+                request.getSourceModule(),
+                request.getTransactionType(),
+                request.getAmount());
 
         return new TransactionResult(
-            txnRef,
-            voucherNumber,
-            journalEntry.getId(),
-            journalEntry.getJournalRef(),
-            journalEntry.getTotalDebit(),
-            journalEntry.getTotalCredit(),
-            request.getValueDate(),
-            postingDate,
-            postingStatus
-        );
+                txnRef,
+                voucherNumber,
+                journalEntry.getId(),
+                journalEntry.getJournalRef(),
+                journalEntry.getTotalDebit(),
+                journalEntry.getTotalCredit(),
+                request.getValueDate(),
+                postingDate,
+                postingStatus);
     }
 
     /**

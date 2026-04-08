@@ -9,17 +9,16 @@ import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
-import java.util.ArrayList;
-import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * CBS Business Date Service — Single source of truth for the current business date.
@@ -47,9 +46,10 @@ public class BusinessDateService {
     private final TransactionBatchRepository batchRepository;
     private final AuditService auditService;
 
-    public BusinessDateService(BusinessCalendarRepository calendarRepository,
-                                TransactionBatchRepository batchRepository,
-                                AuditService auditService) {
+    public BusinessDateService(
+            BusinessCalendarRepository calendarRepository,
+            TransactionBatchRepository batchRepository,
+            AuditService auditService) {
         this.calendarRepository = calendarRepository;
         this.batchRepository = batchRepository;
         this.auditService = auditService;
@@ -65,10 +65,11 @@ public class BusinessDateService {
      */
     public LocalDate getCurrentBusinessDate() {
         String tenantId = TenantContext.getCurrentTenant();
-        return calendarRepository.findOpenDay(tenantId)
-            .map(BusinessCalendar::getBusinessDate)
-            .orElseThrow(() -> new BusinessException("NO_OPEN_DAY",
-                "No business day is currently open. Contact administrator to open the day."));
+        return calendarRepository
+                .findOpenDay(tenantId)
+                .map(BusinessCalendar::getBusinessDate)
+                .orElseThrow(() -> new BusinessException(
+                        "NO_OPEN_DAY", "No business day is currently open. Contact administrator to open the day."));
     }
 
     /**
@@ -99,28 +100,29 @@ public class BusinessDateService {
 
         // Validate: no other day is currently open
         calendarRepository.findOpenDay(tenantId).ifPresent(openDay -> {
-            throw new BusinessException("DAY_ALREADY_OPEN",
-                "Business date " + openDay.getBusinessDate() + " is already open. Close it before opening a new day.");
+            throw new BusinessException(
+                    "DAY_ALREADY_OPEN",
+                    "Business date " + openDay.getBusinessDate()
+                            + " is already open. Close it before opening a new day.");
         });
 
         BusinessCalendar calendar = calendarRepository
-            .findAndLockByTenantIdAndDate(tenantId, businessDate)
-            .orElseThrow(() -> new BusinessException("DATE_NOT_IN_CALENDAR",
-                "Business date " + businessDate + " not found in calendar. Add it first."));
+                .findAndLockByTenantIdAndDate(tenantId, businessDate)
+                .orElseThrow(() -> new BusinessException(
+                        "DATE_NOT_IN_CALENDAR",
+                        "Business date " + businessDate + " not found in calendar. Add it first."));
 
         if (calendar.isDayOpen()) {
-            throw new BusinessException("DAY_ALREADY_OPEN",
-                "Business date " + businessDate + " is already open.");
+            throw new BusinessException("DAY_ALREADY_OPEN", "Business date " + businessDate + " is already open.");
         }
 
         if (calendar.isDayClosed()) {
-            throw new BusinessException("DAY_ALREADY_CLOSED",
-                "Business date " + businessDate + " is already closed. Cannot reopen.");
+            throw new BusinessException(
+                    "DAY_ALREADY_CLOSED", "Business date " + businessDate + " is already closed. Cannot reopen.");
         }
 
         if (calendar.isHoliday()) {
-            throw new BusinessException("DAY_IS_HOLIDAY",
-                "Cannot open a holiday: " + businessDate);
+            throw new BusinessException("DAY_IS_HOLIDAY", "Cannot open a holiday: " + businessDate);
         }
 
         // CBS SOD Validation: Previous business day must be DAY_CLOSED.
@@ -158,9 +160,14 @@ public class BusinessDateService {
             log.info("Default transaction batch auto-created for {}", businessDate);
         }
 
-        auditService.logEvent("BusinessCalendar", saved.getId(), "DAY_OPEN",
-            "NOT_OPENED", "DAY_OPEN", "DAY_CONTROL",
-            "Business day opened: " + businessDate + " by " + currentUser);
+        auditService.logEvent(
+                "BusinessCalendar",
+                saved.getId(),
+                "DAY_OPEN",
+                "NOT_OPENED",
+                "DAY_OPEN",
+                "DAY_CONTROL",
+                "Business day opened: " + businessDate + " by " + currentUser);
 
         log.info("Business day opened: date={}, user={}", businessDate, currentUser);
 
@@ -179,18 +186,20 @@ public class BusinessDateService {
         String currentUser = SecurityUtil.getCurrentUsername();
 
         BusinessCalendar calendar = calendarRepository
-            .findAndLockByTenantIdAndDate(tenantId, businessDate)
-            .orElseThrow(() -> new BusinessException("DATE_NOT_IN_CALENDAR",
-                "Business date " + businessDate + " not found in calendar."));
+                .findAndLockByTenantIdAndDate(tenantId, businessDate)
+                .orElseThrow(() -> new BusinessException(
+                        "DATE_NOT_IN_CALENDAR", "Business date " + businessDate + " not found in calendar."));
 
         if (!calendar.getDayStatus().canClose()) {
-            throw new BusinessException("DAY_NOT_OPEN",
-                "Business date " + businessDate + " is not in a closeable state. Current: " + calendar.getDayStatus());
+            throw new BusinessException(
+                    "DAY_NOT_OPEN",
+                    "Business date " + businessDate + " is not in a closeable state. Current: "
+                            + calendar.getDayStatus());
         }
 
         if (!calendar.isEodComplete()) {
-            throw new BusinessException("EOD_NOT_COMPLETE",
-                "Cannot close day " + businessDate + " — EOD has not completed successfully.");
+            throw new BusinessException(
+                    "EOD_NOT_COMPLETE", "Cannot close day " + businessDate + " — EOD has not completed successfully.");
         }
 
         calendar.setDayStatus(DayStatus.DAY_CLOSED);
@@ -201,9 +210,14 @@ public class BusinessDateService {
 
         BusinessCalendar saved = calendarRepository.save(calendar);
 
-        auditService.logEvent("BusinessCalendar", saved.getId(), "DAY_CLOSE",
-            "DAY_OPEN", "DAY_CLOSED", "DAY_CONTROL",
-            "Business day closed: " + businessDate + " by " + currentUser);
+        auditService.logEvent(
+                "BusinessCalendar",
+                saved.getId(),
+                "DAY_CLOSE",
+                "DAY_OPEN",
+                "DAY_CLOSED",
+                "DAY_CONTROL",
+                "Business day closed: " + businessDate + " by " + currentUser);
 
         log.info("Business day closed: date={}, user={}", businessDate, currentUser);
 
@@ -270,9 +284,14 @@ public class BusinessDateService {
         }
 
         if (created > 0) {
-            auditService.logEvent("BusinessCalendar", null, "CALENDAR_GENERATED",
-                null, year + "-" + String.format("%02d", month), "DAY_CONTROL",
-                "Calendar generated for " + yearMonth + ": " + created + " days by " + currentUser);
+            auditService.logEvent(
+                    "BusinessCalendar",
+                    null,
+                    "CALENDAR_GENERATED",
+                    null,
+                    year + "-" + String.format("%02d", month),
+                    "DAY_CONTROL",
+                    "Calendar generated for " + yearMonth + ": " + created + " days by " + currentUser);
             log.info("Calendar generated: month={}, days={}, user={}", yearMonth, created, currentUser);
         }
 
@@ -291,13 +310,15 @@ public class BusinessDateService {
     @Transactional
     public void addHoliday(LocalDate date, String description, String holidayType, String region) {
         String tenantId = TenantContext.getCurrentTenant();
-        BusinessCalendar cal = calendarRepository.findByTenantIdAndBusinessDate(tenantId, date)
-            .orElseThrow(() -> new BusinessException("DATE_NOT_IN_CALENDAR",
-                "Date " + date + " not in calendar. Generate the month first."));
+        BusinessCalendar cal = calendarRepository
+                .findByTenantIdAndBusinessDate(tenantId, date)
+                .orElseThrow(() -> new BusinessException(
+                        "DATE_NOT_IN_CALENDAR", "Date " + date + " not in calendar. Generate the month first."));
 
         if (cal.isDayOpen() || cal.isDayClosed()) {
-            throw new BusinessException("DAY_ALREADY_PROCESSED",
-                "Cannot mark " + date + " as holiday — day is already " + cal.getDayStatus());
+            throw new BusinessException(
+                    "DAY_ALREADY_PROCESSED",
+                    "Cannot mark " + date + " as holiday — day is already " + cal.getDayStatus());
         }
 
         cal.setHoliday(true);
@@ -307,14 +328,23 @@ public class BusinessDateService {
         cal.setUpdatedBy(SecurityUtil.getCurrentUsername());
         calendarRepository.save(cal);
 
-        auditService.logEvent("BusinessCalendar", cal.getId(), "HOLIDAY_ADDED",
-            null, description, "DAY_CONTROL",
-            "Holiday added: " + date + " — " + description
-                + " | Type: " + cal.getHolidayType()
-                + (region != null ? " | Region: " + region : "")
-                + " by " + SecurityUtil.getCurrentUsername());
-        log.info("Holiday added: date={}, description={}, type={}, region={}",
-            date, description, cal.getHolidayType(), region);
+        auditService.logEvent(
+                "BusinessCalendar",
+                cal.getId(),
+                "HOLIDAY_ADDED",
+                null,
+                description,
+                "DAY_CONTROL",
+                "Holiday added: " + date + " — " + description
+                        + " | Type: " + cal.getHolidayType()
+                        + (region != null ? " | Region: " + region : "")
+                        + " by " + SecurityUtil.getCurrentUsername());
+        log.info(
+                "Holiday added: date={}, description={}, type={}, region={}",
+                date,
+                description,
+                cal.getHolidayType(),
+                region);
     }
 
     /**
@@ -348,10 +378,11 @@ public class BusinessDateService {
                 if (!prev.isHoliday()) {
                     // Found the previous working day — must be DAY_CLOSED
                     if (!prev.isDayClosed()) {
-                        throw new BusinessException("PREVIOUS_DAY_NOT_CLOSED",
-                            "Cannot open " + businessDate + " — previous business day "
-                                + checkDate + " is in " + prev.getDayStatus()
-                                + " status. Close it first (run EOD + Day Close).");
+                        throw new BusinessException(
+                                "PREVIOUS_DAY_NOT_CLOSED",
+                                "Cannot open " + businessDate + " — previous business day "
+                                        + checkDate + " is in " + prev.getDayStatus()
+                                        + " status. Close it first (run EOD + Day Close).");
                     }
                     return; // Previous day is closed — validation passed
                 }
@@ -360,8 +391,10 @@ public class BusinessDateService {
         }
         // No previous working day found within lookback window — first day or calendar gap
         // Allow opening (graceful for initial setup / calendar generation)
-        log.info("No previous working day found within {} days of {} — allowing day open (initial setup)",
-            maxLookback, businessDate);
+        log.info(
+                "No previous working day found within {} days of {} — allowing day open (initial setup)",
+                maxLookback,
+                businessDate);
     }
 
     /**
@@ -379,20 +412,21 @@ public class BusinessDateService {
      * @param forwardDays  Maximum days forward allowed (e.g., 2)
      * @throws BusinessException if value date is outside the allowed window
      */
-    public void validateValueDateWindow(LocalDate valueDate, LocalDate businessDate,
-                                         int backDays, int forwardDays) {
+    public void validateValueDateWindow(LocalDate valueDate, LocalDate businessDate, int backDays, int forwardDays) {
         LocalDate earliest = businessDate.minusDays(backDays);
         LocalDate latest = businessDate.plusDays(forwardDays);
 
         if (valueDate.isBefore(earliest)) {
-            throw new BusinessException("VALUE_DATE_TOO_OLD",
-                "Value date " + valueDate + " is before the allowed window. "
-                    + "Earliest allowed: " + earliest + " (T-" + backDays + ").");
+            throw new BusinessException(
+                    "VALUE_DATE_TOO_OLD",
+                    "Value date " + valueDate + " is before the allowed window. " + "Earliest allowed: " + earliest
+                            + " (T-" + backDays + ").");
         }
         if (valueDate.isAfter(latest)) {
-            throw new BusinessException("VALUE_DATE_TOO_FUTURE",
-                "Value date " + valueDate + " is beyond the allowed window. "
-                    + "Latest allowed: " + latest + " (T+" + forwardDays + ").");
+            throw new BusinessException(
+                    "VALUE_DATE_TOO_FUTURE",
+                    "Value date " + valueDate + " is beyond the allowed window. " + "Latest allowed: " + latest + " (T+"
+                            + forwardDays + ").");
         }
     }
 
@@ -402,13 +436,13 @@ public class BusinessDateService {
     @Transactional
     public void removeHoliday(LocalDate date) {
         String tenantId = TenantContext.getCurrentTenant();
-        BusinessCalendar cal = calendarRepository.findByTenantIdAndBusinessDate(tenantId, date)
-            .orElseThrow(() -> new BusinessException("DATE_NOT_IN_CALENDAR",
-                "Date " + date + " not in calendar."));
+        BusinessCalendar cal = calendarRepository
+                .findByTenantIdAndBusinessDate(tenantId, date)
+                .orElseThrow(() -> new BusinessException("DATE_NOT_IN_CALENDAR", "Date " + date + " not in calendar."));
 
         if (cal.isDayOpen() || cal.isDayClosed()) {
-            throw new BusinessException("DAY_ALREADY_PROCESSED",
-                "Cannot modify " + date + " — day is already " + cal.getDayStatus());
+            throw new BusinessException(
+                    "DAY_ALREADY_PROCESSED", "Cannot modify " + date + " — day is already " + cal.getDayStatus());
         }
 
         String prevDescription = cal.getHolidayDescription();
@@ -417,8 +451,13 @@ public class BusinessDateService {
         cal.setUpdatedBy(SecurityUtil.getCurrentUsername());
         calendarRepository.save(cal);
 
-        auditService.logEvent("BusinessCalendar", cal.getId(), "HOLIDAY_REMOVED",
-            prevDescription, null, "DAY_CONTROL",
-            "Holiday removed: " + date + " (was: " + prevDescription + ") by " + SecurityUtil.getCurrentUsername());
+        auditService.logEvent(
+                "BusinessCalendar",
+                cal.getId(),
+                "HOLIDAY_REMOVED",
+                prevDescription,
+                null,
+                "DAY_CONTROL",
+                "Holiday removed: " + date + " (was: " + prevDescription + ") by " + SecurityUtil.getCurrentUsername());
     }
 }

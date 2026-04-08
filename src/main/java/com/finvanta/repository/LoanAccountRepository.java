@@ -2,16 +2,18 @@ package com.finvanta.repository;
 
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.LoanStatus;
+
 import jakarta.persistence.LockModeType;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-
-import java.math.BigDecimal;
-import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> {
@@ -21,24 +23,21 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.accountNumber = :accountNumber")
     Optional<LoanAccount> findAndLockByTenantIdAndAccountNumber(
-        @Param("tenantId") String tenantId,
-        @Param("accountNumber") String accountNumber
-    );
+            @Param("tenantId") String tenantId, @Param("accountNumber") String accountNumber);
 
     List<LoanAccount> findByTenantIdAndStatus(String tenantId, LoanStatus status);
 
     List<LoanAccount> findByTenantIdAndCustomerId(String tenantId, Long customerId);
 
-    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF') AND la.daysPastDue >= :threshold")
-    List<LoanAccount> findNpaCandidates(
-        @Param("tenantId") String tenantId,
-        @Param("threshold") int threshold
-    );
+    @Query(
+            "SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF') AND la.daysPastDue >= :threshold")
+    List<LoanAccount> findNpaCandidates(@Param("tenantId") String tenantId, @Param("threshold") int threshold);
 
     @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
     List<LoanAccount> findAllActiveAccounts(@Param("tenantId") String tenantId);
 
-    @Query("SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
+    @Query(
+            "SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
     BigDecimal calculateTotalOutstandingPrincipal(@Param("tenantId") String tenantId);
 
     long countByTenantIdAndStatus(String tenantId, LoanStatus status);
@@ -53,17 +52,21 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
 
     boolean existsByTenantIdAndApplicationId(String tenantId, Long applicationId);
 
-    @Query("SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.branch.id = :branchId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
-    java.math.BigDecimal calculateTotalOutstandingByBranch(@Param("tenantId") String tenantId, @Param("branchId") Long branchId);
+    @Query(
+            "SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.branch.id = :branchId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
+    java.math.BigDecimal calculateTotalOutstandingByBranch(
+            @Param("tenantId") String tenantId, @Param("branchId") Long branchId);
 
     /** CBS Branch Portfolio: all loan accounts at a specific branch */
     List<LoanAccount> findByTenantIdAndBranchId(String tenantId, Long branchId);
 
     /** CBS Dashboard: Total NPA outstanding (Sub-Standard + Doubtful + Loss) */
-    @Query("SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status IN ('NPA_SUBSTANDARD', 'NPA_DOUBTFUL', 'NPA_LOSS')")
+    @Query(
+            "SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status IN ('NPA_SUBSTANDARD', 'NPA_DOUBTFUL', 'NPA_LOSS')")
     BigDecimal calculateTotalNpaOutstanding(@Param("tenantId") String tenantId);
 
     /** CBS Dashboard: Total provisioning held across all accounts */
-    @Query("SELECT COALESCE(SUM(la.provisioningAmount), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
+    @Query(
+            "SELECT COALESCE(SUM(la.provisioningAmount), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
     BigDecimal calculateTotalProvisioning(@Param("tenantId") String tenantId);
 }

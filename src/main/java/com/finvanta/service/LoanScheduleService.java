@@ -7,10 +7,6 @@ import com.finvanta.domain.rules.InterestCalculationRule;
 import com.finvanta.repository.LoanScheduleRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -18,6 +14,11 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * CBS Loan Amortization Schedule Generator per Finacle/Temenos standards.
@@ -50,9 +51,10 @@ public class LoanScheduleService {
     private final InterestCalculationRule interestRule;
     private final AuditService auditService;
 
-    public LoanScheduleService(LoanScheduleRepository scheduleRepository,
-                                InterestCalculationRule interestRule,
-                                AuditService auditService) {
+    public LoanScheduleService(
+            LoanScheduleRepository scheduleRepository,
+            InterestCalculationRule interestRule,
+            AuditService auditService) {
         this.scheduleRepository = scheduleRepository;
         this.interestRule = interestRule;
         this.auditService = auditService;
@@ -72,8 +74,9 @@ public class LoanScheduleService {
 
         // Idempotency: don't regenerate
         if (scheduleRepository.existsByTenantIdAndLoanAccountId(tenantId, account.getId())) {
-            throw new BusinessException("SCHEDULE_EXISTS",
-                "Amortization schedule already exists for account: " + account.getAccountNumber());
+            throw new BusinessException(
+                    "SCHEDULE_EXISTS",
+                    "Amortization schedule already exists for account: " + account.getAccountNumber());
         }
 
         BigDecimal principal = account.getSanctionedAmount();
@@ -85,34 +88,30 @@ public class LoanScheduleService {
             emi = interestRule.calculateEmi(principal, annualRate, tenureMonths);
         }
 
-        BigDecimal monthlyRate = annualRate
-            .divide(BigDecimal.valueOf(100), MC)
-            .divide(BigDecimal.valueOf(12), MC);
+        BigDecimal monthlyRate = annualRate.divide(BigDecimal.valueOf(100), MC).divide(BigDecimal.valueOf(12), MC);
 
         BigDecimal openingBalance = principal;
         LocalDate dueDate = account.getDisbursementDate().plusMonths(1);
         List<LoanSchedule> scheduleLines = new ArrayList<>();
 
         for (int i = 1; i <= tenureMonths; i++) {
-            BigDecimal interestComponent = openingBalance
-                .multiply(monthlyRate, MC)
-                .setScale(SCALE, RoundingMode.HALF_UP);
+            BigDecimal interestComponent =
+                    openingBalance.multiply(monthlyRate, MC).setScale(SCALE, RoundingMode.HALF_UP);
 
             BigDecimal principalComponent;
             if (i == tenureMonths) {
                 // Last installment: principal = remaining balance (avoids rounding residual)
                 principalComponent = openingBalance;
-                interestComponent = emi.subtract(principalComponent)
-                    .max(BigDecimal.ZERO)
-                    .setScale(SCALE, RoundingMode.HALF_UP);
+                interestComponent =
+                        emi.subtract(principalComponent).max(BigDecimal.ZERO).setScale(SCALE, RoundingMode.HALF_UP);
             } else {
-                principalComponent = emi.subtract(interestComponent)
-                    .setScale(SCALE, RoundingMode.HALF_UP);
+                principalComponent = emi.subtract(interestComponent).setScale(SCALE, RoundingMode.HALF_UP);
             }
 
-            BigDecimal closingBalance = openingBalance.subtract(principalComponent)
-                .max(BigDecimal.ZERO)
-                .setScale(SCALE, RoundingMode.HALF_UP);
+            BigDecimal closingBalance = openingBalance
+                    .subtract(principalComponent)
+                    .max(BigDecimal.ZERO)
+                    .setScale(SCALE, RoundingMode.HALF_UP);
 
             LoanSchedule line = new LoanSchedule();
             line.setTenantId(tenantId);
@@ -135,12 +134,20 @@ public class LoanScheduleService {
 
         List<LoanSchedule> saved = scheduleRepository.saveAll(scheduleLines);
 
-        auditService.logEvent("LoanSchedule", account.getId(), "GENERATE",
-            null, account.getAccountNumber(), "LOAN_SCHEDULE",
-            "Amortization schedule generated: " + tenureMonths + " installments, EMI: " + emi);
+        auditService.logEvent(
+                "LoanSchedule",
+                account.getId(),
+                "GENERATE",
+                null,
+                account.getAccountNumber(),
+                "LOAN_SCHEDULE",
+                "Amortization schedule generated: " + tenureMonths + " installments, EMI: " + emi);
 
-        log.info("Loan schedule generated: accNo={}, installments={}, emi={}",
-            account.getAccountNumber(), tenureMonths, emi);
+        log.info(
+                "Loan schedule generated: accNo={}, installments={}, emi={}",
+                account.getAccountNumber(),
+                tenureMonths,
+                emi);
 
         return saved;
     }
@@ -167,23 +174,24 @@ public class LoanScheduleService {
         String tenantId = TenantContext.getCurrentTenant();
 
         // Step 1: Cancel future unpaid installments
-        List<LoanSchedule> futureUnpaid = scheduleRepository.findFutureUnpaidInstallments(
-            tenantId, account.getId(), businessDate);
+        List<LoanSchedule> futureUnpaid =
+                scheduleRepository.findFutureUnpaidInstallments(tenantId, account.getId(), businessDate);
         for (LoanSchedule inst : futureUnpaid) {
             inst.setStatus("CANCELLED");
             inst.setUpdatedBy("SYSTEM");
         }
         if (!futureUnpaid.isEmpty()) {
             scheduleRepository.saveAll(futureUnpaid);
-            log.info("Cancelled {} future installments for restructured account {}",
-                futureUnpaid.size(), account.getAccountNumber());
+            log.info(
+                    "Cancelled {} future installments for restructured account {}",
+                    futureUnpaid.size(),
+                    account.getAccountNumber());
         }
 
         // Step 2: Generate new schedule from restructuring date
         BigDecimal outstanding = account.getOutstandingPrincipal();
         BigDecimal annualRate = account.getInterestRate();
-        int remainingTenure = account.getRemainingTenure() != null
-            ? account.getRemainingTenure() : 1;
+        int remainingTenure = account.getRemainingTenure() != null ? account.getRemainingTenure() : 1;
         BigDecimal emi = account.getEmiAmount();
 
         if (emi == null || emi.compareTo(BigDecimal.ZERO) <= 0) {
@@ -193,33 +201,29 @@ public class LoanScheduleService {
         // Determine next installment number (continue from last existing)
         int lastInstNum = scheduleRepository.findMaxInstallmentNumber(tenantId, account.getId());
 
-        BigDecimal monthlyRate = annualRate
-            .divide(BigDecimal.valueOf(100), MC)
-            .divide(BigDecimal.valueOf(12), MC);
+        BigDecimal monthlyRate = annualRate.divide(BigDecimal.valueOf(100), MC).divide(BigDecimal.valueOf(12), MC);
 
         BigDecimal openingBalance = outstanding;
         LocalDate dueDate = businessDate.plusMonths(1);
         List<LoanSchedule> newLines = new ArrayList<>();
 
         for (int i = 1; i <= remainingTenure; i++) {
-            BigDecimal interestComponent = openingBalance
-                .multiply(monthlyRate, MC)
-                .setScale(SCALE, RoundingMode.HALF_UP);
+            BigDecimal interestComponent =
+                    openingBalance.multiply(monthlyRate, MC).setScale(SCALE, RoundingMode.HALF_UP);
 
             BigDecimal principalComponent;
             if (i == remainingTenure) {
                 principalComponent = openingBalance;
-                interestComponent = emi.subtract(principalComponent)
-                    .max(BigDecimal.ZERO)
-                    .setScale(SCALE, RoundingMode.HALF_UP);
+                interestComponent =
+                        emi.subtract(principalComponent).max(BigDecimal.ZERO).setScale(SCALE, RoundingMode.HALF_UP);
             } else {
-                principalComponent = emi.subtract(interestComponent)
-                    .setScale(SCALE, RoundingMode.HALF_UP);
+                principalComponent = emi.subtract(interestComponent).setScale(SCALE, RoundingMode.HALF_UP);
             }
 
-            BigDecimal closingBalance = openingBalance.subtract(principalComponent)
-                .max(BigDecimal.ZERO)
-                .setScale(SCALE, RoundingMode.HALF_UP);
+            BigDecimal closingBalance = openingBalance
+                    .subtract(principalComponent)
+                    .max(BigDecimal.ZERO)
+                    .setScale(SCALE, RoundingMode.HALF_UP);
 
             LoanSchedule line = new LoanSchedule();
             line.setTenantId(tenantId);
@@ -241,14 +245,23 @@ public class LoanScheduleService {
 
         List<LoanSchedule> saved = scheduleRepository.saveAll(newLines);
 
-        auditService.logEvent("LoanSchedule", account.getId(), "REGENERATE",
-            null, account.getAccountNumber(), "LOAN_SCHEDULE",
-            "Schedule regenerated after restructuring: " + remainingTenure
-                + " new installments, EMI: " + emi
-                + ", cancelled: " + futureUnpaid.size() + " old installments");
+        auditService.logEvent(
+                "LoanSchedule",
+                account.getId(),
+                "REGENERATE",
+                null,
+                account.getAccountNumber(),
+                "LOAN_SCHEDULE",
+                "Schedule regenerated after restructuring: " + remainingTenure
+                        + " new installments, EMI: " + emi
+                        + ", cancelled: " + futureUnpaid.size() + " old installments");
 
-        log.info("Schedule regenerated: accNo={}, newInstallments={}, cancelledOld={}, emi={}",
-            account.getAccountNumber(), saved.size(), futureUnpaid.size(), emi);
+        log.info(
+                "Schedule regenerated: accNo={}, newInstallments={}, cancelledOld={}, emi={}",
+                account.getAccountNumber(),
+                saved.size(),
+                futureUnpaid.size(),
+                emi);
 
         return saved;
     }
@@ -299,8 +312,11 @@ public class LoanScheduleService {
             remaining = remaining.subtract(allocated);
         }
 
-        log.info("Schedule updated on payment: accountId={}, amount={}, installmentsPaid={}",
-            accountId, amount, fullyPaid);
+        log.info(
+                "Schedule updated on payment: accountId={}, amount={}, installmentsPaid={}",
+                accountId,
+                amount,
+                fullyPaid);
 
         return fullyPaid;
     }
@@ -315,8 +331,7 @@ public class LoanScheduleService {
     @Transactional
     public int markOverdueInstallments(LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
-        List<LoanSchedule> dueInstallments = scheduleRepository
-            .findScheduledInstallmentsDueBy(tenantId, businessDate);
+        List<LoanSchedule> dueInstallments = scheduleRepository.findScheduledInstallmentsDueBy(tenantId, businessDate);
 
         int marked = 0;
         for (LoanSchedule inst : dueInstallments) {
@@ -356,13 +371,11 @@ public class LoanScheduleService {
      * @param startDate    Expected first EMI date
      * @return List of preview schedule lines (not persisted)
      */
-    public List<LoanSchedule> generateSchedulePreview(BigDecimal principal, BigDecimal annualRate,
-                                                        int tenureMonths, LocalDate startDate) {
+    public List<LoanSchedule> generateSchedulePreview(
+            BigDecimal principal, BigDecimal annualRate, int tenureMonths, LocalDate startDate) {
         BigDecimal emi = interestRule.calculateEmi(principal, annualRate, tenureMonths);
 
-        BigDecimal monthlyRate = annualRate
-            .divide(BigDecimal.valueOf(100), MC)
-            .divide(BigDecimal.valueOf(12), MC);
+        BigDecimal monthlyRate = annualRate.divide(BigDecimal.valueOf(100), MC).divide(BigDecimal.valueOf(12), MC);
 
         BigDecimal openingBalance = principal;
         LocalDate dueDate = startDate;
@@ -370,24 +383,22 @@ public class LoanScheduleService {
         BigDecimal totalInterest = BigDecimal.ZERO;
 
         for (int i = 1; i <= tenureMonths; i++) {
-            BigDecimal interestComponent = openingBalance
-                .multiply(monthlyRate, MC)
-                .setScale(SCALE, RoundingMode.HALF_UP);
+            BigDecimal interestComponent =
+                    openingBalance.multiply(monthlyRate, MC).setScale(SCALE, RoundingMode.HALF_UP);
 
             BigDecimal principalComponent;
             if (i == tenureMonths) {
                 principalComponent = openingBalance;
-                interestComponent = emi.subtract(principalComponent)
-                    .max(BigDecimal.ZERO)
-                    .setScale(SCALE, RoundingMode.HALF_UP);
+                interestComponent =
+                        emi.subtract(principalComponent).max(BigDecimal.ZERO).setScale(SCALE, RoundingMode.HALF_UP);
             } else {
-                principalComponent = emi.subtract(interestComponent)
-                    .setScale(SCALE, RoundingMode.HALF_UP);
+                principalComponent = emi.subtract(interestComponent).setScale(SCALE, RoundingMode.HALF_UP);
             }
 
-            BigDecimal closingBalance = openingBalance.subtract(principalComponent)
-                .max(BigDecimal.ZERO)
-                .setScale(SCALE, RoundingMode.HALF_UP);
+            BigDecimal closingBalance = openingBalance
+                    .subtract(principalComponent)
+                    .max(BigDecimal.ZERO)
+                    .setScale(SCALE, RoundingMode.HALF_UP);
 
             totalInterest = totalInterest.add(interestComponent);
 
@@ -405,8 +416,9 @@ public class LoanScheduleService {
             dueDate = dueDate.plusMonths(1);
         }
 
-        log.info("Schedule preview generated: principal={}, rate={}%, tenure={}, emi={}, totalInterest={}",
-            principal, annualRate, tenureMonths, emi, totalInterest);
+        log.info(
+                "Schedule preview generated: principal={}, rate={}%, tenure={}, emi={}, totalInterest={}",
+                principal, annualRate, tenureMonths, emi, totalInterest);
 
         return previewLines;
     }
@@ -416,8 +428,7 @@ public class LoanScheduleService {
      */
     public List<LoanSchedule> getSchedule(Long accountId) {
         String tenantId = TenantContext.getCurrentTenant();
-        return scheduleRepository.findByTenantIdAndLoanAccountIdOrderByInstallmentNumberAsc(
-            tenantId, accountId);
+        return scheduleRepository.findByTenantIdAndLoanAccountIdOrderByInstallmentNumberAsc(tenantId, accountId);
     }
 
     /**

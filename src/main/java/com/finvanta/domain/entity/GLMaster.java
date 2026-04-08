@@ -1,18 +1,22 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.GLAccountType;
+
 import jakarta.persistence.*;
+
+import java.math.BigDecimal;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.math.BigDecimal;
-
 @Entity
-@Table(name = "gl_master", indexes = {
-    @Index(name = "idx_gl_tenant_code", columnList = "tenant_id, gl_code", unique = true),
-    @Index(name = "idx_gl_type", columnList = "tenant_id, account_type")
-})
+@Table(
+        name = "gl_master",
+        indexes = {
+            @Index(name = "idx_gl_tenant_code", columnList = "tenant_id, gl_code", unique = true),
+            @Index(name = "idx_gl_type", columnList = "tenant_id, account_type")
+        })
 @Getter
 @Setter
 @NoArgsConstructor
@@ -87,7 +91,8 @@ public class GLMaster extends BaseEntity {
 
     /** Returns true if this is a Balance Sheet account — carries forward at year-end */
     public boolean isBalanceSheetAccount() {
-        return accountType == GLAccountType.ASSET || accountType == GLAccountType.LIABILITY
-            || accountType == GLAccountType.EQUITY;
+        return accountType == GLAccountType.ASSET
+                || accountType == GLAccountType.LIABILITY
+                || accountType == GLAccountType.EQUITY;
     }
 }

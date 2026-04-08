@@ -2,17 +2,19 @@ package com.finvanta.repository;
 
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.enums.DepositAccountStatus;
+
 import jakarta.persistence.LockModeType;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
 /**
  * CBS Deposit Account Repository per Finacle CUSTACCT / Temenos ACCOUNT standards.
@@ -25,8 +27,7 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId AND da.accountNumber = :accountNumber")
     Optional<DepositAccount> findAndLockByTenantIdAndAccountNumber(
-        @Param("tenantId") String tenantId,
-        @Param("accountNumber") String accountNumber);
+            @Param("tenantId") String tenantId, @Param("accountNumber") String accountNumber);
 
     /** All ACTIVE deposit accounts for a tenant (for EOD interest accrual — ACTIVE only) */
     @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId AND da.accountStatus = 'ACTIVE'")
@@ -38,7 +39,8 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
      * (PENDING_ACTIVATION, ACTIVE, DORMANT, FROZEN) — only CLOSED accounts are excluded.
      * This is distinct from findAllActiveAccounts which is used by EOD and returns ACTIVE only.
      */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId AND da.accountStatus <> 'CLOSED' ORDER BY da.accountNumber")
+    @Query(
+            "SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId AND da.accountStatus <> 'CLOSED' ORDER BY da.accountNumber")
     List<DepositAccount> findAllNonClosedAccounts(@Param("tenantId") String tenantId);
 
     /**
@@ -49,9 +51,9 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
      * freeze ≠ forfeiture. The freeze only restricts debit/credit operations.
      * Current accounts have 0% rate so are excluded by the interestRate > 0 filter.
      */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId " +
-           "AND da.accountStatus IN ('ACTIVE', 'DORMANT', 'FROZEN') " +
-           "AND da.accountType LIKE 'SAVINGS%' AND da.interestRate > 0")
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.accountStatus IN ('ACTIVE', 'DORMANT', 'FROZEN') "
+            + "AND da.accountType LIKE 'SAVINGS%' AND da.interestRate > 0")
     List<DepositAccount> findActiveSavingsAccounts(@Param("tenantId") String tenantId);
 
     /** Accounts by customer */
@@ -61,25 +63,24 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
     List<DepositAccount> findByTenantIdAndBranchId(String tenantId, Long branchId);
 
     /** Active accounts by branch */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId " +
-           "AND da.branch.id = :branchId AND da.accountStatus NOT IN ('CLOSED')")
-    List<DepositAccount> findActiveByBranch(
-        @Param("tenantId") String tenantId, @Param("branchId") Long branchId);
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.branch.id = :branchId AND da.accountStatus NOT IN ('CLOSED')")
+    List<DepositAccount> findActiveByBranch(@Param("tenantId") String tenantId, @Param("branchId") Long branchId);
 
     /** Dormancy candidates: active accounts with no transaction for 2+ years */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId " +
-           "AND da.accountStatus = 'ACTIVE' AND da.lastTransactionDate < :cutoffDate")
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.accountStatus = 'ACTIVE' AND da.lastTransactionDate < :cutoffDate")
     List<DepositAccount> findDormancyCandidates(
-        @Param("tenantId") String tenantId, @Param("cutoffDate") LocalDate cutoffDate);
+            @Param("tenantId") String tenantId, @Param("cutoffDate") LocalDate cutoffDate);
 
     /** Total deposit balance for dashboard */
-    @Query("SELECT COALESCE(SUM(da.ledgerBalance), 0) FROM DepositAccount da " +
-           "WHERE da.tenantId = :tenantId AND da.accountStatus NOT IN ('CLOSED')")
+    @Query("SELECT COALESCE(SUM(da.ledgerBalance), 0) FROM DepositAccount da "
+            + "WHERE da.tenantId = :tenantId AND da.accountStatus NOT IN ('CLOSED')")
     BigDecimal calculateTotalDeposits(@Param("tenantId") String tenantId);
 
     /** Count by account type (for CASA ratio) */
-    @Query("SELECT da.accountType, COUNT(da) FROM DepositAccount da " +
-           "WHERE da.tenantId = :tenantId AND da.accountStatus NOT IN ('CLOSED') GROUP BY da.accountType")
+    @Query("SELECT da.accountType, COUNT(da) FROM DepositAccount da "
+            + "WHERE da.tenantId = :tenantId AND da.accountStatus NOT IN ('CLOSED') GROUP BY da.accountType")
     List<Object[]> countByAccountType(@Param("tenantId") String tenantId);
 
     long countByTenantIdAndAccountStatusNot(String tenantId, DepositAccountStatus status);
@@ -87,17 +88,18 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
     // === CASA Pipeline Queries (per Finacle ACCTOPN workflow stages) ===
 
     /** Stage 1: Accounts pending activation (maker submitted, checker approval required) */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId " +
-           "AND da.accountStatus = 'PENDING_ACTIVATION' ORDER BY da.createdAt DESC")
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.accountStatus = 'PENDING_ACTIVATION' ORDER BY da.createdAt DESC")
     List<DepositAccount> findPendingActivation(@Param("tenantId") String tenantId);
 
     /** Stage 2: Active accounts (operational) */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId " +
-           "AND da.accountStatus = 'ACTIVE' ORDER BY da.accountNumber")
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.accountStatus = 'ACTIVE' ORDER BY da.accountNumber")
     List<DepositAccount> findActiveAccounts(@Param("tenantId") String tenantId);
 
     /** Stage 3: Accounts requiring attention (dormant, frozen, inoperative) */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId " +
-           "AND da.accountStatus IN ('DORMANT', 'FROZEN', 'INOPERATIVE') ORDER BY da.accountStatus, da.accountNumber")
+    @Query(
+            "SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+                    + "AND da.accountStatus IN ('DORMANT', 'FROZEN', 'INOPERATIVE') ORDER BY da.accountStatus, da.accountNumber")
     List<DepositAccount> findAttentionRequired(@Param("tenantId") String tenantId);
 }

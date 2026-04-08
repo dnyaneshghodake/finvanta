@@ -2,14 +2,15 @@ package com.finvanta.domain.rules;
 
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.LoanStatus;
+
+import java.math.BigDecimal;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-
-import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -54,8 +55,10 @@ class ProvisioningRuleTest {
             "WRITTEN_OFF, 0"
         })
         void provisioningRateByStatus(LoanStatus status, BigDecimal expectedRate) {
-            assertEquals(0, expectedRate.compareTo(rule.getProvisioningRate(status)),
-                status + " should have rate " + expectedRate);
+            assertEquals(
+                    0,
+                    expectedRate.compareTo(rule.getProvisioningRate(status)),
+                    status + " should have rate " + expectedRate);
         }
     }
 

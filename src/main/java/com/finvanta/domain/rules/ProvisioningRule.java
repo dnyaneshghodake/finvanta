@@ -2,10 +2,11 @@ package com.finvanta.domain.rules;
 
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.LoanStatus;
-import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+
+import org.springframework.stereotype.Component;
 
 /**
  * RBI IRAC Provisioning Norms (Master Circular on Prudential Norms).
@@ -31,6 +32,7 @@ public class ProvisioningRule {
     private static final BigDecimal STANDARD_RATE = new BigDecimal("0.0040");
     /** RBI CDR: Restructured accounts carry 5% provisioning for first 2 years */
     private static final BigDecimal RESTRUCTURED_RATE = new BigDecimal("0.05");
+
     private static final BigDecimal SUBSTANDARD_RATE = new BigDecimal("0.10");
     private static final BigDecimal DOUBTFUL_RATE = new BigDecimal("0.40");
     private static final BigDecimal LOSS_RATE = BigDecimal.ONE;

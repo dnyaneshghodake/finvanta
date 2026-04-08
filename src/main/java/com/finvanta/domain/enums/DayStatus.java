@@ -14,10 +14,10 @@ package com.finvanta.domain.enums;
  * - NOT_OPENED is the initial state for all calendar dates
  */
 public enum DayStatus {
-    NOT_OPENED,     // Initial state — day has not been opened yet
-    DAY_OPEN,       // Day is open for transactions
-    EOD_RUNNING,    // End-of-day batch is in progress — no new transactions
-    DAY_CLOSED;     // Day is closed — terminal state, cannot reopen
+    NOT_OPENED, // Initial state — day has not been opened yet
+    DAY_OPEN, // Day is open for transactions
+    EOD_RUNNING, // End-of-day batch is in progress — no new transactions
+    DAY_CLOSED; // Day is closed — terminal state, cannot reopen
 
     /** Returns true if financial transactions are allowed in this state */
     public boolean isTransactionAllowed() {

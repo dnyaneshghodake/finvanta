@@ -2,13 +2,15 @@ package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.SIFrequency;
 import com.finvanta.domain.enums.SIStatus;
+
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * CBS Standing Instruction Entity per Finacle SI_MASTER / Temenos STANDING.ORDER.
@@ -55,13 +57,15 @@ import java.time.LocalDate;
  *   Bank Ops GL (1100) acts as the settlement bridge between CASA and Loan modules.
  */
 @Entity
-@Table(name = "standing_instructions", indexes = {
-    @Index(name = "idx_si_tenant_ref", columnList = "tenant_id, si_reference", unique = true),
-    @Index(name = "idx_si_tenant_status_nextdate", columnList = "tenant_id, status, next_execution_date"),
-    @Index(name = "idx_si_tenant_source", columnList = "tenant_id, source_account_number"),
-    @Index(name = "idx_si_tenant_customer", columnList = "tenant_id, customer_id"),
-    @Index(name = "idx_si_tenant_loan", columnList = "tenant_id, loan_account_number")
-})
+@Table(
+        name = "standing_instructions",
+        indexes = {
+            @Index(name = "idx_si_tenant_ref", columnList = "tenant_id, si_reference", unique = true),
+            @Index(name = "idx_si_tenant_status_nextdate", columnList = "tenant_id, status, next_execution_date"),
+            @Index(name = "idx_si_tenant_source", columnList = "tenant_id, source_account_number"),
+            @Index(name = "idx_si_tenant_customer", columnList = "tenant_id, customer_id"),
+            @Index(name = "idx_si_tenant_loan", columnList = "tenant_id, loan_account_number")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

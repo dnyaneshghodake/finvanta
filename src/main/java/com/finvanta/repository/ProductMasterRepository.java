@@ -1,13 +1,14 @@
 package com.finvanta.repository;
 
 import com.finvanta.domain.entity.ProductMaster;
+
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-
-import java.util.List;
-import java.util.Optional;
 
 /**
  * CBS Product Master Repository per Finacle PDDEF standards.
@@ -19,8 +20,7 @@ public interface ProductMasterRepository extends JpaRepository<ProductMaster, Lo
     Optional<ProductMaster> findByTenantIdAndProductCode(String tenantId, String productCode);
 
     /** All active products for a tenant (for product selection UI) */
-    @Query("SELECT p FROM ProductMaster p WHERE p.tenantId = :tenantId AND p.active = true " +
-           "ORDER BY p.productName")
+    @Query("SELECT p FROM ProductMaster p WHERE p.tenantId = :tenantId AND p.active = true " + "ORDER BY p.productName")
     List<ProductMaster> findActiveProducts(@Param("tenantId") String tenantId);
 
     /** All products for a tenant (for admin management UI) */

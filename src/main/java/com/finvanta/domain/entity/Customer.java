@@ -1,12 +1,14 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.config.PiiEncryptionConverter;
+
 import jakarta.persistence.*;
+
+import java.time.LocalDate;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.time.LocalDate;
 
 /**
  * CBS Customer Information File (CIF) per Finacle CIF_MASTER / Temenos CUSTOMER.
@@ -39,14 +41,16 @@ import java.time.LocalDate;
  *   HIGH   - PEP, high-value, complex structures, adverse media (re-KYC: 2 years)
  */
 @Entity
-@Table(name = "customers", indexes = {
-    @Index(name = "idx_cust_tenant_custno", columnList = "tenant_id, customer_number", unique = true),
-    @Index(name = "idx_cust_pan", columnList = "tenant_id, pan_number"),
-    @Index(name = "idx_cust_aadhaar", columnList = "tenant_id, aadhaar_number"),
-    @Index(name = "idx_cust_pan_hash", columnList = "tenant_id, pan_hash"),
-    @Index(name = "idx_cust_aadhaar_hash", columnList = "tenant_id, aadhaar_hash"),
-    @Index(name = "idx_cust_kyc_expiry", columnList = "tenant_id, kyc_expiry_date")
-})
+@Table(
+        name = "customers",
+        indexes = {
+            @Index(name = "idx_cust_tenant_custno", columnList = "tenant_id, customer_number", unique = true),
+            @Index(name = "idx_cust_pan", columnList = "tenant_id, pan_number"),
+            @Index(name = "idx_cust_aadhaar", columnList = "tenant_id, aadhaar_number"),
+            @Index(name = "idx_cust_pan_hash", columnList = "tenant_id, pan_hash"),
+            @Index(name = "idx_cust_aadhaar_hash", columnList = "tenant_id, aadhaar_hash"),
+            @Index(name = "idx_cust_kyc_expiry", columnList = "tenant_id, kyc_expiry_date")
+        })
 @Getter
 @Setter
 @NoArgsConstructor
@@ -266,7 +270,7 @@ public class Customer extends BaseEntity {
     public boolean isKycExpiringSoon() {
         if (kycExpiryDate == null) return false;
         return LocalDate.now().isAfter(kycExpiryDate.minusDays(90))
-            && !LocalDate.now().isAfter(kycExpiryDate);
+                && !LocalDate.now().isAfter(kycExpiryDate);
     }
 
     // === PII Hash Helpers ===
@@ -291,7 +295,8 @@ public class Customer extends BaseEntity {
         if (input == null || input.isBlank()) return null;
         try {
             java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = digest.digest(input.trim().toUpperCase().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            byte[] hashBytes =
+                    digest.digest(input.trim().toUpperCase().getBytes(java.nio.charset.StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
             for (byte b : hashBytes) {
                 sb.append(String.format("%02x", b));

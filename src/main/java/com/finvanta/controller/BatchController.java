@@ -5,12 +5,13 @@ import com.finvanta.batch.EodOrchestrator;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.service.TransactionBatchService;
 import com.finvanta.util.TenantContext;
+
+import java.time.LocalDate;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
-
-import java.time.LocalDate;
 
 /**
  * CBS EOD Batch Controller.
@@ -30,10 +31,11 @@ public class BatchController {
     private final TransactionBatchService transactionBatchService;
     private final BusinessCalendarRepository calendarRepository;
 
-    public BatchController(EodOrchestrator eodOrchestrator,
-                            BatchService batchService,
-                            TransactionBatchService transactionBatchService,
-                            BusinessCalendarRepository calendarRepository) {
+    public BatchController(
+            EodOrchestrator eodOrchestrator,
+            BatchService batchService,
+            TransactionBatchService transactionBatchService,
+            BusinessCalendarRepository calendarRepository) {
         this.eodOrchestrator = eodOrchestrator;
         this.batchService = batchService;
         this.transactionBatchService = transactionBatchService;
@@ -45,8 +47,9 @@ public class BatchController {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("batch/eod");
         mav.addObject("batchHistory", batchService.getBatchHistory());
-        mav.addObject("currentBusinessDate",
-            calendarRepository.findCurrentBusinessDate(tenantId).orElse(null));
+        mav.addObject(
+                "currentBusinessDate",
+                calendarRepository.findCurrentBusinessDate(tenantId).orElse(null));
         return mav;
     }
 

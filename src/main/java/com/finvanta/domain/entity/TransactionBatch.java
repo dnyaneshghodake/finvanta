@@ -1,13 +1,14 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * CBS Enterprise Transaction Batch Control per Finacle/Temenos standards.
@@ -36,14 +37,18 @@ import java.time.LocalDateTime;
  *   → All CLOSED → EOD completes → Day Close
  */
 @Entity
-@Table(name = "transaction_batches", indexes = {
-    @Index(name = "idx_txnbatch_tenant_date", columnList = "tenant_id, business_date"),
-    @Index(name = "idx_txnbatch_tenant_date_status", columnList = "tenant_id, business_date, status"),
-    @Index(name = "idx_txnbatch_branch", columnList = "tenant_id, branch_id, business_date")
-}, uniqueConstraints = {
-    @UniqueConstraint(name = "uq_txnbatch_tenant_date_name",
-        columnNames = {"tenant_id", "business_date", "batch_name"})
-})
+@Table(
+        name = "transaction_batches",
+        indexes = {
+            @Index(name = "idx_txnbatch_tenant_date", columnList = "tenant_id, business_date"),
+            @Index(name = "idx_txnbatch_tenant_date_status", columnList = "tenant_id, business_date, status"),
+            @Index(name = "idx_txnbatch_branch", columnList = "tenant_id, branch_id, business_date")
+        },
+        uniqueConstraints = {
+            @UniqueConstraint(
+                    name = "uq_txnbatch_tenant_date_name",
+                    columnNames = {"tenant_id", "business_date", "batch_name"})
+        })
 @Getter
 @Setter
 @NoArgsConstructor

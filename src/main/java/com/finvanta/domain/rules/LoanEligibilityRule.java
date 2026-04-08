@@ -6,10 +6,11 @@ import com.finvanta.domain.entity.ProductMaster;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
-import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+
+import org.springframework.stereotype.Component;
 
 /**
  * CBS Loan Eligibility Rule per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
@@ -32,6 +33,7 @@ public class LoanEligibilityRule {
 
     /** Max DTI ratio: total EMI should not exceed 60% of monthly income */
     private static final BigDecimal MAX_DTI_RATIO = new BigDecimal("60.00");
+
     private static final BigDecimal HUNDRED = new BigDecimal("100");
 
     private final LoanAccountRepository accountRepository;
@@ -79,45 +81,55 @@ public class LoanEligibilityRule {
 
         // --- Resolve limits: product-specific or fallback ---
         BigDecimal minAmount = (product != null && product.getMinLoanAmount() != null)
-            ? product.getMinLoanAmount() : FALLBACK_MIN_LOAN_AMOUNT;
+                ? product.getMinLoanAmount()
+                : FALLBACK_MIN_LOAN_AMOUNT;
         BigDecimal maxAmount = (product != null && product.getMaxLoanAmount() != null)
-            ? product.getMaxLoanAmount() : FALLBACK_MAX_LOAN_AMOUNT;
+                ? product.getMaxLoanAmount()
+                : FALLBACK_MAX_LOAN_AMOUNT;
         int minTenure = (product != null && product.getMinTenureMonths() != null)
-            ? product.getMinTenureMonths() : FALLBACK_MIN_TENURE_MONTHS;
+                ? product.getMinTenureMonths()
+                : FALLBACK_MIN_TENURE_MONTHS;
         int maxTenure = (product != null && product.getMaxTenureMonths() != null)
-            ? product.getMaxTenureMonths() : FALLBACK_MAX_TENURE_MONTHS;
+                ? product.getMaxTenureMonths()
+                : FALLBACK_MAX_TENURE_MONTHS;
         BigDecimal minRate = (product != null && product.getMinInterestRate() != null)
-            ? product.getMinInterestRate() : FALLBACK_MIN_INTEREST_RATE;
+                ? product.getMinInterestRate()
+                : FALLBACK_MIN_INTEREST_RATE;
         BigDecimal maxRate = (product != null && product.getMaxInterestRate() != null)
-            ? product.getMaxInterestRate() : FALLBACK_MAX_INTEREST_RATE;
+                ? product.getMaxInterestRate()
+                : FALLBACK_MAX_INTEREST_RATE;
 
         String productLabel = (product != null) ? product.getProductCode() : "SYSTEM";
 
         // --- Amount validation ---
         if (application.getRequestedAmount().compareTo(minAmount) < 0) {
-            throw new BusinessException("ELIGIBILITY_AMOUNT_TOO_LOW",
-                "Requested amount INR " + application.getRequestedAmount()
-                    + " is below minimum INR " + minAmount + " for product " + productLabel);
+            throw new BusinessException(
+                    "ELIGIBILITY_AMOUNT_TOO_LOW",
+                    "Requested amount INR " + application.getRequestedAmount() + " is below minimum INR " + minAmount
+                            + " for product " + productLabel);
         }
         if (application.getRequestedAmount().compareTo(maxAmount) > 0) {
-            throw new BusinessException("ELIGIBILITY_AMOUNT_TOO_HIGH",
-                "Requested amount INR " + application.getRequestedAmount()
-                    + " exceeds maximum INR " + maxAmount + " for product " + productLabel);
+            throw new BusinessException(
+                    "ELIGIBILITY_AMOUNT_TOO_HIGH",
+                    "Requested amount INR " + application.getRequestedAmount() + " exceeds maximum INR " + maxAmount
+                            + " for product " + productLabel);
         }
 
         // --- Tenure validation ---
         if (application.getTenureMonths() < minTenure || application.getTenureMonths() > maxTenure) {
-            throw new BusinessException("ELIGIBILITY_TENURE_INVALID",
-                "Tenure " + application.getTenureMonths() + " months is outside allowed range "
-                    + minTenure + "-" + maxTenure + " months for product " + productLabel);
+            throw new BusinessException(
+                    "ELIGIBILITY_TENURE_INVALID",
+                    "Tenure " + application.getTenureMonths() + " months is outside allowed range " + minTenure + "-"
+                            + maxTenure + " months for product " + productLabel);
         }
 
         // --- Interest rate validation ---
         if (application.getInterestRate().compareTo(minRate) < 0
                 || application.getInterestRate().compareTo(maxRate) > 0) {
-            throw new BusinessException("ELIGIBILITY_RATE_INVALID",
-                "Interest rate " + application.getInterestRate() + "% is outside allowed range "
-                    + minRate + "%-" + maxRate + "% for product " + productLabel);
+            throw new BusinessException(
+                    "ELIGIBILITY_RATE_INVALID",
+                    "Interest rate " + application.getInterestRate() + "% is outside allowed range " + minRate + "%-"
+                            + maxRate + "% for product " + productLabel);
         }
     }
 
@@ -127,19 +139,18 @@ public class LoanEligibilityRule {
      */
     private void validateCustomerEligibility(Customer customer) {
         if (!customer.isKycVerified()) {
-            throw new BusinessException("ELIGIBILITY_KYC_FAILED",
-                "Customer KYC verification is mandatory before loan application");
+            throw new BusinessException(
+                    "ELIGIBILITY_KYC_FAILED", "Customer KYC verification is mandatory before loan application");
         }
 
         if (!customer.isActive()) {
-            throw new BusinessException("ELIGIBILITY_CUSTOMER_INACTIVE",
-                "Customer account is not active");
+            throw new BusinessException("ELIGIBILITY_CUSTOMER_INACTIVE", "Customer account is not active");
         }
 
         if (customer.getCibilScore() != null && customer.getCibilScore() < MIN_CIBIL_SCORE) {
-            throw new BusinessException("ELIGIBILITY_CIBIL_LOW",
-                "CIBIL score " + customer.getCibilScore()
-                    + " is below minimum threshold of " + MIN_CIBIL_SCORE);
+            throw new BusinessException(
+                    "ELIGIBILITY_CIBIL_LOW",
+                    "CIBIL score " + customer.getCibilScore() + " is below minimum threshold of " + MIN_CIBIL_SCORE);
         }
     }
 
@@ -166,8 +177,7 @@ public class LoanEligibilityRule {
 
             // Sum existing outstanding across all active loans for this customer
             BigDecimal existingExposure = BigDecimal.ZERO;
-            var existingAccounts = accountRepository.findByTenantIdAndCustomerId(
-                tenantId, customer.getId());
+            var existingAccounts = accountRepository.findByTenantIdAndCustomerId(tenantId, customer.getId());
             for (var acc : existingAccounts) {
                 if (!acc.getStatus().isTerminal()) {
                     existingExposure = existingExposure.add(acc.getOutstandingPrincipal());
@@ -176,23 +186,22 @@ public class LoanEligibilityRule {
 
             BigDecimal proposedTotal = existingExposure.add(application.getRequestedAmount());
             if (proposedTotal.compareTo(customer.getMaxBorrowingLimit()) > 0) {
-                throw new BusinessException("EXPOSURE_LIMIT_EXCEEDED",
-                    "Total exposure INR " + proposedTotal
-                        + " (existing: INR " + existingExposure
-                        + " + proposed: INR " + application.getRequestedAmount()
-                        + ") exceeds customer borrowing limit of INR "
-                        + customer.getMaxBorrowingLimit());
+                throw new BusinessException(
+                        "EXPOSURE_LIMIT_EXCEEDED",
+                        "Total exposure INR " + proposedTotal
+                                + " (existing: INR " + existingExposure
+                                + " + proposed: INR " + application.getRequestedAmount()
+                                + ") exceeds customer borrowing limit of INR "
+                                + customer.getMaxBorrowingLimit());
             }
         }
 
         // 2. Debt-to-Income (DTI) ratio check
-        if (customer.getMonthlyIncome() != null
-                && customer.getMonthlyIncome().signum() > 0) {
+        if (customer.getMonthlyIncome() != null && customer.getMonthlyIncome().signum() > 0) {
 
             // Calculate existing total EMI obligations
             BigDecimal existingEmi = BigDecimal.ZERO;
-            var existingAccounts = accountRepository.findByTenantIdAndCustomerId(
-                tenantId, customer.getId());
+            var existingAccounts = accountRepository.findByTenantIdAndCustomerId(tenantId, customer.getId());
             for (var acc : existingAccounts) {
                 if (!acc.getStatus().isTerminal() && acc.getEmiAmount() != null) {
                     existingEmi = existingEmi.add(acc.getEmiAmount());
@@ -201,26 +210,25 @@ public class LoanEligibilityRule {
 
             // Estimate proposed EMI using reducing balance formula
             BigDecimal proposedEmi = new com.finvanta.domain.rules.InterestCalculationRule()
-                .calculateEmi(
-                    application.getRequestedAmount(),
-                    application.getInterestRate(),
-                    application.getTenureMonths()
-                );
+                    .calculateEmi(
+                            application.getRequestedAmount(),
+                            application.getInterestRate(),
+                            application.getTenureMonths());
 
             BigDecimal totalEmi = existingEmi.add(proposedEmi);
-            BigDecimal maxAllowableEmi = customer.getMonthlyIncome()
-                .multiply(MAX_DTI_RATIO)
-                .divide(HUNDRED, 2, RoundingMode.HALF_UP);
+            BigDecimal maxAllowableEmi =
+                    customer.getMonthlyIncome().multiply(MAX_DTI_RATIO).divide(HUNDRED, 2, RoundingMode.HALF_UP);
 
             if (totalEmi.compareTo(maxAllowableEmi) > 0) {
-                BigDecimal actualDti = totalEmi.multiply(HUNDRED)
-                    .divide(customer.getMonthlyIncome(), 2, RoundingMode.HALF_UP);
-                throw new BusinessException("DTI_RATIO_EXCEEDED",
-                    "Debt-to-Income ratio " + actualDti + "% exceeds maximum "
-                        + MAX_DTI_RATIO + "%. Total EMI: INR " + totalEmi
-                        + " (existing: INR " + existingEmi
-                        + " + proposed: INR " + proposedEmi
-                        + "). Monthly income: INR " + customer.getMonthlyIncome());
+                BigDecimal actualDti =
+                        totalEmi.multiply(HUNDRED).divide(customer.getMonthlyIncome(), 2, RoundingMode.HALF_UP);
+                throw new BusinessException(
+                        "DTI_RATIO_EXCEEDED",
+                        "Debt-to-Income ratio " + actualDti + "% exceeds maximum "
+                                + MAX_DTI_RATIO + "%. Total EMI: INR " + totalEmi
+                                + " (existing: INR " + existingEmi
+                                + " + proposed: INR " + proposedEmi
+                                + "). Monthly income: INR " + customer.getMonthlyIncome());
             }
         }
     }

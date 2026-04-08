@@ -1,13 +1,15 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.CollateralType;
+
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * CBS Collateral Master per Finacle COLMAS / Temenos AA.COLLATERAL.
@@ -33,11 +35,13 @@ import java.time.LocalDate;
  * A single collateral can secure multiple loans (shared collateral with LTV split).
  */
 @Entity
-@Table(name = "collaterals", indexes = {
-    @Index(name = "idx_collateral_tenant_ref", columnList = "tenant_id, collateral_ref", unique = true),
-    @Index(name = "idx_collateral_loan", columnList = "tenant_id, loan_application_id"),
-    @Index(name = "idx_collateral_type", columnList = "tenant_id, collateral_type")
-})
+@Table(
+        name = "collaterals",
+        indexes = {
+            @Index(name = "idx_collateral_tenant_ref", columnList = "tenant_id, collateral_ref", unique = true),
+            @Index(name = "idx_collateral_loan", columnList = "tenant_id, loan_application_id"),
+            @Index(name = "idx_collateral_type", columnList = "tenant_id, collateral_type")
+        })
 @Getter
 @Setter
 @NoArgsConstructor
@@ -215,7 +219,6 @@ public class Collateral extends BaseEntity {
         if (marketValue == null || marketValue.signum() <= 0) {
             return null;
         }
-        return loanAmount.multiply(new BigDecimal("100"))
-            .divide(marketValue, 2, java.math.RoundingMode.HALF_UP);
+        return loanAmount.multiply(new BigDecimal("100")).divide(marketValue, 2, java.math.RoundingMode.HALF_UP);
     }
 }

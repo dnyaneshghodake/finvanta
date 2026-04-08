@@ -5,14 +5,15 @@ import com.finvanta.domain.entity.LoanApplication;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
+
+import java.math.BigDecimal;
+import java.util.Collections;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-
-import java.math.BigDecimal;
-import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -42,8 +43,7 @@ class LoanEligibilityRuleTest {
         TenantContext.setCurrentTenant("TEST_TENANT");
         accountRepository = mock(LoanAccountRepository.class);
         // Default: no existing loans for the customer (exposure checks pass)
-        when(accountRepository.findByTenantIdAndCustomerId(any(), any()))
-            .thenReturn(Collections.emptyList());
+        when(accountRepository.findByTenantIdAndCustomerId(any(), any())).thenReturn(Collections.emptyList());
         rule = new LoanEligibilityRule(accountRepository);
     }
 
@@ -62,8 +62,7 @@ class LoanEligibilityRuleTest {
             Customer customer = createCustomer(false, true, 750);
             LoanApplication app = createApplication("500000", "10.0000", 12);
 
-            BusinessException ex = assertThrows(BusinessException.class,
-                () -> rule.validate(app, customer));
+            BusinessException ex = assertThrows(BusinessException.class, () -> rule.validate(app, customer));
             assertEquals("ELIGIBILITY_KYC_FAILED", ex.getErrorCode());
         }
 
@@ -87,8 +86,7 @@ class LoanEligibilityRuleTest {
             Customer customer = createCustomer(true, false, 750);
             LoanApplication app = createApplication("500000", "10.0000", 12);
 
-            BusinessException ex = assertThrows(BusinessException.class,
-                () -> rule.validate(app, customer));
+            BusinessException ex = assertThrows(BusinessException.class, () -> rule.validate(app, customer));
             assertEquals("ELIGIBILITY_CUSTOMER_INACTIVE", ex.getErrorCode());
         }
     }
@@ -103,8 +101,7 @@ class LoanEligibilityRuleTest {
             Customer customer = createCustomer(true, true, 649);
             LoanApplication app = createApplication("500000", "10.0000", 12);
 
-            BusinessException ex = assertThrows(BusinessException.class,
-                () -> rule.validate(app, customer));
+            BusinessException ex = assertThrows(BusinessException.class, () -> rule.validate(app, customer));
             assertEquals("ELIGIBILITY_CIBIL_LOW", ex.getErrorCode());
         }
 
@@ -137,8 +134,7 @@ class LoanEligibilityRuleTest {
             Customer customer = createCustomer(true, true, 750);
             LoanApplication app = createApplication("9999", "10.0000", 12);
 
-            BusinessException ex = assertThrows(BusinessException.class,
-                () -> rule.validate(app, customer));
+            BusinessException ex = assertThrows(BusinessException.class, () -> rule.validate(app, customer));
             assertEquals("ELIGIBILITY_AMOUNT_TOO_LOW", ex.getErrorCode());
         }
 
@@ -148,8 +144,7 @@ class LoanEligibilityRuleTest {
             Customer customer = createCustomer(true, true, 750);
             LoanApplication app = createApplication("50000001", "10.0000", 12);
 
-            BusinessException ex = assertThrows(BusinessException.class,
-                () -> rule.validate(app, customer));
+            BusinessException ex = assertThrows(BusinessException.class, () -> rule.validate(app, customer));
             assertEquals("ELIGIBILITY_AMOUNT_TOO_HIGH", ex.getErrorCode());
         }
 
@@ -158,10 +153,8 @@ class LoanEligibilityRuleTest {
         void amountAtBoundaries() {
             Customer customer = createCustomer(true, true, 750);
 
-            assertDoesNotThrow(() -> rule.validate(
-                createApplication("10000", "10.0000", 12), customer));
-            assertDoesNotThrow(() -> rule.validate(
-                createApplication("50000000", "10.0000", 12), customer));
+            assertDoesNotThrow(() -> rule.validate(createApplication("10000", "10.0000", 12), customer));
+            assertDoesNotThrow(() -> rule.validate(createApplication("50000000", "10.0000", 12), customer));
         }
     }
 
@@ -175,8 +168,7 @@ class LoanEligibilityRuleTest {
             Customer customer = createCustomer(true, true, 750);
             LoanApplication app = createApplication("500000", "10.0000", 2);
 
-            BusinessException ex = assertThrows(BusinessException.class,
-                () -> rule.validate(app, customer));
+            BusinessException ex = assertThrows(BusinessException.class, () -> rule.validate(app, customer));
             assertEquals("ELIGIBILITY_TENURE_INVALID", ex.getErrorCode());
         }
 
@@ -186,8 +178,7 @@ class LoanEligibilityRuleTest {
             Customer customer = createCustomer(true, true, 750);
             LoanApplication app = createApplication("500000", "10.0000", 361);
 
-            BusinessException ex = assertThrows(BusinessException.class,
-                () -> rule.validate(app, customer));
+            BusinessException ex = assertThrows(BusinessException.class, () -> rule.validate(app, customer));
             assertEquals("ELIGIBILITY_TENURE_INVALID", ex.getErrorCode());
         }
     }
@@ -202,8 +193,7 @@ class LoanEligibilityRuleTest {
             Customer customer = createCustomer(true, true, 750);
             LoanApplication app = createApplication("500000", "0.5000", 12);
 
-            BusinessException ex = assertThrows(BusinessException.class,
-                () -> rule.validate(app, customer));
+            BusinessException ex = assertThrows(BusinessException.class, () -> rule.validate(app, customer));
             assertEquals("ELIGIBILITY_RATE_INVALID", ex.getErrorCode());
         }
 
@@ -213,8 +203,7 @@ class LoanEligibilityRuleTest {
             Customer customer = createCustomer(true, true, 750);
             LoanApplication app = createApplication("500000", "36.5000", 12);
 
-            BusinessException ex = assertThrows(BusinessException.class,
-                () -> rule.validate(app, customer));
+            BusinessException ex = assertThrows(BusinessException.class, () -> rule.validate(app, customer));
             assertEquals("ELIGIBILITY_RATE_INVALID", ex.getErrorCode());
         }
     }

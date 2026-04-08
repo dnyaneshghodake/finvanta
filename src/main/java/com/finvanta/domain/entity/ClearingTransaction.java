@@ -1,12 +1,13 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * CBS Clearing Transaction — Payment clearing/settlement ledger per Finacle CLG_MASTER.
@@ -30,12 +31,14 @@ import java.time.LocalDateTime;
  * Non-zero suspense indicates stuck transactions (flagged for investigation).
  */
 @Entity
-@Table(name = "clearing_transactions", indexes = {
-    @Index(name = "idx_clrg_tenant_ref", columnList = "tenant_id, clearing_ref"),
-    @Index(name = "idx_clrg_status", columnList = "status"),
-    @Index(name = "idx_clrg_initiated_date", columnList = "initiated_date"),
-    @Index(name = "idx_clrg_settlement_date", columnList = "settlement_date")
-})
+@Table(
+        name = "clearing_transactions",
+        indexes = {
+            @Index(name = "idx_clrg_tenant_ref", columnList = "tenant_id, clearing_ref"),
+            @Index(name = "idx_clrg_status", columnList = "status"),
+            @Index(name = "idx_clrg_initiated_date", columnList = "initiated_date"),
+            @Index(name = "idx_clrg_settlement_date", columnList = "settlement_date")
+        })
 @Getter
 @Setter
 public class ClearingTransaction extends BaseEntity {
@@ -78,4 +81,3 @@ public class ClearingTransaction extends BaseEntity {
 
     // Audit trail: tenantId, createdAt, createdBy inherited from BaseEntity
 }
-

@@ -1,14 +1,16 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import org.hibernate.annotations.Filter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+
+import org.hibernate.annotations.Filter;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * CBS Immutable Ledger Entry per Finacle/Temenos standards.
@@ -38,13 +40,18 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
-@Table(name = "ledger_entries", indexes = {
-    @Index(name = "idx_ledger_tenant_gl", columnList = "tenant_id, gl_code, business_date"),
-    @Index(name = "idx_ledger_tenant_date", columnList = "tenant_id, business_date"),
-    @Index(name = "idx_ledger_journal", columnList = "tenant_id, journal_entry_id")
-}, uniqueConstraints = {
-    @UniqueConstraint(name = "uq_ledger_tenant_seq", columnNames = {"tenant_id", "ledger_sequence"})
-})
+@Table(
+        name = "ledger_entries",
+        indexes = {
+            @Index(name = "idx_ledger_tenant_gl", columnList = "tenant_id, gl_code, business_date"),
+            @Index(name = "idx_ledger_tenant_date", columnList = "tenant_id, business_date"),
+            @Index(name = "idx_ledger_journal", columnList = "tenant_id, journal_entry_id")
+        },
+        uniqueConstraints = {
+            @UniqueConstraint(
+                    name = "uq_ledger_tenant_seq",
+                    columnNames = {"tenant_id", "ledger_sequence"})
+        })
 @Getter
 @Setter
 @NoArgsConstructor

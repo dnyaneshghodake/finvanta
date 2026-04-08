@@ -4,13 +4,14 @@ import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.util.TenantContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
 /**
  * CBS GL Reconciliation Service per Finacle/Temenos EOD standards.
@@ -36,8 +37,7 @@ public class ReconciliationService {
     private final GLMasterRepository glMasterRepository;
     private final LedgerEntryRepository ledgerRepository;
 
-    public ReconciliationService(GLMasterRepository glMasterRepository,
-                                  LedgerEntryRepository ledgerRepository) {
+    public ReconciliationService(GLMasterRepository glMasterRepository, LedgerEntryRepository ledgerRepository) {
         this.glMasterRepository = glMasterRepository;
         this.ledgerRepository = ledgerRepository;
     }
@@ -65,17 +65,19 @@ public class ReconciliationService {
             boolean creditMatch = ledgerCredit.compareTo(glCredit) == 0;
 
             if (!debitMatch || !creditMatch) {
-                Discrepancy d = new Discrepancy(
-                    gl.getGlCode(), gl.getGlName(),
-                    glDebit, ledgerDebit,
-                    glCredit, ledgerCredit
-                );
+                Discrepancy d =
+                        new Discrepancy(gl.getGlCode(), gl.getGlName(), glDebit, ledgerDebit, glCredit, ledgerCredit);
                 discrepancies.add(d);
 
-                log.error("GL RECONCILIATION MISMATCH: glCode={}, glName={}, "
-                    + "glDebit={}, ledgerDebit={}, glCredit={}, ledgerCredit={}",
-                    gl.getGlCode(), gl.getGlName(),
-                    glDebit, ledgerDebit, glCredit, ledgerCredit);
+                log.error(
+                        "GL RECONCILIATION MISMATCH: glCode={}, glName={}, "
+                                + "glDebit={}, ledgerDebit={}, glCredit={}, ledgerCredit={}",
+                        gl.getGlCode(),
+                        gl.getGlName(),
+                        glDebit,
+                        ledgerDebit,
+                        glCredit,
+                        ledgerCredit);
             }
 
             checkedCount++;
@@ -85,8 +87,10 @@ public class ReconciliationService {
         if (balanced) {
             log.info("GL reconciliation BALANCED: {} GL accounts verified", checkedCount);
         } else {
-            log.error("GL reconciliation FAILED: {}/{} GL accounts have discrepancies",
-                discrepancies.size(), checkedCount);
+            log.error(
+                    "GL reconciliation FAILED: {}/{} GL accounts have discrepancies",
+                    discrepancies.size(),
+                    checkedCount);
         }
 
         return new ReconciliationResult(balanced, checkedCount, discrepancies);
@@ -95,11 +99,7 @@ public class ReconciliationService {
     /**
      * Result of a GL reconciliation run.
      */
-    public record ReconciliationResult(
-        boolean isBalanced,
-        int checkedCount,
-        List<Discrepancy> discrepancies
-    ) {
+    public record ReconciliationResult(boolean isBalanced, int checkedCount, List<Discrepancy> discrepancies) {
         public int discrepancyCount() {
             return discrepancies != null ? discrepancies.size() : 0;
         }
@@ -109,11 +109,10 @@ public class ReconciliationService {
      * A single GL code discrepancy between ledger totals and GL master.
      */
     public record Discrepancy(
-        String glCode,
-        String glName,
-        BigDecimal glMasterDebit,
-        BigDecimal ledgerDebit,
-        BigDecimal glMasterCredit,
-        BigDecimal ledgerCredit
-    ) {}
+            String glCode,
+            String glName,
+            BigDecimal glMasterDebit,
+            BigDecimal ledgerDebit,
+            BigDecimal glMasterCredit,
+            BigDecimal ledgerCredit) {}
 }

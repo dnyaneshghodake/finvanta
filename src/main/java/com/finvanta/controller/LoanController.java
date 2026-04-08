@@ -11,30 +11,32 @@ import com.finvanta.domain.enums.SIStatus;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CollateralRepository;
 import com.finvanta.repository.CustomerRepository;
+import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.InterestAccrualRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanDocumentRepository;
 import com.finvanta.repository.LoanTransactionRepository;
-import com.finvanta.repository.DepositAccountRepository;
-import com.finvanta.repository.StandingInstructionRepository;
 import com.finvanta.repository.ProductMasterRepository;
-import com.finvanta.service.impl.StandingInstructionServiceImpl;
+import com.finvanta.repository.StandingInstructionRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CollateralService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanApplicationService;
 import com.finvanta.service.LoanRestructuringService;
 import com.finvanta.service.LoanScheduleService;
+import com.finvanta.service.impl.StandingInstructionServiceImpl;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
+
 import jakarta.validation.Valid;
+
+import java.math.BigDecimal;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
-
-import java.math.BigDecimal;
 
 @Controller
 @RequestMapping("/loan")
@@ -58,23 +60,24 @@ public class LoanController {
     private final StandingInstructionRepository siRepository;
     private final StandingInstructionServiceImpl siService;
 
-    public LoanController(LoanApplicationService applicationService,
-                           LoanAccountService accountService,
-                           LoanScheduleService scheduleService,
-                           CollateralService collateralService,
-                           LoanRestructuringService restructuringService,
-                           BusinessDateService businessDateService,
-                           CustomerRepository customerRepository,
-                           BranchRepository branchRepository,
-                           CollateralRepository collateralRepository,
-                           LoanDocumentRepository documentRepository,
-                           LoanTransactionRepository transactionRepository,
-                           LoanAccountRepository accountRepository,
-                           InterestAccrualRepository accrualRepository,
-                           ProductMasterRepository productRepository,
-                           DepositAccountRepository depositAccountRepository,
-                           StandingInstructionRepository siRepository,
-                           StandingInstructionServiceImpl siService) {
+    public LoanController(
+            LoanApplicationService applicationService,
+            LoanAccountService accountService,
+            LoanScheduleService scheduleService,
+            CollateralService collateralService,
+            LoanRestructuringService restructuringService,
+            BusinessDateService businessDateService,
+            CustomerRepository customerRepository,
+            BranchRepository branchRepository,
+            CollateralRepository collateralRepository,
+            LoanDocumentRepository documentRepository,
+            LoanTransactionRepository transactionRepository,
+            LoanAccountRepository accountRepository,
+            InterestAccrualRepository accrualRepository,
+            ProductMasterRepository productRepository,
+            DepositAccountRepository depositAccountRepository,
+            StandingInstructionRepository siRepository,
+            StandingInstructionServiceImpl siService) {
         this.applicationService = applicationService;
         this.accountService = accountService;
         this.scheduleService = scheduleService;
@@ -110,11 +113,12 @@ public class LoanController {
     }
 
     @PostMapping("/apply")
-    public ModelAndView submitApplication(@Valid @ModelAttribute("application") LoanApplication application,
-                                          BindingResult result,
-                                          @RequestParam Long customerId,
-                                          @RequestParam Long branchId,
-                                          RedirectAttributes redirectAttributes) {
+    public ModelAndView submitApplication(
+            @Valid @ModelAttribute("application") LoanApplication application,
+            BindingResult result,
+            @RequestParam Long customerId,
+            @RequestParam Long branchId,
+            RedirectAttributes redirectAttributes) {
         if (result.hasErrors()) {
             String tenantId = TenantContext.getCurrentTenant();
             ModelAndView mav = new ModelAndView("loan/apply");
@@ -127,8 +131,7 @@ public class LoanController {
 
         try {
             LoanApplication saved = applicationService.createApplication(application, customerId, branchId);
-            redirectAttributes.addFlashAttribute("success",
-                "Application created: " + saved.getApplicationNumber());
+            redirectAttributes.addFlashAttribute("success", "Application created: " + saved.getApplicationNumber());
             return new ModelAndView("redirect:/loan/applications");
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
@@ -149,12 +152,9 @@ public class LoanController {
         // or add branch-aware service methods in Phase 2.
         // Current approach: ADMIN sees all; non-admin sees all (acceptable for Phase 1
         // since applications require maker-checker across branches).
-        mav.addObject("applications",
-            applicationService.getApplicationsByStatus(ApplicationStatus.SUBMITTED));
-        mav.addObject("verifiedApplications",
-            applicationService.getApplicationsByStatus(ApplicationStatus.VERIFIED));
-        mav.addObject("approvedApplications",
-            applicationService.getApplicationsByStatus(ApplicationStatus.APPROVED));
+        mav.addObject("applications", applicationService.getApplicationsByStatus(ApplicationStatus.SUBMITTED));
+        mav.addObject("verifiedApplications", applicationService.getApplicationsByStatus(ApplicationStatus.VERIFIED));
+        mav.addObject("approvedApplications", applicationService.getApplicationsByStatus(ApplicationStatus.APPROVED));
         return mav;
     }
 
@@ -171,9 +171,8 @@ public class LoanController {
     }
 
     @PostMapping("/verify/{id}")
-    public String verifyApplication(@PathVariable Long id,
-                                     @RequestParam String remarks,
-                                     RedirectAttributes redirectAttributes) {
+    public String verifyApplication(
+            @PathVariable Long id, @RequestParam String remarks, RedirectAttributes redirectAttributes) {
         try {
             applicationService.verifyApplication(id, remarks);
             redirectAttributes.addFlashAttribute("success", "Application verified successfully");
@@ -195,9 +194,8 @@ public class LoanController {
     }
 
     @PostMapping("/approve/{id}")
-    public String approveApplication(@PathVariable Long id,
-                                      @RequestParam String remarks,
-                                      RedirectAttributes redirectAttributes) {
+    public String approveApplication(
+            @PathVariable Long id, @RequestParam String remarks, RedirectAttributes redirectAttributes) {
         try {
             applicationService.approveApplication(id, remarks);
             redirectAttributes.addFlashAttribute("success", "Application approved successfully");
@@ -208,9 +206,8 @@ public class LoanController {
     }
 
     @PostMapping("/reject/{id}")
-    public String rejectApplication(@PathVariable Long id,
-                                     @RequestParam String reason,
-                                     RedirectAttributes redirectAttributes) {
+    public String rejectApplication(
+            @PathVariable Long id, @RequestParam String reason, RedirectAttributes redirectAttributes) {
         try {
             applicationService.rejectApplication(id, reason);
             redirectAttributes.addFlashAttribute("success", "Application rejected");
@@ -235,8 +232,7 @@ public class LoanController {
         } else {
             Long branchId = SecurityUtil.getCurrentUserBranchId();
             if (branchId != null) {
-                mav.addObject("accounts",
-                    accountRepository.findByTenantIdAndBranchId(tenantId, branchId));
+                mav.addObject("accounts", accountRepository.findByTenantIdAndBranchId(tenantId, branchId));
             } else {
                 // CBS: No branch assigned — show empty list per fail-safe principle.
                 // Per RBI Operational Risk: no-branch users must not see all data.
@@ -252,48 +248,61 @@ public class LoanController {
         LoanAccount account = accountService.getAccount(accountNumber);
         ModelAndView mav = new ModelAndView("loan/account-details");
         mav.addObject("account", account);
-        mav.addObject("transactions",
-            transactionRepository.findByTenantIdAndLoanAccountIdOrderByPostingDateDesc(tenantId, account.getId()));
+        mav.addObject(
+                "transactions",
+                transactionRepository.findByTenantIdAndLoanAccountIdOrderByPostingDateDesc(tenantId, account.getId()));
         mav.addObject("schedule", scheduleService.getSchedule(account.getId()));
 
         // CBS: Collateral and document data for account view
-        mav.addObject("collaterals",
-            collateralRepository.findByTenantIdAndLoanApplicationId(tenantId, account.getApplication().getId()));
-        mav.addObject("documents",
-            documentRepository.findByTenantIdAndLoanApplicationId(tenantId, account.getApplication().getId()));
+        mav.addObject(
+                "collaterals",
+                collateralRepository.findByTenantIdAndLoanApplicationId(
+                        tenantId, account.getApplication().getId()));
+        mav.addObject(
+                "documents",
+                documentRepository.findByTenantIdAndLoanApplicationId(
+                        tenantId, account.getApplication().getId()));
 
         // CBS: Interest accrual trail for audit-grade per-day tracking (P0-2)
-        mav.addObject("accrualHistory",
-            accrualRepository.findByTenantIdAndAccountIdAndAccrualDateBetweenOrderByAccrualDateAsc(
-                tenantId, account.getId(),
-                account.getDisbursementDate() != null ? account.getDisbursementDate() : java.time.LocalDate.of(2020, 1, 1),
-                java.time.LocalDate.of(2099, 12, 31)));
+        mav.addObject(
+                "accrualHistory",
+                accrualRepository.findByTenantIdAndAccountIdAndAccrualDateBetweenOrderByAccrualDateAsc(
+                        tenantId,
+                        account.getId(),
+                        account.getDisbursementDate() != null
+                                ? account.getDisbursementDate()
+                                : java.time.LocalDate.of(2020, 1, 1),
+                        java.time.LocalDate.of(2099, 12, 31)));
 
         // CBS: Standing Instructions linked to this loan account
-        mav.addObject("standingInstructions",
-            siRepository.findByTenantIdAndLoanAccountNumber(tenantId, account.getAccountNumber()));
+        mav.addObject(
+                "standingInstructions",
+                siRepository.findByTenantIdAndLoanAccountNumber(tenantId, account.getAccountNumber()));
 
         // Cross-module linkage: resolve product ID for "View GL Config" link
-        productRepository.findByTenantIdAndProductCode(tenantId, account.getProductType())
-            .ifPresent(p -> mav.addObject("productId", p.getId()));
+        productRepository
+                .findByTenantIdAndProductCode(tenantId, account.getProductType())
+                .ifPresent(p -> mav.addObject("productId", p.getId()));
 
         // CBS: Schedule preview before disbursement per RBI Fair Practices Code 2023
         // Show the borrower what their repayment schedule will look like BEFORE committing.
         if (!account.isFullyDisbursed()) {
             try {
-                java.time.LocalDate previewStartDate = businessDateService.getCurrentBusinessDate().plusMonths(1);
+                java.time.LocalDate previewStartDate =
+                        businessDateService.getCurrentBusinessDate().plusMonths(1);
                 BigDecimal previewPrincipal = account.getDisbursedAmount().signum() > 0
-                    ? account.getSanctionedAmount() // Multi-tranche: preview on full sanctioned
-                    : account.getSanctionedAmount();
-                mav.addObject("schedulePreview",
-                    scheduleService.generateSchedulePreview(
-                        previewPrincipal,
-                        account.getInterestRate(),
-                        account.getTenureMonths(),
-                        previewStartDate));
+                        ? account.getSanctionedAmount() // Multi-tranche: preview on full sanctioned
+                        : account.getSanctionedAmount();
+                mav.addObject(
+                        "schedulePreview",
+                        scheduleService.generateSchedulePreview(
+                                previewPrincipal,
+                                account.getInterestRate(),
+                                account.getTenureMonths(),
+                                previewStartDate));
                 // Calculate summary for disclosure
                 BigDecimal previewEmi = new com.finvanta.domain.rules.InterestCalculationRule()
-                    .calculateEmi(previewPrincipal, account.getInterestRate(), account.getTenureMonths());
+                        .calculateEmi(previewPrincipal, account.getInterestRate(), account.getTenureMonths());
                 BigDecimal totalPayable = previewEmi.multiply(BigDecimal.valueOf(account.getTenureMonths()));
                 BigDecimal totalInterest = totalPayable.subtract(previewPrincipal);
                 mav.addObject("previewEmi", previewEmi);
@@ -308,8 +317,7 @@ public class LoanController {
     }
 
     @PostMapping("/disburse/{accountNumber}")
-    public String disburseLoan(@PathVariable String accountNumber,
-                                RedirectAttributes redirectAttributes) {
+    public String disburseLoan(@PathVariable String accountNumber, RedirectAttributes redirectAttributes) {
         try {
             accountService.disburseLoan(accountNumber);
             redirectAttributes.addFlashAttribute("success", "Loan disbursed successfully");
@@ -320,12 +328,12 @@ public class LoanController {
     }
 
     @PostMapping("/repayment/{accountNumber}")
-    public String processRepayment(@PathVariable String accountNumber,
-                                    @RequestParam BigDecimal amount,
-                                    RedirectAttributes redirectAttributes) {
+    public String processRepayment(
+            @PathVariable String accountNumber,
+            @RequestParam BigDecimal amount,
+            RedirectAttributes redirectAttributes) {
         try {
-            accountService.processRepayment(accountNumber, amount,
-                businessDateService.getCurrentBusinessDate());
+            accountService.processRepayment(accountNumber, amount, businessDateService.getCurrentBusinessDate());
             redirectAttributes.addFlashAttribute("success", "Repayment processed successfully");
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
@@ -335,14 +343,13 @@ public class LoanController {
 
     /** CBS Prepayment/Foreclosure — MAKER/ADMIN. Pays off total outstanding and closes loan. */
     @PostMapping("/prepayment/{accountNumber}")
-    public String processPrepayment(@PathVariable String accountNumber,
-                                     @RequestParam BigDecimal amount,
-                                     RedirectAttributes redirectAttributes) {
+    public String processPrepayment(
+            @PathVariable String accountNumber,
+            @RequestParam BigDecimal amount,
+            RedirectAttributes redirectAttributes) {
         try {
-            accountService.processPrepayment(accountNumber, amount,
-                businessDateService.getCurrentBusinessDate());
-            redirectAttributes.addFlashAttribute("success",
-                "Loan prepaid/foreclosed successfully: " + accountNumber);
+            accountService.processPrepayment(accountNumber, amount, businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success", "Loan prepaid/foreclosed successfully: " + accountNumber);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -351,13 +358,10 @@ public class LoanController {
 
     /** CBS Write-Off — ADMIN only (enforced in SecurityConfig). NPA accounts only. */
     @PostMapping("/write-off/{accountNumber}")
-    public String writeOffAccount(@PathVariable String accountNumber,
-                                   RedirectAttributes redirectAttributes) {
+    public String writeOffAccount(@PathVariable String accountNumber, RedirectAttributes redirectAttributes) {
         try {
-            accountService.writeOffAccount(accountNumber,
-                businessDateService.getCurrentBusinessDate());
-            redirectAttributes.addFlashAttribute("success",
-                "Loan written off successfully: " + accountNumber);
+            accountService.writeOffAccount(accountNumber, businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success", "Loan written off successfully: " + accountNumber);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -365,12 +369,10 @@ public class LoanController {
     }
 
     @PostMapping("/create-account/{applicationId}")
-    public String createAccount(@PathVariable Long applicationId,
-                                 RedirectAttributes redirectAttributes) {
+    public String createAccount(@PathVariable Long applicationId, RedirectAttributes redirectAttributes) {
         try {
             LoanAccount account = accountService.createLoanAccount(applicationId);
-            redirectAttributes.addFlashAttribute("success",
-                "Account created: " + account.getAccountNumber());
+            redirectAttributes.addFlashAttribute("success", "Account created: " + account.getAccountNumber());
             return "redirect:/loan/account/" + account.getAccountNumber();
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
@@ -384,15 +386,14 @@ public class LoanController {
      * Original transaction is marked reversed (never deleted per CBS audit rules).
      */
     @PostMapping("/reversal/{transactionRef}")
-    public String reverseTransaction(@PathVariable String transactionRef,
-                                      @RequestParam String reason,
-                                      @RequestParam String accountNumber,
-                                      RedirectAttributes redirectAttributes) {
+    public String reverseTransaction(
+            @PathVariable String transactionRef,
+            @RequestParam String reason,
+            @RequestParam String accountNumber,
+            RedirectAttributes redirectAttributes) {
         try {
-            accountService.reverseTransaction(transactionRef, reason,
-                businessDateService.getCurrentBusinessDate());
-            redirectAttributes.addFlashAttribute("success",
-                "Transaction reversed: " + transactionRef);
+            accountService.reverseTransaction(transactionRef, reason, businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success", "Transaction reversed: " + transactionRef);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -405,15 +406,14 @@ public class LoanController {
      * GL Entry: DR Bank Operations / CR Fee Income
      */
     @PostMapping("/fee/{accountNumber}")
-    public String chargeFee(@PathVariable String accountNumber,
-                             @RequestParam BigDecimal feeAmount,
-                             @RequestParam String feeType,
-                             RedirectAttributes redirectAttributes) {
+    public String chargeFee(
+            @PathVariable String accountNumber,
+            @RequestParam BigDecimal feeAmount,
+            @RequestParam String feeType,
+            RedirectAttributes redirectAttributes) {
         try {
-            accountService.chargeFee(accountNumber, feeAmount, feeType,
-                businessDateService.getCurrentBusinessDate());
-            redirectAttributes.addFlashAttribute("success",
-                feeType + " charged: INR " + feeAmount);
+            accountService.chargeFee(accountNumber, feeAmount, feeType, businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute("success", feeType + " charged: INR " + feeAmount);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -426,27 +426,28 @@ public class LoanController {
 
     /** Register collateral against a loan application */
     @PostMapping("/collateral/{applicationId}")
-    public String registerCollateral(@PathVariable Long applicationId,
-                                      @RequestParam String collateralType,
-                                      @RequestParam String ownerName,
-                                      @RequestParam(required = false) String ownerRelationship,
-                                      @RequestParam(required = false) String goldPurity,
-                                      @RequestParam(required = false) BigDecimal goldWeightGrams,
-                                      @RequestParam(required = false) BigDecimal goldNetWeightGrams,
-                                      @RequestParam(required = false) BigDecimal goldRatePerGram,
-                                      @RequestParam(required = false) String propertyAddress,
-                                      @RequestParam(required = false) String propertyType,
-                                      @RequestParam(required = false) BigDecimal propertyAreaSqft,
-                                      @RequestParam(required = false) String registrationNumber,
-                                      @RequestParam(required = false) String vehicleRegistration,
-                                      @RequestParam(required = false) String vehicleMake,
-                                      @RequestParam(required = false) String vehicleModel,
-                                      @RequestParam(required = false) String fdNumber,
-                                      @RequestParam(required = false) String fdBankName,
-                                      @RequestParam(required = false) BigDecimal fdAmount,
-                                      @RequestParam(required = false) BigDecimal marketValue,
-                                      @RequestParam(required = false) String description,
-                                      RedirectAttributes redirectAttributes) {
+    public String registerCollateral(
+            @PathVariable Long applicationId,
+            @RequestParam String collateralType,
+            @RequestParam String ownerName,
+            @RequestParam(required = false) String ownerRelationship,
+            @RequestParam(required = false) String goldPurity,
+            @RequestParam(required = false) BigDecimal goldWeightGrams,
+            @RequestParam(required = false) BigDecimal goldNetWeightGrams,
+            @RequestParam(required = false) BigDecimal goldRatePerGram,
+            @RequestParam(required = false) String propertyAddress,
+            @RequestParam(required = false) String propertyType,
+            @RequestParam(required = false) BigDecimal propertyAreaSqft,
+            @RequestParam(required = false) String registrationNumber,
+            @RequestParam(required = false) String vehicleRegistration,
+            @RequestParam(required = false) String vehicleMake,
+            @RequestParam(required = false) String vehicleModel,
+            @RequestParam(required = false) String fdNumber,
+            @RequestParam(required = false) String fdBankName,
+            @RequestParam(required = false) BigDecimal fdAmount,
+            @RequestParam(required = false) BigDecimal marketValue,
+            @RequestParam(required = false) String description,
+            RedirectAttributes redirectAttributes) {
         try {
             Collateral collateral = new Collateral();
             collateral.setCollateralType(CollateralType.valueOf(collateralType));
@@ -475,9 +476,9 @@ public class LoanController {
             collateral.setMarketValue(marketValue);
 
             Collateral saved = collateralService.registerCollateral(collateral, applicationId);
-            redirectAttributes.addFlashAttribute("success",
-                "Collateral registered: " + saved.getCollateralRef()
-                    + " (" + saved.getCollateralType() + ")");
+            redirectAttributes.addFlashAttribute(
+                    "success",
+                    "Collateral registered: " + saved.getCollateralRef() + " (" + saved.getCollateralType() + ")");
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -490,12 +491,13 @@ public class LoanController {
 
     /** Upload document for a loan application */
     @PostMapping("/document/{applicationId}")
-    public String uploadDocument(@PathVariable Long applicationId,
-                                  @RequestParam String documentType,
-                                  @RequestParam String documentName,
-                                  @RequestParam(required = false) String remarks,
-                                  @RequestParam(defaultValue = "false") boolean mandatory,
-                                  RedirectAttributes redirectAttributes) {
+    public String uploadDocument(
+            @PathVariable Long applicationId,
+            @RequestParam String documentType,
+            @RequestParam String documentName,
+            @RequestParam(required = false) String remarks,
+            @RequestParam(defaultValue = "false") boolean mandatory,
+            RedirectAttributes redirectAttributes) {
         try {
             String tenantId = TenantContext.getCurrentTenant();
             LoanApplication app = applicationService.getApplication(applicationId);
@@ -514,8 +516,7 @@ public class LoanController {
             doc.setCreatedBy(SecurityUtil.getCurrentUsername());
 
             documentRepository.save(doc);
-            redirectAttributes.addFlashAttribute("success",
-                "Document uploaded: " + documentName);
+            redirectAttributes.addFlashAttribute("success", "Document uploaded: " + documentName);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -524,12 +525,12 @@ public class LoanController {
 
     /** Verify a document — CHECKER/ADMIN */
     @PostMapping("/document/verify/{documentId}")
-    public String verifyDocument(@PathVariable Long documentId,
-                                  @RequestParam Long applicationId,
-                                  RedirectAttributes redirectAttributes) {
+    public String verifyDocument(
+            @PathVariable Long documentId, @RequestParam Long applicationId, RedirectAttributes redirectAttributes) {
         try {
-            LoanDocument doc = documentRepository.findById(documentId)
-                .orElseThrow(() -> new RuntimeException("Document not found"));
+            LoanDocument doc = documentRepository
+                    .findById(documentId)
+                    .orElseThrow(() -> new RuntimeException("Document not found"));
             doc.setVerificationStatus("VERIFIED");
             doc.setVerifiedBy(SecurityUtil.getCurrentUsername());
             doc.setVerifiedDate(businessDateService.getCurrentBusinessDate());
@@ -544,13 +545,15 @@ public class LoanController {
 
     /** Reject a document — CHECKER/ADMIN */
     @PostMapping("/document/reject/{documentId}")
-    public String rejectDocument(@PathVariable Long documentId,
-                                  @RequestParam Long applicationId,
-                                  @RequestParam String rejectionReason,
-                                  RedirectAttributes redirectAttributes) {
+    public String rejectDocument(
+            @PathVariable Long documentId,
+            @RequestParam Long applicationId,
+            @RequestParam String rejectionReason,
+            RedirectAttributes redirectAttributes) {
         try {
-            LoanDocument doc = documentRepository.findById(documentId)
-                .orElseThrow(() -> new RuntimeException("Document not found"));
+            LoanDocument doc = documentRepository
+                    .findById(documentId)
+                    .orElseThrow(() -> new RuntimeException("Document not found"));
             doc.setVerificationStatus("REJECTED");
             doc.setVerifiedBy(SecurityUtil.getCurrentUsername());
             doc.setVerifiedDate(businessDateService.getCurrentBusinessDate());
@@ -570,14 +573,14 @@ public class LoanController {
 
     /** Disburse a specific tranche amount for multi-disbursement products */
     @PostMapping("/disburse-tranche/{accountNumber}")
-    public String disburseTranche(@PathVariable String accountNumber,
-                                   @RequestParam BigDecimal trancheAmount,
-                                   @RequestParam(required = false) String narration,
-                                   RedirectAttributes redirectAttributes) {
+    public String disburseTranche(
+            @PathVariable String accountNumber,
+            @RequestParam BigDecimal trancheAmount,
+            @RequestParam(required = false) String narration,
+            RedirectAttributes redirectAttributes) {
         try {
             accountService.disburseTranche(accountNumber, trancheAmount, narration);
-            redirectAttributes.addFlashAttribute("success",
-                "Tranche disbursed: INR " + trancheAmount);
+            redirectAttributes.addFlashAttribute("success", "Tranche disbursed: INR " + trancheAmount);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -590,9 +593,10 @@ public class LoanController {
 
     /** Pause an active Standing Instruction — CHECKER/ADMIN */
     @PostMapping("/si/pause/{siReference}")
-    public String pauseSI(@PathVariable String siReference,
-                           @RequestParam String accountNumber,
-                           RedirectAttributes redirectAttributes) {
+    public String pauseSI(
+            @PathVariable String siReference,
+            @RequestParam String accountNumber,
+            RedirectAttributes redirectAttributes) {
         try {
             siService.pauseSI(siReference);
             redirectAttributes.addFlashAttribute("success", "Standing Instruction paused: " + siReference);
@@ -604,9 +608,10 @@ public class LoanController {
 
     /** Resume a paused Standing Instruction — CHECKER/ADMIN */
     @PostMapping("/si/resume/{siReference}")
-    public String resumeSI(@PathVariable String siReference,
-                            @RequestParam String accountNumber,
-                            RedirectAttributes redirectAttributes) {
+    public String resumeSI(
+            @PathVariable String siReference,
+            @RequestParam String accountNumber,
+            RedirectAttributes redirectAttributes) {
         try {
             siService.resumeSI(siReference);
             redirectAttributes.addFlashAttribute("success", "Standing Instruction resumed: " + siReference);
@@ -618,9 +623,10 @@ public class LoanController {
 
     /** Cancel a Standing Instruction — CHECKER/ADMIN */
     @PostMapping("/si/cancel/{siReference}")
-    public String cancelSI(@PathVariable String siReference,
-                            @RequestParam String accountNumber,
-                            RedirectAttributes redirectAttributes) {
+    public String cancelSI(
+            @PathVariable String siReference,
+            @RequestParam String accountNumber,
+            RedirectAttributes redirectAttributes) {
         try {
             siService.cancelSI(siReference);
             redirectAttributes.addFlashAttribute("success", "Standing Instruction cancelled: " + siReference);
@@ -636,26 +642,35 @@ public class LoanController {
      * MAKER submits → status = PENDING_APPROVAL → CHECKER approves → ACTIVE.
      */
     @PostMapping("/si/register")
-    public String registerManualSI(@RequestParam Long customerId,
-                                    @RequestParam String sourceAccountNumber,
-                                    @RequestParam String destinationType,
-                                    @RequestParam String destinationAccountNumber,
-                                    @RequestParam BigDecimal amount,
-                                    @RequestParam String frequency,
-                                    @RequestParam int executionDay,
-                                    @RequestParam String startDate,
-                                    @RequestParam(required = false) String endDate,
-                                    @RequestParam(required = false) String narration,
-                                    RedirectAttributes redirectAttributes) {
+    public String registerManualSI(
+            @RequestParam Long customerId,
+            @RequestParam String sourceAccountNumber,
+            @RequestParam String destinationType,
+            @RequestParam String destinationAccountNumber,
+            @RequestParam BigDecimal amount,
+            @RequestParam String frequency,
+            @RequestParam int executionDay,
+            @RequestParam String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String narration,
+            RedirectAttributes redirectAttributes) {
         try {
             SIFrequency freq = SIFrequency.valueOf(frequency);
             java.time.LocalDate start = java.time.LocalDate.parse(startDate);
-            java.time.LocalDate end = (endDate != null && !endDate.isBlank())
-                ? java.time.LocalDate.parse(endDate) : null;
-            siService.registerManualSI(customerId, sourceAccountNumber, destinationType,
-                destinationAccountNumber, amount, freq, executionDay, start, end, narration);
-            redirectAttributes.addFlashAttribute("success",
-                "Standing Instruction registered (pending approval)");
+            java.time.LocalDate end =
+                    (endDate != null && !endDate.isBlank()) ? java.time.LocalDate.parse(endDate) : null;
+            siService.registerManualSI(
+                    customerId,
+                    sourceAccountNumber,
+                    destinationType,
+                    destinationAccountNumber,
+                    amount,
+                    freq,
+                    executionDay,
+                    start,
+                    end,
+                    narration);
+            redirectAttributes.addFlashAttribute("success", "Standing Instruction registered (pending approval)");
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -664,8 +679,7 @@ public class LoanController {
 
     /** Approve a PENDING_APPROVAL SI — CHECKER activates per maker-checker workflow */
     @PostMapping("/si/approve/{siReference}")
-    public String approveSI(@PathVariable String siReference,
-                             RedirectAttributes redirectAttributes) {
+    public String approveSI(@PathVariable String siReference, RedirectAttributes redirectAttributes) {
         try {
             siService.approveSI(siReference);
             redirectAttributes.addFlashAttribute("success", "Standing Instruction approved: " + siReference);
@@ -677,9 +691,8 @@ public class LoanController {
 
     /** Reject a PENDING_APPROVAL SI — CHECKER rejects with reason */
     @PostMapping("/si/reject/{siReference}")
-    public String rejectSI(@PathVariable String siReference,
-                            @RequestParam String reason,
-                            RedirectAttributes redirectAttributes) {
+    public String rejectSI(
+            @PathVariable String siReference, @RequestParam String reason, RedirectAttributes redirectAttributes) {
         try {
             siService.rejectSI(siReference, reason);
             redirectAttributes.addFlashAttribute("success", "Standing Instruction rejected: " + siReference);
@@ -691,15 +704,16 @@ public class LoanController {
 
     /** Amend a Standing Instruction — modify amount/frequency/execution day (Gap 4) */
     @PostMapping("/si/amend/{siReference}")
-    public String amendSI(@PathVariable String siReference,
-                           @RequestParam String accountNumber,
-                           @RequestParam(required = false) BigDecimal newAmount,
-                           @RequestParam(required = false) String newFrequency,
-                           @RequestParam(required = false) Integer newExecutionDay,
-                           RedirectAttributes redirectAttributes) {
+    public String amendSI(
+            @PathVariable String siReference,
+            @RequestParam String accountNumber,
+            @RequestParam(required = false) BigDecimal newAmount,
+            @RequestParam(required = false) String newFrequency,
+            @RequestParam(required = false) Integer newExecutionDay,
+            RedirectAttributes redirectAttributes) {
         try {
-            SIFrequency freq = (newFrequency != null && !newFrequency.isBlank())
-                ? SIFrequency.valueOf(newFrequency) : null;
+            SIFrequency freq =
+                    (newFrequency != null && !newFrequency.isBlank()) ? SIFrequency.valueOf(newFrequency) : null;
             siService.amendSI(siReference, newAmount, freq, newExecutionDay);
             redirectAttributes.addFlashAttribute("success", "Standing Instruction amended: " + siReference);
         } catch (Exception e) {
@@ -760,18 +774,20 @@ public class LoanController {
      * Per RBI: restructured accounts get 5% provisioning for first 2 years.
      */
     @PostMapping("/restructure/{accountNumber}")
-    public String restructureLoan(@PathVariable String accountNumber,
-                                   @RequestParam(required = false) BigDecimal newRate,
-                                   @RequestParam(defaultValue = "0") int additionalMonths,
-                                   @RequestParam String reason,
-                                   RedirectAttributes redirectAttributes) {
+    public String restructureLoan(
+            @PathVariable String accountNumber,
+            @RequestParam(required = false) BigDecimal newRate,
+            @RequestParam(defaultValue = "0") int additionalMonths,
+            @RequestParam String reason,
+            RedirectAttributes redirectAttributes) {
         try {
-            restructuringService.restructureLoan(accountNumber, newRate, additionalMonths,
-                reason, businessDateService.getCurrentBusinessDate());
-            redirectAttributes.addFlashAttribute("success",
-                "Loan restructured: " + accountNumber
-                    + (newRate != null ? " | New rate: " + newRate + "%" : "")
-                    + (additionalMonths > 0 ? " | Extended: +" + additionalMonths + " months" : ""));
+            restructuringService.restructureLoan(
+                    accountNumber, newRate, additionalMonths, reason, businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute(
+                    "success",
+                    "Loan restructured: " + accountNumber
+                            + (newRate != null ? " | New rate: " + newRate + "%" : "")
+                            + (additionalMonths > 0 ? " | Extended: +" + additionalMonths + " months" : ""));
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -784,15 +800,16 @@ public class LoanController {
      * Per RBI COVID-19 moratorium guidelines and general CDR framework.
      */
     @PostMapping("/moratorium/{accountNumber}")
-    public String applyMoratorium(@PathVariable String accountNumber,
-                                   @RequestParam int moratoriumMonths,
-                                   @RequestParam String reason,
-                                   RedirectAttributes redirectAttributes) {
+    public String applyMoratorium(
+            @PathVariable String accountNumber,
+            @RequestParam int moratoriumMonths,
+            @RequestParam String reason,
+            RedirectAttributes redirectAttributes) {
         try {
-            restructuringService.applyMoratorium(accountNumber, moratoriumMonths,
-                reason, businessDateService.getCurrentBusinessDate());
-            redirectAttributes.addFlashAttribute("success",
-                "Moratorium applied: " + moratoriumMonths + " months for " + accountNumber);
+            restructuringService.applyMoratorium(
+                    accountNumber, moratoriumMonths, reason, businessDateService.getCurrentBusinessDate());
+            redirectAttributes.addFlashAttribute(
+                    "success", "Moratorium applied: " + moratoriumMonths + " months for " + accountNumber);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }

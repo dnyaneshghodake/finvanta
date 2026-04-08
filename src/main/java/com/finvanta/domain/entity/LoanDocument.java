@@ -1,11 +1,12 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
+
+import java.time.LocalDate;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.time.LocalDate;
 
 /**
  * CBS Loan Document per Finacle DOCMAS / Temenos AA.DOCUMENT.
@@ -28,10 +29,12 @@ import java.time.LocalDate;
  * For production: use AWS S3, Azure Blob, or MinIO for document storage.
  */
 @Entity
-@Table(name = "loan_documents", indexes = {
-    @Index(name = "idx_loandoc_app", columnList = "tenant_id, loan_application_id"),
-    @Index(name = "idx_loandoc_type", columnList = "tenant_id, document_type")
-})
+@Table(
+        name = "loan_documents",
+        indexes = {
+            @Index(name = "idx_loandoc_app", columnList = "tenant_id, loan_application_id"),
+            @Index(name = "idx_loandoc_type", columnList = "tenant_id, document_type")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

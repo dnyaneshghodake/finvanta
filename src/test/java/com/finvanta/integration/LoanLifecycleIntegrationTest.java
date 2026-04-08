@@ -5,6 +5,11 @@ import com.finvanta.domain.enums.*;
 import com.finvanta.repository.*;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.util.TenantContext;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -13,10 +18,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -36,15 +37,32 @@ import static org.junit.jupiter.api.Assertions.*;
 @ActiveProfiles("test")
 class LoanLifecycleIntegrationTest {
 
-    @Autowired private LoanAccountService loanAccountService;
-    @Autowired private LoanAccountRepository accountRepository;
-    @Autowired private LoanApplicationRepository applicationRepository;
-    @Autowired private LoanTransactionRepository transactionRepository;
-    @Autowired private CustomerRepository customerRepository;
-    @Autowired private BranchRepository branchRepository;
-    @Autowired private GLMasterRepository glMasterRepository;
-    @Autowired private BusinessCalendarRepository calendarRepository;
-    @Autowired private TransactionBatchRepository batchRepository;
+    @Autowired
+    private LoanAccountService loanAccountService;
+
+    @Autowired
+    private LoanAccountRepository accountRepository;
+
+    @Autowired
+    private LoanApplicationRepository applicationRepository;
+
+    @Autowired
+    private LoanTransactionRepository transactionRepository;
+
+    @Autowired
+    private CustomerRepository customerRepository;
+
+    @Autowired
+    private BranchRepository branchRepository;
+
+    @Autowired
+    private GLMasterRepository glMasterRepository;
+
+    @Autowired
+    private BusinessCalendarRepository calendarRepository;
+
+    @Autowired
+    private TransactionBatchRepository batchRepository;
 
     private static final String TENANT = "TEST_TENANT";
     private static final LocalDate BIZ_DATE = LocalDate.of(2026, 4, 1);
@@ -53,8 +71,7 @@ class LoanLifecycleIntegrationTest {
     void setUp() {
         TenantContext.setCurrentTenant(TENANT);
         var auth = new UsernamePasswordAuthenticationToken(
-            "admin", "password",
-            List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+                "admin", "password", List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         SecurityContextHolder.getContext().setAuthentication(auth);
     }
 
@@ -163,9 +180,13 @@ class LoanLifecycleIntegrationTest {
 
     private LoanApplication createApprovedApplication() {
         Branch branch = branchRepository.findAll().stream()
-            .filter(b -> b.getTenantId().equals(TENANT)).findFirst().orElseThrow();
+                .filter(b -> b.getTenantId().equals(TENANT))
+                .findFirst()
+                .orElseThrow();
         Customer customer = customerRepository.findAll().stream()
-            .filter(c -> c.getTenantId().equals(TENANT)).findFirst().orElseThrow();
+                .filter(c -> c.getTenantId().equals(TENANT))
+                .findFirst()
+                .orElseThrow();
 
         LoanApplication app = new LoanApplication();
         app.setTenantId(TENANT);
@@ -209,8 +230,8 @@ class LoanLifecycleIntegrationTest {
         assertEquals(BIZ_DATE, disbursed.getDisbursementDate());
 
         // CBS Transaction 360: Verify disbursement has voucher and journal linkage
-        var disbTxns = transactionRepository.findByTenantIdAndLoanAccountIdOrderByPostingDateDesc(
-            TENANT, disbursed.getId());
+        var disbTxns =
+                transactionRepository.findByTenantIdAndLoanAccountIdOrderByPostingDateDesc(TENANT, disbursed.getId());
         assertFalse(disbTxns.isEmpty(), "Disbursement transaction must exist");
         LoanTransaction disbTxn = disbTxns.get(0);
         assertNotNull(disbTxn.getVoucherNumber(), "Disbursement must have voucher number");
@@ -218,20 +239,26 @@ class LoanLifecycleIntegrationTest {
         assertNotNull(disbTxn.getTransactionRef(), "Disbursement must have transaction ref");
 
         // Verify GL after disbursement
-        GLMaster loanAssetGL = glMasterRepository.findByTenantIdAndGlCode(TENANT, "1001").orElseThrow();
-        GLMaster bankOpsGL = glMasterRepository.findByTenantIdAndGlCode(TENANT, "1100").orElseThrow();
+        GLMaster loanAssetGL =
+                glMasterRepository.findByTenantIdAndGlCode(TENANT, "1001").orElseThrow();
+        GLMaster bankOpsGL =
+                glMasterRepository.findByTenantIdAndGlCode(TENANT, "1100").orElseThrow();
         assertEquals(0, new BigDecimal("1000000.00").compareTo(loanAssetGL.getDebitBalance()));
         assertEquals(0, new BigDecimal("1000000.00").compareTo(bankOpsGL.getCreditBalance()));
 
         // --- CBS Day Control: Close day 1, open day 2 for accrual ---
         // Per Finacle/Temenos lifecycle: NOT_OPENED → DAY_OPEN → EOD_RUNNING → DAY_CLOSED
         // Only ONE day can be DAY_OPEN at a time per tenant.
-        BusinessCalendar day1 = calendarRepository.findByTenantIdAndBusinessDate(TENANT, BIZ_DATE).orElseThrow();
+        BusinessCalendar day1 = calendarRepository
+                .findByTenantIdAndBusinessDate(TENANT, BIZ_DATE)
+                .orElseThrow();
         day1.setDayStatus(DayStatus.DAY_CLOSED);
         day1.setEodComplete(true);
         calendarRepository.save(day1);
 
-        BusinessCalendar day2 = calendarRepository.findByTenantIdAndBusinessDate(TENANT, BIZ_DATE.plusDays(1)).orElseThrow();
+        BusinessCalendar day2 = calendarRepository
+                .findByTenantIdAndBusinessDate(TENANT, BIZ_DATE.plusDays(1))
+                .orElseThrow();
         day2.setDayStatus(DayStatus.DAY_OPEN);
         day2.setDayOpenedBy("admin");
         calendarRepository.save(day2);
@@ -247,8 +274,8 @@ class LoanLifecycleIntegrationTest {
 
         // CBS: Verify voucher number is generated for every transaction (Transaction 360 view)
         assertNotNull(accrualTxn.getVoucherNumber(), "Voucher number must be generated for accrual");
-        assertTrue(accrualTxn.getVoucherNumber().startsWith("VCH/"),
-            "Voucher must follow CBS format VCH/branch/date/seq");
+        assertTrue(
+                accrualTxn.getVoucherNumber().startsWith("VCH/"), "Voucher must follow CBS format VCH/branch/date/seq");
 
         // Verify account balance
         LoanAccount afterAccrual = loanAccountService.getAccount(accNo);
@@ -263,8 +290,7 @@ class LoanLifecycleIntegrationTest {
 
         // CBS Transaction 360: Verify repayment has voucher
         assertNotNull(repayTxn.getVoucherNumber(), "Repayment must have voucher number");
-        assertTrue(repayTxn.getVoucherNumber().startsWith("VCH/"),
-            "Repayment voucher must follow CBS format");
+        assertTrue(repayTxn.getVoucherNumber().startsWith("VCH/"), "Repayment voucher must follow CBS format");
 
         // Principal should decrease
         LoanAccount afterRepay = loanAccountService.getAccount(accNo);
@@ -278,8 +304,8 @@ class LoanLifecycleIntegrationTest {
             totalDebit = totalDebit.add(gl.getDebitBalance());
             totalCredit = totalCredit.add(gl.getCreditBalance());
         }
-        assertEquals(0, totalDebit.compareTo(totalCredit),
-            "Trial balance FAILED: DR=" + totalDebit + " CR=" + totalCredit);
+        assertEquals(
+                0, totalDebit.compareTo(totalCredit), "Trial balance FAILED: DR=" + totalDebit + " CR=" + totalCredit);
 
         // --- Idempotency: duplicate accrual returns null ---
         assertNull(loanAccountService.applyInterestAccrual(accNo, accrualDate));
@@ -294,8 +320,7 @@ class LoanLifecycleIntegrationTest {
         LoanAccount account = loanAccountService.createLoanAccount(app.getId());
         loanAccountService.disburseLoan(account.getAccountNumber());
 
-        assertThrows(Exception.class, () ->
-            loanAccountService.disburseLoan(account.getAccountNumber()));
+        assertThrows(Exception.class, () -> loanAccountService.disburseLoan(account.getAccountNumber()));
     }
 
     @Test
@@ -306,7 +331,6 @@ class LoanLifecycleIntegrationTest {
         LoanApplication app = createApprovedApplication();
         loanAccountService.createLoanAccount(app.getId());
 
-        assertThrows(Exception.class, () ->
-            loanAccountService.createLoanAccount(app.getId()));
+        assertThrows(Exception.class, () -> loanAccountService.createLoanAccount(app.getId()));
     }
 }

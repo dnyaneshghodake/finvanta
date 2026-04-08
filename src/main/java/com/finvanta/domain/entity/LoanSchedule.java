@@ -1,12 +1,13 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * CBS Loan Amortization Schedule per Finacle/Temenos standards.
@@ -24,11 +25,13 @@ import java.time.LocalDate;
  * Schedule is immutable after generation. Restructuring creates a new schedule.
  */
 @Entity
-@Table(name = "loan_schedules", indexes = {
-    @Index(name = "idx_loansched_tenant_account", columnList = "tenant_id, loan_account_id"),
-    @Index(name = "idx_loansched_due_date", columnList = "tenant_id, due_date"),
-    @Index(name = "idx_loansched_status", columnList = "tenant_id, loan_account_id, status")
-})
+@Table(
+        name = "loan_schedules",
+        indexes = {
+            @Index(name = "idx_loansched_tenant_account", columnList = "tenant_id, loan_account_id"),
+            @Index(name = "idx_loansched_due_date", columnList = "tenant_id, due_date"),
+            @Index(name = "idx_loansched_status", columnList = "tenant_id, loan_account_id, status")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

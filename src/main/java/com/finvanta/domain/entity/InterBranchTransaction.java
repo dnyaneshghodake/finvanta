@@ -1,11 +1,12 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * CBS Inter-Branch Transaction — Settlement ledger per Finacle IB_SETTLEMENT.
@@ -24,11 +25,15 @@ import java.time.LocalDate;
  * This table tracks settlement matching and error conditions.
  */
 @Entity
-@Table(name = "inter_branch_transactions", indexes = {
-    @Index(name = "idx_ibxfr_tenant_sourcetarget", columnList = "tenant_id, source_branch_id, target_branch_id"),
-    @Index(name = "idx_ibxfr_settlement_status", columnList = "settlement_status"),
-    @Index(name = "idx_ibxfr_business_date", columnList = "business_date")
-})
+@Table(
+        name = "inter_branch_transactions",
+        indexes = {
+            @Index(
+                    name = "idx_ibxfr_tenant_sourcetarget",
+                    columnList = "tenant_id, source_branch_id, target_branch_id"),
+            @Index(name = "idx_ibxfr_settlement_status", columnList = "settlement_status"),
+            @Index(name = "idx_ibxfr_business_date", columnList = "business_date")
+        })
 @Getter
 @Setter
 public class InterBranchTransaction extends BaseEntity {
@@ -62,4 +67,3 @@ public class InterBranchTransaction extends BaseEntity {
     @Column(name = "failure_reason", length = 500)
     private String failureReason; // If FAILED, reason for settlement failure
 }
-

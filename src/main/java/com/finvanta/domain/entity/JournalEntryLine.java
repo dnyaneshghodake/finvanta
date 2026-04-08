@@ -1,18 +1,22 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.DebitCredit;
+
 import jakarta.persistence.*;
+
+import java.math.BigDecimal;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.math.BigDecimal;
-
 @Entity
-@Table(name = "journal_entry_lines", indexes = {
-    @Index(name = "idx_jel_journal", columnList = "journal_entry_id"),
-    @Index(name = "idx_jel_gl", columnList = "tenant_id, gl_code")
-})
+@Table(
+        name = "journal_entry_lines",
+        indexes = {
+            @Index(name = "idx_jel_journal", columnList = "journal_entry_id"),
+            @Index(name = "idx_jel_gl", columnList = "tenant_id, gl_code")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

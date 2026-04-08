@@ -1,16 +1,19 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.util.TenantContext;
+
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+
+import java.time.LocalDateTime;
+
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.Filter;
 import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.ParamDef;
 import org.hibernate.annotations.UpdateTimestamp;
 
-import java.time.LocalDateTime;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * CBS Base Entity with automatic tenant isolation.

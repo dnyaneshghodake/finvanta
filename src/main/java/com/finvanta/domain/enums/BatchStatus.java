@@ -13,10 +13,10 @@ package com.finvanta.domain.enums;
  * - ROLLED_BACK indicates the batch was explicitly reversed by admin
  */
 public enum BatchStatus {
-    PENDING,                // Scheduled but not yet started
-    RUNNING,                // Currently executing EOD steps
-    COMPLETED,              // All accounts processed successfully
-    FAILED,                 // System-level failure, EOD not completed
-    PARTIALLY_COMPLETED,    // Some accounts failed, EOD completed with errors
-    ROLLED_BACK             // Batch reversed by administrator
+    PENDING, // Scheduled but not yet started
+    RUNNING, // Currently executing EOD steps
+    COMPLETED, // All accounts processed successfully
+    FAILED, // System-level failure, EOD not completed
+    PARTIALLY_COMPLETED, // Some accounts failed, EOD completed with errors
+    ROLLED_BACK // Batch reversed by administrator
 }

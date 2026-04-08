@@ -1,13 +1,14 @@
 package com.finvanta.domain.rules;
 
 import com.finvanta.domain.entity.LoanAccount;
-import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+
+import org.springframework.stereotype.Component;
 
 /**
  * CBS Interest Calculation Engine per Finacle INTDEF / Temenos AA.INTEREST.
@@ -45,8 +46,8 @@ public class InterestCalculationRule {
      * @param interestMethod Day count convention: ACTUAL_365, ACTUAL_360, ACTUAL_ACTUAL, THIRTY_360
      * @return Accrued interest for the period
      */
-    public BigDecimal calculateDailyAccrual(LoanAccount account, LocalDate fromDate,
-                                             LocalDate toDate, String interestMethod) {
+    public BigDecimal calculateDailyAccrual(
+            LoanAccount account, LocalDate fromDate, LocalDate toDate, String interestMethod) {
         if (account.getOutstandingPrincipal().compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
@@ -59,13 +60,13 @@ public class InterestCalculationRule {
         int daysInYear = getDaysInYear(interestMethod, fromDate, toDate);
 
         BigDecimal ratePerDay = account.getInterestRate()
-            .divide(BigDecimal.valueOf(100), MC)
-            .divide(BigDecimal.valueOf(daysInYear), MC);
+                .divide(BigDecimal.valueOf(100), MC)
+                .divide(BigDecimal.valueOf(daysInYear), MC);
 
         return account.getOutstandingPrincipal()
-            .multiply(ratePerDay, MC)
-            .multiply(BigDecimal.valueOf(days), MC)
-            .setScale(SCALE, ROUNDING);
+                .multiply(ratePerDay, MC)
+                .multiply(BigDecimal.valueOf(days), MC)
+                .setScale(SCALE, ROUNDING);
     }
 
     /**
@@ -98,9 +99,7 @@ public class InterestCalculationRule {
             return BigDecimal.ZERO;
         }
 
-        BigDecimal monthlyRate = annualRate
-            .divide(BigDecimal.valueOf(100), MC)
-            .divide(BigDecimal.valueOf(12), MC);
+        BigDecimal monthlyRate = annualRate.divide(BigDecimal.valueOf(100), MC).divide(BigDecimal.valueOf(12), MC);
 
         if (monthlyRate.compareTo(BigDecimal.ZERO) == 0) {
             return principal.divide(BigDecimal.valueOf(tenureMonths), SCALE, ROUNDING);
@@ -133,8 +132,7 @@ public class InterestCalculationRule {
         BigDecimal overduePrincipal = account.getOverduePrincipal();
         BigDecimal penalRate = account.getPenalRate();
 
-        if (overduePrincipal.compareTo(BigDecimal.ZERO) <= 0
-                || penalRate.compareTo(BigDecimal.ZERO) <= 0) {
+        if (overduePrincipal.compareTo(BigDecimal.ZERO) <= 0 || penalRate.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
 
@@ -144,24 +142,20 @@ public class InterestCalculationRule {
         }
 
         // Penal interest always uses Actual/365 per RBI Fair Lending Code 2023
-        BigDecimal ratePerDay = penalRate
-            .divide(BigDecimal.valueOf(100), MC)
-            .divide(BigDecimal.valueOf(365), MC);
+        BigDecimal ratePerDay = penalRate.divide(BigDecimal.valueOf(100), MC).divide(BigDecimal.valueOf(365), MC);
 
         return overduePrincipal
-            .multiply(ratePerDay, MC)
-            .multiply(BigDecimal.valueOf(days), MC)
-            .setScale(SCALE, ROUNDING);
+                .multiply(ratePerDay, MC)
+                .multiply(BigDecimal.valueOf(days), MC)
+                .setScale(SCALE, ROUNDING);
     }
 
-    public BigDecimal[] splitEmiComponents(BigDecimal emiAmount, BigDecimal outstandingPrincipal, BigDecimal annualRate) {
-        BigDecimal monthlyRate = annualRate
-            .divide(BigDecimal.valueOf(100), MC)
-            .divide(BigDecimal.valueOf(12), MC);
+    public BigDecimal[] splitEmiComponents(
+            BigDecimal emiAmount, BigDecimal outstandingPrincipal, BigDecimal annualRate) {
+        BigDecimal monthlyRate = annualRate.divide(BigDecimal.valueOf(100), MC).divide(BigDecimal.valueOf(12), MC);
 
-        BigDecimal interestComponent = outstandingPrincipal
-            .multiply(monthlyRate, MC)
-            .setScale(SCALE, ROUNDING);
+        BigDecimal interestComponent =
+                outstandingPrincipal.multiply(monthlyRate, MC).setScale(SCALE, ROUNDING);
 
         BigDecimal principalComponent = emiAmount.subtract(interestComponent).setScale(SCALE, ROUNDING);
 
@@ -174,6 +168,6 @@ public class InterestCalculationRule {
             interestComponent = emiAmount.subtract(principalComponent).setScale(SCALE, ROUNDING);
         }
 
-        return new BigDecimal[]{principalComponent, interestComponent};
+        return new BigDecimal[] {principalComponent, interestComponent};
     }
 }

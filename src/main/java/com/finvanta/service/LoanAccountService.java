@@ -56,8 +56,8 @@ public interface LoanAccountService {
      * @param idempotencyKey Client-supplied unique key (null = no idempotency protection)
      * @return Transaction record (existing if idempotent retry, new otherwise)
      */
-    LoanTransaction processRepayment(String accountNumber, BigDecimal amount,
-                                      LocalDate valueDate, String idempotencyKey);
+    LoanTransaction processRepayment(
+            String accountNumber, BigDecimal amount, LocalDate valueDate, String idempotencyKey);
 
     /**
      * CBS NPA Classification per RBI IRAC norms.

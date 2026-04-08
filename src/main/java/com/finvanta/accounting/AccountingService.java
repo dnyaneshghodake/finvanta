@@ -12,10 +12,6 @@ import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.TenantContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -23,6 +19,11 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * CBS General Ledger (GL) and Journal Entry Service.
@@ -88,23 +89,30 @@ public class AccountingService {
      * Clears the engine context token. Called by TransactionEngine in finally block.
      * Prevents stale tokens on thread pool reuse.
      */
-    public static void clearEngineToken() { ENGINE_TOKEN.remove(); }
+    public static void clearEngineToken() {
+        ENGINE_TOKEN.remove();
+    }
 
     // Legacy compatibility — retained for migration period only.
     // TODO: Remove after confirming no callers use the old API.
     /** @deprecated Use generateEngineToken()/clearEngineToken() instead */
     @Deprecated(forRemoval = true)
-    public static void enterEngineContext() { generateEngineToken(); }
+    public static void enterEngineContext() {
+        generateEngineToken();
+    }
 
     /** @deprecated Use clearEngineToken() instead */
     @Deprecated(forRemoval = true)
-    public static void exitEngineContext() { clearEngineToken(); }
+    public static void exitEngineContext() {
+        clearEngineToken();
+    }
 
-    public AccountingService(JournalEntryRepository journalEntryRepository,
-                             GLMasterRepository glMasterRepository,
-                             AuditService auditService,
-                             LedgerService ledgerService,
-                             TransactionBatchRepository batchRepository) {
+    public AccountingService(
+            JournalEntryRepository journalEntryRepository,
+            GLMasterRepository glMasterRepository,
+            AuditService auditService,
+            LedgerService ledgerService,
+            TransactionBatchRepository batchRepository) {
         this.journalEntryRepository = journalEntryRepository;
         this.glMasterRepository = glMasterRepository;
         this.auditService = auditService;
@@ -113,9 +121,12 @@ public class AccountingService {
     }
 
     @Transactional
-    public JournalEntry postJournalEntry(LocalDate valueDate, String narration,
-                                          String sourceModule, String sourceRef,
-                                          List<JournalLineRequest> lines) {
+    public JournalEntry postJournalEntry(
+            LocalDate valueDate,
+            String narration,
+            String sourceModule,
+            String sourceRef,
+            List<JournalLineRequest> lines) {
         String tenantId = TenantContext.getCurrentTenant();
 
         // CBS Defense-in-Depth: Verify this call originates from TransactionEngine.
@@ -124,19 +135,22 @@ public class AccountingService {
         // Per RBI IT Governance Direction 2023 Section 8.3 and Finacle TRAN_POSTING:
         // the GL posting layer must never be invoked outside the validated engine pipeline.
         if (ENGINE_TOKEN.get() == null) {
-            log.error("SECURITY VIOLATION: AccountingService.postJournalEntry() called outside "
-                + "TransactionEngine context. Module={}, sourceRef={}. "
-                + "This bypasses CBS validation chain (Steps 3-10). Rejecting posting.",
-                sourceModule, sourceRef);
-            throw new BusinessException("ENGINE_CONTEXT_REQUIRED",
-                "GL postings must be initiated through TransactionEngine. "
-                    + "Direct calls to AccountingService.postJournalEntry() are prohibited. "
-                    + "Module=" + sourceModule + ", sourceRef=" + sourceRef);
+            log.error(
+                    "SECURITY VIOLATION: AccountingService.postJournalEntry() called outside "
+                            + "TransactionEngine context. Module={}, sourceRef={}. "
+                            + "This bypasses CBS validation chain (Steps 3-10). Rejecting posting.",
+                    sourceModule,
+                    sourceRef);
+            throw new BusinessException(
+                    "ENGINE_CONTEXT_REQUIRED",
+                    "GL postings must be initiated through TransactionEngine. "
+                            + "Direct calls to AccountingService.postJournalEntry() are prohibited. "
+                            + "Module=" + sourceModule + ", sourceRef=" + sourceRef);
         }
 
         if (lines == null || lines.size() < 2) {
-            throw new BusinessException("ACCOUNTING_INVALID_ENTRY",
-                "Journal entry must have at least 2 lines (double-entry)");
+            throw new BusinessException(
+                    "ACCOUNTING_INVALID_ENTRY", "Journal entry must have at least 2 lines (double-entry)");
         }
 
         // CBS Day Control: Day-status validation is enforced by TransactionEngine (Step 3)
@@ -180,13 +194,14 @@ public class AccountingService {
         int lineNum = 1;
 
         for (JournalLineRequest lineReq : lines) {
-            GLMaster gl = glMasterRepository.findByTenantIdAndGlCode(tenantId, lineReq.glCode())
-                .orElseThrow(() -> new BusinessException("ACCOUNTING_GL_NOT_FOUND",
-                    "GL account not found: " + lineReq.glCode()));
+            GLMaster gl = glMasterRepository
+                    .findByTenantIdAndGlCode(tenantId, lineReq.glCode())
+                    .orElseThrow(() -> new BusinessException(
+                            "ACCOUNTING_GL_NOT_FOUND", "GL account not found: " + lineReq.glCode()));
 
             if (!gl.isActive() || gl.isHeaderAccount()) {
-                throw new BusinessException("ACCOUNTING_GL_NOT_POSTABLE",
-                    "GL account " + lineReq.glCode() + " is not postable");
+                throw new BusinessException(
+                        "ACCOUNTING_GL_NOT_POSTABLE", "GL account " + lineReq.glCode() + " is not postable");
             }
 
             // CBS GL Period Close: Reject postings to dates before the GL's last period close.
@@ -194,15 +209,15 @@ public class AccountingService {
             // no postings can be made to dates within that period. This prevents
             // back-dated postings that would invalidate closed financial statements.
             if (gl.getLastPeriodCloseDate() != null && valueDate.isBefore(gl.getLastPeriodCloseDate())) {
-                throw new BusinessException("GL_PERIOD_CLOSED",
-                    "Cannot post to GL " + lineReq.glCode() + " for date " + valueDate
-                        + " — GL period is closed through " + gl.getLastPeriodCloseDate()
-                        + ". Use a value date after the period close date.");
+                throw new BusinessException(
+                        "GL_PERIOD_CLOSED",
+                        "Cannot post to GL " + lineReq.glCode() + " for date " + valueDate
+                                + " — GL period is closed through " + gl.getLastPeriodCloseDate()
+                                + ". Use a value date after the period close date.");
             }
 
             if (lineReq.amount().compareTo(BigDecimal.ZERO) <= 0) {
-                throw new BusinessException("ACCOUNTING_INVALID_AMOUNT",
-                    "Journal line amount must be positive");
+                throw new BusinessException("ACCOUNTING_INVALID_AMOUNT", "Journal line amount must be positive");
             }
 
             JournalEntryLine line = new JournalEntryLine();
@@ -241,38 +256,48 @@ public class AccountingService {
         // total updates. Without this lock, two concurrent postings would both read
         // the same totals, both increment, and one save would overwrite the other.
         if (activeBatchId != null) {
-            TransactionBatch lockedBatch = batchRepository.findAndLockById(activeBatchId)
-                .orElse(null);
+            TransactionBatch lockedBatch =
+                    batchRepository.findAndLockById(activeBatchId).orElse(null);
             if (lockedBatch != null && lockedBatch.isOpen()) {
                 lockedBatch.addTransaction(totalDebit, totalCredit);
                 batchRepository.save(lockedBatch);
             }
         }
 
-        auditService.logEvent("JournalEntry", savedEntry.getId(), "POST",
-            null, savedEntry.getJournalRef(), "ACCOUNTING",
-            "Journal entry posted: " + savedEntry.getJournalRef());
+        auditService.logEvent(
+                "JournalEntry",
+                savedEntry.getId(),
+                "POST",
+                null,
+                savedEntry.getJournalRef(),
+                "ACCOUNTING",
+                "Journal entry posted: " + savedEntry.getJournalRef());
 
-        log.info("Journal entry posted: ref={}, debit={}, credit={}",
-            savedEntry.getJournalRef(), totalDebit, totalCredit);
+        log.info(
+                "Journal entry posted: ref={}, debit={}, credit={}",
+                savedEntry.getJournalRef(),
+                totalDebit,
+                totalCredit);
 
         return savedEntry;
     }
 
     public void validateDoubleEntry(BigDecimal totalDebit, BigDecimal totalCredit) {
         if (totalDebit.compareTo(totalCredit) != 0) {
-            throw new BusinessException("ACCOUNTING_IMBALANCE",
-                "Double-entry validation failed: Total Debit (" + totalDebit
-                    + ") != Total Credit (" + totalCredit + ")");
+            throw new BusinessException(
+                    "ACCOUNTING_IMBALANCE",
+                    "Double-entry validation failed: Total Debit (" + totalDebit + ") != Total Credit (" + totalCredit
+                            + ")");
         }
     }
 
     @Transactional
     public void updateGLBalances(String tenantId, List<JournalLineRequest> lines) {
         for (JournalLineRequest line : lines) {
-            GLMaster gl = glMasterRepository.findAndLockByTenantIdAndGlCode(tenantId, line.glCode())
-                .orElseThrow(() -> new BusinessException("ACCOUNTING_GL_NOT_FOUND",
-                    "GL account not found: " + line.glCode()));
+            GLMaster gl = glMasterRepository
+                    .findAndLockByTenantIdAndGlCode(tenantId, line.glCode())
+                    .orElseThrow(() ->
+                            new BusinessException("ACCOUNTING_GL_NOT_FOUND", "GL account not found: " + line.glCode()));
 
             if (line.debitCredit() == DebitCredit.DEBIT) {
                 gl.setDebitBalance(gl.getDebitBalance().add(line.amount()));
@@ -316,10 +341,5 @@ public class AccountingService {
         return result;
     }
 
-    public record JournalLineRequest(
-        String glCode,
-        DebitCredit debitCredit,
-        BigDecimal amount,
-        String narration
-    ) {}
+    public record JournalLineRequest(String glCode, DebitCredit debitCredit, BigDecimal amount, String narration) {}
 }

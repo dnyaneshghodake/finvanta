@@ -2,12 +2,13 @@ package com.finvanta.repository;
 
 import com.finvanta.domain.entity.BatchJob;
 import com.finvanta.domain.enums.BatchStatus;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
 @Repository
 public interface BatchJobRepository extends JpaRepository<BatchJob, Long> {

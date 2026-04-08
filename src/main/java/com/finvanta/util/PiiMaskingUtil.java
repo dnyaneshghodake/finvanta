@@ -46,8 +46,7 @@ public final class PiiMaskingUtil {
     public static String maskAadhaar(String aadhaar) {
         if (aadhaar == null || aadhaar.length() < 4) return "****";
         int visibleChars = 4;
-        return "X".repeat(aadhaar.length() - visibleChars)
-            + aadhaar.substring(aadhaar.length() - visibleChars);
+        return "X".repeat(aadhaar.length() - visibleChars) + aadhaar.substring(aadhaar.length() - visibleChars);
     }
 
     /**
@@ -57,8 +56,7 @@ public final class PiiMaskingUtil {
     public static String maskMobile(String mobile) {
         if (mobile == null || mobile.length() < 4) return "****";
         int visibleChars = 4;
-        return "X".repeat(mobile.length() - visibleChars)
-            + mobile.substring(mobile.length() - visibleChars);
+        return "X".repeat(mobile.length() - visibleChars) + mobile.substring(mobile.length() - visibleChars);
     }
 
     /**
@@ -83,7 +81,7 @@ public final class PiiMaskingUtil {
         if (accountNumber == null || accountNumber.length() < 4) return "****";
         int visibleChars = 4;
         return "X".repeat(accountNumber.length() - visibleChars)
-            + accountNumber.substring(accountNumber.length() - visibleChars);
+                + accountNumber.substring(accountNumber.length() - visibleChars);
     }
 
     /**
@@ -92,7 +90,6 @@ public final class PiiMaskingUtil {
      */
     public static String maskLastN(String value, int visibleChars) {
         if (value == null || value.length() <= visibleChars) return value;
-        return "X".repeat(value.length() - visibleChars)
-            + value.substring(value.length() - visibleChars);
+        return "X".repeat(value.length() - visibleChars) + value.substring(value.length() - visibleChars);
     }
 }

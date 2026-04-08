@@ -16,13 +16,13 @@ package com.finvanta.domain.enums;
  * (isDebitAllowed, isCreditAllowed) and EOD processing decisions.
  */
 public enum DepositAccountStatus {
-    PENDING_ACTIVATION,  // Account created but not yet activated (maker-checker pending)
-    ACTIVE,              // Normal operating state — all transactions allowed
-    DORMANT,             // No customer-initiated txn for 24+ months (RBI KYC 2016 Sec 38)
-    INOPERATIVE,         // No customer-initiated txn for 10+ years (RBI Unclaimed Deposits)
-    FROZEN,              // Regulatory/court freeze — partial or total block per PMLA
-    CLOSED,              // Terminal state — zero balance, no further transactions
-    DECEASED;            // Death claim processing — special handling per RBI Nomination
+    PENDING_ACTIVATION, // Account created but not yet activated (maker-checker pending)
+    ACTIVE, // Normal operating state — all transactions allowed
+    DORMANT, // No customer-initiated txn for 24+ months (RBI KYC 2016 Sec 38)
+    INOPERATIVE, // No customer-initiated txn for 10+ years (RBI Unclaimed Deposits)
+    FROZEN, // Regulatory/court freeze — partial or total block per PMLA
+    CLOSED, // Terminal state — zero balance, no further transactions
+    DECEASED; // Death claim processing — special handling per RBI Nomination
 
     /** Returns true if the account is in a terminal state (no further lifecycle transitions) */
     public boolean isTerminal() {

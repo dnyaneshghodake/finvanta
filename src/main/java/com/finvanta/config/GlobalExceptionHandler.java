@@ -2,6 +2,7 @@ package com.finvanta.config;
 
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ValidationException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -38,8 +39,7 @@ public class GlobalExceptionHandler {
         log.error("Optimistic locking failure: {}", ex.getMessage());
         ModelAndView mav = new ModelAndView("error/business-error");
         mav.addObject("errorCode", "CONCURRENT_MODIFICATION");
-        mav.addObject("errorMessage",
-            "This record was modified by another user. Please refresh and try again.");
+        mav.addObject("errorMessage", "This record was modified by another user. Please refresh and try again.");
         return mav;
     }
 

@@ -2,16 +2,18 @@ package com.finvanta.config;
 
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * JPA AttributeConverter for PII field encryption at rest.
@@ -47,16 +49,15 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
     private static final Logger log = LoggerFactory.getLogger(PiiEncryptionConverter.class);
 
     private static final String ALGORITHM = "AES/GCM/NoPadding";
-    private static final int GCM_IV_LENGTH = 12;    // 96 bits per NIST SP 800-38D
-    private static final int GCM_TAG_LENGTH = 128;   // 128-bit authentication tag
+    private static final int GCM_IV_LENGTH = 12; // 96 bits per NIST SP 800-38D
+    private static final int GCM_TAG_LENGTH = 128; // 128-bit authentication tag
 
     /**
      * Default key for development/testing ONLY.
      * Production MUST set FINVANTA_PII_KEY environment variable.
      * 32 bytes = 256-bit AES key, hex-encoded = 64 hex chars.
      */
-    private static final String DEFAULT_DEV_KEY =
-        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    private static final String DEFAULT_DEV_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -76,16 +77,17 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
 
             // Prepend IV to ciphertext: IV(12) + CIPHERTEXT+TAG
             byte[] combined = ByteBuffer.allocate(iv.length + ciphertext.length)
-                .put(iv)
-                .put(ciphertext)
-                .array();
+                    .put(iv)
+                    .put(ciphertext)
+                    .array();
 
             return Base64.getEncoder().encodeToString(combined);
         } catch (Exception e) {
             // Per RBI IT Governance Direction 2023: PII must NEVER be stored in plaintext.
             // Fail the operation rather than silently persisting unencrypted data.
-            throw new RuntimeException("PII encryption failed — refusing to store plaintext. "
-                + "Check FINVANTA_PII_KEY configuration.", e);
+            throw new RuntimeException(
+                    "PII encryption failed — refusing to store plaintext. " + "Check FINVANTA_PII_KEY configuration.",
+                    e);
         }
     }
 
@@ -101,8 +103,10 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
             // If decoded data is too short, it's plaintext that happens to be valid Base64
             // (e.g., PAN "ABCDE1234F" decodes to 7 bytes — too short for IV extraction)
             if (combined.length < GCM_IV_LENGTH + 16) {
-                log.debug("PII field too short for AES-GCM ({} bytes) — treating as plaintext: {}",
-                    combined.length, maskPii(dbData));
+                log.debug(
+                        "PII field too short for AES-GCM ({} bytes) — treating as plaintext: {}",
+                        combined.length,
+                        maskPii(dbData));
                 return dbData;
             }
 
@@ -134,11 +138,15 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
             //
             // Resolution: Run PII re-encryption batch with the correct key, or restore
             // the previous key via FINVANTA_PII_KEY environment variable.
-            log.error("PII decryption failed — REFUSING to return corrupted data. "
-                + "Possible key rotation without re-encryption. "
-                + "Set correct FINVANTA_PII_KEY or run re-encryption batch.", e);
-            throw new RuntimeException("PII decryption failed — data integrity compromised. "
-                + "Check FINVANTA_PII_KEY configuration and run re-encryption if key was rotated.", e);
+            log.error(
+                    "PII decryption failed — REFUSING to return corrupted data. "
+                            + "Possible key rotation without re-encryption. "
+                            + "Set correct FINVANTA_PII_KEY or run re-encryption batch.",
+                    e);
+            throw new RuntimeException(
+                    "PII decryption failed — data integrity compromised. "
+                            + "Check FINVANTA_PII_KEY configuration and run re-encryption if key was rotated.",
+                    e);
         }
     }
 
@@ -148,7 +156,7 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
         // If key is explicitly set but malformed — always fail (any environment)
         if (hexKey != null && hexKey.length() != 64) {
             throw new RuntimeException("FINVANTA_PII_KEY is set but invalid: expected 64 hex chars, got "
-                + hexKey.length() + " chars. Cannot encrypt PII data.");
+                    + hexKey.length() + " chars. Cannot encrypt PII data.");
         }
 
         if (hexKey == null) {
@@ -156,11 +164,11 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
             // a hardcoded encryption key. The default key is for development/testing ONLY.
             String profile = System.getenv("SPRING_PROFILES_ACTIVE");
             if (profile != null && (profile.contains("prod") || profile.contains("staging"))) {
-                throw new RuntimeException("FINVANTA_PII_KEY environment variable is required in "
-                    + profile + " profile. Cannot use default dev key for PII encryption.");
+                throw new RuntimeException("FINVANTA_PII_KEY environment variable is required in " + profile
+                        + " profile. Cannot use default dev key for PII encryption.");
             }
             log.warn("FINVANTA_PII_KEY not set — using default dev key. "
-                + "This is ONLY acceptable in development/test environments.");
+                    + "This is ONLY acceptable in development/test environments.");
             hexKey = DEFAULT_DEV_KEY;
         }
         byte[] keyBytes = hexStringToBytes(hexKey);
@@ -171,8 +179,7 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
         int len = hex.length();
         byte[] data = new byte[len / 2];
         for (int i = 0; i < len; i += 2) {
-            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
-                + Character.digit(hex.charAt(i + 1), 16));
+            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4) + Character.digit(hex.charAt(i + 1), 16));
         }
         return data;
     }

@@ -1,6 +1,5 @@
 package com.finvanta.batch;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.ChargeConfig;
@@ -9,15 +8,18 @@ import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.DisplayName;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.util.Optional;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -50,9 +52,10 @@ public class ChargeEngineTest {
         MockitoAnnotations.openMocks(this);
         // CBS: Set tenant context for multi-tenant charge resolution per Finacle CHRG_MASTER
         TenantContext.setCurrentTenant("DEFAULT");
-        // Provide real ObjectMapper for slab JSON parsing — Jackson is a deterministic utility, not a service dependency
-        chargeEngine = new ChargeEngine(configRepository, accountRepository,
-            transactionEngine, glResolver, auditService, new ObjectMapper());
+        // Provide real ObjectMapper for slab JSON parsing — Jackson is a deterministic utility, not a service
+        // dependency
+        chargeEngine = new ChargeEngine(
+                configRepository, accountRepository, transactionEngine, glResolver, auditService, new ObjectMapper());
     }
 
     @AfterEach
@@ -75,11 +78,11 @@ public class ChargeEngineTest {
         config.setIsActive(true);
 
         when(configRepository.findByTenantAndChargeCodeAndProduct("DEFAULT", "LATE_PAYMENT_FEE", "TERM_LOAN"))
-            .thenReturn(Optional.of(config));
+                .thenReturn(Optional.of(config));
 
         // Act
-        ChargeEngine.ChargeResult result = chargeEngine.calculateCharge("LATE_PAYMENT_FEE",
-            new BigDecimal("100000.00"), "TERM_LOAN");
+        ChargeEngine.ChargeResult result =
+                chargeEngine.calculateCharge("LATE_PAYMENT_FEE", new BigDecimal("100000.00"), "TERM_LOAN");
 
         // Assert
         assertEquals(new BigDecimal("500.00"), result.chargeAmount());
@@ -104,11 +107,11 @@ public class ChargeEngineTest {
         config.setIsActive(true);
 
         when(configRepository.findByTenantAndChargeCodeAndProduct("DEFAULT", "PROCESSING_FEE", "TERM_LOAN"))
-            .thenReturn(Optional.of(config));
+                .thenReturn(Optional.of(config));
 
         // Act
-        ChargeEngine.ChargeResult result = chargeEngine.calculateCharge("PROCESSING_FEE",
-            new BigDecimal("100000.00"), "TERM_LOAN");
+        ChargeEngine.ChargeResult result =
+                chargeEngine.calculateCharge("PROCESSING_FEE", new BigDecimal("100000.00"), "TERM_LOAN");
 
         // Assert
         assertEquals(new BigDecimal("1000.00"), result.chargeAmount()); // 100000 * 1%
@@ -120,8 +123,9 @@ public class ChargeEngineTest {
     @DisplayName("Reject zero/negative charge base")
     void testRejectZeroChargeBase() {
         // Act & Assert
-        assertThrows(BusinessException.class, () ->
-            chargeEngine.calculateCharge("PROCESSING_FEE", BigDecimal.ZERO, "TERM_LOAN"));
+        assertThrows(
+                BusinessException.class,
+                () -> chargeEngine.calculateCharge("PROCESSING_FEE", BigDecimal.ZERO, "TERM_LOAN"));
     }
 
     @Test
@@ -129,11 +133,12 @@ public class ChargeEngineTest {
     void testChargeConfigNotFound() {
         // Arrange
         when(configRepository.findByTenantAndChargeCodeAndProduct("DEFAULT", "UNKNOWN_CHARGE", "TERM_LOAN"))
-            .thenReturn(Optional.empty());
+                .thenReturn(Optional.empty());
 
         // Act & Assert
-        assertThrows(BusinessException.class, () ->
-            chargeEngine.calculateCharge("UNKNOWN_CHARGE", new BigDecimal("100000.00"), "TERM_LOAN"));
+        assertThrows(
+                BusinessException.class,
+                () -> chargeEngine.calculateCharge("UNKNOWN_CHARGE", new BigDecimal("100000.00"), "TERM_LOAN"));
     }
 
     @Test
@@ -143,19 +148,19 @@ public class ChargeEngineTest {
         ChargeConfig config = new ChargeConfig();
         config.setChargeCode("STAMP_DUTY");
         config.setCalculationType("SLAB");
-        config.setSlabJson("[{\"min\":0,\"max\":100000,\"rate\":0.10}," +
-                          "{\"min\":100001,\"max\":500000,\"rate\":0.15}," +
-                          "{\"min\":500001,\"max\":10000000,\"rate\":0.20}]");
+        config.setSlabJson(
+                "[{\"min\":0,\"max\":100000,\"rate\":0.10}," + "{\"min\":100001,\"max\":500000,\"rate\":0.15},"
+                        + "{\"min\":500001,\"max\":10000000,\"rate\":0.20}]");
         config.setGstApplicable(false);
         config.setGlChargeIncome("4002");
         config.setIsActive(true);
 
         when(configRepository.findByTenantAndChargeCodeAndProduct("DEFAULT", "STAMP_DUTY", "HOME_LOAN"))
-            .thenReturn(Optional.of(config));
+                .thenReturn(Optional.of(config));
 
         // Act
-        ChargeEngine.ChargeResult result = chargeEngine.calculateCharge("STAMP_DUTY",
-            new BigDecimal("250000.00"), "HOME_LOAN");
+        ChargeEngine.ChargeResult result =
+                chargeEngine.calculateCharge("STAMP_DUTY", new BigDecimal("250000.00"), "HOME_LOAN");
 
         // Assert - 250000 falls in slab [100001, 500000] at 0.15% = 375
         assertEquals(new BigDecimal("375.00"), result.chargeAmount());
@@ -177,14 +182,13 @@ public class ChargeEngineTest {
         config.setIsActive(true);
 
         when(configRepository.findByTenantAndChargeCodeAndProduct("DEFAULT", "SMALL_CHARGE", "TERM_LOAN"))
-            .thenReturn(Optional.of(config));
+                .thenReturn(Optional.of(config));
 
         // Act - 10000 * 0.10% = 10, but min is 100
-        ChargeEngine.ChargeResult result = chargeEngine.calculateCharge("SMALL_CHARGE",
-            new BigDecimal("10000.00"), "TERM_LOAN");
+        ChargeEngine.ChargeResult result =
+                chargeEngine.calculateCharge("SMALL_CHARGE", new BigDecimal("10000.00"), "TERM_LOAN");
 
         // Assert
         assertEquals(new BigDecimal("100.00"), result.chargeAmount());
     }
 }
-

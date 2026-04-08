@@ -7,9 +7,6 @@ import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.JournalEntryRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -17,6 +14,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
 /**
  * CBS GL Reconciliation Engine per Finacle/Temenos standards.
@@ -51,9 +52,10 @@ public class AccountingReconciliationEngine {
     private final JournalEntryRepository journalEntryRepository;
     private final AuditService auditService;
 
-    public AccountingReconciliationEngine(GLMasterRepository glMasterRepository,
-                                   JournalEntryRepository journalEntryRepository,
-                                   AuditService auditService) {
+    public AccountingReconciliationEngine(
+            GLMasterRepository glMasterRepository,
+            JournalEntryRepository journalEntryRepository,
+            AuditService auditService) {
         this.glMasterRepository = glMasterRepository;
         this.journalEntryRepository = journalEntryRepository;
         this.auditService = auditService;
@@ -84,16 +86,19 @@ public class AccountingReconciliationEngine {
         boolean trialBalanceOk = totalGlDebit.compareTo(totalGlCredit) == 0;
         if (!trialBalanceOk) {
             isBalanced = false;
-            log.error("RECONCILIATION FAILED: Trial balance mismatch — Debit={}, Credit={}, Diff={}",
-                totalGlDebit, totalGlCredit, totalGlDebit.subtract(totalGlCredit));
+            log.error(
+                    "RECONCILIATION FAILED: Trial balance mismatch — Debit={}, Credit={}, Diff={}",
+                    totalGlDebit,
+                    totalGlCredit,
+                    totalGlDebit.subtract(totalGlCredit));
         }
 
         // Check 2: Per-GL journal integrity
         for (GLMaster gl : glAccounts) {
-            BigDecimal journalDebit = journalEntryRepository.sumJournalLinesByGlCode(
-                tenantId, gl.getGlCode(), DebitCredit.DEBIT);
-            BigDecimal journalCredit = journalEntryRepository.sumJournalLinesByGlCode(
-                tenantId, gl.getGlCode(), DebitCredit.CREDIT);
+            BigDecimal journalDebit =
+                    journalEntryRepository.sumJournalLinesByGlCode(tenantId, gl.getGlCode(), DebitCredit.DEBIT);
+            BigDecimal journalCredit =
+                    journalEntryRepository.sumJournalLinesByGlCode(tenantId, gl.getGlCode(), DebitCredit.CREDIT);
 
             if (journalDebit == null) journalDebit = BigDecimal.ZERO;
             if (journalCredit == null) journalCredit = BigDecimal.ZERO;
@@ -116,8 +121,12 @@ public class AccountingReconciliationEngine {
                 var.put("variance", variance);
                 variances.add(var);
 
-                log.warn("GL VARIANCE: code={}, glNet={}, journalNet={}, variance={}",
-                    gl.getGlCode(), glNetBalance, journalNetBalance, variance);
+                log.warn(
+                        "GL VARIANCE: code={}, glNet={}, journalNet={}, variance={}",
+                        gl.getGlCode(),
+                        glNetBalance,
+                        journalNetBalance,
+                        variance);
             }
         }
 
@@ -134,13 +143,21 @@ public class AccountingReconciliationEngine {
 
         // Audit the reconciliation run
         String status = isBalanced ? "BALANCED" : "IMBALANCED (" + variances.size() + " variances)";
-        auditService.logEvent("Reconciliation", 0L, "RECONCILE",
-            null, status, "RECONCILIATION",
-            "GL reconciliation for " + businessDate + ": " + status
-                + ", GL Debit=" + totalGlDebit + ", GL Credit=" + totalGlCredit);
+        auditService.logEvent(
+                "Reconciliation",
+                0L,
+                "RECONCILE",
+                null,
+                status,
+                "RECONCILIATION",
+                "GL reconciliation for " + businessDate + ": " + status + ", GL Debit=" + totalGlDebit + ", GL Credit="
+                        + totalGlCredit);
 
-        log.info("Reconciliation complete: date={}, balanced={}, variances={}",
-            businessDate, isBalanced, variances.size());
+        log.info(
+                "Reconciliation complete: date={}, balanced={}, variances={}",
+                businessDate,
+                isBalanced,
+                variances.size());
 
         return result;
     }
@@ -155,9 +172,10 @@ public class AccountingReconciliationEngine {
 
         if (!isBalanced) {
             int varianceCount = (int) result.get("varianceCount");
-            throw new BusinessException("GL_RECONCILIATION_FAILED",
-                "GL reconciliation failed for " + businessDate + ": " + varianceCount
-                    + " variance(s) detected. Resolve before closing the day.");
+            throw new BusinessException(
+                    "GL_RECONCILIATION_FAILED",
+                    "GL reconciliation failed for " + businessDate + ": " + varianceCount
+                            + " variance(s) detected. Resolve before closing the day.");
         }
     }
 }

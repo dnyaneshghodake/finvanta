@@ -6,12 +6,13 @@ import com.finvanta.repository.TransactionLimitRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
 /**
  * CBS Transaction Limit Validation Service per Finacle/Temenos Internal Controls.
@@ -40,8 +41,8 @@ public class TransactionLimitService {
     private final TransactionLimitRepository limitRepository;
     private final LoanTransactionRepository transactionRepository;
 
-    public TransactionLimitService(TransactionLimitRepository limitRepository,
-                                    LoanTransactionRepository transactionRepository) {
+    public TransactionLimitService(
+            TransactionLimitRepository limitRepository, LoanTransactionRepository transactionRepository) {
         this.limitRepository = limitRepository;
         this.transactionRepository = transactionRepository;
     }
@@ -73,18 +74,22 @@ public class TransactionLimitService {
             // role assigned. Per RBI Internal Controls, user-initiated financial transactions
             // require a role with defined limits. Reject to prevent unlimited access.
             String username = SecurityUtil.getCurrentUsername();
-            log.warn("LIMIT_CHECK: No transactional role for user={}, type={}. "
-                + "User must have MAKER, CHECKER, or ADMIN role to initiate financial transactions.",
-                username, transactionType);
-            throw new BusinessException("NO_TRANSACTIONAL_ROLE",
-                "User " + username + " does not have a transactional role (MAKER/CHECKER/ADMIN). "
-                    + "Financial transactions require an authorized role with configured limits.");
+            log.warn(
+                    "LIMIT_CHECK: No transactional role for user={}, type={}. "
+                            + "User must have MAKER, CHECKER, or ADMIN role to initiate financial transactions.",
+                    username,
+                    transactionType);
+            throw new BusinessException(
+                    "NO_TRANSACTIONAL_ROLE",
+                    "User " + username + " does not have a transactional role (MAKER/CHECKER/ADMIN). "
+                            + "Financial transactions require an authorized role with configured limits.");
         }
 
         // Resolve limit: type-specific first, then 'ALL' fallback
-        TransactionLimit limit = limitRepository.findByRoleAndType(tenantId, role, transactionType)
-            .or(() -> limitRepository.findByRoleForAllTypes(tenantId, role))
-            .orElse(null);
+        TransactionLimit limit = limitRepository
+                .findByRoleAndType(tenantId, role, transactionType)
+                .or(() -> limitRepository.findByRoleForAllTypes(tenantId, role))
+                .orElse(null);
 
         if (limit == null) {
             log.debug("No transaction limit configured for role={}, type={}", role, transactionType);
@@ -92,32 +97,36 @@ public class TransactionLimitService {
         }
 
         // Per-transaction limit check
-        if (limit.getPerTransactionLimit() != null
-                && amount.compareTo(limit.getPerTransactionLimit()) > 0) {
-            throw new BusinessException("TRANSACTION_LIMIT_EXCEEDED",
-                "Transaction amount INR " + amount + " exceeds per-transaction limit of INR "
-                    + limit.getPerTransactionLimit() + " for role " + role
-                    + ". Requires higher authority approval.");
+        if (limit.getPerTransactionLimit() != null && amount.compareTo(limit.getPerTransactionLimit()) > 0) {
+            throw new BusinessException(
+                    "TRANSACTION_LIMIT_EXCEEDED",
+                    "Transaction amount INR " + amount + " exceeds per-transaction limit of INR "
+                            + limit.getPerTransactionLimit() + " for role " + role
+                            + ". Requires higher authority approval.");
         }
 
         // Daily aggregate limit check
         // Per Finacle/Temenos: sum of all transactions by this user today + proposed amount
         if (limit.getDailyAggregateLimit() != null) {
             String username = SecurityUtil.getCurrentUsername();
-            BigDecimal todayTotal = transactionRepository.sumDailyAmountByUser(
-                tenantId, username, businessDate);
+            BigDecimal todayTotal = transactionRepository.sumDailyAmountByUser(tenantId, username, businessDate);
             BigDecimal projectedTotal = todayTotal.add(amount);
 
             if (projectedTotal.compareTo(limit.getDailyAggregateLimit()) > 0) {
-                throw new BusinessException("DAILY_LIMIT_EXCEEDED",
-                    "Daily aggregate INR " + projectedTotal + " (existing INR " + todayTotal
-                        + " + this INR " + amount + ") exceeds daily limit of INR "
-                        + limit.getDailyAggregateLimit() + " for role " + role + ".");
+                throw new BusinessException(
+                        "DAILY_LIMIT_EXCEEDED",
+                        "Daily aggregate INR " + projectedTotal + " (existing INR " + todayTotal
+                                + " + this INR " + amount + ") exceeds daily limit of INR "
+                                + limit.getDailyAggregateLimit() + " for role " + role + ".");
             }
         }
 
-        log.debug("Transaction limit check passed: role={}, type={}, amount={}, perTxn={}, dailyAgg={}",
-            role, transactionType, amount,
-            limit.getPerTransactionLimit(), limit.getDailyAggregateLimit());
+        log.debug(
+                "Transaction limit check passed: role={}, type={}, amount={}, perTxn={}, dailyAgg={}",
+                role,
+                transactionType,
+                amount,
+                limit.getPerTransactionLimit(),
+                limit.getDailyAggregateLimit());
     }
 }

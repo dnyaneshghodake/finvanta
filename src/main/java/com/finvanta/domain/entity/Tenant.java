@@ -1,17 +1,19 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
 
+import org.hibernate.annotations.CreationTimestamp;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 @Entity
-@Table(name = "tenants", indexes = {
-    @Index(name = "idx_tenant_code", columnList = "tenant_code", unique = true)
-})
+@Table(
+        name = "tenants",
+        indexes = {@Index(name = "idx_tenant_code", columnList = "tenant_code", unique = true)})
 @Getter
 @Setter
 @NoArgsConstructor

@@ -1,11 +1,12 @@
 package com.finvanta.accounting;
 
 import com.finvanta.util.BusinessException;
+
+import java.math.BigDecimal;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-
-import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -32,43 +33,38 @@ class AccountingServiceDoubleEntryTest {
     @Test
     @DisplayName("Balanced entry passes validation")
     void balancedEntry_passes() {
-        assertDoesNotThrow(() ->
-            accountingService.validateDoubleEntry(
-                new BigDecimal("100000.00"),
-                new BigDecimal("100000.00")));
+        assertDoesNotThrow(
+                () -> accountingService.validateDoubleEntry(new BigDecimal("100000.00"), new BigDecimal("100000.00")));
     }
 
     @Test
     @DisplayName("Imbalanced entry throws ACCOUNTING_IMBALANCE")
     void imbalancedEntry_throws() {
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            accountingService.validateDoubleEntry(
-                new BigDecimal("100000.00"),
-                new BigDecimal("99999.99")));
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> accountingService.validateDoubleEntry(new BigDecimal("100000.00"), new BigDecimal("99999.99")));
         assertEquals("ACCOUNTING_IMBALANCE", ex.getErrorCode());
     }
 
     @Test
     @DisplayName("Zero debit and credit passes (edge case)")
     void zeroBalanced_passes() {
-        assertDoesNotThrow(() ->
-            accountingService.validateDoubleEntry(BigDecimal.ZERO, BigDecimal.ZERO));
+        assertDoesNotThrow(() -> accountingService.validateDoubleEntry(BigDecimal.ZERO, BigDecimal.ZERO));
     }
 
     @Test
     @DisplayName("Large amounts: ₹50 crore balanced passes")
     void largeAmounts_balanced_passes() {
         BigDecimal fiftyCore = new BigDecimal("500000000.00");
-        assertDoesNotThrow(() ->
-            accountingService.validateDoubleEntry(fiftyCore, fiftyCore));
+        assertDoesNotThrow(() -> accountingService.validateDoubleEntry(fiftyCore, fiftyCore));
     }
 
     @Test
     @DisplayName("One paisa imbalance is detected")
     void onePaisaImbalance_detected() {
-        assertThrows(BusinessException.class, () ->
-            accountingService.validateDoubleEntry(
-                new BigDecimal("1000000.00"),
-                new BigDecimal("1000000.01")));
+        assertThrows(
+                BusinessException.class,
+                () -> accountingService.validateDoubleEntry(
+                        new BigDecimal("1000000.00"), new BigDecimal("1000000.01")));
     }
 }

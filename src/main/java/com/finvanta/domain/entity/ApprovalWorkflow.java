@@ -1,19 +1,23 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.ApprovalStatus;
+
 import jakarta.persistence.*;
+
+import java.time.LocalDateTime;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 @Entity
-@Table(name = "approval_workflows", indexes = {
-    @Index(name = "idx_wf_tenant_entity", columnList = "tenant_id, entity_type, entity_id"),
-    @Index(name = "idx_wf_status", columnList = "tenant_id, status"),
-    @Index(name = "idx_wf_checker", columnList = "tenant_id, checker_user_id")
-})
+@Table(
+        name = "approval_workflows",
+        indexes = {
+            @Index(name = "idx_wf_tenant_entity", columnList = "tenant_id, entity_type, entity_id"),
+            @Index(name = "idx_wf_status", columnList = "tenant_id, status"),
+            @Index(name = "idx_wf_checker", columnList = "tenant_id, checker_user_id")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

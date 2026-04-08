@@ -19,13 +19,13 @@ import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 import com.finvanta.workflow.ApprovalWorkflowService;
+
+import java.util.List;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDate;
-import java.util.List;
 
 @Service
 public class LoanApplicationServiceImpl implements LoanApplicationService {
@@ -42,15 +42,16 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
     private final AuditService auditService;
     private final BusinessDateService businessDateService;
 
-    public LoanApplicationServiceImpl(LoanApplicationRepository applicationRepository,
-                                       CustomerRepository customerRepository,
-                                       BranchRepository branchRepository,
-                                       ProductMasterRepository productRepository,
-                                       LoanEligibilityRule eligibilityRule,
-                                       CollateralService collateralService,
-                                       ApprovalWorkflowService workflowService,
-                                       AuditService auditService,
-                                       BusinessDateService businessDateService) {
+    public LoanApplicationServiceImpl(
+            LoanApplicationRepository applicationRepository,
+            CustomerRepository customerRepository,
+            BranchRepository branchRepository,
+            ProductMasterRepository productRepository,
+            LoanEligibilityRule eligibilityRule,
+            CollateralService collateralService,
+            ApprovalWorkflowService workflowService,
+            AuditService auditService,
+            BusinessDateService businessDateService) {
         this.applicationRepository = applicationRepository;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
@@ -68,22 +69,23 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
-        Customer customer = customerRepository.findById(customerId)
-            .filter(c -> c.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND",
-                "Customer not found: " + customerId));
+        Customer customer = customerRepository
+                .findById(customerId)
+                .filter(c -> c.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND", "Customer not found: " + customerId));
 
-        Branch branch = branchRepository.findById(branchId)
-            .filter(b -> b.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND",
-                "Branch not found: " + branchId));
+        Branch branch = branchRepository
+                .findById(branchId)
+                .filter(b -> b.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "Branch not found: " + branchId));
 
         // CBS: Resolve product for product-driven validation (amount/tenure/rate limits)
         // Per Finacle PDDEF, each product defines its own eligibility bounds.
         ProductMaster product = (application.getProductType() != null)
-            ? productRepository.findByTenantIdAndProductCode(tenantId, application.getProductType())
-                .orElse(null)
-            : null;
+                ? productRepository
+                        .findByTenantIdAndProductCode(tenantId, application.getProductType())
+                        .orElse(null)
+                : null;
         eligibilityRule.validate(application, customer, product);
 
         application.setTenantId(tenantId);
@@ -97,17 +99,26 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         LoanApplication saved = applicationRepository.save(application);
 
         workflowService.initiateApproval(
-            "LoanApplication", saved.getId(),
-            "VERIFY", "New loan application submitted",
-            saved.getApplicationNumber()
-        );
+                "LoanApplication",
+                saved.getId(),
+                "VERIFY",
+                "New loan application submitted",
+                saved.getApplicationNumber());
 
-        auditService.logEvent("LoanApplication", saved.getId(), "CREATE",
-            null, saved, "LOAN_ORIGINATION",
-            "Loan application created: " + saved.getApplicationNumber());
+        auditService.logEvent(
+                "LoanApplication",
+                saved.getId(),
+                "CREATE",
+                null,
+                saved,
+                "LOAN_ORIGINATION",
+                "Loan application created: " + saved.getApplicationNumber());
 
-        log.info("Loan application created: appNo={}, customer={}, amount={}",
-            saved.getApplicationNumber(), customer.getCustomerNumber(), application.getRequestedAmount());
+        log.info(
+                "Loan application created: appNo={}, customer={}, amount={}",
+                saved.getApplicationNumber(),
+                customer.getCustomerNumber(),
+                application.getRequestedAmount());
 
         return saved;
     }
@@ -118,20 +129,19 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
-        LoanApplication app = applicationRepository.findById(applicationId)
-            .filter(a -> a.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND",
-                "Loan application not found: " + applicationId));
+        LoanApplication app = applicationRepository
+                .findById(applicationId)
+                .filter(a -> a.getTenantId().equals(tenantId))
+                .orElseThrow(() ->
+                        new BusinessException("APPLICATION_NOT_FOUND", "Loan application not found: " + applicationId));
 
-        if (app.getStatus() != ApplicationStatus.SUBMITTED
-                && app.getStatus() != ApplicationStatus.UNDER_VERIFICATION) {
-            throw new BusinessException("APPLICATION_INVALID_STATE",
-                "Application cannot be verified in current state: " + app.getStatus());
+        if (app.getStatus() != ApplicationStatus.SUBMITTED && app.getStatus() != ApplicationStatus.UNDER_VERIFICATION) {
+            throw new BusinessException(
+                    "APPLICATION_INVALID_STATE", "Application cannot be verified in current state: " + app.getStatus());
         }
 
         if (currentUser.equals(app.getCreatedBy())) {
-            throw new BusinessException("WORKFLOW_SELF_APPROVAL",
-                "Maker cannot verify their own application");
+            throw new BusinessException("WORKFLOW_SELF_APPROVAL", "Maker cannot verify their own application");
         }
 
         ApplicationStatus previousStatus = app.getStatus();
@@ -144,18 +154,23 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         LoanApplication saved = applicationRepository.save(app);
 
         // Resolve the existing VERIFY workflow before initiating APPROVE
-        workflowService.resolveExistingPendingWorkflow(
-            "LoanApplication", saved.getId(), currentUser, "Verified");
+        workflowService.resolveExistingPendingWorkflow("LoanApplication", saved.getId(), currentUser, "Verified");
 
         workflowService.initiateApproval(
-            "LoanApplication", saved.getId(),
-            "APPROVE", "Verified, pending approval",
-            saved.getApplicationNumber()
-        );
+                "LoanApplication",
+                saved.getId(),
+                "APPROVE",
+                "Verified, pending approval",
+                saved.getApplicationNumber());
 
-        auditService.logEvent("LoanApplication", saved.getId(), "VERIFY",
-            previousStatus.name(), saved.getStatus().name(), "LOAN_ORIGINATION",
-            "Application verified by " + currentUser);
+        auditService.logEvent(
+                "LoanApplication",
+                saved.getId(),
+                "VERIFY",
+                previousStatus.name(),
+                saved.getStatus().name(),
+                "LOAN_ORIGINATION",
+                "Application verified by " + currentUser);
 
         log.info("Application verified: appNo={}, verifier={}", app.getApplicationNumber(), currentUser);
 
@@ -168,33 +183,33 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
-        LoanApplication app = applicationRepository.findById(applicationId)
-            .filter(a -> a.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND",
-                "Loan application not found: " + applicationId));
+        LoanApplication app = applicationRepository
+                .findById(applicationId)
+                .filter(a -> a.getTenantId().equals(tenantId))
+                .orElseThrow(() ->
+                        new BusinessException("APPLICATION_NOT_FOUND", "Loan application not found: " + applicationId));
 
-        if (app.getStatus() != ApplicationStatus.VERIFIED
-                && app.getStatus() != ApplicationStatus.PENDING_APPROVAL) {
-            throw new BusinessException("APPLICATION_INVALID_STATE",
-                "Application cannot be approved in current state: " + app.getStatus());
+        if (app.getStatus() != ApplicationStatus.VERIFIED && app.getStatus() != ApplicationStatus.PENDING_APPROVAL) {
+            throw new BusinessException(
+                    "APPLICATION_INVALID_STATE", "Application cannot be approved in current state: " + app.getStatus());
         }
 
         if (currentUser.equals(app.getCreatedBy())) {
-            throw new BusinessException("WORKFLOW_SELF_APPROVAL",
-                "Maker cannot approve their own application");
+            throw new BusinessException("WORKFLOW_SELF_APPROVAL", "Maker cannot approve their own application");
         }
 
         if (currentUser.equals(app.getVerifiedBy())) {
-            throw new BusinessException("WORKFLOW_VERIFIER_APPROVER_SAME",
-                "Verifier and approver should be different users");
+            throw new BusinessException(
+                    "WORKFLOW_VERIFIER_APPROVER_SAME", "Verifier and approver should be different users");
         }
 
         // CBS: Re-validate at approval with product-driven limits (defense-in-depth)
         Customer customer = app.getCustomer();
         ProductMaster product = (app.getProductType() != null)
-            ? productRepository.findByTenantIdAndProductCode(tenantId, app.getProductType())
-                .orElse(null)
-            : null;
+                ? productRepository
+                        .findByTenantIdAndProductCode(tenantId, app.getProductType())
+                        .orElse(null)
+                : null;
         eligibilityRule.validate(app, customer, product);
 
         // CBS: Validate LTV ratio at approval per RBI norms.
@@ -216,14 +231,22 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         // Resolve the APPROVE workflow — verifyApplication initiated it, approval completes it.
         // Without this, the workflow stays in PENDING_APPROVAL forever.
         workflowService.resolveExistingPendingWorkflow(
-            "LoanApplication", saved.getId(), currentUser, "Approved: " + remarks);
+                "LoanApplication", saved.getId(), currentUser, "Approved: " + remarks);
 
-        auditService.logEvent("LoanApplication", saved.getId(), "APPROVE",
-            previousStatus.name(), saved.getStatus().name(), "LOAN_ORIGINATION",
-            "Application approved by " + currentUser + ", amount: " + saved.getApprovedAmount());
+        auditService.logEvent(
+                "LoanApplication",
+                saved.getId(),
+                "APPROVE",
+                previousStatus.name(),
+                saved.getStatus().name(),
+                "LOAN_ORIGINATION",
+                "Application approved by " + currentUser + ", amount: " + saved.getApprovedAmount());
 
-        log.info("Application approved: appNo={}, approver={}, amount={}",
-            app.getApplicationNumber(), currentUser, app.getApprovedAmount());
+        log.info(
+                "Application approved: appNo={}, approver={}, amount={}",
+                app.getApplicationNumber(),
+                currentUser,
+                app.getApprovedAmount());
 
         return saved;
     }
@@ -237,20 +260,21 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         // RBI Fair Practices Code 2023: Rejection reason is mandatory and must be
         // communicated to the borrower. Empty reasons violate regulatory requirements.
         if (reason == null || reason.isBlank()) {
-            throw new BusinessException("REJECTION_REASON_REQUIRED",
-                "Rejection reason is mandatory per RBI Fair Practices Code. "
-                    + "Banks must communicate specific reasons for loan rejection.");
+            throw new BusinessException(
+                    "REJECTION_REASON_REQUIRED",
+                    "Rejection reason is mandatory per RBI Fair Practices Code. "
+                            + "Banks must communicate specific reasons for loan rejection.");
         }
 
-        LoanApplication app = applicationRepository.findById(applicationId)
-            .filter(a -> a.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND",
-                "Loan application not found: " + applicationId));
+        LoanApplication app = applicationRepository
+                .findById(applicationId)
+                .filter(a -> a.getTenantId().equals(tenantId))
+                .orElseThrow(() ->
+                        new BusinessException("APPLICATION_NOT_FOUND", "Loan application not found: " + applicationId));
 
-        if (app.getStatus() == ApplicationStatus.DISBURSED
-                || app.getStatus() == ApplicationStatus.CANCELLED) {
-            throw new BusinessException("APPLICATION_INVALID_STATE",
-                "Application cannot be rejected in current state: " + app.getStatus());
+        if (app.getStatus() == ApplicationStatus.DISBURSED || app.getStatus() == ApplicationStatus.CANCELLED) {
+            throw new BusinessException(
+                    "APPLICATION_INVALID_STATE", "Application cannot be rejected in current state: " + app.getStatus());
         }
 
         ApplicationStatus previousStatus = app.getStatus();
@@ -262,9 +286,14 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
 
         LoanApplication saved = applicationRepository.save(app);
 
-        auditService.logEvent("LoanApplication", saved.getId(), "REJECT",
-            previousStatus.name(), saved.getStatus().name(), "LOAN_ORIGINATION",
-            "Application rejected by " + currentUser + ": " + reason);
+        auditService.logEvent(
+                "LoanApplication",
+                saved.getId(),
+                "REJECT",
+                previousStatus.name(),
+                saved.getStatus().name(),
+                "LOAN_ORIGINATION",
+                "Application rejected by " + currentUser + ": " + reason);
 
         log.info("Application rejected: appNo={}, rejector={}", app.getApplicationNumber(), currentUser);
 
@@ -274,10 +303,11 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
     @Override
     public LoanApplication getApplication(Long applicationId) {
         String tenantId = TenantContext.getCurrentTenant();
-        return applicationRepository.findById(applicationId)
-            .filter(a -> a.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND",
-                "Loan application not found: " + applicationId));
+        return applicationRepository
+                .findById(applicationId)
+                .filter(a -> a.getTenantId().equals(tenantId))
+                .orElseThrow(() ->
+                        new BusinessException("APPLICATION_NOT_FOUND", "Loan application not found: " + applicationId));
     }
 
     @Override

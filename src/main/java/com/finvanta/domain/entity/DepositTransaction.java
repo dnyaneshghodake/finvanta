@@ -1,13 +1,14 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * CBS Deposit Transaction Entity per Finacle TRAN_DETAIL / Temenos STMT.ENTRY.
@@ -31,13 +32,15 @@ import java.time.LocalDateTime;
  *   LOAN_EMI_DEBIT      - Auto-debit for loan EMI
  */
 @Entity
-@Table(name = "deposit_transactions", indexes = {
-    @Index(name = "idx_deptxn_tenant_account", columnList = "tenant_id, deposit_account_id"),
-    @Index(name = "idx_deptxn_tenant_ref", columnList = "tenant_id, transaction_ref", unique = true),
-    @Index(name = "idx_deptxn_value_date", columnList = "tenant_id, value_date"),
-    @Index(name = "idx_deptxn_type", columnList = "tenant_id, transaction_type"),
-    @Index(name = "idx_deptxn_voucher", columnList = "tenant_id, voucher_number")
-})
+@Table(
+        name = "deposit_transactions",
+        indexes = {
+            @Index(name = "idx_deptxn_tenant_account", columnList = "tenant_id, deposit_account_id"),
+            @Index(name = "idx_deptxn_tenant_ref", columnList = "tenant_id, transaction_ref", unique = true),
+            @Index(name = "idx_deptxn_value_date", columnList = "tenant_id, value_date"),
+            @Index(name = "idx_deptxn_type", columnList = "tenant_id, transaction_type"),
+            @Index(name = "idx_deptxn_voucher", columnList = "tenant_id, voucher_number")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

@@ -1,11 +1,12 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
+
+import java.math.BigDecimal;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.math.BigDecimal;
 
 /**
  * CBS Product Master per Finacle PDDEF (Product Definition) / Temenos AA.PRODUCT.CATALOG.
@@ -30,10 +31,12 @@ import java.math.BigDecimal;
  *   Min Tenure: 12 months, Max Tenure: 84 months
  */
 @Entity
-@Table(name = "product_master", indexes = {
-    @Index(name = "idx_product_tenant_code", columnList = "tenant_id, product_code", unique = true),
-    @Index(name = "idx_product_tenant_active", columnList = "tenant_id, is_active")
-})
+@Table(
+        name = "product_master",
+        indexes = {
+            @Index(name = "idx_product_tenant_code", columnList = "tenant_id, product_code", unique = true),
+            @Index(name = "idx_product_tenant_active", columnList = "tenant_id, is_active")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

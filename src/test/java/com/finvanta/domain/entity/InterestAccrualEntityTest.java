@@ -1,10 +1,10 @@
 package com.finvanta.domain.entity;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.DisplayName;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -71,4 +71,3 @@ public class InterestAccrualEntityTest {
         assertEquals(new BigDecimal("2.0000"), penal.getRateApplied());
     }
 }
-

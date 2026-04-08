@@ -31,11 +31,16 @@ public class TransactionResult {
     private final LocalDateTime postingDate;
     private final String status;
 
-    public TransactionResult(String transactionRef, String voucherNumber,
-                              Long journalEntryId, String journalRef,
-                              BigDecimal totalDebit, BigDecimal totalCredit,
-                              LocalDate valueDate, LocalDateTime postingDate,
-                              String status) {
+    public TransactionResult(
+            String transactionRef,
+            String voucherNumber,
+            Long journalEntryId,
+            String journalRef,
+            BigDecimal totalDebit,
+            BigDecimal totalCredit,
+            LocalDate valueDate,
+            LocalDateTime postingDate,
+            String status) {
         this.transactionRef = transactionRef;
         this.voucherNumber = voucherNumber;
         this.journalEntryId = journalEntryId;
@@ -47,16 +52,47 @@ public class TransactionResult {
         this.status = status;
     }
 
-    public String getTransactionRef() { return transactionRef; }
-    public String getVoucherNumber() { return voucherNumber; }
-    public Long getJournalEntryId() { return journalEntryId; }
-    public String getJournalRef() { return journalRef; }
-    public BigDecimal getTotalDebit() { return totalDebit; }
-    public BigDecimal getTotalCredit() { return totalCredit; }
-    public LocalDate getValueDate() { return valueDate; }
-    public LocalDateTime getPostingDate() { return postingDate; }
-    public String getStatus() { return status; }
+    public String getTransactionRef() {
+        return transactionRef;
+    }
 
-    public boolean isPosted() { return "POSTED".equals(status); }
-    public boolean isPendingApproval() { return "PENDING_APPROVAL".equals(status); }
+    public String getVoucherNumber() {
+        return voucherNumber;
+    }
+
+    public Long getJournalEntryId() {
+        return journalEntryId;
+    }
+
+    public String getJournalRef() {
+        return journalRef;
+    }
+
+    public BigDecimal getTotalDebit() {
+        return totalDebit;
+    }
+
+    public BigDecimal getTotalCredit() {
+        return totalCredit;
+    }
+
+    public LocalDate getValueDate() {
+        return valueDate;
+    }
+
+    public LocalDateTime getPostingDate() {
+        return postingDate;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public boolean isPosted() {
+        return "POSTED".equals(status);
+    }
+
+    public boolean isPendingApproval() {
+        return "PENDING_APPROVAL".equals(status);
+    }
 }

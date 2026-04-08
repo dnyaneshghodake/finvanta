@@ -1,10 +1,12 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
+
+import org.hibernate.annotations.Filter;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.Filter;
 
 /**
  * CBS Database-Backed Sequence per Finacle SEQ_MASTER / Temenos EB.SEQUENCE pattern.
@@ -35,11 +37,9 @@ import org.hibernate.annotations.Filter;
  */
 @Entity
 @Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
-@Table(name = "db_sequences",
-    indexes = {
-        @Index(name = "idx_dbseq_tenant_name", columnList = "tenant_id, sequence_name", unique = true)
-    }
-)
+@Table(
+        name = "db_sequences",
+        indexes = {@Index(name = "idx_dbseq_tenant_name", columnList = "tenant_id, sequence_name", unique = true)})
 @Getter
 @Setter
 @NoArgsConstructor

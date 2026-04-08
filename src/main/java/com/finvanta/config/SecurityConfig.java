@@ -38,129 +38,185 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-            .authorizeHttpRequests(auth -> {
-                auth.requestMatchers("/login", "/error", "/error/**", "/WEB-INF/**", "/resources/**", "/css/**", "/js/**", "/fonts/**", "/img/**").permitAll();
-                // CBS SECURITY: H2 console ONLY accessible in dev profile.
-                // In production, this matcher is not registered — /h2-console/**
-                // falls through to .anyRequest().authenticated() and is blocked.
-                // Per RBI IT Governance Direction 2023: database consoles must NEVER
-                // be exposed in production environments.
-                if (isDevProfile()) {
-                    auth.requestMatchers("/h2-console/**").permitAll();
-                }
-                auth
-                .requestMatchers("/admin/**").hasRole("ADMIN")
-                .requestMatchers("/batch/**").hasRole("ADMIN")
-                .requestMatchers("/branch/add").hasRole("ADMIN")
-                .requestMatchers("/customer/add").hasAnyRole("MAKER", "ADMIN")
-                .requestMatchers("/customer/edit/**").hasAnyRole("MAKER", "ADMIN")
-                .requestMatchers("/customer/deactivate/**").hasRole("ADMIN")
-                .requestMatchers("/customer/verify-kyc/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/branch/edit/**").hasRole("ADMIN")
-                .requestMatchers("/calendar/**").hasRole("ADMIN")
-                .requestMatchers("/loan/verify/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/approve/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/reject/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/create-account/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/disburse/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/write-off/**").hasRole("ADMIN")
-                .requestMatchers("/loan/reversal/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/fee/**").hasAnyRole("MAKER", "ADMIN")
-                .requestMatchers("/loan/collateral/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/document/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/disburse-tranche/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/si/pause/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/si/resume/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/si/cancel/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/si/register").hasAnyRole("MAKER", "ADMIN")
-                .requestMatchers("/loan/si/approve/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/si/reject/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/si/amend/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/si/dashboard").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/loan/restructure/**").hasRole("ADMIN")
-                .requestMatchers("/loan/moratorium/**").hasRole("ADMIN")
-                .requestMatchers("/batch/txn/**").hasRole("ADMIN")
-                .requestMatchers("/admin/products/**").hasRole("ADMIN")
-                .requestMatchers("/admin/limits/**").hasRole("ADMIN")
-                .requestMatchers("/admin/charges/**").hasRole("ADMIN")
-                .requestMatchers("/workflow/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/reconciliation/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/reports/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/deposit/pipeline").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/deposit/accounts").hasAnyRole("MAKER", "CHECKER", "ADMIN")
-                .requestMatchers("/deposit/open").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/deposit/view/**").hasAnyRole("MAKER", "CHECKER", "ADMIN")
-                .requestMatchers("/deposit/deposit/**").hasAnyRole("MAKER", "ADMIN")
-                .requestMatchers("/deposit/withdraw/**").hasAnyRole("MAKER", "ADMIN")
-                .requestMatchers("/deposit/transfer").hasAnyRole("MAKER", "ADMIN")
-                .requestMatchers("/deposit/freeze/**").hasRole("ADMIN")
-                .requestMatchers("/deposit/unfreeze/**").hasRole("ADMIN")
-                .requestMatchers("/deposit/close/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/deposit/activate/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/deposit/reversal/**").hasAnyRole("CHECKER", "ADMIN")
-                .requestMatchers("/deposit/statement/**").hasAnyRole("MAKER", "CHECKER", "ADMIN")
-                .requestMatchers("/loan/apply").hasAnyRole("MAKER", "ADMIN")
-                .requestMatchers("/loan/repayment/**").hasAnyRole("MAKER", "ADMIN")
-                .requestMatchers("/loan/prepayment/**").hasAnyRole("MAKER", "ADMIN")
-                .requestMatchers("/audit/**").hasAnyRole("AUDITOR", "ADMIN")
-                .anyRequest().authenticated();
-            })
-            .formLogin(form -> form
-                .loginPage("/login")
-                .loginProcessingUrl("/login")
-                .defaultSuccessUrl("/dashboard", true)
-                .failureUrl("/login?error")
-                .permitAll()
-            )
-            .logout(logout -> logout
-                .logoutUrl("/logout")
-                .logoutSuccessUrl("/login?logout")
-                .invalidateHttpSession(true)
-                .deleteCookies("JSESSIONID")
-                .permitAll()
-            )
-            .exceptionHandling(ex -> ex
-                .accessDeniedHandler((request, response, accessDeniedException) -> {
-                    response.sendRedirect(request.getContextPath() + "/error/403");
+        http.authorizeHttpRequests(auth -> {
+                    auth.requestMatchers(
+                                    "/login",
+                                    "/error",
+                                    "/error/**",
+                                    "/WEB-INF/**",
+                                    "/resources/**",
+                                    "/css/**",
+                                    "/js/**",
+                                    "/fonts/**",
+                                    "/img/**")
+                            .permitAll();
+                    // CBS SECURITY: H2 console ONLY accessible in dev profile.
+                    // In production, this matcher is not registered — /h2-console/**
+                    // falls through to .anyRequest().authenticated() and is blocked.
+                    // Per RBI IT Governance Direction 2023: database consoles must NEVER
+                    // be exposed in production environments.
+                    if (isDevProfile()) {
+                        auth.requestMatchers("/h2-console/**").permitAll();
+                    }
+                    auth.requestMatchers("/admin/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/batch/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/branch/add")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/customer/add")
+                            .hasAnyRole("MAKER", "ADMIN")
+                            .requestMatchers("/customer/edit/**")
+                            .hasAnyRole("MAKER", "ADMIN")
+                            .requestMatchers("/customer/deactivate/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/customer/verify-kyc/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/branch/edit/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/calendar/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/loan/verify/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/approve/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/reject/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/create-account/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/disburse/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/write-off/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/loan/reversal/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/fee/**")
+                            .hasAnyRole("MAKER", "ADMIN")
+                            .requestMatchers("/loan/collateral/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/document/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/disburse-tranche/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/si/pause/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/si/resume/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/si/cancel/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/si/register")
+                            .hasAnyRole("MAKER", "ADMIN")
+                            .requestMatchers("/loan/si/approve/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/si/reject/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/si/amend/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/si/dashboard")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/loan/restructure/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/loan/moratorium/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/batch/txn/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/admin/products/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/admin/limits/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/admin/charges/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/workflow/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/reconciliation/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/reports/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/deposit/pipeline")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/deposit/accounts")
+                            .hasAnyRole("MAKER", "CHECKER", "ADMIN")
+                            .requestMatchers("/deposit/open")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/deposit/view/**")
+                            .hasAnyRole("MAKER", "CHECKER", "ADMIN")
+                            .requestMatchers("/deposit/deposit/**")
+                            .hasAnyRole("MAKER", "ADMIN")
+                            .requestMatchers("/deposit/withdraw/**")
+                            .hasAnyRole("MAKER", "ADMIN")
+                            .requestMatchers("/deposit/transfer")
+                            .hasAnyRole("MAKER", "ADMIN")
+                            .requestMatchers("/deposit/freeze/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/deposit/unfreeze/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/deposit/close/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/deposit/activate/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/deposit/reversal/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/deposit/statement/**")
+                            .hasAnyRole("MAKER", "CHECKER", "ADMIN")
+                            .requestMatchers("/loan/apply")
+                            .hasAnyRole("MAKER", "ADMIN")
+                            .requestMatchers("/loan/repayment/**")
+                            .hasAnyRole("MAKER", "ADMIN")
+                            .requestMatchers("/loan/prepayment/**")
+                            .hasAnyRole("MAKER", "ADMIN")
+                            .requestMatchers("/audit/**")
+                            .hasAnyRole("AUDITOR", "ADMIN")
+                            .anyRequest()
+                            .authenticated();
                 })
-            )
-            .sessionManagement(session -> session
-                .sessionFixation().migrateSession()
-                .maximumSessions(1)
-            )
-            .csrf(csrf -> {
-                // CBS SECURITY: Only disable CSRF for H2 console in dev profile.
-                // In production, CSRF is enforced on ALL endpoints without exception.
-                if (isDevProfile()) {
-                    csrf.ignoringRequestMatchers("/h2-console/**");
-                }
-            })
-            .headers(headers -> {
-                // CBS SECURITY: sameOrigin frame options only needed for H2 console in dev.
-                // In production, default DENY is used (no framing allowed).
-                if (isDevProfile()) {
-                    headers.frameOptions(frame -> frame.sameOrigin());
-                }
-                // CBS SECURITY: Additional security headers per OWASP and RBI IT Governance.
-                // These headers protect against common web vulnerabilities:
-                //   - X-Content-Type-Options: prevents MIME sniffing attacks
-                //   - X-XSS-Protection: enables browser XSS filter (legacy browsers)
-                //   - Referrer-Policy: prevents leaking internal URLs to external sites
-                //   - Permissions-Policy: disables unnecessary browser features
-                //   - Content-Security-Policy: restricts resource loading to same origin
-                // HSTS (Strict-Transport-Security) is only enabled in production
-                // to avoid HTTPS enforcement issues in dev/test environments.
-                headers.contentTypeOptions(cto -> {}); // X-Content-Type-Options: nosniff
-                headers.xssProtection(xss -> {}); // X-XSS-Protection: 1; mode=block
-                headers.referrerPolicy(ref ->
-                    ref.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
-                headers.permissionsPolicy(pp -> pp.policy("camera=(), microphone=(), geolocation=()"));
-                if (!isDevProfile()) {
-                    headers.httpStrictTransportSecurity(hsts ->
-                        hsts.includeSubDomains(true).maxAgeInSeconds(31536000)); // 1 year
-                }
-            });
+                .formLogin(form -> form.loginPage("/login")
+                        .loginProcessingUrl("/login")
+                        .defaultSuccessUrl("/dashboard", true)
+                        .failureUrl("/login?error")
+                        .permitAll())
+                .logout(logout -> logout.logoutUrl("/logout")
+                        .logoutSuccessUrl("/login?logout")
+                        .invalidateHttpSession(true)
+                        .deleteCookies("JSESSIONID")
+                        .permitAll())
+                .exceptionHandling(ex -> ex.accessDeniedHandler((request, response, accessDeniedException) -> {
+                    response.sendRedirect(request.getContextPath() + "/error/403");
+                }))
+                .sessionManagement(
+                        session -> session.sessionFixation().migrateSession().maximumSessions(1))
+                .csrf(csrf -> {
+                    // CBS SECURITY: Only disable CSRF for H2 console in dev profile.
+                    // In production, CSRF is enforced on ALL endpoints without exception.
+                    if (isDevProfile()) {
+                        csrf.ignoringRequestMatchers("/h2-console/**");
+                    }
+                })
+                .headers(headers -> {
+                    // CBS SECURITY: sameOrigin frame options only needed for H2 console in dev.
+                    // In production, default DENY is used (no framing allowed).
+                    if (isDevProfile()) {
+                        headers.frameOptions(frame -> frame.sameOrigin());
+                    }
+                    // CBS SECURITY: Additional security headers per OWASP and RBI IT Governance.
+                    // These headers protect against common web vulnerabilities:
+                    //   - X-Content-Type-Options: prevents MIME sniffing attacks
+                    //   - X-XSS-Protection: enables browser XSS filter (legacy browsers)
+                    //   - Referrer-Policy: prevents leaking internal URLs to external sites
+                    //   - Permissions-Policy: disables unnecessary browser features
+                    //   - Content-Security-Policy: restricts resource loading to same origin
+                    // HSTS (Strict-Transport-Security) is only enabled in production
+                    // to avoid HTTPS enforcement issues in dev/test environments.
+                    headers.contentTypeOptions(cto -> {}); // X-Content-Type-Options: nosniff
+                    headers.xssProtection(xss -> {}); // X-XSS-Protection: 1; mode=block
+                    headers.referrerPolicy(ref -> ref.policy(
+                            org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy
+                                    .STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
+                    headers.permissionsPolicy(pp -> pp.policy("camera=(), microphone=(), geolocation=()"));
+                    if (!isDevProfile()) {
+                        headers.httpStrictTransportSecurity(
+                                hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000)); // 1 year
+                    }
+                });
 
         return http.build();
     }
@@ -172,7 +228,6 @@ public class SecurityConfig {
      */
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return org.springframework.security.crypto.factory.PasswordEncoderFactories
-            .createDelegatingPasswordEncoder();
+        return org.springframework.security.crypto.factory.PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 }

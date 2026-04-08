@@ -8,13 +8,14 @@ import com.finvanta.repository.TransactionLimitRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 /**
  * CBS Maker-Checker Service per Finacle TRAN_AUTH / Temenos OFS.AUTHORIZATION.
@@ -49,8 +50,8 @@ public class MakerCheckerService {
     private final ApprovalWorkflowRepository workflowRepository;
     private final TransactionLimitRepository limitRepository;
 
-    public MakerCheckerService(ApprovalWorkflowRepository workflowRepository,
-                                TransactionLimitRepository limitRepository) {
+    public MakerCheckerService(
+            ApprovalWorkflowRepository workflowRepository, TransactionLimitRepository limitRepository) {
         this.workflowRepository = workflowRepository;
         this.limitRepository = limitRepository;
     }
@@ -77,9 +78,10 @@ public class MakerCheckerService {
         }
 
         // Resolve the per-transaction limit as the maker-checker threshold
-        TransactionLimit limit = limitRepository.findByRoleAndType(tenantId, role, transactionType)
-            .or(() -> limitRepository.findByRoleForAllTypes(tenantId, role))
-            .orElse(null);
+        TransactionLimit limit = limitRepository
+                .findByRoleAndType(tenantId, role, transactionType)
+                .or(() -> limitRepository.findByRoleForAllTypes(tenantId, role))
+                .orElse(null);
 
         if (limit == null || limit.getPerTransactionLimit() == null) {
             // No limit configured -- auto-approve
@@ -88,8 +90,12 @@ public class MakerCheckerService {
 
         boolean exceeds = amount.compareTo(limit.getPerTransactionLimit()) > 0;
         if (exceeds) {
-            log.info("MAKER_CHECKER: Transaction requires approval. amount={}, limit={}, role={}, type={}",
-                amount, limit.getPerTransactionLimit(), role, transactionType);
+            log.info(
+                    "MAKER_CHECKER: Transaction requires approval. amount={}, limit={}, role={}, type={}",
+                    amount,
+                    limit.getPerTransactionLimit(),
+                    role,
+                    transactionType);
         }
         return exceeds;
     }
@@ -105,8 +111,8 @@ public class MakerCheckerService {
      * @return The created workflow record
      */
     @Transactional
-    public ApprovalWorkflow createPendingApproval(String entityType, Long entityId,
-                                                    String actionType, String payloadSnapshot) {
+    public ApprovalWorkflow createPendingApproval(
+            String entityType, Long entityId, String actionType, String payloadSnapshot) {
         String tenantId = TenantContext.getCurrentTenant();
         String maker = SecurityUtil.getCurrentUsername();
 
@@ -123,8 +129,12 @@ public class MakerCheckerService {
 
         ApprovalWorkflow saved = workflowRepository.save(workflow);
 
-        log.info("Maker-checker workflow created: id={}, type={}, action={}, maker={}",
-            saved.getId(), entityType, actionType, maker);
+        log.info(
+                "Maker-checker workflow created: id={}, type={}, action={}, maker={}",
+                saved.getId(),
+                entityType,
+                actionType,
+                maker);
 
         return saved;
     }
@@ -141,20 +151,22 @@ public class MakerCheckerService {
         String tenantId = TenantContext.getCurrentTenant();
         String checker = SecurityUtil.getCurrentUsername();
 
-        ApprovalWorkflow workflow = workflowRepository.findById(workflowId)
-            .filter(w -> w.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException("WORKFLOW_NOT_FOUND",
-                "Approval workflow not found: " + workflowId));
+        ApprovalWorkflow workflow = workflowRepository
+                .findById(workflowId)
+                .filter(w -> w.getTenantId().equals(tenantId))
+                .orElseThrow(() ->
+                        new BusinessException("WORKFLOW_NOT_FOUND", "Approval workflow not found: " + workflowId));
 
         if (workflow.getStatus() != ApprovalStatus.PENDING_APPROVAL) {
-            throw new BusinessException("WORKFLOW_NOT_PENDING",
-                "Workflow " + workflowId + " is not pending approval. Status: " + workflow.getStatus());
+            throw new BusinessException(
+                    "WORKFLOW_NOT_PENDING",
+                    "Workflow " + workflowId + " is not pending approval. Status: " + workflow.getStatus());
         }
 
         // RBI: Maker and Checker must be different users
         if (checker.equals(workflow.getMakerUserId())) {
-            throw new BusinessException("SAME_MAKER_CHECKER",
-                "Maker and Checker must be different users. Both are: " + checker);
+            throw new BusinessException(
+                    "SAME_MAKER_CHECKER", "Maker and Checker must be different users. Both are: " + checker);
         }
 
         workflow.setStatus(ApprovalStatus.APPROVED);
@@ -165,8 +177,11 @@ public class MakerCheckerService {
 
         ApprovalWorkflow saved = workflowRepository.save(workflow);
 
-        log.info("Transaction approved: workflowId={}, maker={}, checker={}",
-            workflowId, workflow.getMakerUserId(), checker);
+        log.info(
+                "Transaction approved: workflowId={}, maker={}, checker={}",
+                workflowId,
+                workflow.getMakerUserId(),
+                checker);
 
         return saved;
     }
@@ -184,23 +199,25 @@ public class MakerCheckerService {
         String checker = SecurityUtil.getCurrentUsername();
 
         if (checkerRemarks == null || checkerRemarks.isBlank()) {
-            throw new BusinessException("REJECTION_REASON_REQUIRED",
-                "Rejection reason is mandatory per CBS audit rules");
+            throw new BusinessException(
+                    "REJECTION_REASON_REQUIRED", "Rejection reason is mandatory per CBS audit rules");
         }
 
-        ApprovalWorkflow workflow = workflowRepository.findById(workflowId)
-            .filter(w -> w.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException("WORKFLOW_NOT_FOUND",
-                "Approval workflow not found: " + workflowId));
+        ApprovalWorkflow workflow = workflowRepository
+                .findById(workflowId)
+                .filter(w -> w.getTenantId().equals(tenantId))
+                .orElseThrow(() ->
+                        new BusinessException("WORKFLOW_NOT_FOUND", "Approval workflow not found: " + workflowId));
 
         if (workflow.getStatus() != ApprovalStatus.PENDING_APPROVAL) {
-            throw new BusinessException("WORKFLOW_NOT_PENDING",
-                "Workflow " + workflowId + " is not pending. Status: " + workflow.getStatus());
+            throw new BusinessException(
+                    "WORKFLOW_NOT_PENDING",
+                    "Workflow " + workflowId + " is not pending. Status: " + workflow.getStatus());
         }
 
         if (checker.equals(workflow.getMakerUserId())) {
-            throw new BusinessException("SAME_MAKER_CHECKER",
-                "Maker and Checker must be different users. Both are: " + checker);
+            throw new BusinessException(
+                    "SAME_MAKER_CHECKER", "Maker and Checker must be different users. Both are: " + checker);
         }
 
         workflow.setStatus(ApprovalStatus.REJECTED);
@@ -211,8 +228,12 @@ public class MakerCheckerService {
 
         ApprovalWorkflow saved = workflowRepository.save(workflow);
 
-        log.info("Transaction rejected: workflowId={}, maker={}, checker={}, reason={}",
-            workflowId, workflow.getMakerUserId(), checker, checkerRemarks);
+        log.info(
+                "Transaction rejected: workflowId={}, maker={}, checker={}, reason={}",
+                workflowId,
+                workflow.getMakerUserId(),
+                checker,
+                checkerRemarks);
 
         return saved;
     }

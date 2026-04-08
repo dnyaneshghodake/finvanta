@@ -105,19 +105,57 @@ public class TransactionRequest {
         this.compoundJournalGroups = builder.compoundJournalGroups;
     }
 
-    public BigDecimal getAmount() { return amount; }
-    public String getTransactionType() { return transactionType; }
-    public List<JournalLineRequest> getJournalLines() { return journalLines; }
-    public String getSourceModule() { return sourceModule; }
-    public String getAccountReference() { return accountReference; }
-    public String getInitiatedBy() { return initiatedBy; }
-    public LocalDate getValueDate() { return valueDate; }
-    public String getBranchCode() { return branchCode; }
-    public String getNarration() { return narration; }
-    public String getProductType() { return productType; }
-    public String getIdempotencyKey() { return idempotencyKey; }
-    public boolean isSystemGenerated() { return systemGenerated; }
-    public List<CompoundJournalGroup> getCompoundJournalGroups() { return compoundJournalGroups; }
+    public BigDecimal getAmount() {
+        return amount;
+    }
+
+    public String getTransactionType() {
+        return transactionType;
+    }
+
+    public List<JournalLineRequest> getJournalLines() {
+        return journalLines;
+    }
+
+    public String getSourceModule() {
+        return sourceModule;
+    }
+
+    public String getAccountReference() {
+        return accountReference;
+    }
+
+    public String getInitiatedBy() {
+        return initiatedBy;
+    }
+
+    public LocalDate getValueDate() {
+        return valueDate;
+    }
+
+    public String getBranchCode() {
+        return branchCode;
+    }
+
+    public String getNarration() {
+        return narration;
+    }
+
+    public String getProductType() {
+        return productType;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public boolean isSystemGenerated() {
+        return systemGenerated;
+    }
+
+    public List<CompoundJournalGroup> getCompoundJournalGroups() {
+        return compoundJournalGroups;
+    }
 
     /** Returns true if this is a compound (multi-journal) transaction */
     public boolean isCompound() {
@@ -128,10 +166,7 @@ public class TransactionRequest {
      * A single balanced journal entry within a compound transaction.
      * Each group has its own narration and journal lines (DR==CR validated independently).
      */
-    public record CompoundJournalGroup(
-        String narration,
-        List<JournalLineRequest> lines
-    ) {
+    public record CompoundJournalGroup(String narration, List<JournalLineRequest> lines) {
         public CompoundJournalGroup {
             if (lines == null || lines.size() < 2) {
                 throw new IllegalArgumentException("Compound journal group must have at least 2 lines");
@@ -142,7 +177,9 @@ public class TransactionRequest {
         }
     }
 
-    public static Builder builder() { return new Builder(); }
+    public static Builder builder() {
+        return new Builder();
+    }
 
     public static class Builder {
         private BigDecimal amount;
@@ -159,19 +196,70 @@ public class TransactionRequest {
         private boolean systemGenerated = false;
         private List<CompoundJournalGroup> compoundJournalGroups;
 
-        public Builder amount(BigDecimal amount) { this.amount = amount; return this; }
-        public Builder transactionType(String transactionType) { this.transactionType = transactionType; return this; }
-        public Builder journalLines(List<JournalLineRequest> journalLines) { this.journalLines = journalLines; return this; }
-        public Builder sourceModule(String sourceModule) { this.sourceModule = sourceModule; return this; }
-        public Builder accountReference(String accountReference) { this.accountReference = accountReference; return this; }
-        public Builder initiatedBy(String initiatedBy) { this.initiatedBy = initiatedBy; return this; }
-        public Builder valueDate(LocalDate valueDate) { this.valueDate = valueDate; return this; }
-        public Builder branchCode(String branchCode) { this.branchCode = branchCode; return this; }
-        public Builder narration(String narration) { this.narration = narration; return this; }
-        public Builder productType(String productType) { this.productType = productType; return this; }
-        public Builder idempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; return this; }
-        public Builder systemGenerated(boolean systemGenerated) { this.systemGenerated = systemGenerated; return this; }
-        public Builder compoundJournalGroups(List<CompoundJournalGroup> groups) { this.compoundJournalGroups = groups; return this; }
+        public Builder amount(BigDecimal amount) {
+            this.amount = amount;
+            return this;
+        }
+
+        public Builder transactionType(String transactionType) {
+            this.transactionType = transactionType;
+            return this;
+        }
+
+        public Builder journalLines(List<JournalLineRequest> journalLines) {
+            this.journalLines = journalLines;
+            return this;
+        }
+
+        public Builder sourceModule(String sourceModule) {
+            this.sourceModule = sourceModule;
+            return this;
+        }
+
+        public Builder accountReference(String accountReference) {
+            this.accountReference = accountReference;
+            return this;
+        }
+
+        public Builder initiatedBy(String initiatedBy) {
+            this.initiatedBy = initiatedBy;
+            return this;
+        }
+
+        public Builder valueDate(LocalDate valueDate) {
+            this.valueDate = valueDate;
+            return this;
+        }
+
+        public Builder branchCode(String branchCode) {
+            this.branchCode = branchCode;
+            return this;
+        }
+
+        public Builder narration(String narration) {
+            this.narration = narration;
+            return this;
+        }
+
+        public Builder productType(String productType) {
+            this.productType = productType;
+            return this;
+        }
+
+        public Builder idempotencyKey(String idempotencyKey) {
+            this.idempotencyKey = idempotencyKey;
+            return this;
+        }
+
+        public Builder systemGenerated(boolean systemGenerated) {
+            this.systemGenerated = systemGenerated;
+            return this;
+        }
+
+        public Builder compoundJournalGroups(List<CompoundJournalGroup> groups) {
+            this.compoundJournalGroups = groups;
+            return this;
+        }
 
         public TransactionRequest build() {
             if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {

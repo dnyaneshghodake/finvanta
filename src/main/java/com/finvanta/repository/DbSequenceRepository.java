@@ -1,14 +1,16 @@
 package com.finvanta.repository;
 
 import com.finvanta.domain.entity.DbSequence;
+
 import jakarta.persistence.LockModeType;
+
+import java.util.Optional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-
-import java.util.Optional;
 
 /**
  * CBS Sequence Repository with pessimistic locking for multi-instance safety.
@@ -27,8 +29,7 @@ public interface DbSequenceRepository extends JpaRepository<DbSequence, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM DbSequence s WHERE s.tenantId = :tenantId AND s.sequenceName = :seqName")
     Optional<DbSequence> findAndLockByTenantIdAndSequenceName(
-        @Param("tenantId") String tenantId,
-        @Param("seqName") String sequenceName);
+            @Param("tenantId") String tenantId, @Param("seqName") String sequenceName);
 
     /** Non-locking lookup for read-only queries (e.g., admin display). */
     Optional<DbSequence> findByTenantIdAndSequenceName(String tenantId, String sequenceName);

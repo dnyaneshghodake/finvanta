@@ -40,15 +40,12 @@ public final class ReferenceGenerator {
      * For 1M+ daily transactions, 6-digit sequence supports ~11.5 days before
      * reaching Long.MAX_VALUE (effectively infinite).
      */
-    private static final AtomicLong SEQUENCE = new AtomicLong(
-        Math.abs(System.nanoTime() % 100000));
+    private static final AtomicLong SEQUENCE = new AtomicLong(Math.abs(System.nanoTime() % 100000));
 
     /** Millisecond-precision timestamp: yyyyMMddHHmmssSS (SS = centiseconds) */
-    private static final DateTimeFormatter FORMATTER =
-        DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
+    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
 
-    private ReferenceGenerator() {
-    }
+    private ReferenceGenerator() {}
 
     /** Generates loan application number: APP + branchCode + timestamp + seq */
     public static String generateApplicationNumber(String branchCode) {

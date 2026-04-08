@@ -1,13 +1,15 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.DayStatus;
+
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * CBS Business Calendar per Finacle/Temenos Day Control standards.
@@ -36,10 +38,12 @@ import java.time.LocalDateTime;
  *   (e.g., opening April 5 when April 4 is still DAY_OPEN or NOT_OPENED).
  */
 @Entity
-@Table(name = "business_calendar", indexes = {
-    @Index(name = "idx_buscal_tenant_date", columnList = "tenant_id, business_date", unique = true),
-    @Index(name = "idx_buscal_day_status", columnList = "tenant_id, day_status")
-})
+@Table(
+        name = "business_calendar",
+        indexes = {
+            @Index(name = "idx_buscal_tenant_date", columnList = "tenant_id, business_date", unique = true),
+            @Index(name = "idx_buscal_day_status", columnList = "tenant_id, day_status")
+        })
 @Getter
 @Setter
 @NoArgsConstructor
