@@ -13,7 +13,54 @@
         <div class="col"><div class="fv-stat-card"><div class="stat-value"><c:out value="${totalActive}" /></div><div class="stat-label">Active SIs</div></div></div>
         <div class="col"><div class="fv-stat-card stat-warning"><div class="stat-value"><c:out value="${totalPaused}" /></div><div class="stat-label">Paused</div></div></div>
         <div class="col"><div class="fv-stat-card stat-danger"><div class="stat-value"><c:out value="${totalFailed}" /></div><div class="stat-label">Failed (Active)</div></div></div>
+        <div class="col"><div class="fv-stat-card"><div class="stat-value"><c:out value="${totalPending}" /></div><div class="stat-label">Pending Approval</div></div></div>
     </div>
+
+    <!-- Pending SIs Requiring Checker Approval (Maker-Checker) -->
+    <c:if test="${not empty pendingSIs}">
+    <div class="fv-card mb-3">
+        <div class="card-header text-warning"><i class="bi bi-hourglass-split"></i> Pending Approval (Maker-Checker) <span class="badge bg-warning text-dark"><c:out value="${pendingSIs.size()}" /></span></div>
+        <div class="card-body">
+            <div class="table-responsive">
+            <table class="table fv-table">
+                <thead><tr>
+                    <th>SI Ref</th><th>Type</th><th>Customer</th><th>Source CASA</th><th>Destination</th>
+                    <th>Amount</th><th>Frequency</th><th>Maker</th><th>Created</th><th>Action</th>
+                </tr></thead>
+                <tbody>
+                <c:forEach var="si" items="${pendingSIs}">
+                    <tr>
+                        <td class="font-monospace small"><c:out value="${si.siReference}" /></td>
+                        <td><span class="badge bg-info"><c:out value="${si.destinationType}" /></span></td>
+                        <td><c:out value="${si.customer.firstName}" /> <c:out value="${si.customer.lastName}" /></td>
+                        <td><a href="${pageContext.request.contextPath}/deposit/view/${si.sourceAccountNumber}"><c:out value="${si.sourceAccountNumber}" /></a></td>
+                        <td><c:out value="${si.destinationAccountNumber}" default="--" /></td>
+                        <td><c:if test="${si.amount != null}"><fmt:formatNumber value="${si.amount}" type="currency" currencyCode="INR"/></c:if><c:if test="${si.amount == null}">Dynamic</c:if></td>
+                        <td><c:out value="${si.frequency}" /></td>
+                        <td><c:out value="${si.createdBy}" /></td>
+                        <td><c:out value="${si.createdAt}" /></td>
+                        <td>
+                            <form method="post" action="${pageContext.request.contextPath}/loan/si/approve/${si.siReference}" class="d-inline">
+                                <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                                <button type="submit" class="btn btn-sm btn-success" data-confirm="Approve SI ${si.siReference}? It will become active immediately."><i class="bi bi-check-circle"></i> Approve</button>
+                            </form>
+                            <form method="post" action="${pageContext.request.contextPath}/loan/si/reject/${si.siReference}" class="d-inline">
+                                <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                                <input type="hidden" name="reason" value="" id="reject_${si.siReference}" />
+                                <button type="submit" class="btn btn-sm btn-outline-danger"
+                                    onclick="var r=prompt('Rejection reason (mandatory):'); if(!r){return false;} document.getElementById('reject_${si.siReference}').value=r; return confirm('Reject SI ${si.siReference}?');">
+                                    <i class="bi bi-x-circle"></i> Reject
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                </c:forEach>
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+    </c:if>
 
     <!-- Active SIs by Type -->
     <c:if test="${not empty sisByType}">
