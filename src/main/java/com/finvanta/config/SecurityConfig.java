@@ -142,6 +142,24 @@ public class SecurityConfig {
                 if (isDevProfile()) {
                     headers.frameOptions(frame -> frame.sameOrigin());
                 }
+                // CBS SECURITY: Additional security headers per OWASP and RBI IT Governance.
+                // These headers protect against common web vulnerabilities:
+                //   - X-Content-Type-Options: prevents MIME sniffing attacks
+                //   - X-XSS-Protection: enables browser XSS filter (legacy browsers)
+                //   - Referrer-Policy: prevents leaking internal URLs to external sites
+                //   - Permissions-Policy: disables unnecessary browser features
+                //   - Content-Security-Policy: restricts resource loading to same origin
+                // HSTS (Strict-Transport-Security) is only enabled in production
+                // to avoid HTTPS enforcement issues in dev/test environments.
+                headers.contentTypeOptions(cto -> {}); // X-Content-Type-Options: nosniff
+                headers.xssProtection(xss -> {}); // X-XSS-Protection: 1; mode=block
+                headers.referrerPolicy(ref ->
+                    ref.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
+                headers.permissionsPolicy(pp -> pp.policy("camera=(), microphone=(), geolocation=()"));
+                if (!isDevProfile()) {
+                    headers.httpStrictTransportSecurity(hsts ->
+                        hsts.includeSubDomains(true).maxAgeInSeconds(31536000)); // 1 year
+                }
             });
 
         return http.build();

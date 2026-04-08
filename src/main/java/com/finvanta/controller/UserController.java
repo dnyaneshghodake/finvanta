@@ -85,8 +85,9 @@ public class UserController {
             AppUser user = new AppUser();
             user.setTenantId(tenantId);
             user.setUsername(username);
-            // CBS P0: Always bcrypt-hash passwords. Never store plaintext.
-            user.setPasswordHash(passwordEncoder.encode(password));
+            // CBS: Use changePassword() to set password with expiry and history tracking.
+            // Per RBI IT Governance Direction 2023: password rotation every 90 days.
+            user.changePassword(passwordEncoder.encode(password));
             user.setFullName(fullName);
             user.setEmail(email);
             user.setRole(UserRole.valueOf(role));
@@ -173,7 +174,9 @@ public class UserController {
             AppUser user = userRepository.findById(id)
                 .filter(u -> u.getTenantId().equals(tenantId))
                 .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", "User not found"));
-            user.setPasswordHash(passwordEncoder.encode(newPassword));
+            // CBS: Use changePassword() to track password history and set expiry.
+            // Per RBI IT Governance: users cannot reuse last 3 passwords.
+            user.changePassword(passwordEncoder.encode(newPassword));
             user.setUpdatedBy(SecurityUtil.getCurrentUsername());
             userRepository.save(user);
             auditService.logEvent("AppUser", user.getId(), "PASSWORD_RESET",

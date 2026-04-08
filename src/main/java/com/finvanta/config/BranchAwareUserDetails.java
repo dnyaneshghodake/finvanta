@@ -22,6 +22,28 @@ public class BranchAwareUserDetails extends User {
     private final Long branchId;
     private final String branchCode;
 
+    /**
+     * Full constructor with account status flags for lockout and password expiry.
+     *
+     * @param username              Login username
+     * @param password              Encoded password hash
+     * @param accountNonLocked      false if account is locked (failed login attempts)
+     * @param credentialsNonExpired false if password has expired (90-day rotation)
+     * @param authorities           Granted roles (ROLE_MAKER, ROLE_CHECKER, etc.)
+     * @param branchId              User's home branch ID
+     * @param branchCode            User's home branch code
+     */
+    public BranchAwareUserDetails(String username, String password,
+                                   boolean accountNonLocked,
+                                   boolean credentialsNonExpired,
+                                   Collection<? extends GrantedAuthority> authorities,
+                                   Long branchId, String branchCode) {
+        super(username, password, true, true, credentialsNonExpired, accountNonLocked, authorities);
+        this.branchId = branchId;
+        this.branchCode = branchCode;
+    }
+
+    /** Backward-compatible constructor (all flags true) */
     public BranchAwareUserDetails(String username, String password,
                                    Collection<? extends GrantedAuthority> authorities,
                                    Long branchId, String branchCode) {
