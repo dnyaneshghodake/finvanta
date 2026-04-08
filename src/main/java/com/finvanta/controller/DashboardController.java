@@ -109,12 +109,14 @@ public class DashboardController {
 
         // CASA Ratio = (CASA Deposits / Total Deposits) x 100
         // Higher CASA ratio = lower cost of funds for the bank (RBI key metric)
-        // NOTE: Currently the system only has CASA deposits (no term deposits/FDs),
-        // so the ratio is always 100% when deposits exist. When term deposit module
-        // is added, totalDeposits should include FD balances and this formula will
-        // compute a meaningful sub-100% ratio.
+        // Per RBI regulatory reporting: CASA deposits = SB + CA balances.
+        // totalDeposits includes all deposit types (CASA + FD when term deposit module is added).
+        // Currently CASA-only, so casaDeposits == totalDeposits and ratio is 100%.
+        // When FD module is added, totalDeposits must include FD balances while
+        // casaDeposits remains CASA-only, producing a meaningful sub-100% ratio.
+        BigDecimal casaDeposits = totalDeposits; // TODO: When FD module is added, query CASA-only sum here
         BigDecimal casaRatio = totalDeposits.compareTo(BigDecimal.ZERO) > 0
-            ? totalDeposits.multiply(BigDecimal.valueOf(100))
+            ? casaDeposits.multiply(BigDecimal.valueOf(100))
                 .divide(totalDeposits, 2, RoundingMode.HALF_UP)
             : BigDecimal.ZERO;
         mav.addObject("casaRatio", casaRatio);

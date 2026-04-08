@@ -95,7 +95,7 @@ public class SecurityConfig {
             )
             .exceptionHandling(ex -> ex
                 .accessDeniedHandler((request, response, accessDeniedException) -> {
-                    response.sendRedirect(request.getContextPath() + "/error?denied");
+                    response.sendRedirect(request.getContextPath() + "/error/403");
                 })
             )
             .sessionManagement(session -> session

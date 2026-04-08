@@ -41,9 +41,17 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
     @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId AND da.accountStatus <> 'CLOSED' ORDER BY da.accountNumber")
     List<DepositAccount> findAllNonClosedAccounts(@Param("tenantId") String tenantId);
 
-    /** Active savings accounts (for interest accrual -- current accounts have 0% rate) */
+    /**
+     * Savings accounts eligible for interest accrual (ACTIVE, DORMANT, FROZEN).
+     * Per RBI directive: DORMANT accounts continue to accrue interest — dormancy does
+     * not forfeit the customer's right to interest on their balance.
+     * Per PMLA / RBI Freeze Guidelines: FROZEN accounts continue to accrue interest —
+     * freeze ≠ forfeiture. The freeze only restricts debit/credit operations.
+     * Current accounts have 0% rate so are excluded by the interestRate > 0 filter.
+     */
     @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId " +
-           "AND da.accountStatus = 'ACTIVE' AND da.accountType LIKE 'SAVINGS%' AND da.interestRate > 0")
+           "AND da.accountStatus IN ('ACTIVE', 'DORMANT', 'FROZEN') " +
+           "AND da.accountType LIKE 'SAVINGS%' AND da.interestRate > 0")
     List<DepositAccount> findActiveSavingsAccounts(@Param("tenantId") String tenantId);
 
     /** Accounts by customer */

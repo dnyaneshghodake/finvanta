@@ -441,7 +441,20 @@ public class EodOrchestrator {
 
         BusinessCalendar calendar = calendarRepository
             .findAndLockByTenantIdAndDate(tenantId, businessDate).orElseThrow();
-        calendar.setEodComplete(true);
+
+        // CBS Day Control: On FAILED EOD, restore calendar to DAY_OPEN so the batch
+        // can be retried after the root cause is resolved. Per Finacle DAYCTRL /
+        // Temenos COB: a failed EOD must NOT permanently lock the calendar.
+        // Only COMPLETED and PARTIALLY_COMPLETED mark eodComplete=true.
+        // Compare with BatchService.failEodBatch() which restores DAY_OPEN on failure.
+        if (eodJob.getStatus() == BatchStatus.FAILED) {
+            calendar.setDayStatus(DayStatus.DAY_OPEN);
+            calendar.setLocked(false);
+            calendar.setEodComplete(false);
+            log.warn("EOD FAILED for {} — calendar restored to DAY_OPEN for retry", businessDate);
+        } else {
+            calendar.setEodComplete(true);
+        }
         calendar.setUpdatedBy("SYSTEM");
         calendarRepository.save(calendar);
 

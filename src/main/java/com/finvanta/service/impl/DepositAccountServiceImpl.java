@@ -116,8 +116,16 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 "Deposit account not found: " + accountNumber));
     }
 
+    /**
+     * Build and persist a DepositTransaction record.
+     *
+     * @param debitCredit Explicit "DEBIT" or "CREDIT" — caller determines direction.
+     *                    Per Finacle TRAN_DETAIL: debit/credit indicator must be set by
+     *                    the posting logic, not inferred from transaction type name strings.
+     *                    This prevents misclassification of REVERSAL transactions.
+     */
     private DepositTransaction buildTxn(DepositAccount acct, BigDecimal amount,
-            String txnType, LocalDate valueDate, String narration,
+            String txnType, String debitCredit, LocalDate valueDate, String narration,
             TransactionResult result, String txnRef,
             String idempotencyKey, String channel, String counterparty) {
         DepositTransaction txn = new DepositTransaction();
@@ -128,8 +136,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         txn.setAmount(amount);
         txn.setValueDate(valueDate);
         txn.setPostingDate(LocalDateTime.now());
-        txn.setDebitCredit(txnType.contains("WITHDRAWAL") || txnType.contains("DEBIT")
-            || txnType.equals("TDS_DEBIT") || txnType.equals("CHARGE_DEBIT") ? "DEBIT" : "CREDIT");
+        txn.setDebitCredit(debitCredit);
         txn.setBalanceAfter(acct.getLedgerBalance());
         txn.setNarration(narration);
         txn.setJournalEntryId(result.getJournalEntryId());
@@ -258,14 +265,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, amount, "Cash deposit"),
                 new JournalLineRequest(gl, DebitCredit.CREDIT, amount, "Credit " + accountNumber)
             )).build());
-        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, r.getTransactionRef(), idempotencyKey, channel, null);
+        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_DEPOSIT", "CREDIT", businessDate, narration, r, r.getTransactionRef(), idempotencyKey, channel, null);
         acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
         if (acct.isDormant()) { acct.setAccountStatus(DepositAccountStatus.ACTIVE); acct.setDormantDate(null); }
         acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
-        return buildTxn(acct, amount, "CASH_DEPOSIT", businessDate, narration, r, r.getTransactionRef(), idempotencyKey, channel, null);
+        return buildTxn(acct, amount, "CASH_DEPOSIT", "CREDIT", businessDate, narration, r, r.getTransactionRef(), idempotencyKey, channel, null);
     }
 
     // === Withdrawal ===
@@ -306,12 +313,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 new JournalLineRequest(gl, DebitCredit.DEBIT, amount, "Debit " + acn),
                 new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.CREDIT, amount, "Cash withdrawal")
             )).build());
-        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, r.getTransactionRef(), idk, channel, null);
+        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_WITHDRAWAL", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, channel, null);
         acct.setLedgerBalance(acct.getLedgerBalance().subtract(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(bd); acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
-        return buildTxn(acct, amount, "CASH_WITHDRAWAL", bd, narration, r, r.getTransactionRef(), idk, channel, null);
+        return buildTxn(acct, amount, "CASH_WITHDRAWAL", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, channel, null);
     }
 
     // === Transfer ===
