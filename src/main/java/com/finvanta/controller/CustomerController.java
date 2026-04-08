@@ -74,6 +74,35 @@ public class CustomerController {
         return mav;
     }
 
+    /**
+     * CBS Customer Search per Finacle CIF_SEARCH.
+     * Searches by name, customer number, mobile, or PAN.
+     * Essential for branch operations — staff must locate customers quickly.
+     */
+    @GetMapping("/search")
+    public ModelAndView searchCustomers(@RequestParam(required = false) String q) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("customer/list");
+        if (q != null && !q.isBlank() && q.length() >= 2) {
+            mav.addObject("customers", customerRepository.searchCustomers(tenantId, q.trim()));
+            mav.addObject("searchQuery", q);
+        } else {
+            // Show all if no query (same as list)
+            if (SecurityUtil.isAdminRole()) {
+                mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
+            } else {
+                Long branchId = SecurityUtil.getCurrentUserBranchId();
+                if (branchId != null) {
+                    mav.addObject("customers",
+                        customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, branchId));
+                } else {
+                    mav.addObject("customers", java.util.Collections.emptyList());
+                }
+            }
+        }
+        return mav;
+    }
+
     @GetMapping("/add")
     public ModelAndView showAddForm() {
         String tenantId = TenantContext.getCurrentTenant();
@@ -99,6 +128,22 @@ public class CustomerController {
                 .filter(b -> b.getTenantId().equals(tenantId))
                 .orElseThrow(() -> new BusinessException(
                     "BRANCH_NOT_FOUND", "Branch not found: " + branchId));
+
+            // P1 Gap 5.2: Duplicate CIF detection per RBI KYC norms.
+            // Per RBI: one PAN = one CIF. Duplicate CIFs cause exposure miscalculation.
+            if (customer.getPanNumber() != null && !customer.getPanNumber().isBlank()) {
+                if (customerRepository.existsByTenantIdAndPanNumber(tenantId, customer.getPanNumber())) {
+                    throw new BusinessException("DUPLICATE_PAN",
+                        "Customer with PAN " + customer.getPanNumber() + " already exists. "
+                            + "Per RBI KYC norms, one PAN = one CIF.");
+                }
+            }
+            if (customer.getAadhaarNumber() != null && !customer.getAadhaarNumber().isBlank()) {
+                if (customerRepository.existsByTenantIdAndAadhaarNumber(tenantId, customer.getAadhaarNumber())) {
+                    throw new BusinessException("DUPLICATE_AADHAAR",
+                        "Customer with Aadhaar already exists. Duplicate CIFs are prohibited per RBI KYC.");
+                }
+            }
 
             customer.setCustomerNumber(ReferenceGenerator.generateCustomerNumber(branch.getBranchCode()));
             customer.setTenantId(tenantId);
