@@ -220,3 +220,109 @@ VALUES ('DEFAULT', 'ADMIN', 'ALL', 50000000.00, 200000000.00, true, 'Admin defau
 
 INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
 VALUES ('DEFAULT', 'MAKER', 'WRITE_OFF', 0.00, 0.00, true, 'Makers cannot perform write-offs (enforced via limit=0)', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- ============================================================
+-- E2E TEST SCENARIO SEED DATA
+-- ============================================================
+-- Per Tier-1 CBS architecture: transactional data (GL postings, ledger entries,
+-- loan accounts with balances) MUST be created through the TransactionEngine
+-- to maintain double-entry integrity, ledger hash chain, and audit trail.
+--
+-- What we CAN safely seed in data.sql (master/config data only):
+--   1. April 1 as DAY_OPEN — so transactions work immediately after login
+--   2. Default transaction batch — required by TransactionEngine Step 5.5
+--   3. CASA deposit accounts — ACTIVE accounts for CUST001 and CUST002
+--      (balance=0, will be funded via UI deposit after login)
+--   4. Loan application (APPROVED) — ready for account creation + disbursement
+--
+-- What MUST be done via UI after startup (creates proper GL/ledger/audit):
+--   Step 1: Login as admin → Dashboard shows April 1 as business date
+--   Step 2: Login as maker1 → Deposit INR 500,000 into CUST001 CASA
+--   Step 3: Login as maker1 → Deposit INR 1,000,000 into CUST002 CASA
+--   Step 4: Login as checker1 → Create loan account from APP001
+--   Step 5: Login as checker1 → Disburse loan (credits CUST001 CASA)
+--   Step 6: Login as admin → Run EOD for April 1
+--   Step 7: Login as admin → Close Day April 1 → Open Day April 2
+--   Step 8: Repeat transactions → Run EOD → observe DPD, accrual, NPA
+-- ============================================================
+
+-- 1. Open April 1 as business day (so system is immediately usable)
+UPDATE business_calendar
+SET day_status = 'DAY_OPEN', day_opened_by = 'SYSTEM', day_opened_at = CURRENT_TIMESTAMP
+WHERE tenant_id = 'DEFAULT' AND business_date = '2026-04-01';
+
+-- 2. Default transaction batch for April 1 (required by TransactionEngine Step 5.5)
+INSERT INTO transaction_batches (tenant_id, business_date, batch_name, batch_type, status,
+    opened_by, opened_at, maker_id, total_transactions, total_debit, total_credit,
+    version, created_at, created_by)
+VALUES ('DEFAULT', '2026-04-01', 'DEFAULT_BATCH', 'INTRA_DAY', 'OPEN',
+    'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM', 0, 0.00, 0.00,
+    0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- 3. CASA Savings Accounts for KYC-verified customers (ACTIVE, zero balance)
+-- Per CBS: accounts start at zero. Initial deposit must go through TransactionEngine
+-- via the Deposit UI to create proper GL entries (DR Bank Ops / CR SB Deposits).
+-- CUST001 (Rajesh Sharma) — Savings at HQ001
+INSERT INTO deposit_accounts (tenant_id, account_number, customer_id, branch_id,
+    account_type, product_code, currency_code, account_status,
+    available_balance, ledger_balance, hold_amount, uncleared_amount,
+    od_limit, minimum_balance, interest_rate, accrued_interest,
+    ytd_interest_credited, ytd_tds_deducted,
+    opened_date, last_transaction_date,
+    cheque_book_enabled, debit_card_enabled,
+    version, created_at, created_by, updated_by)
+VALUES ('DEFAULT', 'SB-HQ001-000001', 1, 1,
+    'SAVINGS', 'SAVINGS', 'INR', 'ACTIVE',
+    0.00, 0.00, 0.00, 0.00,
+    0.00, 5000.00, 4.0000, 0.00,
+    0.00, 0.00,
+    '2026-04-01', '2026-04-01',
+    false, false,
+    0, CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM');
+
+-- CUST002 (Priya Patel) — Savings at DEL001
+INSERT INTO deposit_accounts (tenant_id, account_number, customer_id, branch_id,
+    account_type, product_code, currency_code, account_status,
+    available_balance, ledger_balance, hold_amount, uncleared_amount,
+    od_limit, minimum_balance, interest_rate, accrued_interest,
+    ytd_interest_credited, ytd_tds_deducted,
+    opened_date, last_transaction_date,
+    cheque_book_enabled, debit_card_enabled,
+    version, created_at, created_by, updated_by)
+VALUES ('DEFAULT', 'SB-DEL001-000001', 2, 2,
+    'SAVINGS', 'SAVINGS', 'INR', 'ACTIVE',
+    0.00, 0.00, 0.00, 0.00,
+    0.00, 5000.00, 4.0000, 0.00,
+    0.00, 0.00,
+    '2026-04-01', '2026-04-01',
+    false, false,
+    0, CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM');
+
+-- 4. Loan Application (APPROVED) — ready for account creation + disbursement
+-- CUST001 applies for Term Loan INR 500,000 at 12% for 24 months
+-- Status: APPROVED (checker has already approved, ready for account creation)
+-- Disbursement account: CUST001's CASA (SB-HQ001-000001)
+INSERT INTO loan_applications (tenant_id, application_number, customer_id, branch_id,
+    product_type, requested_amount, approved_amount, interest_rate, penal_rate,
+    tenure_months, application_date, status,
+    disbursement_account_number,
+    version, created_at, created_by, updated_by)
+VALUES ('DEFAULT', 'APP-HQ001-000001', 1, 1,
+    'TERM_LOAN', 500000.00, 500000.00, 12.0000, 2.0000,
+    24, '2026-04-01', 'APPROVED',
+    'SB-HQ001-000001',
+    0, CURRENT_TIMESTAMP, 'maker1', 'checker1');
+
+-- 5. Second Loan Application (SUBMITTED) — for testing verification flow
+-- CUST002 applies for Home Loan INR 2,500,000 at 8.5% for 120 months
+-- Status: SUBMITTED (needs verification + approval before account creation)
+INSERT INTO loan_applications (tenant_id, application_number, customer_id, branch_id,
+    product_type, requested_amount, interest_rate, penal_rate,
+    tenure_months, application_date, status,
+    disbursement_account_number,
+    version, created_at, created_by, updated_by)
+VALUES ('DEFAULT', 'APP-DEL001-000001', 2, 2,
+    'HOME_LOAN', 2500000.00, 8.5000, 2.0000,
+    120, '2026-04-01', 'SUBMITTED',
+    'SB-DEL001-000001',
+    0, CURRENT_TIMESTAMP, 'maker2', 'maker2');
