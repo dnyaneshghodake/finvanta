@@ -52,4 +52,11 @@ public interface DepositTransactionRepository extends JpaRepository<DepositTrans
 
     /** Idempotency check */
     Optional<DepositTransaction> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
+
+    /** All deposit transactions for a business date (for voucher register / daily report) */
+    @Query("SELECT dt FROM DepositTransaction dt WHERE dt.tenantId = :tenantId " +
+           "AND dt.valueDate = :date ORDER BY dt.postingDate ASC")
+    List<DepositTransaction> findByTenantIdAndValueDate(
+        @Param("tenantId") String tenantId,
+        @Param("date") LocalDate date);
 }

@@ -45,7 +45,9 @@
         <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <li class="nav-section">Accounting</li>
         <li><a href="${pageContext.request.contextPath}/accounting/trial-balance" class="nav-link"><i class="bi bi-journal-bookmark"></i><span class="nav-text">Trial Balance</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/accounting/financial-statements" class="nav-link"><i class="bi bi-file-earmark-bar-graph"></i><span class="nav-text">Financial Statements</span></a></li>
         <li><a href="${pageContext.request.contextPath}/accounting/journal-entries" class="nav-link"><i class="bi bi-journal-text"></i><span class="nav-text">Journal Entries</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/accounting/voucher-register" class="nav-link"><i class="bi bi-receipt-cutoff"></i><span class="nav-text">Voucher Register</span></a></li>
         <li><a href="${pageContext.request.contextPath}/reconciliation/report" class="nav-link"><i class="bi bi-arrow-up-right"></i><span class="nav-text">GL Reconciliation</span></a></li>
         </c:if>
 
