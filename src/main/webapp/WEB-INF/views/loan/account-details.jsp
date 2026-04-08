@@ -129,6 +129,93 @@
     </div>
     </c:if>
 
+    <!-- CBS Standing Instructions (Finacle SI_MASTER / Temenos STANDING.ORDER) -->
+    <c:if test="${not empty standingInstructions}">
+    <div class="fv-card">
+        <div class="card-header"><i class="bi bi-arrow-repeat"></i> Standing Instructions <span class="badge bg-secondary"><c:out value="${standingInstructions.size()}" /></span></div>
+        <div class="card-body">
+            <div class="table-responsive">
+            <table class="table fv-table">
+                <thead>
+                    <tr>
+                        <th>SI Reference</th>
+                        <th>Type</th>
+                        <th>Source CASA</th>
+                        <th>Frequency</th>
+                        <th>Next Execution</th>
+                        <th>Last Status</th>
+                        <th>Executions</th>
+                        <th>Failures</th>
+                        <th>Status</th>
+                        <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                        <th>Action</th>
+                        </c:if>
+                    </tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="si" items="${standingInstructions}">
+                        <tr>
+                            <td class="font-monospace small"><c:out value="${si.siReference}" /></td>
+                            <td><span class="badge ${si.destinationType == 'LOAN_EMI' ? 'bg-primary' : 'bg-info'}"><c:out value="${si.destinationType}" /></span></td>
+                            <td><a href="${pageContext.request.contextPath}/deposit/view/${si.sourceAccountNumber}"><c:out value="${si.sourceAccountNumber}" /></a></td>
+                            <td><c:out value="${si.frequency}" /></td>
+                            <td><c:out value="${si.nextExecutionDate}" default="--" /></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${si.lastExecutionStatus == 'SUCCESS'}"><span class="fv-badge fv-badge-active">SUCCESS</span></c:when>
+                                    <c:when test="${si.lastExecutionStatus != null && si.lastExecutionStatus.startsWith('FAILED')}"><span class="fv-badge fv-badge-npa"><c:out value="${si.lastExecutionStatus}" /></span></c:when>
+                                    <c:when test="${si.lastExecutionStatus == 'SKIPPED'}"><span class="fv-badge fv-badge-pending">SKIPPED</span></c:when>
+                                    <c:otherwise><span class="text-muted">--</span></c:otherwise>
+                                </c:choose>
+                            </td>
+                            <td><c:out value="${si.totalExecutions}" /></td>
+                            <td><c:if test="${si.totalFailures > 0}"><span class="text-danger"><c:out value="${si.totalFailures}" /></span></c:if><c:if test="${si.totalFailures == 0}">0</c:if></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${si.status == 'ACTIVE'}"><span class="fv-badge fv-badge-active">ACTIVE</span></c:when>
+                                    <c:when test="${si.status == 'PAUSED'}"><span class="fv-badge fv-badge-pending">PAUSED</span></c:when>
+                                    <c:when test="${si.status == 'EXPIRED'}"><span class="fv-badge fv-badge-closed">EXPIRED</span></c:when>
+                                    <c:when test="${si.status == 'CANCELLED'}"><span class="fv-badge fv-badge-rejected">CANCELLED</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-pending"><c:out value="${si.status}" /></span></c:otherwise>
+                                </c:choose>
+                            </td>
+                            <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                            <td>
+                                <c:if test="${si.status == 'ACTIVE'}">
+                                    <form method="post" action="${pageContext.request.contextPath}/loan/si/pause/${si.siReference}" class="d-inline">
+                                        <input type="hidden" name="accountNumber" value="${account.accountNumber}" />
+                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                                        <button type="submit" class="btn btn-sm btn-outline-warning" data-confirm="Pause SI ${si.siReference}? EMI auto-debit will stop until resumed."><i class="bi bi-pause-circle"></i> Pause</button>
+                                    </form>
+                                    <form method="post" action="${pageContext.request.contextPath}/loan/si/cancel/${si.siReference}" class="d-inline">
+                                        <input type="hidden" name="accountNumber" value="${account.accountNumber}" />
+                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Cancel SI ${si.siReference}? This is permanent."><i class="bi bi-x-circle"></i> Cancel</button>
+                                    </form>
+                                </c:if>
+                                <c:if test="${si.status == 'PAUSED'}">
+                                    <form method="post" action="${pageContext.request.contextPath}/loan/si/resume/${si.siReference}" class="d-inline">
+                                        <input type="hidden" name="accountNumber" value="${account.accountNumber}" />
+                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                                        <button type="submit" class="btn btn-sm btn-outline-success" data-confirm="Resume SI ${si.siReference}? EMI auto-debit will restart."><i class="bi bi-play-circle"></i> Resume</button>
+                                    </form>
+                                </c:if>
+                            </td>
+                            </c:if>
+                        </tr>
+                    </c:forEach>
+                </tbody>
+            </table>
+            </div>
+            <c:forEach var="si" items="${standingInstructions}">
+                <c:if test="${si.lastFailureReason != null}">
+                    <div class="alert alert-warning mt-2 small"><strong>Last failure (${si.siReference}):</strong> <c:out value="${si.lastFailureReason}" /></div>
+                </c:if>
+            </c:forEach>
+        </div>
+    </div>
+    </c:if>
+
     <!-- CBS Interest Accrual Trail (P0-2: Audit-grade per-day records) -->
     <c:if test="${not empty accrualHistory}">
     <div class="fv-card">

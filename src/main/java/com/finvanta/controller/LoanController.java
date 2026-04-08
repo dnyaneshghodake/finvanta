@@ -14,7 +14,9 @@ import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanDocumentRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.repository.DepositAccountRepository;
+import com.finvanta.repository.StandingInstructionRepository;
 import com.finvanta.repository.ProductMasterRepository;
+import com.finvanta.service.impl.StandingInstructionServiceImpl;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CollateralService;
 import com.finvanta.service.LoanAccountService;
@@ -51,6 +53,8 @@ public class LoanController {
     private final InterestAccrualRepository accrualRepository;
     private final ProductMasterRepository productRepository;
     private final DepositAccountRepository depositAccountRepository;
+    private final StandingInstructionRepository siRepository;
+    private final StandingInstructionServiceImpl siService;
 
     public LoanController(LoanApplicationService applicationService,
                            LoanAccountService accountService,
@@ -66,7 +70,9 @@ public class LoanController {
                            LoanAccountRepository accountRepository,
                            InterestAccrualRepository accrualRepository,
                            ProductMasterRepository productRepository,
-                           DepositAccountRepository depositAccountRepository) {
+                           DepositAccountRepository depositAccountRepository,
+                           StandingInstructionRepository siRepository,
+                           StandingInstructionServiceImpl siService) {
         this.applicationService = applicationService;
         this.accountService = accountService;
         this.scheduleService = scheduleService;
@@ -82,6 +88,8 @@ public class LoanController {
         this.accrualRepository = accrualRepository;
         this.productRepository = productRepository;
         this.depositAccountRepository = depositAccountRepository;
+        this.siRepository = siRepository;
+        this.siService = siService;
     }
 
     @GetMapping("/apply")
@@ -258,6 +266,10 @@ public class LoanController {
                 tenantId, account.getId(),
                 account.getDisbursementDate() != null ? account.getDisbursementDate() : java.time.LocalDate.of(2020, 1, 1),
                 java.time.LocalDate.of(2099, 12, 31)));
+
+        // CBS: Standing Instructions linked to this loan account
+        mav.addObject("standingInstructions",
+            siRepository.findByTenantIdAndLoanAccountNumber(tenantId, account.getAccountNumber()));
 
         // Cross-module linkage: resolve product ID for "View GL Config" link
         productRepository.findByTenantIdAndProductCode(tenantId, account.getProductType())
@@ -564,6 +576,52 @@ public class LoanController {
             accountService.disburseTranche(accountNumber, trancheAmount, narration);
             redirectAttributes.addFlashAttribute("success",
                 "Tranche disbursed: INR " + trancheAmount);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
+    // ================================================================
+    // CBS Standing Instruction Management (Finacle SI_MASTER)
+    // ================================================================
+
+    /** Pause an active Standing Instruction — CHECKER/ADMIN */
+    @PostMapping("/si/pause/{siReference}")
+    public String pauseSI(@PathVariable String siReference,
+                           @RequestParam String accountNumber,
+                           RedirectAttributes redirectAttributes) {
+        try {
+            siService.pauseSI(siReference);
+            redirectAttributes.addFlashAttribute("success", "Standing Instruction paused: " + siReference);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
+    /** Resume a paused Standing Instruction — CHECKER/ADMIN */
+    @PostMapping("/si/resume/{siReference}")
+    public String resumeSI(@PathVariable String siReference,
+                            @RequestParam String accountNumber,
+                            RedirectAttributes redirectAttributes) {
+        try {
+            siService.resumeSI(siReference);
+            redirectAttributes.addFlashAttribute("success", "Standing Instruction resumed: " + siReference);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/loan/account/" + accountNumber;
+    }
+
+    /** Cancel a Standing Instruction — CHECKER/ADMIN */
+    @PostMapping("/si/cancel/{siReference}")
+    public String cancelSI(@PathVariable String siReference,
+                            @RequestParam String accountNumber,
+                            RedirectAttributes redirectAttributes) {
+        try {
+            siService.cancelSI(siReference);
+            redirectAttributes.addFlashAttribute("success", "Standing Instruction cancelled: " + siReference);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
