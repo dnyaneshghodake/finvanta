@@ -5,8 +5,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.FilterDef;
-import org.hibernate.annotations.ParamDef;
 
 /**
  * CBS Database-Backed Sequence per Finacle SEQ_MASTER / Temenos EB.SEQUENCE pattern.
@@ -36,7 +34,6 @@ import org.hibernate.annotations.ParamDef;
  * ~1K TPS which is sufficient for most CBS deployments.
  */
 @Entity
-@FilterDef(name = "tenantFilter", parameters = @ParamDef(name = "tenantId", type = String.class))
 @Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 @Table(name = "db_sequences",
     indexes = {

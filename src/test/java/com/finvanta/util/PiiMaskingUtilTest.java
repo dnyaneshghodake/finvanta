@@ -50,7 +50,7 @@ class PiiMaskingUtilTest {
     @Test
     void testMaskLastN() {
         assertEquals("XXXXXXX3456", PiiMaskingUtil.maskLastN("ACC00123456", 4));
-        assertEquals("XXXXXXXX56", PiiMaskingUtil.maskLastN("ACC00123456", 2));
+        assertEquals("XXXXXXXXX56", PiiMaskingUtil.maskLastN("ACC00123456", 2));
         assertNull(PiiMaskingUtil.maskLastN(null, 4));
         assertEquals("AB", PiiMaskingUtil.maskLastN("AB", 4));
     }

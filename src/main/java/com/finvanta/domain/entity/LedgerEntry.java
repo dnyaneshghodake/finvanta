@@ -5,8 +5,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.FilterDef;
-import org.hibernate.annotations.ParamDef;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -39,7 +37,6 @@ import java.time.LocalDateTime;
  * No @Version column — ledger entries are immutable (no optimistic locking needed).
  */
 @Entity
-@FilterDef(name = "tenantFilter", parameters = @ParamDef(name = "tenantId", type = String.class))
 @Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 @Table(name = "ledger_entries", indexes = {
     @Index(name = "idx_ledger_tenant_gl", columnList = "tenant_id, gl_code, business_date"),
