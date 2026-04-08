@@ -411,6 +411,18 @@ public class BatchService {
         freshCal.setLocked(false);
         freshCal.setDayStatus(DayStatus.DAY_OPEN);
         calendarRepository.save(freshCal);
+
+        // CBS: Audit trail for EOD failure per RBI IT Governance Direction 2023.
+        // EOD failure is a critical operational event that requires investigation.
+        // Per REVIEW.md: every state change must be logged via AuditService.
+        auditService.logEvent("BatchJob", fresh.getId(), "EOD_FAILED",
+            "RUNNING", "FAILED", "BATCH",
+            "EOD FAILED: date=" + fresh.getBusinessDate()
+                + " | processed=" + processedRecords + "/" + totalRecords
+                + " | failed=" + failedRecords
+                + " | Calendar restored to DAY_OPEN for retry"
+                + " | Error: " + (errorMessage != null && errorMessage.length() > 500
+                    ? errorMessage.substring(0, 500) + "..." : errorMessage));
     }
 
     /**
