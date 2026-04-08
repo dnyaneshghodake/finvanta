@@ -96,9 +96,21 @@
                     </div>
                 </div>
 
-                <div class="mb-3">
-                    <label for="purpose" class="form-label">Purpose</label>
-                    <textarea name="purpose" id="purpose" class="form-control" rows="3" placeholder="Purpose of the loan"></textarea>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="disbursementAccountNumber" class="form-label">Disbursement Account (CASA) *</label>
+                        <select name="disbursementAccountNumber" id="disbursementAccountNumber" class="form-select">
+                            <option value="">-- Cash/DD Disbursement (no CASA) --</option>
+                            <c:forEach var="depAcct" items="${casaAccounts}">
+                                <option value="${depAcct.accountNumber}" data-customer-id="${depAcct.customer.id}"><c:out value="${depAcct.accountNumber}" /> - <c:out value="${depAcct.accountType}" /> (Bal: <c:out value="${depAcct.ledgerBalance}" />)</option>
+                            </c:forEach>
+                        </select>
+                        <small class="form-text text-muted">Per RBI: loan proceeds must credit borrower's own CASA account. Select the customer's SB/CA account.</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="purpose" class="form-label">Purpose</label>
+                        <textarea name="purpose" id="purpose" class="form-control" rows="3" placeholder="Purpose of the loan"></textarea>
+                    </div>
                 </div>
 
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />

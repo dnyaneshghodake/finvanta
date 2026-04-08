@@ -174,6 +174,8 @@ CREATE TABLE loan_applications (
     collateral_reference VARCHAR(100),
     risk_category   VARCHAR(20),
     penal_rate      DECIMAL(8,4),
+    -- CBS CASA-Linked Disbursement (Finacle DISB_MASTER / Temenos AA.DISBURSEMENT)
+    disbursement_account_number VARCHAR(40),  -- Borrower's CASA account for loan proceeds credit
     version         BIGINT          NOT NULL DEFAULT 0,
     created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
     updated_at      DATETIME2,
@@ -224,6 +226,8 @@ CREATE TABLE loan_accounts (
     last_penal_accrual_date DATE,
     collateral_reference VARCHAR(100),
     risk_category   VARCHAR(20),
+    -- CBS CASA-Linked Disbursement (Finacle DISB_MASTER / Temenos AA.DISBURSEMENT)
+    disbursement_account_number VARCHAR(40),  -- Borrower's CASA account for loan proceeds credit
     -- Multi-Disbursement (Finacle DISB_MASTER / Temenos AA.DISBURSEMENT)
     disbursement_mode VARCHAR(20)    DEFAULT 'SINGLE',       -- SINGLE, MULTI_TRANCHE, DRAWDOWN
     total_tranches_planned INT,

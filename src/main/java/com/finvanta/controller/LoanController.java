@@ -13,6 +13,7 @@ import com.finvanta.repository.InterestAccrualRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanDocumentRepository;
 import com.finvanta.repository.LoanTransactionRepository;
+import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CollateralService;
@@ -49,6 +50,7 @@ public class LoanController {
     private final LoanAccountRepository accountRepository;
     private final InterestAccrualRepository accrualRepository;
     private final ProductMasterRepository productRepository;
+    private final DepositAccountRepository depositAccountRepository;
 
     public LoanController(LoanApplicationService applicationService,
                            LoanAccountService accountService,
@@ -63,7 +65,8 @@ public class LoanController {
                            LoanTransactionRepository transactionRepository,
                            LoanAccountRepository accountRepository,
                            InterestAccrualRepository accrualRepository,
-                           ProductMasterRepository productRepository) {
+                           ProductMasterRepository productRepository,
+                           DepositAccountRepository depositAccountRepository) {
         this.applicationService = applicationService;
         this.accountService = accountService;
         this.scheduleService = scheduleService;
@@ -78,6 +81,7 @@ public class LoanController {
         this.accountRepository = accountRepository;
         this.accrualRepository = accrualRepository;
         this.productRepository = productRepository;
+        this.depositAccountRepository = depositAccountRepository;
     }
 
     @GetMapping("/apply")
@@ -88,6 +92,10 @@ public class LoanController {
         mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
         mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
         mav.addObject("products", productRepository.findActiveProducts(tenantId));
+        // CBS: CASA accounts for disbursement target selection per Finacle DISB_MASTER.
+        // Per RBI KYC/AML: loan proceeds must credit the borrower's own CASA account.
+        // The UI filters by customer on the client side (data-customer-id attribute).
+        mav.addObject("casaAccounts", depositAccountRepository.findAllActiveAccounts(tenantId));
         return mav;
     }
 

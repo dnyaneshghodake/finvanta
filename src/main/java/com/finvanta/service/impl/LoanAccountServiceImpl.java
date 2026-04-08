@@ -20,8 +20,12 @@ import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.DepositAccountService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
+import com.finvanta.repository.DepositAccountRepository;
+import com.finvanta.domain.entity.DepositAccount;
+import com.finvanta.accounting.GLConstants;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
@@ -78,6 +82,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final ProductGLResolver glResolver;
     private final TransactionEngine transactionEngine;
     private final ChargeEngine chargeEngine;
+    private final DepositAccountRepository depositAccountRepository;
+    private final DepositAccountService depositAccountService;
 
     public LoanAccountServiceImpl(LoanAccountRepository accountRepository,
                                    LoanApplicationRepository applicationRepository,
@@ -93,7 +99,9 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    BusinessDateService businessDateService,
                                    ProductGLResolver glResolver,
                                    TransactionEngine transactionEngine,
-                                   ChargeEngine chargeEngine) {
+                                   ChargeEngine chargeEngine,
+                                   DepositAccountRepository depositAccountRepository,
+                                   DepositAccountService depositAccountService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
@@ -109,6 +117,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.glResolver = glResolver;
         this.transactionEngine = transactionEngine;
         this.chargeEngine = chargeEngine;
+        this.depositAccountRepository = depositAccountRepository;
+        this.depositAccountService = depositAccountService;
     }
 
     @Override
@@ -160,6 +170,10 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setCollateralReference(application.getCollateralReference());
         account.setRiskCategory(application.getRiskCategory() != null
             ? application.getRiskCategory() : "MEDIUM");
+        // CBS: Copy disbursement CASA account from application per Finacle DISB_MASTER.
+        // Per Tier-1 CBS: loan proceeds credit the borrower's operating account.
+        // Validated at disbursement time (account must be ACTIVE, same CIF).
+        account.setDisbursementAccountNumber(application.getDisbursementAccountNumber());
         account.setStatus(LoanStatus.ACTIVE);
         account.setCreatedBy(currentUser);
 
@@ -278,14 +292,69 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 ? "Tranche " + trancheNum + " disbursement for " + accountNumber
                 : "Loan disbursement for account " + accountNumber);
 
+        // ====================================================================
+        // CBS CASA-Linked Disbursement per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT
+        //
+        // Per Tier-1 CBS (Finacle/Temenos/BNP) and RBI KYC/AML guidelines:
+        //   - Loan disbursement MUST credit the borrower's operating CASA account
+        //   - GL: DR Loan Asset (1001) / CR Customer Deposits (SB 2010 or CA 2020)
+        //   - CASA subledger (ledger_balance, available_balance) updated atomically
+        //   - DepositTransaction record created for CASA mini-statement
+        //   - Validation: CASA account must be ACTIVE, same CIF, same tenant
+        //
+        // Fallback: If no CASA account is linked (disbursementAccountNumber is null),
+        // disbursement credits Bank Operations GL (1100) — cash/DD mode for backward
+        // compatibility and third-party disbursements (e.g., builder for home loans).
+        // ====================================================================
+        String creditGl;
+        DepositAccount casaAccount = null;
+        String disbAcctNum = account.getDisbursementAccountNumber();
+
+        if (disbAcctNum != null && !disbAcctNum.isBlank()) {
+            // CBS: Validate the CASA account at disbursement time (not just at application).
+            // Per Finacle DISB_MASTER: account can become FROZEN/CLOSED between approval and disbursement.
+            casaAccount = depositAccountRepository
+                .findByTenantIdAndAccountNumber(tenantId, disbAcctNum)
+                .orElseThrow(() -> new BusinessException("CASA_ACCOUNT_NOT_FOUND",
+                    "Disbursement CASA account not found: " + disbAcctNum
+                        + ". Link a valid CASA account before disbursement."));
+
+            // RBI KYC/AML: CASA account must belong to the same customer (CIF linkage).
+            // Per RBI: retail loan disbursement to third-party accounts is prohibited.
+            if (!casaAccount.getCustomer().getId().equals(account.getCustomer().getId())) {
+                throw new BusinessException("CASA_CIF_MISMATCH",
+                    "Disbursement account " + disbAcctNum + " belongs to customer "
+                        + casaAccount.getCustomer().getCustomerNumber()
+                        + " but loan belongs to " + account.getCustomer().getCustomerNumber()
+                        + ". Per RBI KYC/AML, loan proceeds must credit the borrower's own account.");
+            }
+
+            // CBS: CASA account must be ACTIVE to receive credit.
+            if (!casaAccount.isCreditAllowed()) {
+                throw new BusinessException("CASA_NOT_CREDITABLE",
+                    "Disbursement account " + disbAcctNum + " is not creditable (status: "
+                        + casaAccount.getAccountStatus()
+                        + "). Account must be ACTIVE to receive loan disbursement.");
+            }
+
+            // Resolve GL: SB Deposits (2010) for savings, CA Deposits (2020) for current
+            creditGl = casaAccount.isSavings() ? GLConstants.SB_DEPOSITS : GLConstants.CA_DEPOSITS;
+            log.info("CASA-linked disbursement: loan={}, casa={}, gl={}", accountNumber, disbAcctNum, creditGl);
+        } else {
+            // Fallback: No CASA linked — credit Bank Operations GL (cash/DD mode)
+            creditGl = glResolver.getBankOperationsGL(productType);
+            log.info("Cash/DD disbursement: loan={}, gl={} (no CASA linked)", accountNumber, creditGl);
+        }
+
         // CBS: ALL financial postings go through TransactionEngine
         List<JournalLineRequest> journalLines = List.of(
             new JournalLineRequest(glResolver.getLoanAssetGL(productType),
                 DebitCredit.DEBIT, disbursementAmount,
                 "Disbursement T" + trancheNum + " - " + accountNumber),
-            new JournalLineRequest(glResolver.getBankOperationsGL(productType),
+            new JournalLineRequest(creditGl,
                 DebitCredit.CREDIT, disbursementAmount,
-                "Bank credit T" + trancheNum + " - " + accountNumber)
+                (casaAccount != null ? "Credit CASA " + disbAcctNum : "Bank credit")
+                    + " T" + trancheNum + " - " + accountNumber)
         );
 
         TransactionResult txnResult = transactionEngine.execute(
@@ -301,6 +370,26 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                 .journalLines(journalLines)
                 .build()
         );
+
+        // CBS: Update CASA subledger atomically within the same @Transactional boundary.
+        // Per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT:
+        //   - CASA ledger_balance increased by disbursement amount
+        //   - CASA available_balance recomputed
+        //   - DepositTransaction (LOAN_DISBURSEMENT) created for CASA mini-statement
+        //   - CASA last_transaction_date updated for dormancy tracking
+        // This ensures GL and subledger stay in perfect sync — any rollback reverses both.
+        if (casaAccount != null) {
+            depositAccountService.deposit(
+                disbAcctNum,
+                disbursementAmount,
+                bizDate,
+                "Loan disbursement " + accountNumber + " T" + trancheNum
+                    + " | Voucher: " + txnResult.getVoucherNumber(),
+                "DISB-" + txnResult.getTransactionRef(), // Idempotency key prevents double-credit on retry
+                "LOAN_DISBURSEMENT"
+            );
+            log.info("CASA credited: casa={}, amount={}, loan={}", disbAcctNum, disbursementAmount, accountNumber);
+        }
 
         LoanTransaction txn = new LoanTransaction();
         txn.setTenantId(tenantId);
