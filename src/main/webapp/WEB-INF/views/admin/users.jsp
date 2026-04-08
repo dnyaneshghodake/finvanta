@@ -117,7 +117,7 @@
                         </td>
                     </tr>
                 </c:forEach>
-                <c:if test="${empty users}"><tr><td colspan="8" class="text-center text-muted">No users found</td></tr></c:if>
+                <c:if test="${empty users}"><tr><td colspan="9" class="text-center text-muted">No users found</td></tr></c:if>
                 </tbody>
             </table>
             </div>
