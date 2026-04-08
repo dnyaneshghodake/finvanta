@@ -935,6 +935,31 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         }
 
         LoanStatus previousStatus = account.getStatus();
+
+        // CBS: NPA Upgrade Check per RBI IRAC Master Circular.
+        // "An account classified as NPA may be upgraded as 'Standard' if the
+        //  entire arrears of interest and principal are paid by the borrower."
+        // This is an EXPLICIT upgrade — NPA never auto-downgrades via classify().
+        // The upgrade resets NPA date and reverses excess provisioning (handled by
+        // ProvisioningService in the next EOD step).
+        if (npaRule.isEligibleForNpaUpgrade(account)) {
+            account.setStatus(LoanStatus.ACTIVE);
+            account.setNpaDate(null);
+            account.setNpaClassificationDate(businessDate);
+            account.setUpdatedBy("SYSTEM");
+            accountRepository.save(account);
+
+            auditService.logEvent("LoanAccount", account.getId(), "NPA_UPGRADE",
+                previousStatus.name(), LoanStatus.ACTIVE.name(), "LOAN_ACCOUNTS",
+                "NPA upgraded to Standard: " + previousStatus + " -> ACTIVE"
+                    + " | DPD: " + account.getDaysPastDue()
+                    + " | All arrears cleared");
+
+            log.info("NPA UPGRADE: accNo={}, {} -> ACTIVE, dpd={}",
+                accountNumber, previousStatus, account.getDaysPastDue());
+            return;
+        }
+
         LoanStatus newStatus = npaRule.classify(account);
 
         if (previousStatus != newStatus) {

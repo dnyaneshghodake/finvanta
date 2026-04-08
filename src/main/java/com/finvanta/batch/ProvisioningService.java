@@ -46,6 +46,8 @@ public class ProvisioningService {
     private static final Logger log = LoggerFactory.getLogger(ProvisioningService.class);
 
     private static final BigDecimal STANDARD_RATE = new BigDecimal("0.40");
+    /** RBI CDR: Restructured accounts carry 5% provisioning for first 2 years post-restructuring */
+    private static final BigDecimal RESTRUCTURED_RATE = new BigDecimal("5.00");
     private static final BigDecimal SUB_STANDARD_SECURED_RATE = new BigDecimal("15.00");
     private static final BigDecimal SUB_STANDARD_UNSECURED_RATE = new BigDecimal("25.00");
     private static final BigDecimal DOUBTFUL_1YR_RATE = new BigDecimal("25.00");
@@ -141,7 +143,8 @@ public class ProvisioningService {
             && !account.getCollateralReference().isBlank();
 
         return switch (status) {
-            case ACTIVE, SMA_0, SMA_1, SMA_2, RESTRUCTURED -> STANDARD_RATE;
+            case ACTIVE, SMA_0, SMA_1, SMA_2 -> STANDARD_RATE;
+            case RESTRUCTURED -> RESTRUCTURED_RATE;
             case NPA_SUBSTANDARD -> isSecured
                 ? SUB_STANDARD_SECURED_RATE : SUB_STANDARD_UNSECURED_RATE;
             case NPA_DOUBTFUL -> getDoubtfulRate(account, businessDate);

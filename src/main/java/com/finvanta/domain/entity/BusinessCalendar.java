@@ -21,6 +21,19 @@ import java.time.LocalDateTime;
  * - Day cannot close until EOD completes successfully
  * - Holidays are pre-configured — no transactions allowed on holidays
  * - System date may differ from business date (e.g., EOD runs after midnight)
+ *
+ * Holiday Types (per RBI Negotiable Instruments Act 1881):
+ *   WEEKEND   - Saturday/Sunday (auto-detected during calendar generation)
+ *   NATIONAL  - Republic Day, Independence Day, Gandhi Jayanti (all branches)
+ *   STATE     - Regional holidays (applicable to specific state/region branches)
+ *   BANK      - Bank-specific holidays (declared by bank management)
+ *   OPTIONAL  - Optional holidays (staff can choose, bank remains operational)
+ *   GAZETTED  - Government gazetted holidays (per state gazette notification)
+ *
+ * Previous Day Validation:
+ *   Before opening a new day, the system validates that the previous business
+ *   day is in DAY_CLOSED status. This prevents gaps in the day sequence
+ *   (e.g., opening April 5 when April 4 is still DAY_OPEN or NOT_OPENED).
  */
 @Entity
 @Table(name = "business_calendar", indexes = {
@@ -40,6 +53,23 @@ public class BusinessCalendar extends BaseEntity {
 
     @Column(name = "holiday_description", length = 200)
     private String holidayDescription;
+
+    /**
+     * Holiday type classification per RBI Negotiable Instruments Act 1881.
+     * Values: WEEKEND, NATIONAL, STATE, BANK, OPTIONAL, GAZETTED
+     * Null for non-holiday dates.
+     */
+    @Column(name = "holiday_type", length = 20)
+    private String holidayType;
+
+    /**
+     * Applicable region/state for STATE holidays.
+     * Null for NATIONAL/WEEKEND holidays (apply to all branches).
+     * Per RBI NI Act: state holidays vary by region — a holiday in Maharashtra
+     * may not be a holiday in Karnataka.
+     */
+    @Column(name = "holiday_region", length = 100)
+    private String holidayRegion;
 
     /**
      * Day status per CBS lifecycle:

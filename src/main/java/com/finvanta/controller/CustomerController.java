@@ -9,6 +9,7 @@ import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.BusinessException;
+import com.finvanta.util.PiiMaskingUtil;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.TenantContext;
 import com.finvanta.util.SecurityUtil;
@@ -164,6 +165,20 @@ public class CustomerController {
             customer.setTenantId(tenantId);
             customer.setBranch(branch);
             customer.setCreatedBy(currentUser);
+
+            // CBS: Compute PII hashes for de-duplication per RBI KYC norms.
+            // Since PAN/Aadhaar are encrypted (AES-256-GCM), ciphertext comparison
+            // doesn't work for duplicate detection. SHA-256 hash enables DB-level
+            // uniqueness checks without decryption.
+            customer.computePanHash();
+            customer.computeAadhaarHash();
+
+            // CBS: Set default KYC risk category based on customer type.
+            // PEP customers are always HIGH risk per FATF Recommendation 12.
+            if (customer.isPep()) {
+                customer.setKycRiskCategory("HIGH");
+            }
+
             Customer saved = customerRepository.save(customer);
 
             auditService.logEvent("Customer", saved.getId(), "CREATE",
@@ -187,6 +202,11 @@ public class CustomerController {
             .orElseThrow(() -> new BusinessException(
                 "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
         mav.addObject("customer", customer);
+        // CBS: PII masking per RBI IT Governance Direction 2023 / UIDAI Aadhaar Act 2016.
+        // Full PII is never exposed in UI — only masked values (last 4 digits visible).
+        mav.addObject("maskedPan", PiiMaskingUtil.maskPan(customer.getPanNumber()));
+        mav.addObject("maskedAadhaar", PiiMaskingUtil.maskAadhaar(customer.getAadhaarNumber()));
+        mav.addObject("maskedMobile", PiiMaskingUtil.maskMobile(customer.getMobileNumber()));
         mav.addObject("loanApplications",
             applicationRepository.findByTenantIdAndCustomerId(tenantId, id));
         mav.addObject("loanAccounts",
@@ -204,6 +224,9 @@ public class CustomerController {
                 "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
         ModelAndView mav = new ModelAndView("customer/edit");
         mav.addObject("customer", customer);
+        // CBS: PII masking for immutable disabled fields in edit form
+        mav.addObject("maskedPan", PiiMaskingUtil.maskPan(customer.getPanNumber()));
+        mav.addObject("maskedAadhaar", PiiMaskingUtil.maskAadhaar(customer.getAadhaarNumber()));
         mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
         return mav;
     }
@@ -248,6 +271,17 @@ public class CustomerController {
             existing.setMaxBorrowingLimit(updated.getMaxBorrowingLimit());
             existing.setEmploymentType(updated.getEmploymentType());
             existing.setEmployerName(updated.getEmployerName());
+            // CBS Sprint 1.2: KYC risk category and PEP flag from edit form
+            if (updated.getKycRiskCategory() != null) {
+                existing.setKycRiskCategory(updated.getKycRiskCategory());
+                // Recompute KYC expiry if risk category changed (different renewal period)
+                existing.computeKycExpiry();
+            }
+            existing.setPep(updated.isPep());
+            if (updated.isPep()) {
+                existing.setKycRiskCategory("HIGH"); // PEP always HIGH per FATF
+                existing.computeKycExpiry();
+            }
             existing.setBranch(branch);
             existing.setUpdatedBy(currentUser);
             customerRepository.save(existing);
@@ -279,12 +313,21 @@ public class CustomerController {
             customer.setKycVerified(true);
             customer.setKycVerifiedDate(businessDateService.getCurrentBusinessDate());
             customer.setKycVerifiedBy(currentUser);
+
+            // CBS: Compute KYC expiry based on risk category per RBI KYC Section 16.
+            // LOW=10yr, MEDIUM=8yr, HIGH=2yr from verification date.
+            // This enables EOD batch to detect expired KYC customers for re-verification.
+            customer.computeKycExpiry();
+            customer.setRekycDue(false); // Clear re-KYC flag on fresh verification
+
             customer.setUpdatedBy(currentUser);
             customerRepository.save(customer);
 
             auditService.logEvent("Customer", customer.getId(), "KYC_VERIFY",
                 "KYC_PENDING", "KYC_VERIFIED", "CIF",
-                "KYC verified by " + currentUser);
+                "KYC verified by " + currentUser
+                    + " | Risk: " + customer.getKycRiskCategory()
+                    + " | Expiry: " + customer.getKycExpiryDate());
 
             redirectAttributes.addFlashAttribute("success",
                 "KYC verified for customer: " + customer.getCustomerNumber());

@@ -61,8 +61,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
 
     /** RBI Master Direction on KYC 2016, Section 38: 24 months no customer-initiated txn = DORMANT */
     private static final long DORMANCY_MONTHS = 24;
-    /** IT Act Section 194A: TDS threshold for annual interest income (INR 40,000 for non-seniors) */
-    private static final BigDecimal TDS_THRESHOLD = new BigDecimal("40000.00");
+    /** IT Act Section 194A: TDS threshold for non-senior citizens (INR 40,000 per FY) */
+    private static final BigDecimal TDS_THRESHOLD_REGULAR = new BigDecimal("40000.00");
+    /** IT Act Section 194A: TDS threshold for senior citizens age >= 60 (INR 50,000 per FY) */
+    private static final BigDecimal TDS_THRESHOLD_SENIOR = new BigDecimal("50000.00");
+    /** Senior citizen age threshold (60 years) per IT Act */
+    private static final int SENIOR_CITIZEN_AGE = 60;
     /** TDS rate: 10% per IT Act Section 194A */
     private static final BigDecimal TDS_RATE = new BigDecimal("0.10");
 
@@ -346,6 +350,10 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     public DepositTransaction transfer(String from, String to,
             BigDecimal amount, LocalDate bd, String narration, String idk) {
         String tid = TenantContext.getCurrentTenant();
+        if (idk != null) {
+            var dup = transactionRepository.findByTenantIdAndIdempotencyKey(tid, idk).orElse(null);
+            if (dup != null) return dup;
+        }
         if (from.equals(to)) throw new BusinessException("SAME_ACCOUNT", "Cannot transfer to same account");
         // CBS: Lock accounts in deterministic order (alphabetical by account number)
         // to prevent ABBA deadlock when two concurrent transfers happen in opposite directions.
@@ -479,9 +487,21 @@ public class DepositAccountServiceImpl implements DepositAccountService {
 
         // IT Act Section 194A: TDS deduction at source if YTD interest exceeds threshold.
         // TDS is deducted on the TOTAL quarterly credit amount (not just the excess).
-        // Per RBI/IT Act: TDS = 10% of interest if cumulative YTD interest > INR 40,000.
+        // Per IT Act: TDS = 10% of interest if cumulative YTD interest exceeds:
+        //   INR 40,000 for regular customers
+        //   INR 50,000 for senior citizens (age >= 60)
+        // Per RBI/IT Act: senior citizen status is determined by customer's age on
+        // the business date (not calendar date) from their date of birth.
+        BigDecimal tdsThreshold = TDS_THRESHOLD_REGULAR;
+        if (acct.getCustomer() != null && acct.getCustomer().getDateOfBirth() != null) {
+            long age = java.time.temporal.ChronoUnit.YEARS.between(
+                acct.getCustomer().getDateOfBirth(), bd);
+            if (age >= SENIOR_CITIZEN_AGE) {
+                tdsThreshold = TDS_THRESHOLD_SENIOR;
+            }
+        }
         BigDecimal tdsAmount = BigDecimal.ZERO;
-        if (acct.getYtdInterestCredited().compareTo(TDS_THRESHOLD) > 0) {
+        if (acct.getYtdInterestCredited().compareTo(tdsThreshold) > 0) {
             tdsAmount = interest.multiply(TDS_RATE).setScale(2, RoundingMode.HALF_UP);
             if (tdsAmount.signum() > 0) {
                 acct.setLedgerBalance(acct.getLedgerBalance().subtract(tdsAmount));

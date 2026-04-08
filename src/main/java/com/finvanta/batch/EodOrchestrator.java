@@ -64,11 +64,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   Step 5: NPA Classification (DPD-based per RBI IRAC)
  *   Step 6: Provisioning (RBI IRAC percentages)
  *   Step 7: GL Reconciliation (ledger vs GL master)
+ *   Step 7.1: Subledger Reconciliation (loan/CASA balances vs GL)
  *   Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)
  *   Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)
  *   Step 8: CASA Savings Interest Accrual + Quarterly Credit (per RBI directive)
  *   Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER — LOAN_EMI auto-debit)
  *   Step 9: CASA Dormancy Classification (per RBI Master Direction on KYC 2016 Sec 38)
+ *   Step 10: KYC Expiry Flagging (per RBI Master Direction on KYC 2016 Sec 16)
  *
  * Day status: DAY_OPEN -> EOD_RUNNING -> (eodComplete=true)
  * Day close is a separate admin action after EOD completes.
@@ -87,6 +89,7 @@ public class EodOrchestrator {
     private final LoanScheduleService scheduleService;
     private final ProvisioningService provisioningService;
     private final ReconciliationService reconciliationService;
+    private final SubledgerReconciliationService subledgerReconciliationService;
     private final InterBranchSettlementService settlementService;
     private final ClearingService clearingService;
     private final BusinessCalendarRepository calendarRepository;
@@ -95,6 +98,7 @@ public class EodOrchestrator {
     private final com.finvanta.service.DepositAccountService depositAccountService;
     private final com.finvanta.repository.DepositAccountRepository depositAccountRepository;
     private final com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService;
+    private final com.finvanta.repository.CustomerRepository customerRepository;
 
     /** Self-proxy for per-account transaction isolation via Spring AOP. */
     private final EodOrchestrator self;
@@ -104,6 +108,7 @@ public class EodOrchestrator {
                            LoanScheduleService scheduleService,
                            ProvisioningService provisioningService,
                            ReconciliationService reconciliationService,
+                           SubledgerReconciliationService subledgerReconciliationService,
                            InterBranchSettlementService settlementService,
                            ClearingService clearingService,
                            BusinessCalendarRepository calendarRepository,
@@ -112,12 +117,14 @@ public class EodOrchestrator {
                            com.finvanta.service.DepositAccountService depositAccountService,
                            com.finvanta.repository.DepositAccountRepository depositAccountRepository,
                            com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService,
+                           com.finvanta.repository.CustomerRepository customerRepository,
                            @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;
         this.scheduleService = scheduleService;
         this.provisioningService = provisioningService;
         this.reconciliationService = reconciliationService;
+        this.subledgerReconciliationService = subledgerReconciliationService;
         this.settlementService = settlementService;
         this.clearingService = clearingService;
         this.calendarRepository = calendarRepository;
@@ -126,6 +133,7 @@ public class EodOrchestrator {
         this.depositAccountService = depositAccountService;
         this.depositAccountRepository = depositAccountRepository;
         this.standingInstructionService = standingInstructionService;
+        this.customerRepository = customerRepository;
         this.self = self;
     }
 
@@ -220,6 +228,19 @@ public class EodOrchestrator {
             }
         }, errors);
 
+        // Step 7.1: Subledger-to-GL Reconciliation (Tier-1 CBS three-way reconciliation)
+        // Verifies: loan outstanding vs GL 1001, CASA savings vs GL 2010, CASA current vs GL 2020.
+        // Non-blocking: logs discrepancies but doesn't stop EOD (manual investigation required).
+        failedCount += runStep(eodJob, "SUBLEDGER_RECONCILIATION", () -> {
+            SubledgerReconciliationService.SubledgerReconciliationResult subResult =
+                subledgerReconciliationService.reconcile();
+            if (!subResult.isBalanced()) {
+                log.warn("EOD Step 7.1: {} subledger discrepancies detected", subResult.discrepancyCount());
+            } else {
+                log.info("EOD Step 7.1: subledger reconciliation balanced");
+            }
+        }, errors);
+
         // Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)
         failedCount += runStep(eodJob, "INTER_BRANCH_SETTLEMENT", () -> {
             settlementService.settleInterBranch(businessDate);
@@ -300,6 +321,36 @@ public class EodOrchestrator {
         failedCount += runStep(eodJob, "CASA_DORMANCY", () -> {
             int dormantCount = depositAccountService.markDormantAccounts(businessDate);
             log.info("EOD Step 9: {} CASA accounts marked DORMANT", dormantCount);
+        }, errors);
+
+        // Step 10: KYC Expiry Flagging (RBI Master Direction on KYC 2016 Section 16)
+        // Identifies customers with expired or expiring-soon KYC and flags them for
+        // re-verification outreach. Per RBI: expired KYC must be flagged and tracked.
+        // Non-blocking: flags customers but doesn't block transactions (that's a P1 enhancement).
+        failedCount += runStep(eodJob, "KYC_EXPIRY_CHECK", () -> {
+            String tid = TenantContext.getCurrentTenant();
+            // Flag customers with expired KYC
+            var expiredCustomers = customerRepository.findKycExpiredCustomers(tid, businessDate);
+            for (var customer : expiredCustomers) {
+                customer.setRekycDue(true);
+                customer.setUpdatedBy("SYSTEM_EOD");
+                customerRepository.save(customer);
+            }
+            // Flag customers with KYC expiring within 90 days (proactive outreach)
+            var expiringSoon = customerRepository.findKycExpiringSoonCustomers(
+                tid, businessDate, businessDate.plusDays(90));
+            for (var customer : expiringSoon) {
+                customer.setRekycDue(true);
+                customer.setUpdatedBy("SYSTEM_EOD");
+                customerRepository.save(customer);
+            }
+            int total = expiredCustomers.size() + expiringSoon.size();
+            if (total > 0) {
+                log.info("EOD Step 10: {} customers flagged for re-KYC ({} expired, {} expiring soon)",
+                    total, expiredCustomers.size(), expiringSoon.size());
+            } else {
+                log.info("EOD Step 10: no KYC expiry issues detected");
+            }
         }, errors);
 
         } catch (Exception e) {
@@ -471,18 +522,23 @@ public class EodOrchestrator {
         BusinessCalendar calendar = calendarRepository
             .findAndLockByTenantIdAndDate(tenantId, businessDate).orElseThrow();
 
-        // CBS Day Control: On FAILED EOD, restore calendar to DAY_OPEN so the batch
-        // can be retried after the root cause is resolved. Per Finacle DAYCTRL /
-        // Temenos COB: a failed EOD must NOT permanently lock the calendar.
-        // Only COMPLETED and PARTIALLY_COMPLETED mark eodComplete=true.
-        // Compare with BatchService.failEodBatch() which restores DAY_OPEN on failure.
-        if (eodJob.getStatus() == BatchStatus.FAILED) {
+        // CBS Day Control: Only COMPLETED EOD marks eodComplete=true and allows Day Close.
+        // FAILED and PARTIALLY_COMPLETED both restore DAY_OPEN for retry.
+        // Per Finacle DAYCTRL / Temenos COB: partial EOD must be retryable — the failed
+        // accounts need reprocessing. Marking eodComplete=true on partial completion
+        // would permanently lock the calendar and prevent retry.
+        if (eodJob.getStatus() == BatchStatus.COMPLETED) {
+            calendar.setEodComplete(true);
+        } else {
             calendar.setDayStatus(DayStatus.DAY_OPEN);
             calendar.setLocked(false);
             calendar.setEodComplete(false);
-            log.warn("EOD FAILED for {} — calendar restored to DAY_OPEN for retry", businessDate);
-        } else {
-            calendar.setEodComplete(true);
+            if (eodJob.getStatus() == BatchStatus.FAILED) {
+                log.warn("EOD FAILED for {} — calendar restored to DAY_OPEN for retry", businessDate);
+            } else {
+                log.warn("EOD PARTIALLY_COMPLETED for {} — {} failures. Calendar restored to DAY_OPEN for retry",
+                    businessDate, failedCount);
+            }
         }
         calendar.setUpdatedBy("SYSTEM");
         calendarRepository.save(calendar);

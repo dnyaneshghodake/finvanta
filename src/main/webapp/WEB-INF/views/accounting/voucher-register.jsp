@@ -25,7 +25,7 @@
 
     <!-- Ledger Entries (GL Postings) -->
     <div class="fv-card mb-3">
-        <div class="card-header"><i class="bi bi-receipt-cutoff"></i> GL Ledger Entries &mdash; <c:out value="${reportDate}"/> <span class="badge bg-secondary"><c:out value="${ledgerEntries.size()}"/></span></div>
+        <div class="card-header"><i class="bi bi-receipt-cutoff"></i> GL Ledger Entries &mdash; <c:out value="${reportDate}" /> <span class="badge bg-secondary"><c:out value="${ledgerEntries.size()}" /></span></div>
         <div class="card-body">
             <div class="table-responsive">
             <table class="table fv-table fv-datatable table-sm">
@@ -34,17 +34,17 @@
                     <th class="text-end">Debit</th><th class="text-end">Credit</th><th>Module</th><th>Narration</th>
                 </tr></thead>
                 <tbody>
-                <c:forEach var="le" items="${ledgerEntries}">
+                <c:forEach var="entry" items="${ledgerEntries}">
                     <tr>
-                        <td><c:out value="${le.ledgerSequence}"/></td>
-                        <td class="font-monospace small"><c:out value="${le.journalRef}"/></td>
-                        <td><c:out value="${le.glCode}"/></td>
-                        <td><c:out value="${le.glName}"/></td>
-                        <td class="font-monospace small"><c:out value="${le.accountReference}" default="--"/></td>
-                        <td class="text-end amount"><c:if test="${le.debitAmount.signum() > 0}"><fmt:formatNumber value="${le.debitAmount}" type="number" maxFractionDigits="2"/></c:if></td>
-                        <td class="text-end amount"><c:if test="${le.creditAmount.signum() > 0}"><fmt:formatNumber value="${le.creditAmount}" type="number" maxFractionDigits="2"/></c:if></td>
-                        <td><c:out value="${le.moduleCode}" default="--"/></td>
-                        <td class="small"><c:out value="${le.narration}"/></td>
+                        <td><c:out value="${entry.ledgerSequence}" /></td>
+                        <td class="font-monospace small"><c:out value="${entry.journalRef}" /></td>
+                        <td><c:out value="${entry.glCode}" /></td>
+                        <td><c:out value="${entry.glName}" /></td>
+                        <td class="font-monospace small"><c:out value="${entry.accountReference}" default="--" /></td>
+                        <td class="text-end amount"><c:if test="${entry.debitAmount.signum() > 0}"><fmt:formatNumber value="${entry.debitAmount}" type="number" maxFractionDigits="2" /></c:if></td>
+                        <td class="text-end amount"><c:if test="${entry.creditAmount.signum() > 0}"><fmt:formatNumber value="${entry.creditAmount}" type="number" maxFractionDigits="2" /></c:if></td>
+                        <td><c:out value="${entry.moduleCode}" default="--" /></td>
+                        <td class="small"><c:out value="${entry.narration}" /></td>
                     </tr>
                 </c:forEach>
                 <c:if test="${empty ledgerEntries}"><tr><td colspan="9" class="text-center text-muted">No ledger entries for this date</td></tr></c:if>
@@ -57,7 +57,7 @@
     <!-- Loan Transactions -->
     <c:if test="${not empty loanTransactions}">
     <div class="fv-card mb-3">
-        <div class="card-header">Loan Transactions <span class="badge bg-secondary"><c:out value="${loanTransactions.size()}"/></span></div>
+        <div class="card-header">Loan Transactions <span class="badge bg-secondary"><c:out value="${loanTransactions.size()}" /></span></div>
         <div class="card-body">
             <div class="table-responsive">
             <table class="table fv-table table-sm">
@@ -65,12 +65,12 @@
                 <tbody>
                 <c:forEach var="t" items="${loanTransactions}">
                     <tr class="${t.reversed ? 'table-secondary' : ''}">
-                        <td class="font-monospace small"><c:out value="${t.transactionRef}"/></td>
-                        <td><c:out value="${t.transactionType}"/></td>
-                        <td class="text-end amount"><fmt:formatNumber value="${t.amount}" type="number" maxFractionDigits="2"/></td>
-                        <td class="font-monospace small"><c:out value="${t.voucherNumber}" default="--"/></td>
-                        <td><c:out value="${t.loanAccount.accountNumber}"/></td>
-                        <td class="small"><c:out value="${t.narration}"/></td>
+                        <td class="font-monospace small"><c:out value="${t.transactionRef}" /></td>
+                        <td><c:out value="${t.transactionType}" /></td>
+                        <td class="text-end amount"><fmt:formatNumber value="${t.amount}" type="number" maxFractionDigits="2" /></td>
+                        <td class="font-monospace small"><c:out value="${t.voucherNumber}" default="--" /></td>
+                        <td><c:out value="${t.loanAccount.accountNumber}" /></td>
+                        <td class="small"><c:out value="${t.narration}" /></td>
                     </tr>
                 </c:forEach>
                 </tbody>
@@ -83,7 +83,7 @@
     <!-- Deposit Transactions -->
     <c:if test="${not empty depositTransactions}">
     <div class="fv-card">
-        <div class="card-header">Deposit Transactions <span class="badge bg-secondary"><c:out value="${depositTransactions.size()}"/></span></div>
+        <div class="card-header">Deposit Transactions <span class="badge bg-secondary"><c:out value="${depositTransactions.size()}" /></span></div>
         <div class="card-body">
             <div class="table-responsive">
             <table class="table fv-table table-sm">
@@ -91,13 +91,13 @@
                 <tbody>
                 <c:forEach var="t" items="${depositTransactions}">
                     <tr class="${t.reversed ? 'table-secondary' : ''}">
-                        <td class="font-monospace small"><c:out value="${t.transactionRef}"/></td>
-                        <td><c:out value="${t.transactionType}"/></td>
-                        <td><span class="${t.debitCredit == 'DEBIT' ? 'text-danger' : 'text-success'}"><c:out value="${t.debitCredit}"/></span></td>
-                        <td class="text-end amount"><fmt:formatNumber value="${t.amount}" type="number" maxFractionDigits="2"/></td>
-                        <td class="font-monospace small"><c:out value="${t.voucherNumber}" default="--"/></td>
-                        <td><c:out value="${t.channel}" default="--"/></td>
-                        <td class="small"><c:out value="${t.narration}"/></td>
+                        <td class="font-monospace small"><c:out value="${t.transactionRef}" /></td>
+                        <td><c:out value="${t.transactionType}" /></td>
+                        <td><span class="${t.debitCredit == 'DEBIT' ? 'text-danger' : 'text-success'}"><c:out value="${t.debitCredit}" /></span></td>
+                        <td class="text-end amount"><fmt:formatNumber value="${t.amount}" type="number" maxFractionDigits="2" /></td>
+                        <td class="font-monospace small"><c:out value="${t.voucherNumber}" default="--" /></td>
+                        <td><c:out value="${t.channel}" default="--" /></td>
+                        <td class="small"><c:out value="${t.narration}" /></td>
                     </tr>
                 </c:forEach>
                 </tbody>

@@ -30,4 +30,20 @@ public interface GLMasterRepository extends JpaRepository<GLMaster, Long> {
 
     @Query("SELECT gl FROM GLMaster gl WHERE gl.tenantId = :tenantId AND gl.headerAccount = false AND gl.active = true ORDER BY gl.glCode")
     List<GLMaster> findAllPostableAccounts(@Param("tenantId") String tenantId);
+
+    /** All GL accounts (including headers) ordered by code for chart of accounts display */
+    @Query("SELECT gl FROM GLMaster gl WHERE gl.tenantId = :tenantId AND gl.active = true ORDER BY gl.glCode")
+    List<GLMaster> findAllActiveOrderByCode(@Param("tenantId") String tenantId);
+
+    /** Child GL accounts under a parent header (for GL hierarchy traversal) */
+    @Query("SELECT gl FROM GLMaster gl WHERE gl.tenantId = :tenantId AND gl.parentGlCode = :parentCode AND gl.active = true ORDER BY gl.glCode")
+    List<GLMaster> findChildAccounts(
+        @Param("tenantId") String tenantId,
+        @Param("parentCode") String parentCode);
+
+    /** All GL accounts of a specific type (for financial statement sections) */
+    @Query("SELECT gl FROM GLMaster gl WHERE gl.tenantId = :tenantId AND gl.accountType = :type AND gl.headerAccount = false AND gl.active = true ORDER BY gl.glCode")
+    List<GLMaster> findPostableByType(
+        @Param("tenantId") String tenantId,
+        @Param("type") GLAccountType type);
 }

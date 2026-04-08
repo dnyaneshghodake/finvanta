@@ -109,7 +109,14 @@ public class BatchService {
      * 2. No deadlock risk with AuditService's REQUIRES_NEW propagation
      * 3. Pessimistic locks are released between account processing
      * Calendar locking and batch job tracking use dedicated @Transactional helpers.
+     *
+     * @deprecated Use {@link EodOrchestrator#executeEod(LocalDate)} instead.
+     * This Phase 1 implementation lacks: CASA interest accrual, SI execution,
+     * dormancy classification, inter-branch settlement, clearing validation,
+     * and parallel processing. Retained only for backward compatibility during
+     * migration. Will be removed in a future release.
      */
+    @Deprecated(forRemoval = true)
     public BatchJob runEodBatch(LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
         String initiatedBy = SecurityUtil.getCurrentUsername();

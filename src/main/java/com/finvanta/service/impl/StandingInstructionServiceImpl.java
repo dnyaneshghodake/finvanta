@@ -12,6 +12,7 @@ import com.finvanta.repository.StandingInstructionRepository;
 import com.finvanta.service.DepositAccountService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.util.BusinessException;
+import com.finvanta.util.PiiMaskingUtil;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
@@ -269,7 +270,7 @@ public class StandingInstructionServiceImpl {
                 "ACTIVE", "EXPIRED", "STANDING_INSTRUCTION",
                 "SI expired (end date reached): " + si.getSiReference()
                     + " | End date: " + si.getEndDate()
-                    + " | Total executions: " + (si.getTotalExecutions() + 1));
+                    + " | Total executions: " + si.getTotalExecutions());
         }
         siRepository.save(si);
     }
@@ -332,10 +333,14 @@ public class StandingInstructionServiceImpl {
      */
     private void logNotification(StandingInstruction si, String eventType, String message) {
         try {
+            // CBS: Mask mobile number in audit log per RBI IT Governance Direction 2023.
+            // PII must never appear in plaintext in logs, audit trails, or error messages.
+            String maskedMobile = (si.getCustomer() != null && si.getCustomer().getMobileNumber() != null)
+                ? PiiMaskingUtil.maskMobile(si.getCustomer().getMobileNumber()) : "N/A";
             auditService.logEvent("StandingInstruction", si.getId(), eventType,
                 si.getSiReference(), message, "NOTIFICATION",
                 "Customer: " + (si.getCustomer() != null ? si.getCustomer().getId() : "N/A")
-                    + " | Mobile: " + (si.getCustomer() != null ? si.getCustomer().getMobileNumber() : "N/A")
+                    + " | Mobile: " + maskedMobile
                     + " | Message: " + message);
             log.debug("SI notification logged: si={}, event={}", si.getSiReference(), eventType);
         } catch (Exception e) {

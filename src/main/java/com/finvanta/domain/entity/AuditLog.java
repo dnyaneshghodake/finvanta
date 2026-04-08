@@ -4,10 +4,12 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.Filter;
 
 import java.time.LocalDateTime;
 
 @Entity
+@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 @Table(name = "audit_logs", indexes = {
     @Index(name = "idx_audit_tenant_entity", columnList = "tenant_id, entity_type, entity_id"),
     @Index(name = "idx_audit_timestamp", columnList = "tenant_id, event_timestamp"),

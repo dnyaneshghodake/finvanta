@@ -7,6 +7,7 @@ import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
+import com.finvanta.workflow.ApprovalWorkflowService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -43,15 +44,18 @@ public class LoanRestructuringService {
     private final LoanScheduleService scheduleService;
     private final AuditService auditService;
     private final com.finvanta.domain.rules.InterestCalculationRule interestRule;
+    private final ApprovalWorkflowService workflowService;
 
     public LoanRestructuringService(LoanAccountRepository accountRepository,
                                      LoanScheduleService scheduleService,
                                      AuditService auditService,
-                                     com.finvanta.domain.rules.InterestCalculationRule interestRule) {
+                                     com.finvanta.domain.rules.InterestCalculationRule interestRule,
+                                     ApprovalWorkflowService workflowService) {
         this.accountRepository = accountRepository;
         this.scheduleService = scheduleService;
         this.auditService = auditService;
         this.interestRule = interestRule;
+        this.workflowService = workflowService;
     }
 
     /**
@@ -136,6 +140,24 @@ public class LoanRestructuringService {
         );
         account.setEmiAmount(newEmi);
 
+        // CBS: Regenerate amortization schedule from restructuring date.
+        // Per Finacle/Temenos: restructuring invalidates the existing schedule.
+        // Future unpaid installments must be cancelled and new ones generated
+        // with the revised EMI, rate, and tenure. Without this, the schedule
+        // shows stale amounts that don't match the restructured terms, causing
+        // DPD miscalculation and incorrect overdue marking during EOD.
+        try {
+            scheduleService.regenerateSchedule(account, businessDate);
+            log.info("Schedule regenerated after restructuring: accNo={}, newEmi={}",
+                accountNumber, newEmi);
+        } catch (Exception e) {
+            // Schedule regeneration failure should not block restructuring.
+            // The restructured terms (rate, tenure, EMI) are already saved on the account.
+            // Schedule can be regenerated manually via admin action.
+            log.warn("Schedule regeneration failed after restructuring for {}: {}",
+                accountNumber, e.getMessage());
+        }
+
         // Mark as RESTRUCTURED per RBI CDR (unless already NPA)
         // NPA accounts remain NPA per RBI norms -- restructuring does not
         // auto-upgrade NPA to standard. The RESTRUCTURED flag is tracked
@@ -158,6 +180,28 @@ public class LoanRestructuringService {
         auditService.logEvent("LoanAccount", account.getId(), "RESTRUCTURE",
             oldStatus.name(), account.getStatus().name(), "LOAN_RESTRUCTURING",
             auditDesc);
+
+        // CBS: Initiate maker-checker approval workflow for restructuring.
+        // Per RBI CDR Framework and Finacle APPR_MASTER: restructuring requires
+        // dual authorization (maker initiates, checker approves). The restructuring
+        // terms are already applied to the account (optimistic approach — if rejected,
+        // the terms must be manually reverted). For production, consider a pending
+        // state that defers term application until checker approval.
+        try {
+            String payload = "RESTRUCTURE|" + accountNumber
+                + "|rate=" + oldRate + "->" + account.getInterestRate()
+                + "|tenure=" + oldTenure + "->" + account.getTenureMonths()
+                + "|emi=" + newEmi + "|reason=" + reason;
+            workflowService.initiateApproval("LoanAccount", account.getId(),
+                "LOAN_RESTRUCTURING", "Loan restructuring: " + accountNumber, payload);
+            log.info("Restructuring maker-checker initiated: accNo={}, maker={}",
+                accountNumber, currentUser);
+        } catch (Exception e) {
+            // Workflow initiation failure should not block restructuring.
+            // The terms are already applied and audited.
+            log.warn("Restructuring maker-checker initiation failed for {}: {}",
+                accountNumber, e.getMessage());
+        }
 
         log.info("Loan restructured: accNo={}, rate={}->{}, tenure={}->{}, emi={}",
             accountNumber, oldRate, account.getInterestRate(),
@@ -226,6 +270,32 @@ public class LoanRestructuringService {
                 account.getRemainingTenure() + moratoriumMonths);
         }
 
+        // CBS: Capitalize accrued interest at moratorium start.
+        // Per RBI COVID moratorium guidelines and general CDR framework:
+        // Interest that accrues during moratorium is typically capitalized
+        // (added to outstanding principal) at the end of the moratorium period.
+        // This increases the principal base and recalculates EMI.
+        // For simplicity, we capitalize the currently accrued interest at moratorium
+        // application time. Future accruals during moratorium will continue to accrue
+        // and can be capitalized again at moratorium end (manual process).
+        BigDecimal capitalizedInterest = BigDecimal.ZERO;
+        if (account.getAccruedInterest() != null && account.getAccruedInterest().signum() > 0) {
+            capitalizedInterest = account.getAccruedInterest();
+            account.setOutstandingPrincipal(
+                account.getOutstandingPrincipal().add(capitalizedInterest));
+            account.setAccruedInterest(BigDecimal.ZERO);
+            log.info("Interest capitalized at moratorium: accNo={}, capitalized={}",
+                accountNumber, capitalizedInterest);
+        }
+
+        // Recalculate EMI on new outstanding principal + extended tenure
+        BigDecimal newEmi = interestRule.calculateEmi(
+            account.getOutstandingPrincipal(),
+            account.getInterestRate(),
+            account.getRemainingTenure() != null ? account.getRemainingTenure() : 1
+        );
+        account.setEmiAmount(newEmi);
+
         if (!account.getStatus().isNpa()) {
             account.setStatus(LoanStatus.RESTRUCTURED);
         }
@@ -238,6 +308,8 @@ public class LoanRestructuringService {
             "Moratorium applied: " + moratoriumMonths + " months"
                 + " | NextEMI: " + oldNextEmi + " -> " + account.getNextEmiDate()
                 + " | Maturity: " + oldMaturity + " -> " + account.getMaturityDate()
+                + " | Interest capitalized: INR " + capitalizedInterest
+                + " | New EMI: INR " + newEmi
                 + " | Reason: " + reason);
 
         log.info("Moratorium applied: accNo={}, months={}, nextEmi={}, maturity={}",

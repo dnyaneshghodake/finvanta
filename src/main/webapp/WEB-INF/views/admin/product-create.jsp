@@ -29,12 +29,22 @@
 
                 <h6 class="mb-3 text-primary">Interest Configuration</h6>
                 <div class="row mb-3">
-                    <div class="col-md-2"><label class="form-label">Method</label><select name="interestMethod" class="form-select"><option value="ACTUAL_365">Actual/365</option><option value="ACTUAL_360">Actual/360</option></select></div>
+                    <div class="col-md-2"><label class="form-label">Method</label><select name="interestMethod" class="form-select"><option value="ACTUAL_365">Actual/365</option><option value="ACTUAL_360">Actual/360</option><option value="ACTUAL_ACTUAL">Actual/Actual</option><option value="THIRTY_360">30/360</option></select></div>
                     <div class="col-md-2"><label class="form-label">Type</label><select name="interestType" class="form-select"><option value="FIXED">Fixed</option><option value="FLOATING">Floating</option></select></div>
                     <div class="col-md-2"><label class="form-label">Min Rate % *</label><input type="number" name="minInterestRate" class="form-control" step="0.01" required value="8.00"/></div>
                     <div class="col-md-2"><label class="form-label">Max Rate % *</label><input type="number" name="maxInterestRate" class="form-control" step="0.01" required value="24.00"/></div>
                     <div class="col-md-2"><label class="form-label">Penal Rate %</label><input type="number" name="defaultPenalRate" class="form-control" step="0.01" value="2.00"/></div>
                     <div class="col-md-2"><label class="form-label">Frequency</label><select name="repaymentFrequency" class="form-select"><option value="MONTHLY">Monthly</option><option value="QUARTERLY">Quarterly</option><option value="BULLET">Bullet</option></select></div>
+                </div>
+
+                <%-- CBS Sprint 1.4: Floating Rate & CASA Tiering Configuration --%>
+                <h6 class="mb-3 text-primary">Floating Rate Configuration (RBI EBLR/MCLR)</h6>
+                <div class="row mb-3">
+                    <div class="col-md-2"><label class="form-label">Benchmark</label><select name="defaultBenchmarkName" class="form-select"><option value="">-- None (Fixed) --</option><option value="EBLR">EBLR</option><option value="MCLR">MCLR</option><option value="RLLR">RLLR</option><option value="T_BILL">T-Bill</option></select></div>
+                    <div class="col-md-2"><label class="form-label">Reset Frequency</label><select name="defaultRateResetFrequency" class="form-select"><option value="">-- N/A --</option><option value="QUARTERLY">Quarterly</option><option value="HALF_YEARLY">Half Yearly</option><option value="YEARLY">Yearly</option></select></div>
+                    <div class="col-md-2"><label class="form-label">Default Spread %</label><input type="number" name="defaultSpread" class="form-control" step="0.01" placeholder="e.g., 2.50"/></div>
+                    <div class="col-md-2"><label class="form-label">CASA Tiering</label><div class="form-check mt-2"><input type="checkbox" name="interestTieringEnabled" value="true" class="form-check-input" id="tieringCheck"/><label class="form-check-label" for="tieringCheck">Enable Balance Tiering</label></div></div>
+                    <div class="col-md-4"><label class="form-label">Tiering JSON</label><input type="text" name="interestTieringJson" class="form-control" placeholder='[{"min":0,"max":100000,"rate":3.0}]'/></div>
                 </div>
 
                 <h6 class="mb-3 text-primary">Amount &amp; Tenure Limits</h6>

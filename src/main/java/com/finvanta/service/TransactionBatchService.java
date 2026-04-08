@@ -2,8 +2,10 @@ package com.finvanta.service;
 
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Branch;
+import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.TransactionBatch;
 import com.finvanta.repository.BranchRepository;
+import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
@@ -42,13 +44,16 @@ public class TransactionBatchService {
     private static final Logger log = LoggerFactory.getLogger(TransactionBatchService.class);
 
     private final TransactionBatchRepository batchRepository;
+    private final BusinessCalendarRepository calendarRepository;
     private final BranchRepository branchRepository;
     private final AuditService auditService;
 
     public TransactionBatchService(TransactionBatchRepository batchRepository,
+                                    BusinessCalendarRepository calendarRepository,
                                     BranchRepository branchRepository,
                                     AuditService auditService) {
         this.batchRepository = batchRepository;
+        this.calendarRepository = calendarRepository;
         this.branchRepository = branchRepository;
         this.auditService = auditService;
     }
@@ -67,6 +72,27 @@ public class TransactionBatchService {
                                        String batchType, Long branchId) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
+
+        // CBS CRITICAL: Business day must be DAY_OPEN before any batch can be opened.
+        // Per Finacle DAYCTRL / Temenos COB: batches are only valid for an open business day.
+        // Without this check, batches could be opened for NOT_OPENED, DAY_CLOSED, or
+        // holiday dates — breaking the CBS day control lifecycle invariant.
+        BusinessCalendar calendar = calendarRepository
+            .findByTenantIdAndBusinessDate(tenantId, businessDate)
+            .orElseThrow(() -> new BusinessException("DATE_NOT_IN_CALENDAR",
+                "Business date " + businessDate + " not found in calendar."));
+
+        if (!calendar.isDayOpen()) {
+            throw new BusinessException("DAY_NOT_OPEN",
+                "Cannot open batch for " + businessDate
+                    + " — day status is " + calendar.getDayStatus()
+                    + ". The business day must be DAY_OPEN before opening transaction batches.");
+        }
+
+        if (calendar.isHoliday()) {
+            throw new BusinessException("DAY_IS_HOLIDAY",
+                "Cannot open batch for holiday: " + businessDate);
+        }
 
         // Validate: no duplicate batch name for same business date
         if (batchRepository.existsByTenantIdAndBusinessDateAndBatchName(

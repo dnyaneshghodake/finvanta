@@ -10,23 +10,43 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 
 /**
- * Interest calculation using Actual/365 day-count convention.
- * Per RBI circular on interest rate computation (2009):
- *   Daily Interest = (Outstanding Principal × ROI) / 365
+ * CBS Interest Calculation Engine per Finacle INTDEF / Temenos AA.INTEREST.
  *
- * EMI computation uses standard reducing balance formula.
- * EMI monthly rate uses /12 (not /365*30).
+ * Supports multiple day count conventions per product configuration:
+ *   ACTUAL_365  — Actual days / 365 (RBI default for INR loans, per 2009 circular)
+ *   ACTUAL_360  — Actual days / 360 (common for USD/EUR money market)
+ *   ACTUAL_ACTUAL — Actual days / actual days in year (365 or 366 for leap year)
+ *   THIRTY_360  — 30 days per month / 360 (US corporate bonds, some NBFC products)
+ *
+ * Per RBI circular on interest rate computation (2009):
+ *   "For the purpose of equated installments, interest shall be calculated on
+ *    daily reducing balance on actual number of days in the year (365/366 days)."
+ *
+ * EMI computation uses standard reducing balance formula:
+ *   EMI = P × r × (1+r)^n / ((1+r)^n - 1)
+ *   where r = annual rate / 12 (monthly rate)
+ *
+ * Penal interest per RBI Fair Lending Code 2023:
+ *   Penal charges on overdue principal only (not on interest/EMI amount).
  */
 @Component
 public class InterestCalculationRule {
 
-    /** RBI mandates 365-day year for daily interest accrual */
-    private static final int DAYS_IN_YEAR = 365;
     private static final int SCALE = 2;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
     private static final MathContext MC = new MathContext(18, ROUNDING);
 
-    public BigDecimal calculateDailyAccrual(LoanAccount account, LocalDate fromDate, LocalDate toDate) {
+    /**
+     * Calculates daily interest accrual using the specified day count convention.
+     *
+     * @param account       Loan account with outstanding principal and rate
+     * @param fromDate      Accrual start date (exclusive — last accrual date)
+     * @param toDate        Accrual end date (inclusive — current business date)
+     * @param interestMethod Day count convention: ACTUAL_365, ACTUAL_360, ACTUAL_ACTUAL, THIRTY_360
+     * @return Accrued interest for the period
+     */
+    public BigDecimal calculateDailyAccrual(LoanAccount account, LocalDate fromDate,
+                                             LocalDate toDate, String interestMethod) {
         if (account.getOutstandingPrincipal().compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
@@ -36,14 +56,41 @@ public class InterestCalculationRule {
             return BigDecimal.ZERO;
         }
 
+        int daysInYear = getDaysInYear(interestMethod, fromDate, toDate);
+
         BigDecimal ratePerDay = account.getInterestRate()
             .divide(BigDecimal.valueOf(100), MC)
-            .divide(BigDecimal.valueOf(DAYS_IN_YEAR), MC);
+            .divide(BigDecimal.valueOf(daysInYear), MC);
 
         return account.getOutstandingPrincipal()
             .multiply(ratePerDay, MC)
             .multiply(BigDecimal.valueOf(days), MC)
             .setScale(SCALE, ROUNDING);
+    }
+
+    /**
+     * Backward-compatible overload — defaults to ACTUAL_365 (RBI standard for INR).
+     */
+    public BigDecimal calculateDailyAccrual(LoanAccount account, LocalDate fromDate, LocalDate toDate) {
+        return calculateDailyAccrual(account, fromDate, toDate, "ACTUAL_365");
+    }
+
+    /**
+     * Returns the denominator (days in year) for the given day count convention.
+     *
+     * @param interestMethod Day count convention from ProductMaster.interestMethod
+     * @param fromDate       Period start date (used for ACTUAL_ACTUAL leap year check)
+     * @param toDate         Period end date
+     * @return Days in year for the convention
+     */
+    private int getDaysInYear(String interestMethod, LocalDate fromDate, LocalDate toDate) {
+        if (interestMethod == null) return 365; // Default
+        return switch (interestMethod) {
+            case "ACTUAL_365" -> 365;
+            case "ACTUAL_360", "THIRTY_360" -> 360;
+            case "ACTUAL_ACTUAL" -> toDate.isLeapYear() ? 366 : 365;
+            default -> 365;
+        };
     }
 
     public BigDecimal calculateEmi(BigDecimal principal, BigDecimal annualRate, int tenureMonths) {
@@ -96,9 +143,10 @@ public class InterestCalculationRule {
             return BigDecimal.ZERO;
         }
 
+        // Penal interest always uses Actual/365 per RBI Fair Lending Code 2023
         BigDecimal ratePerDay = penalRate
             .divide(BigDecimal.valueOf(100), MC)
-            .divide(BigDecimal.valueOf(DAYS_IN_YEAR), MC);
+            .divide(BigDecimal.valueOf(365), MC);
 
         return overduePrincipal
             .multiply(ratePerDay, MC)

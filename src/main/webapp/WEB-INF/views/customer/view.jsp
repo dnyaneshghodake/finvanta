@@ -28,9 +28,12 @@
                 <tr><td class="fw-bold">Full Name</td><td><c:out value="${customer.fullName}" /></td></tr>
                 <tr><td class="fw-bold">Customer Type</td><td><c:out value="${customer.customerType}" /></td></tr>
                 <tr><td class="fw-bold">Date of Birth</td><td><c:out value="${customer.dateOfBirth}" /></td></tr>
-                <tr><td class="fw-bold">PAN</td><td><c:out value="${customer.panNumber}" /></td></tr>
-                <tr><td class="fw-bold">Aadhaar</td><td><c:out value="${customer.aadhaarNumber}" /></td></tr>
-                <tr><td class="fw-bold">Mobile</td><td><c:out value="${customer.mobileNumber}" /></td></tr>
+                <%-- CBS: PII masking per RBI IT Governance Direction 2023 / UIDAI Aadhaar Act 2016.
+                     PAN/Aadhaar/Mobile are masked in display — only last 4 digits visible.
+                     Full values are available in DB (encrypted) for authorized operations. --%>
+                <tr><td class="fw-bold">PAN</td><td><c:out value="${maskedPan}" /></td></tr>
+                <tr><td class="fw-bold">Aadhaar</td><td><c:out value="${maskedAadhaar}" /></td></tr>
+                <tr><td class="fw-bold">Mobile</td><td><c:out value="${maskedMobile}" /></td></tr>
                 <tr><td class="fw-bold">Email</td><td><c:out value="${customer.email}" /></td></tr>
                 <tr><td class="fw-bold">Address</td><td><c:out value="${customer.address}" />, <c:out value="${customer.city}" />, <c:out value="${customer.state}" /> - <c:out value="${customer.pinCode}" /></td></tr>
                 <tr><td class="fw-bold">KYC Status</td><td>
@@ -47,6 +50,34 @@
                         </c:otherwise>
                     </c:choose>
                 </td></tr>
+                <%-- CBS Sprint 1.2: KYC Risk, Expiry, PEP, and Customer Group fields --%>
+                <tr><td class="fw-bold">KYC Risk Category</td><td>
+                    <c:choose>
+                        <c:when test="${customer.kycRiskCategory == 'HIGH'}"><span class="fv-badge fv-badge-npa">HIGH</span></c:when>
+                        <c:when test="${customer.kycRiskCategory == 'LOW'}"><span class="fv-badge fv-badge-active">LOW</span></c:when>
+                        <c:otherwise><span class="fv-badge fv-badge-pending">MEDIUM</span></c:otherwise>
+                    </c:choose>
+                </td></tr>
+                <tr><td class="fw-bold">KYC Expiry Date</td><td>
+                    <c:choose>
+                        <c:when test="${customer.kycExpired}"><span class="fv-badge fv-badge-npa">EXPIRED</span> <c:out value="${customer.kycExpiryDate}" /></c:when>
+                        <c:when test="${customer.kycExpiringSoon}"><span class="fv-badge fv-badge-pending">Expiring Soon</span> <c:out value="${customer.kycExpiryDate}" /></c:when>
+                        <c:when test="${not empty customer.kycExpiryDate}"><c:out value="${customer.kycExpiryDate}" /></c:when>
+                        <c:otherwise>--</c:otherwise>
+                    </c:choose>
+                </td></tr>
+                <c:if test="${customer.rekycDue}">
+                <tr><td class="fw-bold">Re-KYC Status</td><td><span class="fv-badge fv-badge-npa"><i class="bi bi-exclamation-triangle"></i> RE-KYC DUE</span></td></tr>
+                </c:if>
+                <tr><td class="fw-bold">PEP (Politically Exposed)</td><td>
+                    <c:choose>
+                        <c:when test="${customer.pep}"><span class="fv-badge fv-badge-npa">YES - Enhanced Due Diligence Required</span></c:when>
+                        <c:otherwise>No</c:otherwise>
+                    </c:choose>
+                </td></tr>
+                <c:if test="${not empty customer.customerGroupName}">
+                <tr><td class="fw-bold">Customer Group</td><td><c:out value="${customer.customerGroupName}" /> (ID: <c:out value="${customer.customerGroupId}" />)</td></tr>
+                </c:if>
                 <tr><td class="fw-bold">CIBIL Score</td><td><c:out value="${customer.cibilScore}" /></td></tr>
                 <tr><td class="fw-bold">Branch</td><td><a href="${pageContext.request.contextPath}/branch/view/${customer.branch.id}"><c:out value="${customer.branch.branchCode}" /> - <c:out value="${customer.branch.branchName}" /></a></td></tr>
                 <tr><td class="fw-bold">Monthly Income</td><td class="amount"><c:if test="${customer.monthlyIncome != null}"><fmt:formatNumber value="${customer.monthlyIncome}" type="number" maxFractionDigits="2" /> INR</c:if><c:if test="${customer.monthlyIncome == null}">--</c:if></td></tr>

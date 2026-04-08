@@ -68,25 +68,27 @@ UPDATE business_calendar SET holiday_description = 'Sunday'              WHERE t
 -- Customers (with CBS Exposure Limits per RBI Exposure Norms)
 -- monthly_income: for DTI ratio check (total EMI <= 60% of income)
 -- max_borrowing_limit: per-customer cap on total outstanding exposure
-INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, branch_id, monthly_income, max_borrowing_limit, employment_type, employer_name, version, created_at, created_by)
-VALUES ('DEFAULT', 'CUST001', 'Rajesh', 'Sharma', '1985-03-15', 'ABCDE1234F', '123456789012', '9876543210', 'rajesh.sharma@email.com', '123 MG Road', 'Mumbai', 'Maharashtra', '400001', true, '2026-01-15', 'admin', 750, 'INDIVIDUAL', true, 1, 150000.00, 5000000.00, 'SALARIED', 'Tata Consultancy Services', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+-- Sprint 1.2: Added is_pep, rekyc_due (NOT NULL), kyc_risk_category for new Customer entity fields
+INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, is_pep, rekyc_due, kyc_risk_category, branch_id, monthly_income, max_borrowing_limit, employment_type, employer_name, version, created_at, created_by)
+VALUES ('DEFAULT', 'CUST001', 'Rajesh', 'Sharma', '1985-03-15', 'ABCDE1234F', '123456789012', '9876543210', 'rajesh.sharma@email.com', '123 MG Road', 'Mumbai', 'Maharashtra', '400001', true, '2026-01-15', 'admin', 750, 'INDIVIDUAL', true, false, false, 'LOW', 1, 150000.00, 5000000.00, 'SALARIED', 'Tata Consultancy Services', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
-INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, branch_id, monthly_income, max_borrowing_limit, employment_type, employer_name, version, created_at, created_by)
-VALUES ('DEFAULT', 'CUST002', 'Priya', 'Patel', '1990-07-22', 'FGHIJ5678K', '234567890123', '9876543211', 'priya.patel@email.com', '456 Ring Road', 'Delhi', 'Delhi', '110002', true, '2026-02-10', 'admin', 820, 'INDIVIDUAL', true, 2, 250000.00, 10000000.00, 'SALARIED', 'Infosys Limited', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, is_pep, rekyc_due, kyc_risk_category, branch_id, monthly_income, max_borrowing_limit, employment_type, employer_name, version, created_at, created_by)
+VALUES ('DEFAULT', 'CUST002', 'Priya', 'Patel', '1990-07-22', 'FGHIJ5678K', '234567890123', '9876543211', 'priya.patel@email.com', '456 Ring Road', 'Delhi', 'Delhi', '110002', true, '2026-02-10', 'admin', 820, 'INDIVIDUAL', true, false, false, 'MEDIUM', 2, 250000.00, 10000000.00, 'SALARIED', 'Infosys Limited', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
-INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, cibil_score, customer_type, is_active, branch_id, monthly_income, max_borrowing_limit, employment_type, employer_name, version, created_at, created_by)
-VALUES ('DEFAULT', 'CUST003', 'Arun', 'Kumar', '1978-11-05', 'KLMNO9012P', '345678901234', '9876543212', 'arun.kumar@email.com', '789 Brigade Road', 'Bangalore', 'Karnataka', '560002', false, 580, 'INDIVIDUAL', true, 3, 80000.00, 2000000.00, 'SELF_EMPLOYED', NULL, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, cibil_score, customer_type, is_active, is_pep, rekyc_due, kyc_risk_category, branch_id, monthly_income, max_borrowing_limit, employment_type, employer_name, version, created_at, created_by)
+VALUES ('DEFAULT', 'CUST003', 'Arun', 'Kumar', '1978-11-05', 'KLMNO9012P', '345678901234', '9876543212', 'arun.kumar@email.com', '789 Brigade Road', 'Bangalore', 'Karnataka', '560002', false, 580, 'INDIVIDUAL', true, false, false, 'MEDIUM', 3, 80000.00, 2000000.00, 'SELF_EMPLOYED', NULL, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Product Master (Finacle PDDEF / Temenos AA.PRODUCT.CATALOG)
 -- Per CBS standards: GL codes are configured per product, not hardcoded.
-INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, version, created_at, created_by)
-VALUES ('DEFAULT', 'TERM_LOAN', 'Term Loan - Unsecured', 'TERM_LOAN', 'Standard unsecured term loan for salaried individuals', 'INR', 'ACTUAL_365', 'FIXED', 8.0000, 24.0000, 2.0000, 50000.00, 5000000.00, 6, 84, 'MONTHLY', '1001', '1002', '1100', '4001', '4002', '4003', '5001', '1003', '5002', '2100', true, 'INTEREST_FIRST', false, 1.0000, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+-- Sprint 1.4: Added interest_tiering_enabled (NOT NULL) for CASA tiering support
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, interest_tiering_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'TERM_LOAN', 'Term Loan - Unsecured', 'TERM_LOAN', 'Standard unsecured term loan for salaried individuals', 'INR', 'ACTUAL_365', 'FIXED', 8.0000, 24.0000, 2.0000, 50000.00, 5000000.00, 6, 84, 'MONTHLY', '1001', '1002', '1100', '4001', '4002', '4003', '5001', '1003', '5002', '2100', true, 'INTEREST_FIRST', false, 1.0000, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
-INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, version, created_at, created_by)
-VALUES ('DEFAULT', 'HOME_LOAN', 'Home Loan - Secured', 'TERM_LOAN', 'Housing finance for residential property purchase', 'INR', 'ACTUAL_365', 'FLOATING', 6.5000, 12.0000, 2.0000, 500000.00, 50000000.00, 12, 360, 'MONTHLY', '1001', '1002', '1100', '4001', '4002', '4003', '5001', '1003', '5002', '2100', true, 'INTEREST_FIRST', false, 0.5000, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, interest_tiering_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'HOME_LOAN', 'Home Loan - Secured', 'TERM_LOAN', 'Housing finance for residential property purchase', 'INR', 'ACTUAL_365', 'FLOATING', 6.5000, 12.0000, 2.0000, 500000.00, 50000000.00, 12, 360, 'MONTHLY', '1001', '1002', '1100', '4001', '4002', '4003', '5001', '1003', '5002', '2100', true, 'INTEREST_FIRST', false, 0.5000, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
-INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, version, created_at, created_by)
-VALUES ('DEFAULT', 'GOLD_LOAN', 'Gold Loan - Secured', 'DEMAND_LOAN', 'Loan against gold ornaments with bullet repayment', 'INR', 'ACTUAL_365', 'FIXED', 7.0000, 15.0000, 2.0000, 10000.00, 2500000.00, 3, 12, 'BULLET', '1001', '1002', '1100', '4001', '4002', '4003', '5001', '1003', '5002', '2100', true, 'INTEREST_FIRST', true, 0.2500, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, interest_tiering_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'GOLD_LOAN', 'Gold Loan - Secured', 'DEMAND_LOAN', 'Loan against gold ornaments with bullet repayment', 'INR', 'ACTUAL_365', 'FIXED', 7.0000, 15.0000, 2.0000, 10000.00, 2500000.00, 3, 12, 'BULLET', '1001', '1002', '1100', '4001', '4002', '4003', '5001', '1003', '5002', '2100', true, 'INTEREST_FIRST', true, 0.2500, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- GL Master (Chart of Accounts)
 -- CBS IMPORTANT: All GL balances start at ZERO. Opening balances must be established
@@ -137,17 +139,17 @@ INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance,
 -- min_interest_rate/max_interest_rate: used as the default savings rate band.
 -- min_loan_amount: repurposed as minimum_balance for CASA products.
 -- max_loan_amount: repurposed as maximum_balance (0 = unlimited).
-INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, version, created_at, created_by)
-VALUES ('DEFAULT', 'SAVINGS', 'Savings Account - Regular', 'CASA_SAVINGS', 'Individual savings account per RBI norms. Interest: 4% p.a. daily product, credited quarterly.', 'INR', 'ACTUAL_365', 'FIXED', 4.0000, 4.0000, 0.0000, 5000.00, 0.00, 0, 0, 'QUARTERLY', '2010', '2010', '1100', '4010', '4002', '4003', '5010', '2010', '5002', '2100', true, 'INTEREST_FIRST', false, 0.0000, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, interest_tiering_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'SAVINGS', 'Savings Account - Regular', 'CASA_SAVINGS', 'Individual savings account per RBI norms. Interest: 4% p.a. daily product, credited quarterly.', 'INR', 'ACTUAL_365', 'FIXED', 4.0000, 4.0000, 0.0000, 5000.00, 0.00, 0, 0, 'QUARTERLY', '2010', '2010', '1100', '4010', '4002', '4003', '5010', '2010', '5002', '2100', true, 'INTEREST_FIRST', false, 0.0000, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
-INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, version, created_at, created_by)
-VALUES ('DEFAULT', 'SAVINGS_PMJDY', 'Savings - PMJDY (Zero Balance)', 'CASA_SAVINGS', 'Pradhan Mantri Jan Dhan Yojana zero-balance savings account. Interest: 4% p.a.', 'INR', 'ACTUAL_365', 'FIXED', 4.0000, 4.0000, 0.0000, 0.00, 0.00, 0, 0, 'QUARTERLY', '2010', '2010', '1100', '4010', '4002', '4003', '5010', '2010', '5002', '2100', true, 'INTEREST_FIRST', false, 0.0000, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, interest_tiering_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'SAVINGS_PMJDY', 'Savings - PMJDY (Zero Balance)', 'CASA_SAVINGS', 'Pradhan Mantri Jan Dhan Yojana zero-balance savings account. Interest: 4% p.a.', 'INR', 'ACTUAL_365', 'FIXED', 4.0000, 4.0000, 0.0000, 0.00, 0.00, 0, 0, 'QUARTERLY', '2010', '2010', '1100', '4010', '4002', '4003', '5010', '2010', '5002', '2100', true, 'INTEREST_FIRST', false, 0.0000, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
-INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, version, created_at, created_by)
-VALUES ('DEFAULT', 'SAVINGS_NRI', 'Savings - NRE/NRO', 'CASA_SAVINGS', 'NRI savings account per FEMA guidelines. Interest: 3.5% p.a.', 'INR', 'ACTUAL_365', 'FIXED', 3.5000, 3.5000, 0.0000, 10000.00, 0.00, 0, 0, 'QUARTERLY', '2010', '2010', '1100', '4010', '4002', '4003', '5010', '2010', '5002', '2100', true, 'INTEREST_FIRST', false, 0.0000, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, interest_tiering_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'SAVINGS_NRI', 'Savings - NRE/NRO', 'CASA_SAVINGS', 'NRI savings account per FEMA guidelines. Interest: 3.5% p.a.', 'INR', 'ACTUAL_365', 'FIXED', 3.5000, 3.5000, 0.0000, 10000.00, 0.00, 0, 0, 'QUARTERLY', '2010', '2010', '1100', '4010', '4002', '4003', '5010', '2010', '5002', '2100', true, 'INTEREST_FIRST', false, 0.0000, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
-INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, version, created_at, created_by)
-VALUES ('DEFAULT', 'CURRENT', 'Current Account - Business', 'CASA_CURRENT', 'Business current account. Zero interest per RBI norms. Min balance INR 10,000.', 'INR', 'ACTUAL_365', 'FIXED', 0.0000, 0.0000, 0.0000, 10000.00, 0.00, 0, 0, 'MONTHLY', '2020', '2020', '1100', '4010', '4002', '4003', '5010', '2020', '5002', '2100', true, 'INTEREST_FIRST', false, 0.0000, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, interest_tiering_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'CURRENT', 'Current Account - Business', 'CASA_CURRENT', 'Business current account. Zero interest per RBI norms. Min balance INR 10,000.', 'INR', 'ACTUAL_365', 'FIXED', 0.0000, 0.0000, 0.0000, 10000.00, 0.00, 0, 0, 'MONTHLY', '2020', '2020', '1100', '4010', '4002', '4003', '5010', '2020', '5002', '2100', true, 'INTEREST_FIRST', false, 0.0000, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- P0-1: CHARGE CONFIGURATIONS (Finacle CHRG_MASTER)
 -- PROCESSING_FEE: 1% of loan amount, GST applicable (18%)
@@ -218,3 +220,109 @@ VALUES ('DEFAULT', 'ADMIN', 'ALL', 50000000.00, 200000000.00, true, 'Admin defau
 
 INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
 VALUES ('DEFAULT', 'MAKER', 'WRITE_OFF', 0.00, 0.00, true, 'Makers cannot perform write-offs (enforced via limit=0)', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- ============================================================
+-- E2E TEST SCENARIO SEED DATA
+-- ============================================================
+-- Per Tier-1 CBS architecture: transactional data (GL postings, ledger entries,
+-- loan accounts with balances) MUST be created through the TransactionEngine
+-- to maintain double-entry integrity, ledger hash chain, and audit trail.
+--
+-- What we CAN safely seed in data.sql (master/config data only):
+--   1. April 1 as DAY_OPEN — so transactions work immediately after login
+--   2. Default transaction batch — required by TransactionEngine Step 5.5
+--   3. CASA deposit accounts — ACTIVE accounts for CUST001 and CUST002
+--      (balance=0, will be funded via UI deposit after login)
+--   4. Loan application (APPROVED) — ready for account creation + disbursement
+--
+-- What MUST be done via UI after startup (creates proper GL/ledger/audit):
+--   Step 1: Login as admin → Dashboard shows April 1 as business date
+--   Step 2: Login as maker1 → Deposit INR 500,000 into CUST001 CASA
+--   Step 3: Login as maker1 → Deposit INR 1,000,000 into CUST002 CASA
+--   Step 4: Login as checker1 → Create loan account from APP001
+--   Step 5: Login as checker1 → Disburse loan (credits CUST001 CASA)
+--   Step 6: Login as admin → Run EOD for April 1
+--   Step 7: Login as admin → Close Day April 1 → Open Day April 2
+--   Step 8: Repeat transactions → Run EOD → observe DPD, accrual, NPA
+-- ============================================================
+
+-- 1. Open April 1 as business day (so system is immediately usable)
+UPDATE business_calendar
+SET day_status = 'DAY_OPEN', day_opened_by = 'SYSTEM', day_opened_at = CURRENT_TIMESTAMP
+WHERE tenant_id = 'DEFAULT' AND business_date = '2026-04-01';
+
+-- 2. Default transaction batch for April 1 (required by TransactionEngine Step 5.5)
+INSERT INTO transaction_batches (tenant_id, business_date, batch_name, batch_type, status,
+    opened_by, opened_at, maker_id, total_transactions, total_debit, total_credit,
+    version, created_at, created_by)
+VALUES ('DEFAULT', '2026-04-01', 'DEFAULT_BATCH', 'INTRA_DAY', 'OPEN',
+    'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM', 0, 0.00, 0.00,
+    0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- 3. CASA Savings Accounts for KYC-verified customers (ACTIVE, zero balance)
+-- Per CBS: accounts start at zero. Initial deposit must go through TransactionEngine
+-- via the Deposit UI to create proper GL entries (DR Bank Ops / CR SB Deposits).
+-- CUST001 (Rajesh Sharma) — Savings at HQ001
+INSERT INTO deposit_accounts (tenant_id, account_number, customer_id, branch_id,
+    account_type, product_code, currency_code, account_status,
+    available_balance, ledger_balance, hold_amount, uncleared_amount,
+    od_limit, minimum_balance, interest_rate, accrued_interest,
+    ytd_interest_credited, ytd_tds_deducted,
+    opened_date, last_transaction_date,
+    cheque_book_enabled, debit_card_enabled,
+    version, created_at, created_by, updated_by)
+VALUES ('DEFAULT', 'SB-HQ001-000001', 1, 1,
+    'SAVINGS', 'SAVINGS', 'INR', 'ACTIVE',
+    0.00, 0.00, 0.00, 0.00,
+    0.00, 5000.00, 4.0000, 0.00,
+    0.00, 0.00,
+    '2026-04-01', '2026-04-01',
+    false, false,
+    0, CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM');
+
+-- CUST002 (Priya Patel) — Savings at DEL001
+INSERT INTO deposit_accounts (tenant_id, account_number, customer_id, branch_id,
+    account_type, product_code, currency_code, account_status,
+    available_balance, ledger_balance, hold_amount, uncleared_amount,
+    od_limit, minimum_balance, interest_rate, accrued_interest,
+    ytd_interest_credited, ytd_tds_deducted,
+    opened_date, last_transaction_date,
+    cheque_book_enabled, debit_card_enabled,
+    version, created_at, created_by, updated_by)
+VALUES ('DEFAULT', 'SB-DEL001-000001', 2, 2,
+    'SAVINGS', 'SAVINGS', 'INR', 'ACTIVE',
+    0.00, 0.00, 0.00, 0.00,
+    0.00, 5000.00, 4.0000, 0.00,
+    0.00, 0.00,
+    '2026-04-01', '2026-04-01',
+    false, false,
+    0, CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM');
+
+-- 4. Loan Application (APPROVED) — ready for account creation + disbursement
+-- CUST001 applies for Term Loan INR 500,000 at 12% for 24 months
+-- Status: APPROVED (checker has already approved, ready for account creation)
+-- Disbursement account: CUST001's CASA (SB-HQ001-000001)
+INSERT INTO loan_applications (tenant_id, application_number, customer_id, branch_id,
+    product_type, requested_amount, approved_amount, interest_rate, penal_rate,
+    tenure_months, application_date, status,
+    disbursement_account_number,
+    version, created_at, created_by, updated_by)
+VALUES ('DEFAULT', 'APP-HQ001-000001', 1, 1,
+    'TERM_LOAN', 500000.00, 500000.00, 12.0000, 2.0000,
+    24, '2026-04-01', 'APPROVED',
+    'SB-HQ001-000001',
+    0, CURRENT_TIMESTAMP, 'maker1', 'checker1');
+
+-- 5. Second Loan Application (SUBMITTED) — for testing verification flow
+-- CUST002 applies for Home Loan INR 2,500,000 at 8.5% for 120 months
+-- Status: SUBMITTED (needs verification + approval before account creation)
+INSERT INTO loan_applications (tenant_id, application_number, customer_id, branch_id,
+    product_type, requested_amount, interest_rate, penal_rate,
+    tenure_months, application_date, status,
+    disbursement_account_number,
+    version, created_at, created_by, updated_by)
+VALUES ('DEFAULT', 'APP-DEL001-000001', 2, 2,
+    'HOME_LOAN', 2500000.00, 8.5000, 2.0000,
+    120, '2026-04-01', 'SUBMITTED',
+    'SB-DEL001-000001',
+    0, CURRENT_TIMESTAMP, 'maker2', 'maker2');

@@ -76,9 +76,55 @@
 
     <c:if test="${empty reconResult.variances and reconResult.isBalanced}">
     <div class="fv-card">
-        <div class="card-header">Reconciliation Result</div>
+        <div class="card-header">GL vs Journal Reconciliation</div>
         <div class="card-body text-center text-muted">
-            <p class="mt-3 mb-3">All ${reconResult.glAccountCount} GL accounts are balanced. No variances detected.</p>
+            <p class="mt-3 mb-3"><i class="bi bi-check-circle text-success"></i> All ${reconResult.glAccountCount} GL accounts are balanced. No variances detected.</p>
+        </div>
+    </div>
+    </c:if>
+
+    <%-- CBS Sprint 0.3: Subledger-to-GL Reconciliation Report --%>
+    <c:if test="${not empty subledgerResult}">
+    <div class="fv-card">
+        <div class="card-header ${subledgerResult.balanced ? '' : 'text-danger'}">
+            <i class="bi bi-arrow-left-right"></i> Subledger vs GL Reconciliation
+            <c:choose>
+                <c:when test="${subledgerResult.balanced}"><span class="fv-badge fv-badge-active float-end">BALANCED</span></c:when>
+                <c:otherwise><span class="fv-badge fv-badge-npa float-end">IMBALANCED (${subledgerResult.discrepancyCount()} issues)</span></c:otherwise>
+            </c:choose>
+        </div>
+        <div class="card-body">
+            <c:if test="${subledgerResult.balanced}">
+                <p class="text-center text-muted"><i class="bi bi-check-circle text-success"></i> All subledger totals match GL balances. Loan outstanding = GL 1001, CASA Savings = GL 2010, CASA Current = GL 2020.</p>
+            </c:if>
+            <c:if test="${not empty subledgerResult.discrepancies()}">
+                <div class="table-responsive">
+                <table class="table fv-table">
+                    <thead>
+                        <tr>
+                            <th>Check</th>
+                            <th>Description</th>
+                            <th>GL Code</th>
+                            <th class="text-end">Subledger Total</th>
+                            <th class="text-end">GL Total</th>
+                            <th class="text-end text-danger">Variance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <c:forEach var="d" items="${subledgerResult.discrepancies()}">
+                            <tr>
+                                <td class="fw-bold"><c:out value="${d.checkCode()}" /></td>
+                                <td><c:out value="${d.checkName()}" /></td>
+                                <td><c:out value="${d.glCode()}" /></td>
+                                <td class="amount"><fmt:formatNumber value="${d.subledgerTotal()}" type="number" maxFractionDigits="2" /></td>
+                                <td class="amount"><fmt:formatNumber value="${d.glTotal()}" type="number" maxFractionDigits="2" /></td>
+                                <td class="amount text-danger fw-bold"><fmt:formatNumber value="${d.variance()}" type="number" maxFractionDigits="2" /></td>
+                            </tr>
+                        </c:forEach>
+                    </tbody>
+                </table>
+                </div>
+            </c:if>
         </div>
     </div>
     </c:if>

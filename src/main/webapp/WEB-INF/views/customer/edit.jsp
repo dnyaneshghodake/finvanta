@@ -8,17 +8,19 @@
         <div class="card-header">Edit Customer &mdash; <c:out value="${customer.customerNumber}" /> <a href="${pageContext.request.contextPath}/customer/view/${customer.id}" class="btn btn-sm btn-outline-secondary float-end"><i class="bi bi-x-circle"></i> Cancel</a></div>
         <div class="card-body">
             <form method="post" action="${pageContext.request.contextPath}/customer/edit/${customer.id}" class="fv-form">
-                <!-- Immutable fields (read-only per RBI KYC norms) -->
+                <!-- Immutable fields (read-only per RBI KYC norms) — PII masked per RBI/UIDAI -->
                 <div class="row mb-3">
                     <div class="col-md-4"><label class="form-label">Customer Number</label><input type="text" class="form-control" value="<c:out value='${customer.customerNumber}'/>" disabled /></div>
-                    <div class="col-md-4"><label class="form-label">PAN Number</label><input type="text" class="form-control" value="<c:out value='${customer.panNumber}'/>" disabled /></div>
-                    <div class="col-md-4"><label class="form-label">Aadhaar Number</label><input type="text" class="form-control" value="<c:out value='${customer.aadhaarNumber}'/>" disabled /></div>
+                    <div class="col-md-4"><label class="form-label">PAN Number</label><input type="text" class="form-control" value="<c:out value='${maskedPan}'/>" disabled /></div>
+                    <div class="col-md-4"><label class="form-label">Aadhaar Number</label><input type="text" class="form-control" value="<c:out value='${maskedAadhaar}'/>" disabled /></div>
                 </div>
                 <hr />
                 <!-- Mutable fields -->
                 <div class="row mb-3">
-                    <div class="col-md-6"><label class="form-label">Customer Type *</label><select name="customerType" class="form-select" required><option value="INDIVIDUAL" ${customer.customerType == 'INDIVIDUAL' ? 'selected' : ''}>Individual</option><option value="CORPORATE" ${customer.customerType == 'CORPORATE' ? 'selected' : ''}>Corporate</option></select></div>
-                    <div class="col-md-6"><label class="form-label">Branch *</label><select name="branchId" class="form-select" required><c:forEach var="branch" items="${branches}"><option value="${branch.id}" ${branch.id == customer.branch.id ? 'selected' : ''}><c:out value="${branch.branchCode}" /> - <c:out value="${branch.branchName}" /></option></c:forEach></select></div>
+                    <div class="col-md-3"><label class="form-label">Customer Type *</label><select name="customerType" class="form-select" required><option value="INDIVIDUAL" ${customer.customerType == 'INDIVIDUAL' ? 'selected' : ''}>Individual</option><option value="JOINT" ${customer.customerType == 'JOINT' ? 'selected' : ''}>Joint</option><option value="HUF" ${customer.customerType == 'HUF' ? 'selected' : ''}>HUF</option><option value="PARTNERSHIP" ${customer.customerType == 'PARTNERSHIP' ? 'selected' : ''}>Partnership</option><option value="COMPANY" ${customer.customerType == 'COMPANY' ? 'selected' : ''}>Company</option><option value="TRUST" ${customer.customerType == 'TRUST' ? 'selected' : ''}>Trust</option><option value="NRI" ${customer.customerType == 'NRI' ? 'selected' : ''}>NRI</option><option value="MINOR" ${customer.customerType == 'MINOR' ? 'selected' : ''}>Minor</option><option value="GOVERNMENT" ${customer.customerType == 'GOVERNMENT' ? 'selected' : ''}>Government</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Branch *</label><select name="branchId" class="form-select" required><c:forEach var="branch" items="${branches}"><option value="${branch.id}" ${branch.id == customer.branch.id ? 'selected' : ''}><c:out value="${branch.branchCode}" /> - <c:out value="${branch.branchName}" /></option></c:forEach></select></div>
+                    <div class="col-md-3"><label class="form-label">KYC Risk Category</label><select name="kycRiskCategory" class="form-select"><option value="LOW" ${customer.kycRiskCategory == 'LOW' ? 'selected' : ''}>Low</option><option value="MEDIUM" ${customer.kycRiskCategory == 'MEDIUM' ? 'selected' : ''}>Medium</option><option value="HIGH" ${customer.kycRiskCategory == 'HIGH' ? 'selected' : ''}>High</option></select></div>
+                    <div class="col-md-3"><label class="form-label">PEP</label><div class="form-check mt-2"><input type="checkbox" name="pep" value="true" class="form-check-input" id="pepEdit" ${customer.pep ? 'checked' : ''} /><label class="form-check-label" for="pepEdit">Politically Exposed Person</label></div></div>
                 </div>
                 <div class="row mb-3">
                     <div class="col-md-6"><label class="form-label">First Name *</label><input type="text" name="firstName" class="form-control" value="<c:out value='${customer.firstName}'/>" required /></div>

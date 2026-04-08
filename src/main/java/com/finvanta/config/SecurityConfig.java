@@ -21,16 +21,35 @@ import org.springframework.security.web.SecurityFilterChain;
  * - Verifier and approver must be different users (enforced in service layer)
  * - EOD batch processing restricted to ADMIN only
  * - Audit logs accessible only to AUDITOR and ADMIN
+ *
+ * SECURITY: H2 console access is restricted to 'dev' profile only.
+ * In production, /h2-console/** is denied by the default authenticated() rule.
  */
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
+    @org.springframework.beans.factory.annotation.Value("${spring.profiles.active:prod}")
+    private String activeProfile;
+
+    private boolean isDevProfile() {
+        return activeProfile != null && activeProfile.contains("dev");
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/login", "/error", "/error/**", "/WEB-INF/**", "/resources/**", "/css/**", "/js/**", "/fonts/**", "/img/**", "/h2-console/**").permitAll()
+            .authorizeHttpRequests(auth -> {
+                auth.requestMatchers("/login", "/error", "/error/**", "/WEB-INF/**", "/resources/**", "/css/**", "/js/**", "/fonts/**", "/img/**").permitAll();
+                // CBS SECURITY: H2 console ONLY accessible in dev profile.
+                // In production, this matcher is not registered — /h2-console/**
+                // falls through to .anyRequest().authenticated() and is blocked.
+                // Per RBI IT Governance Direction 2023: database consoles must NEVER
+                // be exposed in production environments.
+                if (isDevProfile()) {
+                    auth.requestMatchers("/h2-console/**").permitAll();
+                }
+                auth
                 .requestMatchers("/admin/**").hasRole("ADMIN")
                 .requestMatchers("/batch/**").hasRole("ADMIN")
                 .requestMatchers("/branch/add").hasRole("ADMIN")
@@ -85,8 +104,8 @@ public class SecurityConfig {
                 .requestMatchers("/loan/repayment/**").hasAnyRole("MAKER", "ADMIN")
                 .requestMatchers("/loan/prepayment/**").hasAnyRole("MAKER", "ADMIN")
                 .requestMatchers("/audit/**").hasAnyRole("AUDITOR", "ADMIN")
-                .anyRequest().authenticated()
-            )
+                .anyRequest().authenticated();
+            })
             .formLogin(form -> form
                 .loginPage("/login")
                 .loginProcessingUrl("/login")
@@ -110,12 +129,38 @@ public class SecurityConfig {
                 .sessionFixation().migrateSession()
                 .maximumSessions(1)
             )
-            .csrf(csrf -> csrf
-                .ignoringRequestMatchers("/h2-console/**")
-            )
-            .headers(headers -> headers
-                .frameOptions(frame -> frame.sameOrigin())
-            );
+            .csrf(csrf -> {
+                // CBS SECURITY: Only disable CSRF for H2 console in dev profile.
+                // In production, CSRF is enforced on ALL endpoints without exception.
+                if (isDevProfile()) {
+                    csrf.ignoringRequestMatchers("/h2-console/**");
+                }
+            })
+            .headers(headers -> {
+                // CBS SECURITY: sameOrigin frame options only needed for H2 console in dev.
+                // In production, default DENY is used (no framing allowed).
+                if (isDevProfile()) {
+                    headers.frameOptions(frame -> frame.sameOrigin());
+                }
+                // CBS SECURITY: Additional security headers per OWASP and RBI IT Governance.
+                // These headers protect against common web vulnerabilities:
+                //   - X-Content-Type-Options: prevents MIME sniffing attacks
+                //   - X-XSS-Protection: enables browser XSS filter (legacy browsers)
+                //   - Referrer-Policy: prevents leaking internal URLs to external sites
+                //   - Permissions-Policy: disables unnecessary browser features
+                //   - Content-Security-Policy: restricts resource loading to same origin
+                // HSTS (Strict-Transport-Security) is only enabled in production
+                // to avoid HTTPS enforcement issues in dev/test environments.
+                headers.contentTypeOptions(cto -> {}); // X-Content-Type-Options: nosniff
+                headers.xssProtection(xss -> {}); // X-XSS-Protection: 1; mode=block
+                headers.referrerPolicy(ref ->
+                    ref.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
+                headers.permissionsPolicy(pp -> pp.policy("camera=(), microphone=(), geolocation=()"));
+                if (!isDevProfile()) {
+                    headers.httpStrictTransportSecurity(hsts ->
+                        hsts.includeSubDomains(true).maxAgeInSeconds(31536000)); // 1 year
+                }
+            });
 
         return http.build();
     }

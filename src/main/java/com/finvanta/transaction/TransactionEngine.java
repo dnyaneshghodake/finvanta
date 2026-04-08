@@ -7,6 +7,7 @@ import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.TransactionBatchRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.MakerCheckerService;
 import com.finvanta.service.SequenceGeneratorService;
 import com.finvanta.service.TransactionLimitService;
@@ -67,9 +68,18 @@ public class TransactionEngine {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionEngine.class);
 
+    /** Configurable value date window: max days back from current business date */
+    @org.springframework.beans.factory.annotation.Value("${cbs.value-date.back-days:2}")
+    private int valueDateBackDays;
+
+    /** Configurable value date window: max days forward from current business date */
+    @org.springframework.beans.factory.annotation.Value("${cbs.value-date.forward-days:0}")
+    private int valueDateForwardDays;
+
     private final AccountingService accountingService;
     private final TransactionLimitService limitService;
     private final MakerCheckerService makerCheckerService;
+    private final BusinessDateService businessDateService;
     private final BusinessCalendarRepository calendarRepository;
     private final BranchRepository branchRepository;
     private final TransactionBatchRepository batchRepository;
@@ -79,6 +89,7 @@ public class TransactionEngine {
     public TransactionEngine(AccountingService accountingService,
                               TransactionLimitService limitService,
                               MakerCheckerService makerCheckerService,
+                              BusinessDateService businessDateService,
                               BusinessCalendarRepository calendarRepository,
                               BranchRepository branchRepository,
                               TransactionBatchRepository batchRepository,
@@ -87,6 +98,7 @@ public class TransactionEngine {
         this.accountingService = accountingService;
         this.limitService = limitService;
         this.makerCheckerService = makerCheckerService;
+        this.businessDateService = businessDateService;
         this.calendarRepository = calendarRepository;
         this.branchRepository = branchRepository;
         this.batchRepository = batchRepository;
@@ -134,6 +146,30 @@ public class TransactionEngine {
         if (calendar.isHoliday()) {
             throw new BusinessException("HOLIDAY_POSTING",
                 "Cannot post transactions on a holiday: " + request.getValueDate());
+        }
+
+        // ================================================================
+        // STEP 2.5: Value Date Window Validation
+        // Per Finacle/Temenos: user-initiated transactions can only be posted with
+        // value dates within a configurable window (default T-2 to T+0).
+        // This prevents excessive back-dating that bypasses period-close controls.
+        // System-generated transactions (EOD batch) are exempt — they always use
+        // the current business date which is inherently within the window.
+        // ================================================================
+        if (!request.isSystemGenerated()) {
+            try {
+                LocalDate currentBizDate = businessDateService.getCurrentBusinessDate();
+                businessDateService.validateValueDateWindow(
+                    request.getValueDate(), currentBizDate,
+                    valueDateBackDays, valueDateForwardDays);
+            } catch (BusinessException e) {
+                if ("NO_OPEN_DAY".equals(e.getErrorCode())) {
+                    // No day open — let Step 3 handle this (DAY_NOT_OPEN error)
+                    log.debug("Value date window check skipped — no day currently open");
+                } else {
+                    throw e;
+                }
+            }
         }
 
         // ================================================================

@@ -68,4 +68,41 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     /** Check if Aadhaar already exists */
     boolean existsByTenantIdAndAadhaarNumber(String tenantId, String aadhaarNumber);
+
+    // === KYC Re-Verification (RBI Master Direction on KYC 2016 Section 16) ===
+
+    /**
+     * Customers with expired KYC (kycExpiryDate before businessDate).
+     * Used by EOD batch to flag customers for re-KYC outreach.
+     * Only active, KYC-verified customers are included.
+     */
+    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId " +
+           "AND c.active = true AND c.kycVerified = true " +
+           "AND c.kycExpiryDate IS NOT NULL AND c.kycExpiryDate < :businessDate " +
+           "AND c.rekycDue = false")
+    List<Customer> findKycExpiredCustomers(
+        @Param("tenantId") String tenantId,
+        @Param("businessDate") java.time.LocalDate businessDate);
+
+    /**
+     * Customers with KYC expiring within the next 90 days.
+     * Used for proactive re-KYC outreach before expiry.
+     */
+    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId " +
+           "AND c.active = true AND c.kycVerified = true " +
+           "AND c.kycExpiryDate IS NOT NULL " +
+           "AND c.kycExpiryDate BETWEEN :businessDate AND :warningDate " +
+           "AND c.rekycDue = false")
+    List<Customer> findKycExpiringSoonCustomers(
+        @Param("tenantId") String tenantId,
+        @Param("businessDate") java.time.LocalDate businessDate,
+        @Param("warningDate") java.time.LocalDate warningDate);
+
+    // === PII Hash-Based De-Duplication (per RBI KYC: one PAN = one CIF) ===
+
+    /** Check if PAN hash already exists (for duplicate CIF prevention on encrypted PAN) */
+    boolean existsByTenantIdAndPanHash(String tenantId, String panHash);
+
+    /** Check if Aadhaar hash already exists (for duplicate CIF prevention on encrypted Aadhaar) */
+    boolean existsByTenantIdAndAadhaarHash(String tenantId, String aadhaarHash);
 }

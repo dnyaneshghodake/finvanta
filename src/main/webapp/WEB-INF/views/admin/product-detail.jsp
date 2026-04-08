@@ -29,6 +29,13 @@
                 <tr><td class="fw-bold">Loan Amount Range</td><td class="amount"><fmt:formatNumber value="${product.minLoanAmount}" type="number" maxFractionDigits="0" /> &ndash; <fmt:formatNumber value="${product.maxLoanAmount}" type="number" maxFractionDigits="0" /></td></tr>
                 <tr><td class="fw-bold">Tenure Range</td><td><c:out value="${product.minTenureMonths}" /> &ndash; <c:out value="${product.maxTenureMonths}" /> months</td></tr>
                 <tr><td class="fw-bold">Description</td><td><c:out value="${product.description}" default="--" /></td></tr>
+                <%-- CBS Sprint 1.4: Floating Rate & CASA Tiering display --%>
+                <c:if test="${not empty product.defaultBenchmarkName}">
+                <tr><td class="fw-bold">Benchmark Rate</td><td><c:out value="${product.defaultBenchmarkName}" /> | Reset: <c:out value="${product.defaultRateResetFrequency}" default="--" /> | Default Spread: <fmt:formatNumber value="${product.defaultSpread}" maxFractionDigits="2" />%</td></tr>
+                </c:if>
+                <c:if test="${product.interestTieringEnabled}">
+                <tr><td class="fw-bold">Interest Tiering</td><td><span class="fv-badge fv-badge-active">ENABLED</span> <small class="text-muted font-monospace"><c:out value="${product.interestTieringJson}" /></small></td></tr>
+                </c:if>
                 <tr><td class="fw-bold">Status</td><td>
                     <c:choose>
                         <c:when test="${product.active}"><span class="fv-badge fv-badge-active">ACTIVE</span></c:when>
