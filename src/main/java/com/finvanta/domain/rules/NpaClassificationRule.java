@@ -113,4 +113,28 @@ public class NpaClassificationRule {
     public int getNpaThresholdDays() {
         return NPA_THRESHOLD_DAYS;
     }
+
+    /**
+     * Determines if an NPA account is eligible for upgrade back to Standard.
+     *
+     * Per RBI Master Circular on IRAC Norms:
+     * "An account classified as NPA may be upgraded as 'Standard' if the
+     *  entire arrears of interest and principal are paid by the borrower."
+     *
+     * Conditions for upgrade:
+     * 1. Account must currently be in NPA status (Sub-Standard, Doubtful, or Loss)
+     * 2. DPD must be 0 (all overdue installments cleared)
+     * 3. No overdue principal or interest remaining
+     *
+     * @param account The NPA loan account
+     * @return true if eligible for upgrade to Standard
+     */
+    public boolean isEligibleForNpaUpgrade(LoanAccount account) {
+        if (!account.getStatus().isNpa()) {
+            return false;
+        }
+        return account.getDaysPastDue() == 0
+            && account.getOverduePrincipal().signum() <= 0
+            && account.getOverdueInterest().signum() <= 0;
+    }
 }
