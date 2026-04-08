@@ -276,7 +276,16 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
-        if (acct.isDormant()) { acct.setAccountStatus(DepositAccountStatus.ACTIVE); acct.setDormantDate(null); }
+        if (acct.isDormant()) {
+            acct.setAccountStatus(DepositAccountStatus.ACTIVE);
+            acct.setDormantDate(null);
+            // CBS: Audit trail for dormancy reactivation per RBI IT Governance Direction 2023.
+            // Per RBI KYC 2016 Sec 38: deposit on dormant account reactivates it.
+            auditService.logEvent("DepositAccount", acct.getId(), "DORMANCY_REACTIVATED",
+                "DORMANT", "ACTIVE", "DEPOSIT",
+                "Account reactivated via deposit: " + accountNumber
+                    + " | Amount: INR " + amount + " | Channel: " + channel);
+        }
         acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
         return buildTxn(acct, amount, "CASH_DEPOSIT", "CREDIT", businessDate, narration, r, r.getTransactionRef(), idempotencyKey, channel, null);
@@ -376,7 +385,15 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         src.setLastTransactionDate(bd); src.setUpdatedBy(SecurityUtil.getCurrentUsername()); accountRepository.save(src);
         tgt.setLedgerBalance(tgt.getLedgerBalance().add(amount));
         recomputeAvailable(tgt);
-        tgt.setLastTransactionDate(bd); if (tgt.isDormant()) { tgt.setAccountStatus(DepositAccountStatus.ACTIVE); tgt.setDormantDate(null); }
+        tgt.setLastTransactionDate(bd);
+        if (tgt.isDormant()) {
+            tgt.setAccountStatus(DepositAccountStatus.ACTIVE);
+            tgt.setDormantDate(null);
+            auditService.logEvent("DepositAccount", tgt.getId(), "DORMANCY_REACTIVATED",
+                "DORMANT", "ACTIVE", "DEPOSIT",
+                "Account reactivated via transfer credit: " + tgt.getAccountNumber()
+                    + " | Amount: INR " + amount + " | From: " + from);
+        }
         tgt.setUpdatedBy(SecurityUtil.getCurrentUsername()); accountRepository.save(tgt);
         // CBS: TRANSFER_CREDIT leg gets its own unique transactionRef to satisfy
         // the unique constraint on (tenant_id, transaction_ref) in deposit_transactions.

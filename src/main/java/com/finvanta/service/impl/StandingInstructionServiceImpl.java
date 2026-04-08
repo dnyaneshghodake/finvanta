@@ -209,6 +209,11 @@ public class StandingInstructionServiceImpl {
             si.setLastExecutionStatus("EXPIRED_LOAN_CLOSED");
             si.setUpdatedBy("SYSTEM_EOD");
             siRepository.save(si);
+            auditService.logEvent("StandingInstruction", si.getId(), "SI_EXPIRED",
+                "ACTIVE", "EXPIRED", "STANDING_INSTRUCTION",
+                "SI expired (loan closed): " + si.getSiReference()
+                    + " | Loan: " + si.getLoanAccountNumber()
+                    + " | Loan status: " + loan.getStatus());
             return false;
         }
 
@@ -260,6 +265,11 @@ public class StandingInstructionServiceImpl {
         si.setUpdatedBy("SYSTEM_EOD");
         if (si.getEndDate() != null && si.getNextExecutionDate().isAfter(si.getEndDate())) {
             si.setStatus(SIStatus.EXPIRED);
+            auditService.logEvent("StandingInstruction", si.getId(), "SI_EXPIRED",
+                "ACTIVE", "EXPIRED", "STANDING_INSTRUCTION",
+                "SI expired (end date reached): " + si.getSiReference()
+                    + " | End date: " + si.getEndDate()
+                    + " | Total executions: " + (si.getTotalExecutions() + 1));
         }
         siRepository.save(si);
     }
