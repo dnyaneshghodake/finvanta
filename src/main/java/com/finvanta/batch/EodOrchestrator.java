@@ -67,6 +67,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)
  *   Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)
  *   Step 8: CASA Savings Interest Accrual + Quarterly Credit (per RBI directive)
+ *   Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER — LOAN_EMI auto-debit)
  *   Step 9: CASA Dormancy Classification (per RBI Master Direction on KYC 2016 Sec 38)
  *
  * Day status: DAY_OPEN -> EOD_RUNNING -> (eodComplete=true)
@@ -93,6 +94,7 @@ public class EodOrchestrator {
     private final AuditService auditService;
     private final com.finvanta.service.DepositAccountService depositAccountService;
     private final com.finvanta.repository.DepositAccountRepository depositAccountRepository;
+    private final com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService;
 
     /** Self-proxy for per-account transaction isolation via Spring AOP. */
     private final EodOrchestrator self;
@@ -109,6 +111,7 @@ public class EodOrchestrator {
                            AuditService auditService,
                            com.finvanta.service.DepositAccountService depositAccountService,
                            com.finvanta.repository.DepositAccountRepository depositAccountRepository,
+                           com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService,
                            @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;
@@ -122,6 +125,7 @@ public class EodOrchestrator {
         this.auditService = auditService;
         this.depositAccountService = depositAccountService;
         this.depositAccountRepository = depositAccountRepository;
+        this.standingInstructionService = standingInstructionService;
         this.self = self;
     }
 
@@ -266,8 +270,29 @@ public class EodOrchestrator {
             log.info("EOD Step 8: CASA interest accrued for {} savings accounts", accrued);
         }
 
+        // Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER)
+        // Executes all due SIs: LOAN_EMI auto-debit, recurring transfers, SIP, utility.
+        // Per Finacle EOD: SI execution runs AFTER interest accrual (so interest is
+        // current before EMI split) but BEFORE dormancy check (because SI execution
+        // counts as a customer-initiated transaction that prevents dormancy).
+        // Each SI runs in its own REQUIRES_NEW transaction for isolation.
+        // CASA debit + loan repayment are ATOMIC within each SI transaction.
+        self.updateStepName(eodJob.getId(), "STANDING_INSTRUCTION_EXECUTION");
+        try {
+            int[] siResult = standingInstructionService.executeAllDueSIs(businessDate);
+            processedCount += siResult[0];
+            failedCount += siResult[1];
+            log.info("EOD Step 8.5: SI execution done — executed={}, failed={}",
+                siResult[0], siResult[1]);
+        } catch (Exception e) {
+            failedCount++;
+            appendError(errors, "SI_EXECUTION", "ALL", e);
+        }
+
         // Step 9: CASA Dormancy Classification (RBI Master Direction on KYC 2016 Sec 38)
         // Accounts with no customer-initiated txn for 24+ months -> DORMANT
+        // NOTE: Must run AFTER SI execution — SI debits update lastTransactionDate
+        // which prevents dormancy for accounts with active standing instructions.
         failedCount += runStep(eodJob, "CASA_DORMANCY", () -> {
             int dormantCount = depositAccountService.markDormantAccounts(businessDate);
             log.info("EOD Step 9: {} CASA accounts marked DORMANT", dormantCount);
