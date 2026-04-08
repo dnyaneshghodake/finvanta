@@ -398,9 +398,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // CBS: YTD Reset on Indian Financial Year boundary (April 1).
         // Per IT Act Section 194A: TDS threshold is per financial year (Apr 1 - Mar 31).
         // Without reset, YTD accumulates forever and TDS is incorrectly applied in year 2+.
+        // Indian FY: Apr 1 of year N to Mar 31 of year N+1. So on April 1, 2026,
+        // last accrual date Mar 31, 2026 is in the PREVIOUS FY (both calendar year 2026).
+        // Correct check: last accrual was before April 1 of the current calendar year.
         if (bd.getMonthValue() == 4 && bd.getDayOfMonth() == 1) {
             if (acct.getLastInterestAccrualDate() != null
-                    && acct.getLastInterestAccrualDate().getYear() < bd.getYear()) {
+                    && acct.getLastInterestAccrualDate().isBefore(bd)) {
                 acct.setYtdInterestCredited(BigDecimal.ZERO);
                 acct.setYtdTdsDeducted(BigDecimal.ZERO);
                 log.info("FY reset: YTD counters reset for {} on {}", acn, bd);

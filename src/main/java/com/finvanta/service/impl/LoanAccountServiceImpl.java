@@ -35,6 +35,7 @@ import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -103,7 +104,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                                    ChargeEngine chargeEngine,
                                    DepositAccountRepository depositAccountRepository,
                                    DepositAccountService depositAccountService,
-                                   StandingInstructionServiceImpl standingInstructionService) {
+                                   @Lazy StandingInstructionServiceImpl standingInstructionService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
