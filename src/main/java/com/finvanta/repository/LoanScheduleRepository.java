@@ -54,4 +54,30 @@ public interface LoanScheduleRepository extends JpaRepository<LoanSchedule, Long
 
     /** Check if schedule already exists for a loan account */
     boolean existsByTenantIdAndLoanAccountId(String tenantId, Long loanAccountId);
+
+    /**
+     * Future unpaid installments for restructuring schedule regeneration.
+     * Returns SCHEDULED and OVERDUE installments with due date on or after the given date.
+     * PAID and PARTIALLY_PAID installments are preserved (historical record).
+     * CANCELLED installments are excluded (already processed by prior restructuring).
+     */
+    @Query("SELECT ls FROM LoanSchedule ls WHERE ls.tenantId = :tenantId " +
+           "AND ls.loanAccount.id = :accountId AND ls.dueDate >= :fromDate " +
+           "AND ls.status IN ('SCHEDULED', 'OVERDUE') " +
+           "ORDER BY ls.installmentNumber ASC")
+    List<LoanSchedule> findFutureUnpaidInstallments(
+        @Param("tenantId") String tenantId,
+        @Param("accountId") Long accountId,
+        @Param("fromDate") LocalDate fromDate);
+
+    /**
+     * Maximum installment number for a loan account.
+     * Used by regenerateSchedule() to continue numbering after cancelled installments.
+     * Returns 0 if no installments exist.
+     */
+    @Query("SELECT COALESCE(MAX(ls.installmentNumber), 0) FROM LoanSchedule ls " +
+           "WHERE ls.tenantId = :tenantId AND ls.loanAccount.id = :accountId")
+    int findMaxInstallmentNumber(
+        @Param("tenantId") String tenantId,
+        @Param("accountId") Long accountId);
 }
