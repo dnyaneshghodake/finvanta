@@ -1331,7 +1331,15 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         // The user-entered feeAmount is used as a fallback baseAmount for FLAT charges
         // where the config determines the actual amount.
         BigDecimal chargeBaseAmount = account.getSanctionedAmount();
-        chargeEngine.applyCharge(accountNumber, feeType, chargeBaseAmount, businessDate);
+        ChargeEngine.ChargeResult chargeResult = chargeEngine.applyCharge(
+            accountNumber, feeType, chargeBaseAmount, businessDate);
+
+        // CBS: Use the ACTUAL calculated amount from ChargeEngine (not the user-entered feeAmount).
+        // Per Finacle CHRG_MASTER: the ChargeEngine determines the real charge based on
+        // FLAT/PERCENTAGE/SLAB config + min/max bounds + GST. The user-entered feeAmount
+        // was only used for validation (positive check above); the GL posting uses chargeResult.
+        // The LoanTransaction record MUST match what was posted to GL for reconciliation.
+        BigDecimal actualChargeTotal = chargeResult.totalAmount();
 
         // CBS: Create loan transaction record for module-level tracking
         // This links the charge to the loan account transaction history
@@ -1340,19 +1348,24 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
         txn.setLoanAccount(account);
         txn.setTransactionType(TransactionType.FEE_CHARGE);
-        txn.setAmount(feeAmount);
+        txn.setAmount(actualChargeTotal);
         txn.setValueDate(businessDate);
         txn.setPostingDate(LocalDateTime.now());
         txn.setBalanceAfter(account.getTotalOutstanding());
-        txn.setNarration(feeType + ": " + feeAmount);
+        txn.setNarration(feeType + ": INR " + actualChargeTotal
+            + " (charge=" + chargeResult.chargeAmount()
+            + ", GST=" + chargeResult.gstAmount() + ")");
         txn.setCreatedBy(currentUser);
         LoanTransaction savedTxn = transactionRepository.save(txn);
 
         auditService.logEvent("LoanAccount", account.getId(), "FEE_CHARGE",
             null, savedTxn.getTransactionRef(), "LOAN_ACCOUNTS",
-            feeType + ": " + feeAmount + " for " + accountNumber);
+            feeType + ": INR " + actualChargeTotal + " for " + accountNumber
+                + " (charge=" + chargeResult.chargeAmount() + ", GST=" + chargeResult.gstAmount() + ")");
 
-        log.info("Fee charged: accNo={}, type={}, amount={}", accountNumber, feeType, feeAmount);
+        log.info("Fee charged: accNo={}, type={}, actualAmount={}, charge={}, gst={}",
+            accountNumber, feeType, actualChargeTotal,
+            chargeResult.chargeAmount(), chargeResult.gstAmount());
 
         return savedTxn;
     }

@@ -355,7 +355,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 new JournalLineRequest(glForAccount(src), DebitCredit.DEBIT, amount, "Transfer debit"),
                 new JournalLineRequest(glForAccount(tgt), DebitCredit.CREDIT, amount, "Transfer credit")
             )).build());
-        if (r.isPendingApproval()) return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, r.getTransactionRef(), idk, "INTERNAL", to);
+        if (r.isPendingApproval()) return buildTxn(src, amount, "TRANSFER_DEBIT", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, "INTERNAL", to);
         src.setLedgerBalance(src.getLedgerBalance().subtract(amount));
         recomputeAvailable(src);
         src.setLastTransactionDate(bd); src.setUpdatedBy(SecurityUtil.getCurrentUsername()); accountRepository.save(src);
@@ -367,8 +367,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // the unique constraint on (tenant_id, transaction_ref) in deposit_transactions.
         // Per Finacle TRAN_DETAIL: each subledger entry has its own unique reference.
         String creditTxnRef = ReferenceGenerator.generateTransactionRef();
-        buildTxn(tgt, amount, "TRANSFER_CREDIT", bd, "Transfer from " + from, r, creditTxnRef, null, "INTERNAL", from);
-        return buildTxn(src, amount, "TRANSFER_DEBIT", bd, narration, r, r.getTransactionRef(), idk, "INTERNAL", to);
+        buildTxn(tgt, amount, "TRANSFER_CREDIT", "CREDIT", bd, "Transfer from " + from, r, creditTxnRef, null, "INTERNAL", from);
+        return buildTxn(src, amount, "TRANSFER_DEBIT", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, "INTERNAL", to);
     }
 
     // === Interest Accrual (EOD daily) ===
@@ -468,7 +468,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         acct.setAccruedInterest(BigDecimal.ZERO);
         acct.setLastInterestCreditDate(bd);
         accountRepository.save(acct);
-        return buildTxn(acct, interest, "INTEREST_CREDIT", bd,
+        return buildTxn(acct, interest, "INTEREST_CREDIT", "CREDIT", bd,
             "Quarterly interest credit" + (tdsAmount.signum() > 0 ? " (TDS INR " + tdsAmount + " deducted)" : ""),
             r, r.getTransactionRef(), null, "SYSTEM", null);
     }
@@ -705,8 +705,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         log.info("Transaction reversed: ref={}, amount={}, account={}, reason={}",
             transactionRef, amount, acct.getAccountNumber(), reason);
 
-        // Step 6: Create reversal transaction record
-        return buildTxn(acct, amount, "REVERSAL", businessDate,
+        // Step 6: Create reversal transaction record.
+        // CBS: Reversal direction is opposite of original — reversing a CREDIT creates
+        // a DEBIT record, and vice versa. Per Finacle TRAN_REVERSAL / Temenos REVERSAL:
+        // the subledger entry must accurately reflect the contra movement.
+        String reversalDirection = wasDebit ? "CREDIT" : "DEBIT";
+        return buildTxn(acct, amount, "REVERSAL", reversalDirection, businessDate,
             "Reversal of " + transactionRef + ": " + reason,
             r, r.getTransactionRef(), null, original.getChannel(), null);
     }

@@ -150,9 +150,10 @@ public class ChargeEngine {
      * @param chargeCode    Charge config identifier
      * @param baseAmount    Base amount
      * @param businessDate  CBS business date
+     * @return ChargeResult with the actual calculated charge, GST, and total amounts
      */
     @Transactional
-    public void applyCharge(String accountNumber, String chargeCode, BigDecimal baseAmount, LocalDate businessDate) {
+    public ChargeResult applyCharge(String accountNumber, String chargeCode, BigDecimal baseAmount, LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
 
         LoanAccount account = accountRepository.findByTenantIdAndAccountNumber(tenantId, accountNumber)
@@ -222,6 +223,8 @@ public class ChargeEngine {
 
         log.info("Charge applied: account={}, chargeCode={}, amount={}, journal={}, voucher={}",
             accountNumber, chargeCode, result.totalAmount(), txnResult.getJournalRef(), txnResult.getVoucherNumber());
+
+        return result;
     }
 
     /**
