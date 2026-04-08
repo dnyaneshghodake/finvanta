@@ -9,6 +9,7 @@ import com.finvanta.repository.StandingInstructionRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
+import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 import org.slf4j.Logger;
@@ -185,7 +186,7 @@ public class DepositController {
         try {
             // CBS: Server-side validation — defense-in-depth per OWASP / RBI IT Governance
             if (amount == null || amount.signum() <= 0) {
-                throw new com.finvanta.util.BusinessException("INVALID_AMOUNT",
+                throw new BusinessException("INVALID_AMOUNT",
                     "Deposit amount must be positive");
             }
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();
@@ -215,7 +216,7 @@ public class DepositController {
         try {
             // CBS: Server-side validation — defense-in-depth per OWASP / RBI IT Governance
             if (amount == null || amount.signum() <= 0) {
-                throw new com.finvanta.util.BusinessException("INVALID_AMOUNT",
+                throw new BusinessException("INVALID_AMOUNT",
                     "Withdrawal amount must be positive");
             }
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();
@@ -246,11 +247,11 @@ public class DepositController {
         try {
             // CBS: Server-side validation — defense-in-depth per OWASP / RBI IT Governance
             if (amount == null || amount.signum() <= 0) {
-                throw new com.finvanta.util.BusinessException("INVALID_AMOUNT",
+                throw new BusinessException("INVALID_AMOUNT",
                     "Transfer amount must be positive");
             }
             if (fromAccount == null || fromAccount.isBlank() || toAccount == null || toAccount.isBlank()) {
-                throw new com.finvanta.util.BusinessException("MISSING_ACCOUNT",
+                throw new BusinessException("MISSING_ACCOUNT",
                     "Both source and target accounts are required");
             }
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();
@@ -333,7 +334,7 @@ public class DepositController {
                                       RedirectAttributes ra) {
         try {
             if (reason == null || reason.isBlank()) {
-                throw new com.finvanta.util.BusinessException("REASON_REQUIRED",
+                throw new BusinessException("REASON_REQUIRED",
                     "Reversal reason is mandatory");
             }
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();

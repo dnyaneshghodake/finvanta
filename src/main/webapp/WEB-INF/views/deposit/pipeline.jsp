@@ -50,7 +50,7 @@
                             <td>
                                 <form method="post" action="${pageContext.request.contextPath}/deposit/activate/${a.accountNumber}" class="d-inline">
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                    <button type="submit" class="btn btn-sm btn-success" data-confirm="Activate account ${a.accountNumber}? It will become operational immediately."><i class="bi bi-check-circle"></i> Activate</button>
+                                    <button type="submit" class="btn btn-sm btn-success" data-confirm="Activate this account? It will become operational immediately."><i class="bi bi-check-circle"></i> Activate</button>
                                 </form>
                                 <a href="${pageContext.request.contextPath}/deposit/view/${a.accountNumber}" class="btn btn-sm btn-outline-secondary">View</a>
                             </td>
@@ -154,7 +154,7 @@
                                 <c:if test="${a.frozen && pageContext.request.isUserInRole('ROLE_ADMIN')}">
                                     <form method="post" action="${pageContext.request.contextPath}/deposit/unfreeze/${a.accountNumber}" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                        <button type="submit" class="btn btn-sm btn-outline-success" data-confirm="Unfreeze account ${a.accountNumber}?"><i class="bi bi-unlock"></i> Unfreeze</button>
+                                        <button type="submit" class="btn btn-sm btn-outline-success" data-confirm="Unfreeze this account?"><i class="bi bi-unlock"></i> Unfreeze</button>
                                     </form>
                                 </c:if>
                             </td>

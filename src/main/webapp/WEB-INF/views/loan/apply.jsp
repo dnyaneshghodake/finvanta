@@ -40,7 +40,7 @@
                         <select name="productType" id="productType" class="form-select" required>
                             <option value="">-- Select Product --</option>
                             <c:forEach var="product" items="${products}">
-                                <option value="${product.productCode}"
+                                <option value="<c:out value='${product.productCode}'/>"
                                     data-min-amount="${product.minLoanAmount}"
                                     data-max-amount="${product.maxLoanAmount}"
                                     data-min-tenure="${product.minTenureMonths}"
@@ -48,8 +48,8 @@
                                     data-min-rate="${product.minInterestRate}"
                                     data-max-rate="${product.maxInterestRate}"
                                     data-default-penal="${product.defaultPenalRate}"
-                                    data-category="${product.productCategory}"
-                                    data-interest-type="${product.interestType}"
+                                    data-category="<c:out value='${product.productCategory}'/>"
+                                    data-interest-type="<c:out value='${product.interestType}'/>"
                                     data-prepayment-penalty="${product.prepaymentPenaltyApplicable}"><c:out value="${product.productCode}" /> - <c:out value="${product.productName}" /></option>
                             </c:forEach>
                         </select>
@@ -102,7 +102,7 @@
                         <select name="disbursementAccountNumber" id="disbursementAccountNumber" class="form-select">
                             <option value="">-- Cash/DD Disbursement (no CASA) --</option>
                             <c:forEach var="depAcct" items="${casaAccounts}">
-                                <option value="${depAcct.accountNumber}" data-customer-id="${depAcct.customer.id}"><c:out value="${depAcct.accountNumber}" /> - <c:out value="${depAcct.accountType}" /> (Bal: <c:out value="${depAcct.ledgerBalance}" />)</option>
+                                <option value="<c:out value='${depAcct.accountNumber}'/>" data-customer-id="${depAcct.customer.id}"><c:out value="${depAcct.accountNumber}" /> - <c:out value="${depAcct.accountType}" /> (Bal: <c:out value="${depAcct.ledgerBalance}" />)</option>
                             </c:forEach>
                         </select>
                         <small class="form-text text-muted">Per RBI: loan proceeds must credit borrower's own CASA account. Select the customer's SB/CA account.</small>
