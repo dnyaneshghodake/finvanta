@@ -578,6 +578,9 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     }
 
     // === Dormancy (EOD batch) ===
+    // Per RBI Master Direction on KYC 2016, Section 38:
+    // Accounts with no customer-initiated transaction for 24+ months → DORMANT.
+    // Per REVIEW.md: every state change MUST be logged via AuditService.
     @Override @Transactional
     public int markDormantAccounts(LocalDate businessDate) {
         String tid = TenantContext.getCurrentTenant();
@@ -585,9 +588,24 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         var candidates = accountRepository.findDormancyCandidates(tid, cutoff);
         int count = 0;
         for (var acct : candidates) {
-            acct.setAccountStatus(DepositAccountStatus.DORMANT); acct.setDormantDate(businessDate);
+            String prevStatus = acct.getAccountStatus().name();
+            acct.setAccountStatus(DepositAccountStatus.DORMANT);
+            acct.setDormantDate(businessDate);
             acct.setUpdatedBy("SYSTEM_EOD");
             accountRepository.save(acct);
+
+            // CBS: Audit trail for dormancy state change per RBI IT Governance Direction 2023.
+            // Per REVIEW.md: every state change must be logged via AuditService.
+            // Dormancy is a regulatory classification that affects transaction gating
+            // (debits blocked, credits allowed) — must be traceable for RBI audit.
+            auditService.logEvent("DepositAccount", acct.getId(), "DORMANCY_CLASSIFIED",
+                prevStatus, "DORMANT", "DEPOSIT",
+                "Account marked DORMANT: " + acct.getAccountNumber()
+                    + " | Last txn: " + acct.getLastTransactionDate()
+                    + " | Cutoff: " + cutoff
+                    + " | Balance: INR " + acct.getLedgerBalance()
+                    + " | Customer: " + (acct.getCustomer() != null ? acct.getCustomer().getCustomerNumber() : "N/A"));
+
             count++;
         }
         if (count > 0) log.info("Marked {} accounts as DORMANT (cutoff={})", count, cutoff);

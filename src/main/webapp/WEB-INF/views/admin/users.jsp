@@ -77,21 +77,26 @@
                         <td>
                             <form method="post" action="${pageContext.request.contextPath}/admin/users/toggle-active/${u.id}" class="d-inline">
                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-                                <button type="submit" class="btn btn-sm ${u.active ? 'btn-outline-warning' : 'btn-outline-success'}" data-confirm="${u.active ? 'Deactivate' : 'Activate'} user ${u.username}?">
-                                    <i class="bi ${u.active ? 'bi-person-x' : 'bi-person-check'}"></i> ${u.active ? 'Deactivate' : 'Activate'}
-                                </button>
+                                <c:choose>
+                                    <c:when test="${u.active}">
+                                        <button type="submit" class="btn btn-sm btn-outline-warning" data-confirm="Deactivate this user?"><i class="bi bi-person-x"></i> Deactivate</button>
+                                    </c:when>
+                                    <c:otherwise>
+                                        <button type="submit" class="btn btn-sm btn-outline-success" data-confirm="Activate this user?"><i class="bi bi-person-check"></i> Activate</button>
+                                    </c:otherwise>
+                                </c:choose>
                             </form>
                             <c:if test="${u.locked}">
                             <form method="post" action="${pageContext.request.contextPath}/admin/users/unlock/${u.id}" class="d-inline">
                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-                                <button type="submit" class="btn btn-sm btn-outline-primary" data-confirm="Unlock user ${u.username}?"><i class="bi bi-unlock"></i> Unlock</button>
+                                <button type="submit" class="btn btn-sm btn-outline-primary" data-confirm="Unlock this user?"><i class="bi bi-unlock"></i> Unlock</button>
                             </form>
                             </c:if>
                             <form method="post" action="${pageContext.request.contextPath}/admin/users/reset-password/${u.id}" class="d-inline">
                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
                                 <input type="hidden" name="newPassword" value="" id="pwd_${u.id}"/>
                                 <button type="submit" class="btn btn-sm btn-outline-secondary"
-                                    onclick="var p=prompt('New password (min 8 chars):'); if(!p||p.length<8){alert('Password must be at least 8 characters');return false;} document.getElementById('pwd_${u.id}').value=p; return confirm('Reset password for ${u.username}?');">
+                                    onclick="var p=prompt('New password (min 8 chars):'); if(!p||p.length<8){alert('Password must be at least 8 characters');return false;} document.getElementById('pwd_${u.id}').value=p; return confirm('Reset password for this user?');">
                                     <i class="bi bi-key"></i> Reset Pwd
                                 </button>
                             </form>
