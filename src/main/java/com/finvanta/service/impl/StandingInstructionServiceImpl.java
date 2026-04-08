@@ -16,6 +16,7 @@ import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +34,12 @@ import java.util.List;
  * 3. DYNAMIC EMI: Amount fetched from LoanAccount at execution (never cached).
  * 4. MIN BALANCE: SI respects CASA minimum balance per RBI norms.
  * 5. PRIORITY: LOAN_EMI(1) before UTILITY(5) per Finacle SI_MASTER.
+ *
+ * IMPORTANT: Uses self-proxy pattern for executeSingleSI() so that
+ * @Transactional(REQUIRES_NEW) is intercepted by Spring AOP.
+ * Without this, self-invocation from executeAllDueSIs() would bypass
+ * the proxy and REQUIRES_NEW would be silently ignored — breaking
+ * per-SI transaction isolation and atomicity guarantees.
  */
 @Service
 public class StandingInstructionServiceImpl {
@@ -46,18 +53,28 @@ public class StandingInstructionServiceImpl {
     private final DepositAccountService depositAccountService;
     private final AuditService auditService;
 
+    /**
+     * Self-proxy for per-SI transaction isolation via Spring AOP.
+     * Without this, executeSingleSI()'s @Transactional(REQUIRES_NEW) would be
+     * bypassed on self-invocation from executeAllDueSIs(), causing ALL SIs to
+     * share one transaction — financially unsafe (one failure rolls back all).
+     */
+    private final StandingInstructionServiceImpl self;
+
     public StandingInstructionServiceImpl(StandingInstructionRepository siRepository,
                                            LoanAccountRepository loanAccountRepository,
                                            DepositAccountRepository depositAccountRepository,
                                            LoanAccountService loanAccountService,
                                            DepositAccountService depositAccountService,
-                                           AuditService auditService) {
+                                           AuditService auditService,
+                                           @Lazy StandingInstructionServiceImpl self) {
         this.siRepository = siRepository;
         this.loanAccountRepository = loanAccountRepository;
         this.depositAccountRepository = depositAccountRepository;
         this.loanAccountService = loanAccountService;
         this.depositAccountService = depositAccountService;
         this.auditService = auditService;
+        this.self = self;
     }
 
     @Transactional
@@ -100,13 +117,20 @@ public class StandingInstructionServiceImpl {
         return saved;
     }
 
+    /**
+     * EOD: Execute all due SIs. NOT @Transactional — each SI gets its own
+     * REQUIRES_NEW transaction via self-proxy call to executeSingleSI().
+     * @return int[2]: [0]=executed, [1]=failed
+     */
     public int[] executeAllDueSIs(LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
         List<StandingInstruction> dueSIs = siRepository.findDueSIs(tenantId, businessDate);
         int executed = 0, failed = 0;
         for (StandingInstruction si : dueSIs) {
             try {
-                if (executeSingleSI(si, businessDate)) { executed++; } else { failed++; }
+                // CBS: MUST use self-proxy so @Transactional(REQUIRES_NEW) is intercepted.
+                // Direct call (this.executeSingleSI) would bypass Spring AOP proxy.
+                if (self.executeSingleSI(si, businessDate)) { executed++; } else { failed++; }
             } catch (Exception e) {
                 failed++;
                 log.error("SI fatal: si={}, error={}", si.getSiReference(), e.getMessage(), e);
@@ -223,6 +247,7 @@ public class StandingInstructionServiceImpl {
         return currentDate.plusMonths(1);
     }
 
+    /** Pause an active SI — per RBI Customer Rights, customer can pause at any time. */
     @Transactional
     public StandingInstruction pauseSI(String siReference) {
         String tenantId = TenantContext.getCurrentTenant();
@@ -231,9 +256,14 @@ public class StandingInstructionServiceImpl {
         if (si.getStatus() != SIStatus.ACTIVE) throw new BusinessException("SI_NOT_ACTIVE", "Cannot pause: " + si.getStatus());
         si.setStatus(SIStatus.PAUSED);
         si.setUpdatedBy(SecurityUtil.getCurrentUsername());
-        return siRepository.save(si);
+        StandingInstruction saved = siRepository.save(si);
+        auditService.logEvent("StandingInstruction", si.getId(), "SI_PAUSED",
+            "ACTIVE", "PAUSED", "STANDING_INSTRUCTION",
+            "SI paused: " + siReference + " by " + SecurityUtil.getCurrentUsername());
+        return saved;
     }
 
+    /** Resume a paused SI — restores automatic execution from next cycle. */
     @Transactional
     public StandingInstruction resumeSI(String siReference) {
         String tenantId = TenantContext.getCurrentTenant();
@@ -242,17 +272,27 @@ public class StandingInstructionServiceImpl {
         if (si.getStatus() != SIStatus.PAUSED) throw new BusinessException("SI_NOT_PAUSED", "Cannot resume: " + si.getStatus());
         si.setStatus(SIStatus.ACTIVE);
         si.setUpdatedBy(SecurityUtil.getCurrentUsername());
-        return siRepository.save(si);
+        StandingInstruction saved = siRepository.save(si);
+        auditService.logEvent("StandingInstruction", si.getId(), "SI_RESUMED",
+            "PAUSED", "ACTIVE", "STANDING_INSTRUCTION",
+            "SI resumed: " + siReference + " by " + SecurityUtil.getCurrentUsername());
+        return saved;
     }
 
+    /** Cancel SI permanently — per RBI Customer Rights, customer can cancel at any time. */
     @Transactional
     public StandingInstruction cancelSI(String siReference) {
         String tenantId = TenantContext.getCurrentTenant();
         StandingInstruction si = siRepository.findByTenantIdAndSiReference(tenantId, siReference)
             .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
         if (si.getStatus().isTerminal()) throw new BusinessException("SI_TERMINAL", "Already terminal: " + si.getStatus());
+        String prevStatus = si.getStatus().name();
         si.setStatus(SIStatus.CANCELLED);
         si.setUpdatedBy(SecurityUtil.getCurrentUsername());
-        return siRepository.save(si);
+        StandingInstruction saved = siRepository.save(si);
+        auditService.logEvent("StandingInstruction", si.getId(), "SI_CANCELLED",
+            prevStatus, "CANCELLED", "STANDING_INSTRUCTION",
+            "SI cancelled: " + siReference + " by " + SecurityUtil.getCurrentUsername());
+        return saved;
     }
 }
