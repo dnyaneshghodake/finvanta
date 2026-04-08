@@ -64,6 +64,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   Step 5: NPA Classification (DPD-based per RBI IRAC)
  *   Step 6: Provisioning (RBI IRAC percentages)
  *   Step 7: GL Reconciliation (ledger vs GL master)
+ *   Step 7.1: Subledger Reconciliation (loan/CASA balances vs GL)
  *   Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)
  *   Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)
  *   Step 8: CASA Savings Interest Accrual + Quarterly Credit (per RBI directive)
@@ -87,6 +88,7 @@ public class EodOrchestrator {
     private final LoanScheduleService scheduleService;
     private final ProvisioningService provisioningService;
     private final ReconciliationService reconciliationService;
+    private final SubledgerReconciliationService subledgerReconciliationService;
     private final InterBranchSettlementService settlementService;
     private final ClearingService clearingService;
     private final BusinessCalendarRepository calendarRepository;
@@ -104,6 +106,7 @@ public class EodOrchestrator {
                            LoanScheduleService scheduleService,
                            ProvisioningService provisioningService,
                            ReconciliationService reconciliationService,
+                           SubledgerReconciliationService subledgerReconciliationService,
                            InterBranchSettlementService settlementService,
                            ClearingService clearingService,
                            BusinessCalendarRepository calendarRepository,
@@ -118,6 +121,7 @@ public class EodOrchestrator {
         this.scheduleService = scheduleService;
         this.provisioningService = provisioningService;
         this.reconciliationService = reconciliationService;
+        this.subledgerReconciliationService = subledgerReconciliationService;
         this.settlementService = settlementService;
         this.clearingService = clearingService;
         this.calendarRepository = calendarRepository;
@@ -217,6 +221,19 @@ public class EodOrchestrator {
                 log.warn("EOD Step 7: {} GL discrepancies", result.discrepancyCount());
             } else {
                 log.info("EOD Step 7: GL reconciliation balanced");
+            }
+        }, errors);
+
+        // Step 7.1: Subledger-to-GL Reconciliation (Tier-1 CBS three-way reconciliation)
+        // Verifies: loan outstanding vs GL 1001, CASA savings vs GL 2010, CASA current vs GL 2020.
+        // Non-blocking: logs discrepancies but doesn't stop EOD (manual investigation required).
+        failedCount += runStep(eodJob, "SUBLEDGER_RECONCILIATION", () -> {
+            SubledgerReconciliationService.SubledgerReconciliationResult subResult =
+                subledgerReconciliationService.reconcile();
+            if (!subResult.isBalanced()) {
+                log.warn("EOD Step 7.1: {} subledger discrepancies detected", subResult.discrepancyCount());
+            } else {
+                log.info("EOD Step 7.1: subledger reconciliation balanced");
             }
         }, errors);
 
