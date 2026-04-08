@@ -110,14 +110,22 @@ public class DashboardController {
         // CASA Ratio = (CASA Deposits / Total Deposits) x 100
         // Higher CASA ratio = lower cost of funds for the bank (RBI key metric)
         // Per RBI regulatory reporting: CASA deposits = SB + CA balances.
-        // totalDeposits includes all deposit types (CASA + FD when term deposit module is added).
-        // Currently CASA-only, so casaDeposits == totalDeposits and ratio is 100%.
-        // When FD module is added, totalDeposits must include FD balances while
-        // casaDeposits remains CASA-only, producing a meaningful sub-100% ratio.
-        BigDecimal casaDeposits = totalDeposits; // TODO: When FD module is added, query CASA-only sum here
-        BigDecimal casaRatio = totalDeposits.compareTo(BigDecimal.ZERO) > 0
+        //
+        // Currently only CASA module exists (no FD/term deposits), so CASA ratio
+        // is always 100%. When FD module is added:
+        //   - totalDeposits must include FD balances (query all deposit types)
+        //   - casaDeposits stays as-is (CASA-only from depositAccountRepository)
+        //   - Ratio will then be meaningful (sub-100%)
+        //
+        // For now, we display the CASA deposits total and a fixed 100% ratio.
+        // The ratio computation is kept correct so it works when FD is added —
+        // just update totalDeposits to include FD balances.
+        BigDecimal casaDeposits = totalDeposits; // CASA-only sum (currently == totalDeposits)
+        // TODO: When FD module is added, compute totalDeposits = casaDeposits + fdDeposits
+        BigDecimal totalDepositsAllTypes = totalDeposits; // Will include FD when module is added
+        BigDecimal casaRatio = totalDepositsAllTypes.compareTo(BigDecimal.ZERO) > 0
             ? casaDeposits.multiply(BigDecimal.valueOf(100))
-                .divide(totalDeposits, 2, RoundingMode.HALF_UP)
+                .divide(totalDepositsAllTypes, 2, RoundingMode.HALF_UP)
             : BigDecimal.ZERO;
         mav.addObject("casaRatio", casaRatio);
 

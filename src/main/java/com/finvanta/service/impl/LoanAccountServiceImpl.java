@@ -300,14 +300,20 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         //
         // Per Tier-1 CBS (Finacle/Temenos/BNP) and RBI KYC/AML guidelines:
         //   - Loan disbursement MUST credit the borrower's operating CASA account
-        //   - GL: DR Loan Asset (1001) / CR Customer Deposits (SB 2010 or CA 2020)
+        //   - GL flow (2-step via Bank Ops bridge):
+        //     Step 1 (Loan side): DR Loan Asset (1001) / CR Bank Ops (1100)
+        //     Step 2 (CASA side): DR Bank Ops (1100) / CR Customer Deposits (2010/2020)
+        //   - Bank Ops GL (1100) acts as the settlement bridge between modules
         //   - CASA subledger (ledger_balance, available_balance) updated atomically
         //   - DepositTransaction record created for CASA mini-statement
         //   - Validation: CASA account must be ACTIVE, same CIF, same tenant
         //
+        // The loan-side GL ALWAYS credits Bank Ops (1100). When CASA is linked,
+        // depositAccountService.deposit() posts the CASA-side GL (DR Bank Ops / CR Deposits)
+        // and updates the CASA subledger. This avoids double-crediting Customer Deposits.
+        //
         // Fallback: If no CASA account is linked (disbursementAccountNumber is null),
-        // disbursement credits Bank Operations GL (1100) — cash/DD mode for backward
-        // compatibility and third-party disbursements (e.g., builder for home loans).
+        // disbursement credits Bank Operations GL (1100) — cash/DD mode.
         // ====================================================================
         String creditGl;
         DepositAccount casaAccount = null;
@@ -340,9 +346,12 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                         + "). Account must be ACTIVE to receive loan disbursement.");
             }
 
-            // Resolve GL: SB Deposits (2010) for savings, CA Deposits (2020) for current
-            creditGl = casaAccount.isSavings() ? GLConstants.SB_DEPOSITS : GLConstants.CA_DEPOSITS;
-            log.info("CASA-linked disbursement: loan={}, casa={}, gl={}", accountNumber, disbAcctNum, creditGl);
+            // CBS: Loan-side GL always credits Bank Ops (bridge GL).
+            // The CASA-side GL (DR Bank Ops / CR Customer Deposits) is posted by
+            // depositAccountService.deposit() below, which also updates the CASA subledger.
+            // This 2-step approach prevents double-crediting Customer Deposits GL.
+            creditGl = glResolver.getBankOperationsGL(productType);
+            log.info("CASA-linked disbursement: loan={}, casa={}, bridgeGl={}", accountNumber, disbAcctNum, creditGl);
         } else {
             // Fallback: No CASA linked — credit Bank Operations GL (cash/DD mode)
             creditGl = glResolver.getBankOperationsGL(productType);

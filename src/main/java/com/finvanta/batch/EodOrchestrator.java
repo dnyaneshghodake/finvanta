@@ -166,6 +166,7 @@ public class EodOrchestrator {
         self.updateStepName(eodJob.getId(), "UPDATE_DPD");
         int[] step2Result = processAccountsParallel(activeAccounts, eodExecutor, currentTenant,
             "DPD", account -> self.updateAccountDpd(account.getAccountNumber(), businessDate), errors);
+        processedCount += step2Result[0];
         failedCount += step2Result[1];
         log.info("EOD Step 2: DPD updated ({} threads)", parallelThreads);
 
@@ -185,6 +186,7 @@ public class EodOrchestrator {
         int[] step4Result = processAccountsParallel(activeAccounts, eodExecutor, currentTenant,
             "Penal", account -> loanAccountService.applyPenalInterest(
                 account.getAccountNumber(), businessDate), errors);
+        processedCount += step4Result[0];
         failedCount += step4Result[1];
         log.info("EOD Step 4: penal interest done ({} threads)", parallelThreads);
 
@@ -193,6 +195,7 @@ public class EodOrchestrator {
         int[] step5Result = processAccountsParallel(activeAccounts, eodExecutor, currentTenant,
             "NPA", account -> loanAccountService.classifyNPA(
                 account.getAccountNumber(), businessDate), errors);
+        processedCount += step5Result[0];
         failedCount += step5Result[1];
         log.info("EOD Step 5: NPA classification done ({} threads)", parallelThreads);
 
@@ -267,6 +270,7 @@ public class EodOrchestrator {
                 }
                 log.info("EOD Step 8: CASA quarterly interest credited for {} accounts", credited);
             }
+            processedCount += accrued;
             log.info("EOD Step 8: CASA interest accrued for {} savings accounts", accrued);
         }
 

@@ -71,32 +71,34 @@ public class SequenceGeneratorService {
             .orElse(null);
 
         if (seq == null) {
-            // Lazy init: ensure the sequence row exists.
-            // Uses JPA persist with duplicate-safe catch instead of H2-specific MERGE KEY
-            // syntax (which is NOT compatible with SQL Server production).
+            // Lazy init: ensure the sequence row exists using a native INSERT that
+            // is safe under concurrent first-use (duplicate key is silently ignored).
             //
             // Concurrent first-use safety:
             //   - Thread A and B both find null and both attempt insert
-            //   - One succeeds, the other hits unique constraint (uq_dbseq_tenant_name)
-            //   - The constraint violation is caught and ignored (row already exists)
+            //   - One succeeds, the other gets a duplicate key error (silently ignored)
             //   - Both threads then proceed to lock-and-increment
+            //
+            // Uses native SQL to avoid poisoning the Hibernate Session/persistence context.
+            // A failed JPA persist() + flush() marks the Session as rollback-only on some
+            // databases (SQL Server, PostgreSQL), making subsequent operations fail.
+            // Native SQL operates outside the persistence context and does not affect it.
             //
             // Per Finacle SEQ_MASTER: sequence lazy-init must be idempotent across DB engines.
             try {
-                DbSequence newSeq = new DbSequence();
-                newSeq.setTenantId(tenantId);
-                newSeq.setSequenceName(sequenceName);
-                newSeq.setCurrentValue(0L);
-                entityManager.persist(newSeq);
-                entityManager.flush();
+                entityManager.createNativeQuery(
+                    "INSERT INTO db_sequences (tenant_id, sequence_name, current_value, version) "
+                    + "VALUES (:tenantId, :seqName, 0, 0)")
+                    .setParameter("tenantId", tenantId)
+                    .setParameter("seqName", sequenceName)
+                    .executeUpdate();
             } catch (Exception e) {
                 // Unique constraint violation — another thread already created it.
-                // Clear the failed persist from the persistence context.
-                entityManager.clear();
+                // Native SQL does not poison the persistence context, so no clear() needed.
                 log.debug("Sequence {} already exists (concurrent init), proceeding to lock", sequenceName);
             }
 
-            // Now lock the row — guaranteed to exist after persist or concurrent insert
+            // Now lock the row — guaranteed to exist after insert or concurrent insert
             seq = sequenceRepository
                 .findAndLockByTenantIdAndSequenceName(tenantId, sequenceName)
                 .orElseThrow(() -> new IllegalStateException(
