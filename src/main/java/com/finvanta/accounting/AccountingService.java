@@ -189,6 +189,17 @@ public class AccountingService {
                     "GL account " + lineReq.glCode() + " is not postable");
             }
 
+            // CBS GL Period Close: Reject postings to dates before the GL's last period close.
+            // Per Finacle GL_PERIOD / Temenos PERIOD.CLOSE: once a GL period is closed,
+            // no postings can be made to dates within that period. This prevents
+            // back-dated postings that would invalidate closed financial statements.
+            if (gl.getLastPeriodCloseDate() != null && valueDate.isBefore(gl.getLastPeriodCloseDate())) {
+                throw new BusinessException("GL_PERIOD_CLOSED",
+                    "Cannot post to GL " + lineReq.glCode() + " for date " + valueDate
+                        + " — GL period is closed through " + gl.getLastPeriodCloseDate()
+                        + ". Use a value date after the period close date.");
+            }
+
             if (lineReq.amount().compareTo(BigDecimal.ZERO) <= 0) {
                 throw new BusinessException("ACCOUNTING_INVALID_AMOUNT",
                     "Journal line amount must be positive");
