@@ -104,7 +104,7 @@
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
         <input type="hidden" name="reason" value="" id="closeReason"/>
         <button type="submit" class="btn btn-outline-danger btn-sm"
-            onclick="var r=prompt('Closure reason (mandatory):'); if(!r){return false;} document.getElementById('closeReason').value=r; return confirm('Close account ${account.accountNumber}? Balance must be zero.');">
+            onclick="var r=prompt('Closure reason (mandatory):'); if(!r){return false;} document.getElementById('closeReason').value=r; return confirm('Close this account? Balance must be zero.');">
             <i class="bi bi-x-circle"></i> Close Account
         </button>
     </form>
@@ -158,7 +158,7 @@
         <form method="post" action="${pageContext.request.contextPath}/loan/si/register" class="fv-form">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
             <input type="hidden" name="customerId" value="${account.customer.id}"/>
-            <input type="hidden" name="sourceAccountNumber" value="${account.accountNumber}"/>
+            <input type="hidden" name="sourceAccountNumber" value="<c:out value='${account.accountNumber}'/>"/>
             <div class="row mb-3">
                 <div class="col-md-3">
                     <label class="form-label">Destination Type *</label>
@@ -175,7 +175,7 @@
                         <option value="">-- Select --</option>
                         <c:forEach var="acct" items="${activeAccounts}">
                             <c:if test="${acct.accountNumber != account.accountNumber}">
-                            <option value="${acct.accountNumber}"><c:out value="${acct.accountNumber}" /> (<c:out value="${acct.accountType}" />)</option>
+                            <option value="<c:out value='${acct.accountNumber}'/>"><c:out value="${acct.accountNumber}" /> (<c:out value="${acct.accountType}" />)</option>
                             </c:if>
                         </c:forEach>
                     </select>
@@ -243,11 +243,11 @@
     <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
     <td><c:if test="${!t.reversed && t.transactionType != 'REVERSAL' && !account.closed}">
         <form method="post" action="${pageContext.request.contextPath}/deposit/reversal/${t.transactionRef}" style="display:inline">
-            <input type="hidden" name="accountNumber" value="${account.accountNumber}"/>
-            <input type="hidden" name="reason" value="" id="reason_${t.transactionRef}"/>
+            <input type="hidden" name="accountNumber" value="<c:out value='${account.accountNumber}'/>"/>
+            <input type="hidden" name="reason" value="" id="reason_${t.id}"/>
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
             <button type="submit" class="btn btn-sm btn-outline-danger"
-                onclick="var r=prompt('Reversal reason (mandatory):'); if(!r){return false;} document.getElementById('reason_${t.transactionRef}').value=r; return confirm('Reverse transaction ${t.transactionRef}?');">
+                onclick="var r=prompt('Reversal reason (mandatory):'); if(!r){return false;} document.getElementById('reason_${t.id}').value=r; return confirm('Reverse this transaction?');">
                 Reverse
             </button>
         </form>

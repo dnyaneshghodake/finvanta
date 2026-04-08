@@ -60,7 +60,7 @@
                 <select name="productCode" id="productCode" class="form-select">
                     <option value="">-- Auto from Account Type --</option>
                     <c:forEach var="p" items="${products}">
-                    <option value="${p.productCode}" data-rate="${p.minInterestRate}" data-minbal="${p.minLoanAmount}" data-category="${p.productCategory}"><c:out value="${p.productCode}"/> &mdash; <c:out value="${p.productName}"/></option>
+                    <option value="<c:out value='${p.productCode}'/>" data-rate="${p.minInterestRate}" data-minbal="${p.minLoanAmount}" data-category="<c:out value='${p.productCategory}'/>"><c:out value="${p.productCode}"/> &mdash; <c:out value="${p.productName}"/></option>
                     </c:forEach>
                 </select>
                 <small id="productHint" class="form-text text-muted"></small>

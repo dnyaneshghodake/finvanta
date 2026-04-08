@@ -359,8 +359,21 @@ public class DepositController {
         mav.addObject("pageTitle", "Statement: " + accountNumber);
 
         if (fromDate != null && toDate != null && !fromDate.isBlank() && !toDate.isBlank()) {
-            LocalDate from = LocalDate.parse(fromDate);
-            LocalDate to = LocalDate.parse(toDate);
+            LocalDate from;
+            LocalDate to;
+            try {
+                from = LocalDate.parse(fromDate);
+                to = LocalDate.parse(toDate);
+            } catch (Exception e) {
+                mav.addObject("error", "Invalid date format. Use YYYY-MM-DD.");
+                LocalDate defaultTo = businessDateService.getCurrentBusinessDate();
+                LocalDate defaultFrom = defaultTo.minusDays(30);
+                mav.addObject("transactions",
+                    depositService.getStatement(accountNumber, defaultFrom, defaultTo));
+                mav.addObject("fromDate", defaultFrom.toString());
+                mav.addObject("toDate", defaultTo.toString());
+                return mav;
+            }
             mav.addObject("transactions",
                 depositService.getStatement(accountNumber, from, to));
             mav.addObject("fromDate", fromDate);
