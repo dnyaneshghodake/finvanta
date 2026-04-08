@@ -111,6 +111,7 @@ public class LoanController {
             mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
             mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
             mav.addObject("products", productRepository.findActiveProducts(tenantId));
+            mav.addObject("casaAccounts", depositAccountRepository.findAllActiveAccounts(tenantId));
             return mav;
         }
 
