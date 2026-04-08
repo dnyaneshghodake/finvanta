@@ -265,7 +265,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, amount, "Cash deposit"),
                 new JournalLineRequest(gl, DebitCredit.CREDIT, amount, "Credit " + accountNumber)
             )).build());
-        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_DEPOSIT", "CREDIT", businessDate, narration, r, r.getTransactionRef(), idempotencyKey, channel, null);
+        if (r.isPendingApproval()) {
+            // CBS: Pending approval — GL not yet posted, balance not yet updated.
+            // Record transaction with PENDING narration. balanceAfter reflects current
+            // (unchanged) balance since the deposit hasn't been applied yet.
+            return buildTxn(acct, amount, "CASH_DEPOSIT", "CREDIT", businessDate,
+                (narration != null ? narration : "Cash deposit") + " [PENDING APPROVAL]",
+                r, r.getTransactionRef(), idempotencyKey, channel, null);
+        }
         acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
@@ -313,7 +320,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 new JournalLineRequest(gl, DebitCredit.DEBIT, amount, "Debit " + acn),
                 new JournalLineRequest(GLConstants.BANK_OPERATIONS, DebitCredit.CREDIT, amount, "Cash withdrawal")
             )).build());
-        if (r.isPendingApproval()) return buildTxn(acct, amount, "CASH_WITHDRAWAL", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, channel, null);
+        if (r.isPendingApproval()) {
+            return buildTxn(acct, amount, "CASH_WITHDRAWAL", "DEBIT", bd,
+                (narration != null ? narration : "Cash withdrawal") + " [PENDING APPROVAL]",
+                r, r.getTransactionRef(), idk, channel, null);
+        }
         acct.setLedgerBalance(acct.getLedgerBalance().subtract(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(bd); acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
@@ -355,7 +366,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 new JournalLineRequest(glForAccount(src), DebitCredit.DEBIT, amount, "Transfer debit"),
                 new JournalLineRequest(glForAccount(tgt), DebitCredit.CREDIT, amount, "Transfer credit")
             )).build());
-        if (r.isPendingApproval()) return buildTxn(src, amount, "TRANSFER_DEBIT", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, "INTERNAL", to);
+        if (r.isPendingApproval()) {
+            return buildTxn(src, amount, "TRANSFER_DEBIT", "DEBIT", bd,
+                (narration != null ? narration : "Transfer to " + to) + " [PENDING APPROVAL]",
+                r, r.getTransactionRef(), idk, "INTERNAL", to);
+        }
         src.setLedgerBalance(src.getLedgerBalance().subtract(amount));
         recomputeAvailable(src);
         src.setLastTransactionDate(bd); src.setUpdatedBy(SecurityUtil.getCurrentUsername()); accountRepository.save(src);

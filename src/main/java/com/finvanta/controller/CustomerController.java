@@ -75,8 +75,10 @@ public class CustomerController {
     }
 
     /**
-     * CBS Customer Search per Finacle CIF_SEARCH.
+     * CBS Customer Search with branch isolation per Finacle CIF_SEARCH + BRANCH_CONTEXT.
      * Searches by name, customer number, mobile, or PAN.
+     * MAKER/CHECKER: search restricted to their home branch.
+     * ADMIN: searches across all branches.
      * Essential for branch operations — staff must locate customers quickly.
      */
     @GetMapping("/search")
@@ -84,7 +86,20 @@ public class CustomerController {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("customer/list");
         if (q != null && !q.isBlank() && q.length() >= 2) {
-            mav.addObject("customers", customerRepository.searchCustomers(tenantId, q.trim()));
+            // CBS: Apply branch isolation to search results per Finacle BRANCH_CONTEXT.
+            // Without this, MAKER/CHECKER could search across all branches, bypassing
+            // the branch isolation enforced in listCustomers().
+            if (SecurityUtil.isAdminRole()) {
+                mav.addObject("customers", customerRepository.searchCustomers(tenantId, q.trim()));
+            } else {
+                Long branchId = SecurityUtil.getCurrentUserBranchId();
+                if (branchId != null) {
+                    mav.addObject("customers",
+                        customerRepository.searchCustomersByBranch(tenantId, branchId, q.trim()));
+                } else {
+                    mav.addObject("customers", java.util.Collections.emptyList());
+                }
+            }
             mav.addObject("searchQuery", q);
         } else {
             // Show all if no query (same as list)

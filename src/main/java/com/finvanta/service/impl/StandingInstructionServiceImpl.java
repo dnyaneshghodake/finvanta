@@ -135,8 +135,25 @@ public class StandingInstructionServiceImpl {
                 // CBS: MUST use self-proxy so @Transactional(REQUIRES_NEW) is intercepted.
                 // Direct call (this.executeSingleSI) would bypass Spring AOP proxy.
                 if (self.executeSingleSI(si, businessDate)) { executed++; } else { failed++; }
+            } catch (BusinessException e) {
+                // CBS: Financial transaction rolled back — record failure in separate transaction.
+                // executeSingleSI's REQUIRES_NEW transaction was marked rollback-only by the
+                // exception, so any save() inside it was lost. We must record the failure
+                // in a new, clean REQUIRES_NEW transaction via recordSIFailure().
+                failed++;
+                try {
+                    self.recordSIFailure(si.getId(), businessDate, e.getErrorCode(), e.getMessage());
+                } catch (Exception recordErr) {
+                    log.error("SI failure recording also failed: si={}, err={}", si.getSiReference(), recordErr.getMessage());
+                }
+                log.warn("SI failed: si={}, code={}, msg={}", si.getSiReference(), e.getErrorCode(), e.getMessage());
             } catch (Exception e) {
                 failed++;
+                try {
+                    self.recordSIFailure(si.getId(), businessDate, "SYSTEM_ERROR", e.getMessage());
+                } catch (Exception recordErr) {
+                    log.error("SI failure recording also failed: si={}, err={}", si.getSiReference(), recordErr.getMessage());
+                }
                 log.error("SI fatal: si={}, error={}", si.getSiReference(), e.getMessage(), e);
             }
         }
@@ -144,18 +161,42 @@ public class StandingInstructionServiceImpl {
         return new int[]{executed, failed};
     }
 
+    /**
+     * Execute a single SI in its own REQUIRES_NEW transaction.
+     *
+     * CBS FINANCIAL SAFETY: When withdraw() or processRepayment() throws (e.g.,
+     * INSUFFICIENT_BALANCE), Spring marks this REQUIRES_NEW transaction as rollback-only.
+     * Any subsequent siRepository.save() within the SAME transaction would be rolled back,
+     * losing the failure tracking (retriesDone, lastExecutionStatus, etc.).
+     *
+     * Fix: Let the exception propagate to roll back the financial operations cleanly,
+     * then record the failure in a SEPARATE REQUIRES_NEW transaction via
+     * recordSIFailure(). This ensures:
+     *   1. Financial operations (CASA debit + loan repayment) are fully rolled back
+     *   2. SI failure metadata is persisted in a separate committed transaction
+     *   3. No partial financial state (debit without repayment, or vice versa)
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean executeSingleSI(StandingInstruction si, LocalDate businessDate) {
         String idempotencyKey = "SI-" + si.getSiReference() + "-" + businessDate;
-        try {
-            if (si.isLoanEmi()) return executeLoanEmiSI(si, businessDate, si.getTenantId(), idempotencyKey);
-            else if (si.isInternalTransfer()) return executeTransferSI(si, businessDate, idempotencyKey);
-            else { markSkipped(si, businessDate, "Type not implemented"); return false; }
-        } catch (BusinessException e) {
-            return handleFailure(si, businessDate, e.getErrorCode(), e.getMessage());
-        } catch (Exception e) {
-            return handleFailure(si, businessDate, "SYSTEM_ERROR", e.getMessage());
+        if (si.isLoanEmi()) return executeLoanEmiSI(si, businessDate, si.getTenantId(), idempotencyKey);
+        else if (si.isInternalTransfer()) return executeTransferSI(si, businessDate, idempotencyKey);
+        else { markSkipped(si, businessDate, "Type not implemented"); return false; }
+    }
+
+    /**
+     * Record SI failure in a separate REQUIRES_NEW transaction.
+     * Called from executeAllDueSIs() AFTER the financial transaction has rolled back.
+     * This ensures failure metadata is always persisted regardless of financial rollback.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean recordSIFailure(Long siId, LocalDate businessDate, String code, String msg) {
+        StandingInstruction si = siRepository.findById(siId).orElse(null);
+        if (si == null) {
+            log.error("SI not found for failure recording: id={}", siId);
+            return false;
         }
+        return handleFailure(si, businessDate, code, msg);
     }
 
     private boolean executeLoanEmiSI(StandingInstruction si, LocalDate businessDate,
