@@ -60,8 +60,8 @@
             <div class="table-responsive">
             <table class="table fv-table fv-datatable table-sm">
                 <thead><tr>
-                    <th>Username</th><th>Full Name</th><th>Role</th><th>Branch</th><th>Email</th>
-                    <th>Active</th><th>Locked</th><th>Failed Logins</th><th>Actions</th>
+                    <th>Username</th><th>Full Name</th><th>Role</th><th>Branch</th>
+                    <th>Active</th><th>Locked</th><th>Pwd Expiry</th><th>Last Login</th><th>Actions</th>
                 </tr></thead>
                 <tbody>
                 <c:forEach var="u" items="${users}">
@@ -70,10 +70,24 @@
                         <td><c:out value="${u.fullName}"/></td>
                         <td><span class="badge ${u.role == 'ADMIN' ? 'bg-danger' : u.role == 'CHECKER' ? 'bg-primary' : u.role == 'MAKER' ? 'bg-success' : 'bg-info'}"><c:out value="${u.role}"/></span></td>
                         <td><c:out value="${u.branch.branchCode}" default="--"/></td>
-                        <td><c:out value="${u.email}" default="--"/></td>
                         <td><c:choose><c:when test="${u.active}"><span class="fv-badge fv-badge-active">Active</span></c:when><c:otherwise><span class="fv-badge fv-badge-rejected">Inactive</span></c:otherwise></c:choose></td>
-                        <td><c:if test="${u.locked}"><span class="fv-badge fv-badge-npa">LOCKED</span></c:if><c:if test="${!u.locked}">--</c:if></td>
-                        <td><c:out value="${u.failedLoginAttempts}"/></td>
+                        <td>
+                            <c:if test="${u.locked}"><span class="fv-badge fv-badge-npa">LOCKED</span><br/><small class="text-muted">Attempts: <c:out value="${u.failedLoginAttempts}"/></small></c:if>
+                            <c:if test="${!u.locked}">--</c:if>
+                        </td>
+                        <td>
+                            <c:choose>
+                                <c:when test="${u.passwordExpired}"><span class="fv-badge fv-badge-npa">EXPIRED</span></c:when>
+                                <c:when test="${not empty u.passwordExpiryDate}"><c:out value="${u.passwordExpiryDate}"/></c:when>
+                                <c:otherwise>--</c:otherwise>
+                            </c:choose>
+                        </td>
+                        <td>
+                            <c:choose>
+                                <c:when test="${not empty u.lastLoginAt}"><small><c:out value="${u.lastLoginAt}"/><br/><c:out value="${u.lastLoginIp}" default=""/></small></c:when>
+                                <c:otherwise><small class="text-muted">Never</small></c:otherwise>
+                            </c:choose>
+                        </td>
                         <td>
                             <form method="post" action="${pageContext.request.contextPath}/admin/users/toggle-active/${u.id}" class="d-inline">
                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
@@ -103,7 +117,7 @@
                         </td>
                     </tr>
                 </c:forEach>
-                <c:if test="${empty users}"><tr><td colspan="9" class="text-center text-muted">No users found</td></tr></c:if>
+                <c:if test="${empty users}"><tr><td colspan="8" class="text-center text-muted">No users found</td></tr></c:if>
                 </tbody>
             </table>
             </div>

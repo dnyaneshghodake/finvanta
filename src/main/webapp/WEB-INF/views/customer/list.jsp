@@ -29,8 +29,9 @@
                         <tr>
                             <td><c:out value="${cust.customerNumber}" /></td>
                             <td><c:out value="${cust.fullName}" /></td>
-                            <td><c:out value="${cust.panNumber}" /></td>
-                            <td><c:out value="${cust.mobileNumber}" /></td>
+                            <%-- CBS: PII masked in list view per RBI IT Governance / UIDAI --%>
+                            <td><c:if test="${not empty cust.panNumber}">XXXXXX<c:out value="${cust.panNumber.length() > 4 ? cust.panNumber.substring(cust.panNumber.length() - 4) : cust.panNumber}" /></c:if></td>
+                            <td><c:if test="${not empty cust.mobileNumber}">XXXXXX<c:out value="${cust.mobileNumber.length() > 4 ? cust.mobileNumber.substring(cust.mobileNumber.length() - 4) : cust.mobileNumber}" /></c:if></td>
                             <td>
                                 <c:choose>
                                     <c:when test="${cust.kycVerified}"><span class="fv-badge fv-badge-active">Verified</span></c:when>
