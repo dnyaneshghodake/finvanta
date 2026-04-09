@@ -90,6 +90,22 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- ZXing QR Code — Apache 2.0, industry-standard QR encoder/decoder.
+             Per CBS Tier-1 standards: QR encoding for MFA enrollment must use a
+             proven, audited library. Hand-rolled QR encoders invariably have subtle
+             ISO 18004 compliance bugs (Reed-Solomon, interleaving, format info).
+             ZXing is used by Google Authenticator itself and every major banking app. -->
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>core</artifactId>
+            <version>3.5.3</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>javase</artifactId>
+            <version>3.5.3</version>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
