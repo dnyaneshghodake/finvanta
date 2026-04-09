@@ -9,6 +9,7 @@ import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.repository.StandingInstructionRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
+import com.finvanta.util.BranchAccessValidator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
@@ -58,6 +59,7 @@ public class DepositController {
     private final DepositAccountRepository depositAccountRepository;
     private final StandingInstructionRepository siRepository;
     private final ProductMasterRepository productMasterRepository;
+    private final BranchAccessValidator branchAccessValidator;
 
     public DepositController(
             DepositAccountService depositService,
@@ -66,7 +68,8 @@ public class DepositController {
             BranchRepository branchRepository,
             DepositAccountRepository depositAccountRepository,
             StandingInstructionRepository siRepository,
-            ProductMasterRepository productMasterRepository) {
+            ProductMasterRepository productMasterRepository,
+            BranchAccessValidator branchAccessValidator) {
         this.depositService = depositService;
         this.businessDateService = businessDateService;
         this.customerRepository = customerRepository;
@@ -74,6 +77,7 @@ public class DepositController {
         this.depositAccountRepository = depositAccountRepository;
         this.siRepository = siRepository;
         this.productMasterRepository = productMasterRepository;
+        this.branchAccessValidator = branchAccessValidator;
     }
 
     /**
@@ -107,14 +111,35 @@ public class DepositController {
      * Stage 1: Pending Activation (MAKER submitted → CHECKER to activate)
      * Stage 2: Active Accounts (operational)
      * Stage 3: Attention Required (DORMANT / FROZEN / INOPERATIVE)
+     *
+     * CBS Tier-1: Pipeline is branch-scoped for CHECKER (sees only their branch).
+     * ADMIN sees all branches (for HO consolidated view).
      */
     @GetMapping("/pipeline")
     public ModelAndView pipeline() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("deposit/pipeline");
-        mav.addObject("pendingAccounts", depositAccountRepository.findPendingActivation(tenantId));
-        mav.addObject("activeAccounts", depositAccountRepository.findActiveAccounts(tenantId));
-        mav.addObject("attentionAccounts", depositAccountRepository.findAttentionRequired(tenantId));
+        if (SecurityUtil.isAdminRole()) {
+            mav.addObject("pendingAccounts", depositAccountRepository.findPendingActivation(tenantId));
+            mav.addObject("activeAccounts", depositAccountRepository.findActiveAccounts(tenantId));
+            mav.addObject("attentionAccounts", depositAccountRepository.findAttentionRequired(tenantId));
+        } else {
+            Long branchId = SecurityUtil.getCurrentUserBranchId();
+            if (branchId != null) {
+                // Filter pipeline by branch — only show accounts at user's branch
+                mav.addObject("pendingAccounts", depositAccountRepository.findPendingActivation(tenantId).stream()
+                        .filter(a -> a.getBranch() != null && branchId.equals(a.getBranch().getId()))
+                        .toList());
+                mav.addObject("activeAccounts", depositAccountRepository.findActiveByBranch(tenantId, branchId));
+                mav.addObject("attentionAccounts", depositAccountRepository.findAttentionRequired(tenantId).stream()
+                        .filter(a -> a.getBranch() != null && branchId.equals(a.getBranch().getId()))
+                        .toList());
+            } else {
+                mav.addObject("pendingAccounts", java.util.Collections.emptyList());
+                mav.addObject("activeAccounts", java.util.Collections.emptyList());
+                mav.addObject("attentionAccounts", java.util.Collections.emptyList());
+            }
+        }
         mav.addObject("pageTitle", "CASA Account Pipeline");
         return mav;
     }
@@ -123,8 +148,24 @@ public class DepositController {
     public ModelAndView openAccountForm() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("deposit/open");
-        mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
-        mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+        // CBS Tier-1: Branch-scoped dropdowns per Finacle BRANCH_CONTEXT.
+        // MAKER/CHECKER see only their branch's customers and their home branch.
+        // ADMIN sees all customers and branches.
+        if (SecurityUtil.isAdminRole()) {
+            mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
+            mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+        } else {
+            Long branchId = SecurityUtil.getCurrentUserBranchId();
+            if (branchId != null) {
+                mav.addObject("customers", customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, branchId));
+                branchRepository.findById(branchId)
+                        .filter(b -> b.getTenantId().equals(tenantId))
+                        .ifPresent(b -> mav.addObject("branches", java.util.List.of(b)));
+            } else {
+                mav.addObject("customers", java.util.Collections.emptyList());
+                mav.addObject("branches", java.util.Collections.emptyList());
+            }
+        }
         mav.addObject("products", productMasterRepository.findActiveProducts(tenantId));
         mav.addObject("pageTitle", "Open CASA Account");
         return mav;
@@ -171,8 +212,10 @@ public class DepositController {
         mav.addObject(
                 "standingInstructions",
                 siRepository.findByTenantIdAndSourceAccountNumberOrderByPriorityAsc(tenantId, accountNumber));
-        // Active CASA accounts for SI target selection (internal transfer destination)
+        // Active CASA accounts for SI target selection (internal transfer destination — all branches)
         mav.addObject("activeAccounts", depositService.getActiveAccounts());
+        // CBS Tier-1: Pass branch context for display
+        mav.addObject("accountBranchCode", account.getBranch() != null ? account.getBranch().getBranchCode() : "--");
 
         return mav;
     }
@@ -238,8 +281,23 @@ public class DepositController {
 
     @GetMapping("/transfer")
     public ModelAndView transferForm() {
+        String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("deposit/transfer");
-        mav.addObject("accounts", depositService.getActiveAccounts());
+        // CBS Tier-1: Transfer source accounts restricted to user's branch.
+        // Target accounts show all active accounts (inter-branch transfer is allowed
+        // but the source must be at the user's branch per Finacle BRANCH_CONTEXT).
+        if (SecurityUtil.isAdminRole()) {
+            mav.addObject("accounts", depositService.getActiveAccounts());
+        } else {
+            Long branchId = SecurityUtil.getCurrentUserBranchId();
+            if (branchId != null) {
+                mav.addObject("accounts", depositAccountRepository.findActiveByBranch(tenantId, branchId));
+            } else {
+                mav.addObject("accounts", java.util.Collections.emptyList());
+            }
+        }
+        // Target accounts: show all active (inter-branch transfer target can be any branch)
+        mav.addObject("allAccounts", depositService.getActiveAccounts());
         mav.addObject("pageTitle", "Fund Transfer");
         return mav;
     }
