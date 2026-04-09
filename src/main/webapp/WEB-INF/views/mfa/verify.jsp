@@ -65,6 +65,9 @@
 
             <div class="text-center mt-2" style="color:#475569;font-size:0.75rem;">
                 Logged in as: <strong><c:out value="${username}" /></strong>
+                <c:if test="${not empty remainingAttempts && remainingAttempts < 5}">
+                    <br/><span style="color:#f59e0b;"><i class="bi bi-exclamation-triangle"></i> <c:out value="${remainingAttempts}" /> attempt(s) remaining</span>
+                </c:if>
             </div>
         </div>
     </div>
