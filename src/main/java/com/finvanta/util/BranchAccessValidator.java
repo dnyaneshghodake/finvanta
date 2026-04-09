@@ -99,15 +99,16 @@ public class BranchAccessValidator {
         if (!userBranchId.equals(targetBranchId)) {
             String username = SecurityUtil.getCurrentUsername();
             String userBranchCode = SecurityUtil.getCurrentUserBranchCode();
+            String userRole = SecurityUtil.getCurrentUserRole();
             log.warn(
                     "BRANCH_ACCESS_DENIED: user={}, userBranch={}, targetBranch={}, role={}",
                     username,
                     userBranchCode,
                     targetBranchCode,
-                    currentRole);
+                    userRole);
             throw new BusinessException(
                     "BRANCH_ACCESS_DENIED",
-                    "User " + username + " (branch " + userBranchCode + ", role " + currentRole
+                    "User " + username + " (branch " + userBranchCode + ", role " + userRole
                             + ") cannot access branch " + targetBranchCode
                             + ". Per RBI operational controls, branch staff can only access their home branch. "
                             + "Contact ADMIN for cross-branch authorization.");
