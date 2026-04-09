@@ -106,6 +106,9 @@ public class EodOrchestrator {
     private final com.finvanta.workflow.ApprovalWorkflowService workflowService;
     private final com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository;
 
+    /** CBS: Snapshot step counters for audit logging */
+    private static final String SNAPSHOT_STEP_NAME = "DAILY_BALANCE_SNAPSHOT";
+
     /** Self-proxy for per-account transaction isolation via Spring AOP. */
     private final EodOrchestrator self;
 
@@ -391,22 +394,37 @@ public class EodOrchestrator {
             // Must run AFTER interest accrual AND SI execution (so all balance-affecting
             // operations are reflected). This is the TRUE end-of-day closing balance.
             // CBS: Per-account fault isolation — one bad account must NOT kill all snapshots.
-            self.updateStepName(eodJob.getId(), "DAILY_BALANCE_SNAPSHOT");
+            // Phase 1: CASA accounts only. Phase 2: extend to loan accounts for sectoral exposure.
+            self.updateStepName(eodJob.getId(), SNAPSHOT_STEP_NAME);
             {
                 var allCasaAccounts = depositAccountRepository.findAllNonClosedAccounts(tenantId);
                 int captured = 0;
+                int skippedIdempotent = 0;
                 for (var acct : allCasaAccounts) {
                     try {
                         if (balanceSnapshotRepository.existsByTenantIdAndAccountIdAndBusinessDate(
                                 tenantId, acct.getId(), businessDate)) {
+                            skippedIdempotent++;
                             continue; // Idempotent — skip if already captured
+                        }
+                        // CBS: Every operational account MUST have a branch. Null branch
+                        // indicates a data integrity issue that must be logged, not papered
+                        // over with a magic number. Per Finacle ACCT_BAL_HIST: branch_id
+                        // is a mandatory field for branch-level regulatory reporting.
+                        if (acct.getBranch() == null) {
+                            log.error("DATA INTEGRITY: Account {} has null branch — skipping snapshot",
+                                    acct.getAccountNumber());
+                            failedCount++;
+                            appendError(errors, SNAPSHOT_STEP_NAME, acct.getAccountNumber(),
+                                    new IllegalStateException("Account has no branch assigned"));
+                            continue;
                         }
                         com.finvanta.domain.entity.DailyBalanceSnapshot snapshot =
                                 new com.finvanta.domain.entity.DailyBalanceSnapshot();
                         snapshot.setTenantId(tenantId);
                         snapshot.setAccountId(acct.getId());
                         snapshot.setAccountNumber(acct.getAccountNumber());
-                        snapshot.setBranchId(acct.getBranch() != null ? acct.getBranch().getId() : 0L);
+                        snapshot.setBranchId(acct.getBranch().getId());
                         snapshot.setBusinessDate(businessDate);
                         snapshot.setClosingBalance(acct.getLedgerBalance());
                         snapshot.setAvailableBalance(acct.getAvailableBalance());
@@ -417,10 +435,25 @@ public class EodOrchestrator {
                         captured++;
                     } catch (Exception e) {
                         failedCount++;
-                        appendError(errors, "DAILY_BALANCE_SNAPSHOT", acct.getAccountNumber(), e);
+                        appendError(errors, SNAPSHOT_STEP_NAME, acct.getAccountNumber(), e);
                     }
                 }
-                log.info("EOD Step 8.6: {} daily balance snapshots captured", captured);
+                processedCount += captured;
+                log.info("EOD Step 8.6: {} daily balance snapshots captured (skipped={} idempotent)",
+                        captured, skippedIdempotent);
+
+                // CBS: Audit trail for balance snapshot batch per RBI IT Governance Direction 2023
+                auditService.logEvent(
+                        "BatchJob",
+                        eodJob.getId(),
+                        "DAILY_BALANCE_SNAPSHOT",
+                        null,
+                        String.valueOf(captured),
+                        "EOD",
+                        "Daily balance snapshots captured: date=" + businessDate
+                                + ", captured=" + captured
+                                + ", total=" + allCasaAccounts.size()
+                                + ", skippedIdempotent=" + skippedIdempotent);
             }
 
             // Step 9: CASA Dormancy Classification (RBI Master Direction on KYC 2016 Sec 38)

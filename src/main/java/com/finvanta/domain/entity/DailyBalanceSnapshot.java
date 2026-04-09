@@ -56,7 +56,19 @@ import lombok.Setter;
 @NoArgsConstructor
 public class DailyBalanceSnapshot extends BaseEntity {
 
-    /** The deposit account this snapshot belongs to */
+    /**
+     * The deposit account this snapshot belongs to.
+     * Per Finacle ACCT_BAL_HIST: FK to account master for referential integrity.
+     * Stored as raw ID (not @ManyToOne) for batch insert performance — the EOD step
+     * inserts thousands of snapshots per run and JPA relationship loading would cause
+     * N+1 queries. The unique index on (tenant_id, account_id, business_date) provides
+     * application-level integrity, and the account_id references deposit_accounts.id.
+     *
+     * CBS Design Decision: Denormalized for batch performance. The accountNumber and
+     * branchId fields are also denormalized to avoid joins in reporting queries.
+     * Per Finacle/Temenos: balance history tables prioritize read/write throughput
+     * over normalized relational design because they are high-volume, append-only.
+     */
     @Column(name = "account_id", nullable = false)
     private Long accountId;
 
@@ -64,7 +76,7 @@ public class DailyBalanceSnapshot extends BaseEntity {
     @Column(name = "account_number", nullable = false, length = 40)
     private String accountNumber;
 
-    /** Branch ID for branch-level balance reporting */
+    /** Branch ID for branch-level balance reporting (denormalized from deposit_accounts) */
     @Column(name = "branch_id", nullable = false)
     private Long branchId;
 

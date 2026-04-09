@@ -65,6 +65,20 @@ public class CustomUserDetailsService implements UserDetailsService {
             log.info("User auto-unlocked after lockout duration: {}", username);
         }
 
+        // CBS MFA Gate: Per RBI IT Governance Direction 2023 Section 8.4:
+        // If MFA is enabled but the user has not yet enrolled (no TOTP secret),
+        // reject login. This prevents a user with mfa_enabled=true from bypassing
+        // MFA by simply never enrolling. The admin must either:
+        //   1. Provide an MFA enrollment flow before enabling mfa_enabled, OR
+        //   2. Disable mfa_enabled until enrollment endpoints are available.
+        // Without this gate, the mfa_enabled flag is purely decorative.
+        if (appUser.isMfaEnrollmentRequired()) {
+            log.warn("MFA enrollment required but not completed for user: {}", username);
+            throw new UsernameNotFoundException(
+                    "MFA enrollment required for user: " + username
+                            + ". Contact administrator to complete MFA setup.");
+        }
+
         Long branchId = appUser.getBranch() != null ? appUser.getBranch().getId() : null;
         String branchCode = appUser.getBranch() != null ? appUser.getBranch().getBranchCode() : null;
 
@@ -73,6 +87,12 @@ public class CustomUserDetailsService implements UserDetailsService {
         //   - credentialsNonExpired=false → Spring rejects with CredentialsExpiredException
         // This is cleaner than throwing UsernameNotFoundException for locked/expired accounts
         // because it provides proper error codes to the login page.
+        //
+        // CBS MFA Note: When MFA enrollment/verification endpoints are implemented,
+        // this method should return a custom UserDetails that carries mfaEnabled/mfaSecret
+        // so the authentication success handler can redirect to the TOTP verification page
+        // instead of the dashboard. For now, mfa_enabled=true with a valid secret would
+        // pass through (TOTP verification is a Phase 2 enhancement).
         return new BranchAwareUserDetails(
                 appUser.getUsername(),
                 appUser.getPasswordHash(),

@@ -166,8 +166,17 @@ public class AppUser extends BaseEntity {
      * MFA method (Google Authenticator, Microsoft Authenticator, Authy).
      *
      * The secret is Base32-encoded and used to generate 6-digit OTPs that change
-     * every 30 seconds. Stored encrypted in production (PII-level protection).
-     * Null = MFA not enrolled for this user.
+     * every 30 seconds. Null = MFA not enrolled for this user.
+     *
+     * SECURITY WARNING: This field MUST be encrypted at rest in production.
+     * A compromised database dump with plaintext TOTP secrets allows an attacker
+     * to generate valid MFA codes for every enrolled user, completely defeating MFA.
+     * Per RBI IT Governance Direction 2023: MFA secrets are authentication credentials
+     * equivalent to password hashes and require PII-level encryption.
+     *
+     * TODO (P0-SECURITY): Implement a JPA @Convert(converter = MfaSecretEncryptor.class)
+     * using AES-256-GCM with a key from a secrets manager (AWS KMS / HashiCorp Vault).
+     * This MUST be completed before enabling mfa_enabled=true for any user in production.
      */
     @Column(name = "mfa_secret", length = 100)
     private String mfaSecret;

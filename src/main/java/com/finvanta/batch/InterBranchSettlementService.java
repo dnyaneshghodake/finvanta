@@ -232,18 +232,14 @@ public class InterBranchSettlementService {
             settlementRepository.save(txn);
         }
 
-        // CBS Tier-1: GL-based conservation-of-funds validation.
-        // Per Finacle IB_SETTLEMENT: verify GL 1300 (IB Receivable) == GL 2300 (IB Payable)
-        // at the aggregate level. This catches actual GL posting errors that the in-memory
-        // net position sum (which is tautologically zero) cannot detect.
-        BigDecimal totalIBReceivable = settlementRepository.sumReceivablesByBranch(tenantId, null) != null
-                ? allPending.stream()
-                        .filter(txn -> "SETTLED".equals(txn.getSettlementStatus()))
-                        .map(InterBranchTransaction::getAmount)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add)
-                : BigDecimal.ZERO;
-        // Note: Full GL-level validation (GL 1300 debit == GL 2300 credit) is performed
-        // by ReconciliationService in Step 7. Here we validate settlement-level consistency.
+        // CBS Tier-1: Conservation-of-funds validation.
+        // The in-memory net position sum is tautologically zero by construction (each txn
+        // adds +X to target and -X to source). The REAL conservation check is GL-based:
+        //   GL 1300 (IB Receivable) debit total == GL 2300 (IB Payable) credit total
+        // This is verified by ReconciliationService.reconcileLedgerVsGL() in EOD Step 7
+        // and SubledgerReconciliationService in Step 7.1. If GL posting failed for any
+        // transaction (sourceJournalId or targetJournalId is null), that transaction is
+        // already marked FAILED above and allBalanced is set to false.
 
         // Log per-branch net positions for HO reconciliation
         for (var entry : branchNetPositions.entrySet()) {
