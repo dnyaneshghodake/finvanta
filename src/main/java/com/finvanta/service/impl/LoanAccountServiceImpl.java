@@ -1567,6 +1567,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         reversal.setTenantId(tenantId);
         reversal.setTransactionRef(txnResult.getTransactionRef());
         reversal.setLoanAccount(account);
+        reversal.setBranch(account.getBranch());
+        reversal.setBranchCode(account.getBranch().getBranchCode());
         reversal.setTransactionType(TransactionType.REVERSAL);
         reversal.setAmount(amount);
         reversal.setPrincipalComponent(original.getPrincipalComponent());
@@ -1658,6 +1660,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.FEE_CHARGE);
         txn.setAmount(actualChargeTotal);
         txn.setValueDate(businessDate);
