@@ -86,11 +86,19 @@
                         <form method="post" action="${pageContext.request.contextPath}/batch/eod/apply">
                             <input type="hidden" name="businessDate" value="<c:out value='${trialDate}' />" />
                             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                            <button type="submit" class="btn btn-warning btn-lg"
-                                    onclick="return confirm('Execute EOD for ${trialDate}? This will process all accounts. Continue?');">
+                            <button type="submit" class="btn btn-warning btn-lg" id="applyEodBtn"
+                                    data-date="<c:out value='${trialDate}' />">
                                 <i class="bi bi-play-circle"></i> Apply EOD for <c:out value="${trialDate}" />
                             </button>
                         </form>
+                        <script>
+                            document.getElementById('applyEodBtn').addEventListener('click', function(e) {
+                                var dt = this.getAttribute('data-date');
+                                if (!confirm('Execute EOD for ' + dt + '? This will process all accounts. Continue?')) {
+                                    e.preventDefault();
+                                }
+                            });
+                        </script>
                     </c:when>
                     <c:otherwise>
                         <button class="btn btn-secondary btn-lg" disabled title="Resolve all BLOCKER checks before Apply">
