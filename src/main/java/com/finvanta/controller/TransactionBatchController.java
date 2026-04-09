@@ -1,8 +1,7 @@
 package com.finvanta.controller;
 
-import com.finvanta.repository.BusinessCalendarRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.TransactionBatchService;
-import com.finvanta.util.TenantContext;
 
 import java.time.LocalDate;
 
@@ -21,23 +20,27 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 public class TransactionBatchController {
 
     private final TransactionBatchService batchService;
-    private final BusinessCalendarRepository calendarRepository;
+    private final BusinessDateService businessDateService;
 
     public TransactionBatchController(
-            TransactionBatchService batchService, BusinessCalendarRepository calendarRepository) {
+            TransactionBatchService batchService, BusinessDateService businessDateService) {
         this.batchService = batchService;
-        this.calendarRepository = calendarRepository;
+        this.businessDateService = businessDateService;
     }
 
     @GetMapping("/list")
     public ModelAndView listBatches(@RequestParam(required = false) String businessDate) {
-        String tenantId = TenantContext.getCurrentTenant();
-        LocalDate date = businessDate != null
-                ? LocalDate.parse(businessDate)
-                : calendarRepository
-                        .findCurrentBusinessDate(tenantId)
-                        .map(bc -> bc.getBusinessDate())
-                        .orElse(LocalDate.now());
+        // CBS: Default to the currently DAY_OPEN business date from the user's branch.
+        // The deprecated findCurrentBusinessDate() returned MAX(date) where eodComplete=false
+        // which could be April 30 instead of April 1 — showing "no batches" when OPEN
+        // batches exist on the actual current business date.
+        LocalDate date;
+        if (businessDate != null) {
+            date = LocalDate.parse(businessDate);
+        } else {
+            var openDay = businessDateService.getOpenDayOrNull();
+            date = openDay != null ? openDay.getBusinessDate() : LocalDate.now();
+        }
 
         ModelAndView mav = new ModelAndView("batch/txn-batches");
         mav.addObject("batches", batchService.getBatchesForDate(date));
