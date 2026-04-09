@@ -137,6 +137,24 @@ class MfaServiceTest {
     }
 
     @Test
+    @DisplayName("buildOtpAuthUri URL-encodes spaces and special chars per RFC 6238 key URI format")
+    void buildOtpAuthUri_encodesSpecialChars() {
+        String uri = mfaService.buildOtpAuthUri("user@bank.com", "JBSWY3DPEHPK3PXP");
+
+        // Issuer "Finvanta CBS" must have space encoded in both label and query param
+        assertTrue(uri.startsWith("otpauth://totp/Finvanta%20CBS:"),
+                "Issuer space must be percent-encoded in label");
+        assertTrue(uri.contains("&issuer=Finvanta%20CBS"),
+                "Issuer space must be percent-encoded in query param");
+        // Username @ must be encoded in the label path segment
+        assertTrue(uri.contains("user%40bank.com"),
+                "Username @ must be percent-encoded");
+        // Must NOT contain raw unencoded space in the URI
+        assertFalse(uri.contains("Finvanta CBS"),
+                "Raw space must not appear in otpauth URI");
+    }
+
+    @Test
     @DisplayName("verifyLoginTotp returns true when MFA not enabled")
     void verifyLoginTotp_mfaDisabled_returnsTrue() {
         testUser.setMfaEnabled(false);
