@@ -14,14 +14,27 @@
                     <h5>Step 1: Scan QR Code</h5>
                     <p class="text-muted">Open Google Authenticator, Microsoft Authenticator, or Authy and scan this QR code:</p>
                     <div class="text-center p-3 mb-3" style="background:#fff;border-radius:8px;border:1px solid #dee2e6;">
-                        <!-- QR code rendered via JavaScript using otpauth URI -->
-                        <div id="qrcode" style="display:inline-block;"></div>
+                        <!-- CBS: QR code generated server-side as Base64 PNG data URI.
+                             Per Finacle/Temenos: no external CDN/JS dependency for air-gapped networks.
+                             Falls back to manual secret entry if QR generation fails. -->
+                        <c:choose>
+                            <c:when test="${not empty qrCodeDataUri}">
+                                <img src="${qrCodeDataUri}" alt="Scan this QR code with your authenticator app"
+                                     style="image-rendering:pixelated;width:280px;height:280px;" />
+                            </c:when>
+                            <c:otherwise>
+                                <div class="alert alert-warning mb-0" style="font-size:0.85rem;">
+                                    <i class="bi bi-exclamation-triangle"></i> QR code generation failed.
+                                    Please enter the secret key manually in your authenticator app (see below).
+                                </div>
+                            </c:otherwise>
+                        </c:choose>
                     </div>
-                    <p class="text-muted small">Can't scan? Enter this secret manually in your authenticator app:</p>
+                    <p class="text-muted small"><i class="bi bi-keyboard"></i> Can't scan? Enter this secret manually in your authenticator app:</p>
                     <div class="input-group mb-3">
                         <span class="input-group-text"><i class="bi bi-key"></i></span>
-                        <input type="text" class="form-control font-monospace" value="${secret}" readonly id="secretField" />
-                        <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('secretField').value)"><i class="bi bi-clipboard"></i></button>
+                        <input type="text" class="form-control font-monospace" value="<c:out value='${secret}' />" readonly id="secretField" />
+                        <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('secretField').value)" title="Copy to clipboard"><i class="bi bi-clipboard"></i> Copy</button>
                     </div>
                 </div>
                 <div class="col-md-6">
@@ -29,7 +42,7 @@
                     <p class="text-muted">Enter the 6-digit code from your authenticator app to complete enrollment:</p>
                     <form method="post" action="${pageContext.request.contextPath}/admin/mfa/verify">
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                        <input type="hidden" name="username" value="${username}" />
+                        <input type="hidden" name="username" value="<c:out value='${username}' />" />
                         <div class="mb-3">
                             <label class="form-label">TOTP Code (6 digits)</label>
                             <input type="text" name="totpCode" class="form-control form-control-lg text-center font-monospace"
@@ -45,29 +58,9 @@
     </div>
 </div>
 
-<!-- CBS Security: otpauth URI passed via data attribute to prevent XSS.
-     Per OWASP: never interpolate server-side values directly into JavaScript string literals.
-     Using data-uri with <c:out> HTML-escapes the value, then JavaScript reads it safely. -->
-<div id="otpData" data-uri="<c:out value='${otpAuthUri}' />" style="display:none;"></div>
-<script>
-    // Simple QR code rendering using a canvas-based approach
-    // In production, use a proper QR library like qrcode.js
-    (function() {
-        var dataEl = document.getElementById('otpData');
-        var uri = dataEl ? dataEl.getAttribute('data-uri') : '';
-        var container = document.getElementById('qrcode');
-        if (uri && container) {
-            // Fallback: show the URI as a link if QR JS is not available
-            var code = document.createElement('code');
-            code.style.cssText = 'word-break:break-all;font-size:0.75rem;';
-            code.textContent = uri;
-            var p = document.createElement('p');
-            p.className = 'text-muted small';
-            p.textContent = 'otpauth:// URI:';
-            container.appendChild(p);
-            container.appendChild(code);
-        }
-    })();
-</script>
+<!-- CBS: QR code is rendered server-side via QrCodeGenerator (pure Java, zero deps).
+     No client-side JavaScript QR generation needed — works on air-gapped bank networks.
+     The otpauth:// URI is NOT exposed to the browser (only the rendered PNG image).
+     Manual secret key is available as fallback for environments without camera access. -->
 
 <%@ include file="../layout/footer.jsp" %>

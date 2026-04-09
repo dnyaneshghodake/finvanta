@@ -10,6 +10,7 @@ import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.repository.TransactionLimitRepository;
 import com.finvanta.service.MfaService;
+import com.finvanta.service.QrCodeGenerator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
@@ -46,6 +47,7 @@ public class AdminController {
     private final ProductGLResolver glResolver;
     private final AuditService auditService;
     private final MfaService mfaService;
+    private final QrCodeGenerator qrCodeGenerator;
     private final AppUserRepository appUserRepository;
     private final InterBranchSettlementService settlementService;
 
@@ -57,6 +59,7 @@ public class AdminController {
             ProductGLResolver glResolver,
             AuditService auditService,
             MfaService mfaService,
+            QrCodeGenerator qrCodeGenerator,
             AppUserRepository appUserRepository,
             InterBranchSettlementService settlementService) {
         this.productRepository = productRepository;
@@ -66,6 +69,7 @@ public class AdminController {
         this.glResolver = glResolver;
         this.auditService = auditService;
         this.mfaService = mfaService;
+        this.qrCodeGenerator = qrCodeGenerator;
         this.appUserRepository = appUserRepository;
         this.settlementService = settlementService;
     }
@@ -281,10 +285,18 @@ public class AdminController {
             String base32Secret = mfaService.enrollMfa(username);
             String otpAuthUri = mfaService.buildOtpAuthUri(username, base32Secret);
 
+            // CBS: Generate QR code server-side as Base64 PNG data URI.
+            // Per Finacle/Temenos Tier-1 standards: bank networks are air-gapped,
+            // so QR rendering must be server-side (no CDN/JS library dependency).
+            // The QR image is embedded inline via data:image/png;base64,... — no
+            // external image hosting, no client-side processing of the TOTP secret.
+            String qrCodeDataUri = qrCodeGenerator.generateDataUri(otpAuthUri);
+
             ModelAndView mav = new ModelAndView("admin/mfa-enroll");
             mav.addObject("username", username);
             mav.addObject("secret", base32Secret);
             mav.addObject("otpAuthUri", otpAuthUri);
+            mav.addObject("qrCodeDataUri", qrCodeDataUri);
             return mav;
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
