@@ -21,7 +21,10 @@
             <div class="fv-alert alert alert-danger" role="alert">Invalid username or password. Please check your credentials and try again.</div>
         </c:if>
         <c:if test="${param.expired != null}">
-            <div class="fv-alert alert alert-warning" role="alert">Your password has expired. Please contact your administrator or login to change it.</div>
+            <div class="fv-alert alert alert-warning" role="alert"><i class="bi bi-exclamation-triangle"></i> Your session has been terminated because you logged in from another browser or device. Only one active session is allowed per RBI policy.</div>
+        </c:if>
+        <c:if test="${param.timeout != null}">
+            <div class="fv-alert alert alert-warning" role="alert"><i class="bi bi-clock-history"></i> Your session has expired due to inactivity. Please login again to continue.</div>
         </c:if>
         <c:if test="${param.logout != null}">
             <div class="fv-alert alert alert-success" role="alert">You have been logged out successfully.</div>

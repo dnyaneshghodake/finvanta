@@ -201,8 +201,19 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex.accessDeniedHandler((request, response, accessDeniedException) -> {
                     response.sendRedirect(request.getContextPath() + "/error/403");
                 }))
-                .sessionManagement(
-                        session -> session.sessionFixation().migrateSession().maximumSessions(1))
+                .sessionManagement(session -> session
+                        // CBS: Migrate session on login to prevent session fixation attacks (OWASP A2)
+                        .sessionFixation().migrateSession()
+                        // CBS: Only one active session per user per RBI IT Governance Direction 2023 §8.3.
+                        // Per Finacle USER_MASTER: concurrent login from a second browser/device
+                        // terminates the first session (last-login-wins policy).
+                        // expiredUrl: shown when the FIRST session is invalidated by the second login.
+                        .maximumSessions(1)
+                        .expiredUrl("/login?expired")
+                        .and()
+                        // CBS: When session times out (inactivity), redirect to login with message.
+                        // Without this, user sees a generic error page or white screen.
+                        .invalidSessionUrl("/login?timeout"))
                 .csrf(csrf -> {
                     // CBS SECURITY: Only disable CSRF for H2 console in dev profile.
                     // In production, CSRF is enforced on ALL endpoints without exception.
