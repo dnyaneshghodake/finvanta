@@ -103,6 +103,7 @@ public class EodOrchestrator {
     private final com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService;
     private final com.finvanta.repository.CustomerRepository customerRepository;
     private final com.finvanta.workflow.ApprovalWorkflowService workflowService;
+    private final com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository;
 
     /** Self-proxy for per-account transaction isolation via Spring AOP. */
     private final EodOrchestrator self;
@@ -125,6 +126,7 @@ public class EodOrchestrator {
             com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService,
             com.finvanta.repository.CustomerRepository customerRepository,
             com.finvanta.workflow.ApprovalWorkflowService workflowService,
+            com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository,
             @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;
@@ -143,6 +145,7 @@ public class EodOrchestrator {
         this.standingInstructionService = standingInstructionService;
         this.customerRepository = customerRepository;
         this.workflowService = workflowService;
+        this.balanceSnapshotRepository = balanceSnapshotRepository;
         this.self = self;
     }
 
@@ -362,6 +365,40 @@ public class EodOrchestrator {
                 processedCount += accrued;
                 log.info("EOD Step 8: CASA interest accrued for {} savings accounts", accrued);
             }
+
+            // Step 8.1: Daily Balance Snapshot (per Finacle ACCT_BAL_HIST / RBI directive)
+            // Captures closing balance of every CASA account for minimum daily balance
+            // interest calculation and regulatory reporting (CRR/SLR average balance).
+            // Must run AFTER interest accrual (so accrued amounts are reflected in balance).
+            failedCount += runStep(
+                    eodJob,
+                    "DAILY_BALANCE_SNAPSHOT",
+                    () -> {
+                        var allCasaAccounts = depositAccountRepository.findAllNonClosedAccounts(tenantId);
+                        int captured = 0;
+                        for (var acct : allCasaAccounts) {
+                            if (balanceSnapshotRepository.existsByTenantIdAndAccountIdAndBusinessDate(
+                                    tenantId, acct.getId(), businessDate)) {
+                                continue; // Idempotent — skip if already captured
+                            }
+                            com.finvanta.domain.entity.DailyBalanceSnapshot snapshot =
+                                    new com.finvanta.domain.entity.DailyBalanceSnapshot();
+                            snapshot.setTenantId(tenantId);
+                            snapshot.setAccountId(acct.getId());
+                            snapshot.setAccountNumber(acct.getAccountNumber());
+                            snapshot.setBranchId(acct.getBranch() != null ? acct.getBranch().getId() : 0L);
+                            snapshot.setBusinessDate(businessDate);
+                            snapshot.setClosingBalance(acct.getLedgerBalance());
+                            snapshot.setAvailableBalance(acct.getAvailableBalance());
+                            snapshot.setHoldAmount(acct.getHoldAmount());
+                            snapshot.setAccountType(acct.getAccountType());
+                            snapshot.setCreatedBy("SYSTEM_EOD");
+                            balanceSnapshotRepository.save(snapshot);
+                            captured++;
+                        }
+                        log.info("EOD Step 8.1: {} daily balance snapshots captured", captured);
+                    },
+                    errors);
 
             // Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER)
             // Executes all due SIs: LOAN_EMI auto-debit, recurring transfers, SIP, utility.

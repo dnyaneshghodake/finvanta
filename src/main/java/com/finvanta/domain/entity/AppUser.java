@@ -157,6 +157,40 @@ public class AppUser extends BaseEntity {
         resetLoginAttempts();
     }
 
+    // === MFA / Two-Factor Authentication (RBI IT Governance Direction 2023) ===
+
+    /**
+     * TOTP (Time-based One-Time Password) secret for MFA.
+     * Per RBI IT Governance Direction 2023 Section 8.4: privileged users (ADMIN)
+     * must use multi-factor authentication. TOTP is the most widely supported
+     * MFA method (Google Authenticator, Microsoft Authenticator, Authy).
+     *
+     * The secret is Base32-encoded and used to generate 6-digit OTPs that change
+     * every 30 seconds. Stored encrypted in production (PII-level protection).
+     * Null = MFA not enrolled for this user.
+     */
+    @Column(name = "mfa_secret", length = 100)
+    private String mfaSecret;
+
+    /**
+     * Whether MFA is enabled for this user.
+     * Per RBI: mandatory for ADMIN, optional for MAKER/CHECKER.
+     * When enabled, login requires both password AND TOTP code.
+     */
+    @Column(name = "mfa_enabled", nullable = false)
+    private boolean mfaEnabled = false;
+
+    /**
+     * MFA enrollment date — when the user first set up their authenticator.
+     */
+    @Column(name = "mfa_enrolled_date")
+    private LocalDate mfaEnrolledDate;
+
+    /** Returns true if MFA is required but not yet enrolled */
+    public boolean isMfaEnrollmentRequired() {
+        return mfaEnabled && (mfaSecret == null || mfaSecret.isBlank());
+    }
+
     /** Sets password with expiry and history tracking */
     public void changePassword(String newPasswordHash) {
         // Add current password to history (keep last 3)

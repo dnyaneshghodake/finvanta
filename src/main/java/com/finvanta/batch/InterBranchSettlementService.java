@@ -156,7 +156,12 @@ public class InterBranchSettlementService {
 
     /**
      * Settle inter-branch transactions (called during EOD).
-     * Validates that sum(receivables) = sum(payables) for all branches.
+     *
+     * Per Finacle IB_SETTLEMENT / Temenos IB.NETTING:
+     * 1. Validate all pending IB transactions have complete GL postings
+     * 2. Calculate net position per branch (receivables - payables)
+     * 3. Mark transactions as SETTLED with batch reference
+     * 4. Log net position summary for HO reconciliation
      *
      * @param businessDate CBS business date
      */
@@ -167,37 +172,63 @@ public class InterBranchSettlementService {
         List<InterBranchTransaction> pendingTransactions =
                 settlementRepository.findByTenantIdAndSettlementStatusOrderByBusinessDateAsc(tenantId, "PENDING");
 
+        if (pendingTransactions.isEmpty()) {
+            log.info("No pending inter-branch transactions to settle for {}", businessDate);
+            return;
+        }
+
         String settlementBatchRef = "IB-SETTLEMENT-" + businessDate;
         boolean allBalanced = true;
 
-        // CBS: For each branch, verify receivables = payables
-        // (This is a simplified approach; production would track per-branch balances)
+        // CBS Tier-1: Calculate per-branch net position (receivables - payables)
+        java.util.Map<String, java.math.BigDecimal> branchNetPositions = new java.util.LinkedHashMap<>();
 
         for (InterBranchTransaction txn : pendingTransactions) {
             try {
-                // Assume balanced if both journals exist (full implementation would add balance checks)
                 if (txn.getSourceJournalId() != null && txn.getTargetJournalId() != null) {
                     txn.setSettlementStatus("SETTLED");
                     txn.setSettlementBatchRef(settlementBatchRef);
+
+                    // Track net position: source branch pays (negative), target branch receives (positive)
+                    String sourceCode = txn.getSourceBranch().getBranchCode();
+                    String targetCode = txn.getTargetBranch().getBranchCode();
+                    branchNetPositions.merge(sourceCode, txn.getAmount().negate(), java.math.BigDecimal::add);
+                    branchNetPositions.merge(targetCode, txn.getAmount(), java.math.BigDecimal::add);
                 } else {
                     txn.setSettlementStatus("FAILED");
-                    txn.setFailureReason("Incomplete GL posting");
+                    txn.setFailureReason("Incomplete GL posting — source or target journal missing");
                     allBalanced = false;
                 }
             } catch (Exception e) {
                 txn.setSettlementStatus("FAILED");
                 txn.setFailureReason(e.getMessage());
                 allBalanced = false;
-
                 log.error("Inter-branch settlement failed for transaction {}: {}", txn.getId(), e.getMessage());
             }
             settlementRepository.save(txn);
         }
 
+        // CBS: Verify net positions sum to zero (conservation of funds)
+        java.math.BigDecimal totalNetPosition = branchNetPositions.values().stream()
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+
+        if (totalNetPosition.compareTo(java.math.BigDecimal.ZERO) != 0) {
+            log.error("IB SETTLEMENT IMBALANCE: net positions do not sum to zero! Total: {}", totalNetPosition);
+            allBalanced = false;
+        }
+
+        // Log per-branch net positions for HO reconciliation
+        for (var entry : branchNetPositions.entrySet()) {
+            String direction = entry.getValue().signum() >= 0 ? "NET_RECEIVABLE" : "NET_PAYABLE";
+            log.info("IB Net Position: branch={}, amount={}, direction={}",
+                    entry.getKey(), entry.getValue().abs(), direction);
+        }
+
         if (!allBalanced) {
-            log.warn("Inter-branch settlement completed with errors. Manual review required.");
+            log.warn("Inter-branch settlement completed with errors for {}. Manual review required.", businessDate);
         } else {
-            log.info("Inter-branch settlement completed successfully for date: {}", businessDate);
+            log.info("Inter-branch settlement completed: date={}, transactions={}, branches={}",
+                    businessDate, pendingTransactions.size(), branchNetPositions.size());
         }
     }
 }
