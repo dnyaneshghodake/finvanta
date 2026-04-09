@@ -188,7 +188,7 @@ VALUES ('DEFAULT', 'checker1', '{noop}finvanta123', 'Amit Deshmukh (Verification
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
 VALUES ('DEFAULT', 'checker2', '{noop}finvanta123', 'Kavita Nair (Approval Officer)', 'checker2@finvanta.com', 'CHECKER', true, false, 0, 1, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
--- Admin (Branch Manager) — MFA enabled per RBI IT Governance Direction 2023
+-- Admin (Branch Manager) — MFA required per RBI IT Governance Direction 2023 (enrollment pending: no MFA endpoints yet)
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
 VALUES ('DEFAULT', 'admin', '{noop}finvanta123', 'Vikram Joshi (Branch Manager)', 'admin@finvanta.com', 'ADMIN', true, false, 0, 1, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 

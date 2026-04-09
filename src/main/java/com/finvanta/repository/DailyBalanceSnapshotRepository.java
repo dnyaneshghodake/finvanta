@@ -34,7 +34,7 @@ public interface DailyBalanceSnapshotRepository extends JpaRepository<DailyBalan
      * Used for RBI-compliant minimum daily balance interest calculation.
      * Per RBI: savings interest = minDailyBalance * rate / 36500
      */
-    @Query("SELECT MIN(dbs.closingBalance) FROM DailyBalanceSnapshot dbs "
+    @Query("SELECT COALESCE(MIN(dbs.closingBalance), 0) FROM DailyBalanceSnapshot dbs "
             + "WHERE dbs.tenantId = :tenantId AND dbs.accountId = :accountId "
             + "AND dbs.businessDate BETWEEN :fromDate AND :toDate")
     BigDecimal findMinBalanceInPeriod(

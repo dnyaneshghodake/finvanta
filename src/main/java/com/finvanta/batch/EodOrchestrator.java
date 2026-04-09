@@ -71,6 +71,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)
  *   Step 8: CASA Savings Interest Accrual + Quarterly Credit (per RBI directive)
  *   Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER — LOAN_EMI auto-debit)
+ *   Step 8.6: Daily Balance Snapshot (per Finacle ACCT_BAL_HIST — must be AFTER all balance mutations)
  *   Step 9: CASA Dormancy Classification (per RBI Master Direction on KYC 2016 Sec 38)
  *   Step 10: KYC Expiry Flagging (per RBI Master Direction on KYC 2016 Sec 16)
  *
@@ -366,40 +367,6 @@ public class EodOrchestrator {
                 log.info("EOD Step 8: CASA interest accrued for {} savings accounts", accrued);
             }
 
-            // Step 8.1: Daily Balance Snapshot (per Finacle ACCT_BAL_HIST / RBI directive)
-            // Captures closing balance of every CASA account for minimum daily balance
-            // interest calculation and regulatory reporting (CRR/SLR average balance).
-            // Must run AFTER interest accrual (so accrued amounts are reflected in balance).
-            failedCount += runStep(
-                    eodJob,
-                    "DAILY_BALANCE_SNAPSHOT",
-                    () -> {
-                        var allCasaAccounts = depositAccountRepository.findAllNonClosedAccounts(tenantId);
-                        int captured = 0;
-                        for (var acct : allCasaAccounts) {
-                            if (balanceSnapshotRepository.existsByTenantIdAndAccountIdAndBusinessDate(
-                                    tenantId, acct.getId(), businessDate)) {
-                                continue; // Idempotent — skip if already captured
-                            }
-                            com.finvanta.domain.entity.DailyBalanceSnapshot snapshot =
-                                    new com.finvanta.domain.entity.DailyBalanceSnapshot();
-                            snapshot.setTenantId(tenantId);
-                            snapshot.setAccountId(acct.getId());
-                            snapshot.setAccountNumber(acct.getAccountNumber());
-                            snapshot.setBranchId(acct.getBranch() != null ? acct.getBranch().getId() : 0L);
-                            snapshot.setBusinessDate(businessDate);
-                            snapshot.setClosingBalance(acct.getLedgerBalance());
-                            snapshot.setAvailableBalance(acct.getAvailableBalance());
-                            snapshot.setHoldAmount(acct.getHoldAmount());
-                            snapshot.setAccountType(acct.getAccountType());
-                            snapshot.setCreatedBy("SYSTEM_EOD");
-                            balanceSnapshotRepository.save(snapshot);
-                            captured++;
-                        }
-                        log.info("EOD Step 8.1: {} daily balance snapshots captured", captured);
-                    },
-                    errors);
-
             // Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER)
             // Executes all due SIs: LOAN_EMI auto-debit, recurring transfers, SIP, utility.
             // Per Finacle EOD: SI execution runs AFTER interest accrual (so interest is
@@ -416,6 +383,44 @@ public class EodOrchestrator {
             } catch (Exception e) {
                 failedCount++;
                 appendError(errors, "SI_EXECUTION", "ALL", e);
+            }
+
+            // Step 8.6: Daily Balance Snapshot (per Finacle ACCT_BAL_HIST / RBI directive)
+            // Captures closing balance of every CASA account for minimum daily balance
+            // interest calculation and regulatory reporting (CRR/SLR average balance).
+            // Must run AFTER interest accrual AND SI execution (so all balance-affecting
+            // operations are reflected). This is the TRUE end-of-day closing balance.
+            // CBS: Per-account fault isolation — one bad account must NOT kill all snapshots.
+            self.updateStepName(eodJob.getId(), "DAILY_BALANCE_SNAPSHOT");
+            {
+                var allCasaAccounts = depositAccountRepository.findAllNonClosedAccounts(tenantId);
+                int captured = 0;
+                for (var acct : allCasaAccounts) {
+                    try {
+                        if (balanceSnapshotRepository.existsByTenantIdAndAccountIdAndBusinessDate(
+                                tenantId, acct.getId(), businessDate)) {
+                            continue; // Idempotent — skip if already captured
+                        }
+                        com.finvanta.domain.entity.DailyBalanceSnapshot snapshot =
+                                new com.finvanta.domain.entity.DailyBalanceSnapshot();
+                        snapshot.setTenantId(tenantId);
+                        snapshot.setAccountId(acct.getId());
+                        snapshot.setAccountNumber(acct.getAccountNumber());
+                        snapshot.setBranchId(acct.getBranch() != null ? acct.getBranch().getId() : 0L);
+                        snapshot.setBusinessDate(businessDate);
+                        snapshot.setClosingBalance(acct.getLedgerBalance());
+                        snapshot.setAvailableBalance(acct.getAvailableBalance());
+                        snapshot.setHoldAmount(acct.getHoldAmount());
+                        snapshot.setAccountType(acct.getAccountType());
+                        snapshot.setCreatedBy("SYSTEM_EOD");
+                        balanceSnapshotRepository.save(snapshot);
+                        captured++;
+                    } catch (Exception e) {
+                        failedCount++;
+                        appendError(errors, "DAILY_BALANCE_SNAPSHOT", acct.getAccountNumber(), e);
+                    }
+                }
+                log.info("EOD Step 8.6: {} daily balance snapshots captured", captured);
             }
 
             // Step 9: CASA Dormancy Classification (RBI Master Direction on KYC 2016 Sec 38)
