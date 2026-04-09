@@ -1,10 +1,12 @@
 package com.finvanta.config;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.env.Environment;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -26,9 +28,15 @@ class MfaSecretEncryptorTest {
     private static final String TEST_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     private static final String SAMPLE_SECRET = "JBSWY3DPEHPK3PXP"; // Base32 TOTP secret
 
+    private Environment mockEnvironment() {
+        Environment env = mock(Environment.class);
+        when(env.matchesProfiles("dev", "test")).thenReturn(true);
+        return env;
+    }
+
     @BeforeEach
     void setUp() {
-        encryptor = new MfaSecretEncryptor();
+        encryptor = new MfaSecretEncryptor(mockEnvironment());
         ReflectionTestUtils.setField(encryptor, "hexKey", TEST_KEY);
     }
 
@@ -60,7 +68,7 @@ class MfaSecretEncryptorTest {
         String encrypted = encryptor.convertToDatabaseColumn(SAMPLE_SECRET);
 
         // Create a new encryptor with a different key
-        MfaSecretEncryptor wrongKeyEncryptor = new MfaSecretEncryptor();
+        MfaSecretEncryptor wrongKeyEncryptor = new MfaSecretEncryptor(mockEnvironment());
         ReflectionTestUtils.setField(wrongKeyEncryptor, "hexKey",
                 "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
 
@@ -112,11 +120,37 @@ class MfaSecretEncryptorTest {
     @Test
     @DisplayName("Key with wrong length is rejected")
     void keyValidation_wrongLength_throwsException() {
-        MfaSecretEncryptor badKeyEncryptor = new MfaSecretEncryptor();
+        MfaSecretEncryptor badKeyEncryptor = new MfaSecretEncryptor(mockEnvironment());
         ReflectionTestUtils.setField(badKeyEncryptor, "hexKey", "0123456789abcdef"); // 16 chars = 8 bytes (too short)
 
         assertThrows(IllegalStateException.class,
                 () -> badKeyEncryptor.convertToDatabaseColumn(SAMPLE_SECRET));
+    }
+
+    @Test
+    @DisplayName("Production profile with default key fails startup")
+    void prodProfile_defaultKey_throwsException() {
+        Environment prodEnv = mock(Environment.class);
+        when(prodEnv.matchesProfiles("dev", "test")).thenReturn(false);
+
+        MfaSecretEncryptor prodEncryptor = new MfaSecretEncryptor(prodEnv);
+        ReflectionTestUtils.setField(prodEncryptor, "hexKey", TEST_KEY); // TEST_KEY == DEV_DEFAULT_KEY
+
+        assertThrows(IllegalStateException.class, prodEncryptor::validateEncryptionKey,
+                "Production profile with default key must fail startup");
+    }
+
+    @Test
+    @DisplayName("Dev profile with default key logs warning but does not fail")
+    void devProfile_defaultKey_doesNotThrow() {
+        Environment devEnv = mock(Environment.class);
+        when(devEnv.matchesProfiles("dev", "test")).thenReturn(true);
+
+        MfaSecretEncryptor devEncryptor = new MfaSecretEncryptor(devEnv);
+        ReflectionTestUtils.setField(devEncryptor, "hexKey", TEST_KEY);
+
+        assertDoesNotThrow(devEncryptor::validateEncryptionKey,
+                "Dev profile with default key should not fail");
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.finvanta.config;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 
@@ -16,6 +17,7 @@ import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 /**
@@ -57,6 +59,10 @@ public class MfaSecretEncryptor implements AttributeConverter<String, String> {
     private static final int GCM_IV_LENGTH = 12; // 96 bits per NIST SP 800-38D
     private static final int GCM_TAG_LENGTH = 128; // 128-bit authentication tag
 
+    /** The well-known default key — used ONLY for dev/test H2 seed data compatibility. */
+    private static final String DEV_DEFAULT_KEY =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
     /**
      * Encryption key (hex-encoded, 64 characters = 32 bytes = 256 bits).
      * DEV default: deterministic key for H2 seed data compatibility.
@@ -65,8 +71,47 @@ public class MfaSecretEncryptor implements AttributeConverter<String, String> {
      * To generate a production key:
      *   openssl rand -hex 32
      */
-    @Value("${mfa.encryption.key:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}")
+    @Value("${mfa.encryption.key:" + DEV_DEFAULT_KEY + "}")
     private String hexKey;
+
+    private final Environment environment;
+
+    public MfaSecretEncryptor(Environment environment) {
+        this.environment = environment;
+    }
+
+    /**
+     * CBS SECURITY: Startup validation per RBI IT Governance Direction 2023 Section 8.4.
+     *
+     * In production, the default deterministic key is a CVE — any attacker who reads
+     * the source code can decrypt every MFA secret in the database. This check:
+     *   - DEV/TEST profile: logs a warning (acceptable for H2 seed data)
+     *   - PROD/any other profile: FAILS STARTUP to prevent deployment with insecure key
+     *
+     * Per Finacle/Temenos: encryption keys for authentication credentials must come
+     * from HSM/KMS/Vault in production — never from source code or properties files.
+     */
+    @PostConstruct
+    void validateEncryptionKey() {
+        boolean isDevOrTest = environment.matchesProfiles("dev", "test");
+        if (DEV_DEFAULT_KEY.equals(hexKey)) {
+            if (isDevOrTest) {
+                log.warn("CBS SECURITY: MFA encryption using DEFAULT DEV KEY. "
+                        + "This is acceptable for dev/test only. "
+                        + "PROD MUST override mfa.encryption.key via environment variable or secrets manager.");
+            } else {
+                log.error("CBS SECURITY VIOLATION: MFA encryption key is the DEFAULT DEV KEY in non-dev profile. "
+                        + "This is a CVE — any attacker can decrypt all MFA secrets. "
+                        + "Set mfa.encryption.key via environment variable: export MFA_ENCRYPTION_KEY=$(openssl rand -hex 32)");
+                throw new IllegalStateException(
+                        "FATAL: MFA encryption key must be overridden in production. "
+                                + "Set mfa.encryption.key via environment variable or secrets manager.");
+            }
+        } else {
+            log.info("CBS SECURITY: MFA encryption key configured (non-default). Key length: {} hex chars.",
+                    hexKey.length());
+        }
+    }
 
     private SecretKey getKey() {
         byte[] keyBytes = hexToBytes(hexKey);
