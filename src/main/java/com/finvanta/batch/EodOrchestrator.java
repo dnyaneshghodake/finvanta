@@ -102,6 +102,7 @@ public class EodOrchestrator {
     private final com.finvanta.repository.DepositAccountRepository depositAccountRepository;
     private final com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService;
     private final com.finvanta.repository.CustomerRepository customerRepository;
+    private final com.finvanta.workflow.ApprovalWorkflowService workflowService;
 
     /** Self-proxy for per-account transaction isolation via Spring AOP. */
     private final EodOrchestrator self;
@@ -123,6 +124,7 @@ public class EodOrchestrator {
             com.finvanta.repository.DepositAccountRepository depositAccountRepository,
             com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService,
             com.finvanta.repository.CustomerRepository customerRepository,
+            com.finvanta.workflow.ApprovalWorkflowService workflowService,
             @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;
@@ -140,6 +142,7 @@ public class EodOrchestrator {
         this.depositAccountRepository = depositAccountRepository;
         this.standingInstructionService = standingInstructionService;
         this.customerRepository = customerRepository;
+        this.workflowService = workflowService;
         this.self = self;
     }
 
@@ -424,6 +427,56 @@ public class EodOrchestrator {
                                     expiringSoon.size());
                         } else {
                             log.info("EOD Step 10: no KYC expiry issues detected");
+                        }
+                    },
+                    errors);
+
+            // Step 10.5: SLA Escalation (per Finacle WORKFLOW_SLA / RBI Fair Practices Code)
+            // Identifies pending approvals that have breached their SLA deadline and
+            // auto-escalates them to ADMIN for immediate attention.
+            failedCount += runStep(
+                    eodJob,
+                    "SLA_ESCALATION",
+                    () -> {
+                        int escalated = workflowService.escalateBreachedWorkflows();
+                        if (escalated > 0) {
+                            log.info("EOD Step 10.5: {} workflows escalated due to SLA breach", escalated);
+                        } else {
+                            log.info("EOD Step 10.5: no SLA breaches detected");
+                        }
+                    },
+                    errors);
+
+            // Step 10.6: Floating Rate Reset (per RBI EBLR/MCLR Framework)
+            // Resets interest rates on floating-rate loans where nextRateResetDate <= businessDate.
+            // Per RBI: EBLR-linked loans must reset at least once every 3 months.
+            failedCount += runStep(
+                    eodJob,
+                    "FLOATING_RATE_RESET",
+                    () -> {
+                        List<LoanAccount> floatingAccounts = accountRepository.findAllActiveAccounts(
+                                TenantContext.getCurrentTenant()).stream()
+                                .filter(LoanAccount::isFloatingRate)
+                                .filter(a -> a.getNextRateResetDate() != null
+                                        && !businessDate.isBefore(a.getNextRateResetDate()))
+                                .toList();
+                        int reset = 0;
+                        for (LoanAccount fa : floatingAccounts) {
+                            try {
+                                // Use current benchmark rate (in production, fetch from rate table)
+                                if (fa.getBenchmarkRate() != null) {
+                                    loanAccountService.resetFloatingRate(
+                                            fa.getAccountNumber(), fa.getBenchmarkRate(), businessDate);
+                                    reset++;
+                                }
+                            } catch (Exception e) {
+                                appendError(errors, "RATE_RESET", fa.getAccountNumber(), e);
+                            }
+                        }
+                        if (reset > 0) {
+                            log.info("EOD Step 10.6: {} floating rate accounts reset", reset);
+                        } else {
+                            log.info("EOD Step 10.6: no floating rate resets due today");
                         }
                     },
                     errors);

@@ -43,6 +43,15 @@ public class TransactionLimit extends BaseEntity {
     @Column(name = "transaction_type", nullable = false, length = 30)
     private String transactionType;
 
+    /**
+     * Channel this limit applies to: BRANCH, ATM, INTERNET, MOBILE, UPI, NEFT, RTGS, IMPS, ALL.
+     * Per RBI Digital Banking Framework 2023: different channels may have different limits.
+     * Example: BRANCH channel allows INR 10L per txn, MOBILE allows INR 2L per txn.
+     * NULL or 'ALL' = applies to all channels (backward compatible with existing data).
+     */
+    @Column(name = "channel", length = 20)
+    private String channel;
+
     /** Maximum amount for a single transaction (null = unlimited) */
     @Column(name = "per_transaction_limit", precision = 18, scale = 2)
     private BigDecimal perTransactionLimit;

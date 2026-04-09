@@ -1724,6 +1724,102 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         return savedTxn;
     }
 
+    /**
+     * CBS Floating Rate Reset per RBI EBLR/MCLR Framework.
+     *
+     * Per RBI circular (Oct 2019): all new floating rate retail loans must be linked
+     * to an external benchmark (repo rate, T-bill, etc.). The effective rate is:
+     *   effectiveRate = benchmarkRate + spread
+     *
+     * Rate reset rules:
+     * - Spread is fixed at sanction (does not change on reset)
+     * - Only benchmarkRate changes on reset
+     * - EMI is recalculated on the new rate
+     * - Remaining schedule is regenerated
+     * - Rate reset is logged in audit trail for transparency per RBI Fair Practices Code
+     *
+     * @param accountNumber    Loan account number
+     * @param newBenchmarkRate New benchmark rate (% p.a.)
+     * @param businessDate     CBS business date
+     * @return Updated loan account
+     */
+    @Override
+    @Transactional
+    public LoanAccount resetFloatingRate(String accountNumber, BigDecimal newBenchmarkRate, LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+
+        LoanAccount account = accountRepository
+                .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
+                .orElseThrow(
+                        () -> new BusinessException("ACCOUNT_NOT_FOUND", "Loan account not found: " + accountNumber));
+
+        if (account.getStatus().isTerminal()) {
+            return account; // No reset on closed/written-off accounts
+        }
+
+        if (!account.isFloatingRate()) {
+            throw new BusinessException(
+                    "NOT_FLOATING_RATE",
+                    "Account " + accountNumber + " is not a floating rate loan. Rate reset not applicable.");
+        }
+
+        BigDecimal oldRate = account.getInterestRate();
+        BigDecimal spread = account.getSpread() != null ? account.getSpread() : BigDecimal.ZERO;
+        BigDecimal newEffectiveRate = newBenchmarkRate.add(spread);
+
+        // Floor at 0% — negative rates not supported per RBI
+        if (newEffectiveRate.compareTo(BigDecimal.ZERO) < 0) {
+            newEffectiveRate = BigDecimal.ZERO;
+        }
+
+        account.setBenchmarkRate(newBenchmarkRate);
+        account.setInterestRate(newEffectiveRate);
+        account.setLastRateResetDate(businessDate);
+
+        // Compute next reset date based on frequency
+        if ("QUARTERLY".equals(account.getRateResetFrequency())) {
+            account.setNextRateResetDate(businessDate.plusMonths(3));
+        } else if ("HALF_YEARLY".equals(account.getRateResetFrequency())) {
+            account.setNextRateResetDate(businessDate.plusMonths(6));
+        } else if ("YEARLY".equals(account.getRateResetFrequency())) {
+            account.setNextRateResetDate(businessDate.plusYears(1));
+        }
+
+        // Recalculate EMI on new rate with remaining tenure
+        if (account.getRemainingTenure() != null && account.getRemainingTenure() > 0) {
+            BigDecimal newEmi = interestRule.calculateEmi(
+                    account.getOutstandingPrincipal(), newEffectiveRate, account.getRemainingTenure());
+            account.setEmiAmount(newEmi);
+        }
+
+        account.setUpdatedBy("SYSTEM");
+        LoanAccount saved = accountRepository.save(account);
+
+        // Regenerate remaining schedule with new EMI
+        try {
+            scheduleService.generateSchedule(saved, businessDate);
+        } catch (Exception e) {
+            log.warn("Schedule regeneration failed after rate reset for {}: {}", accountNumber, e.getMessage());
+        }
+
+        auditService.logEvent(
+                "LoanAccount",
+                saved.getId(),
+                "RATE_RESET",
+                oldRate.toPlainString(),
+                newEffectiveRate.toPlainString(),
+                "LOAN_ACCOUNTS",
+                "Floating rate reset: " + accountNumber
+                        + " | Old rate: " + oldRate + "% → New rate: " + newEffectiveRate + "%"
+                        + " | Benchmark: " + newBenchmarkRate + "% + Spread: " + spread + "%"
+                        + " | New EMI: " + saved.getEmiAmount());
+
+        log.info("Rate reset: accNo={}, oldRate={}%, newRate={}%, benchmark={}%, spread={}%",
+                accountNumber, oldRate, newEffectiveRate, newBenchmarkRate, spread);
+
+        return saved;
+    }
+
     @Override
     public LoanAccount getAccount(String accountNumber) {
         String tenantId = TenantContext.getCurrentTenant();

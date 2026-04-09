@@ -119,6 +119,18 @@ public interface LoanAccountService {
      */
     LoanTransaction chargeFee(String accountNumber, BigDecimal feeAmount, String feeType, LocalDate businessDate);
 
+    /**
+     * CBS Floating Rate Reset per RBI EBLR/MCLR Framework.
+     * Resets the interest rate on floating-rate loans when the benchmark changes.
+     * Per RBI: EBLR-linked loans must reset at least once every 3 months.
+     *
+     * @param accountNumber Loan account number
+     * @param newBenchmarkRate New benchmark rate (% p.a.)
+     * @param businessDate CBS business date
+     * @return Updated loan account with new effective rate
+     */
+    LoanAccount resetFloatingRate(String accountNumber, BigDecimal newBenchmarkRate, LocalDate businessDate);
+
     LoanAccount getAccount(String accountNumber);
 
     List<LoanAccount> getActiveAccounts();
