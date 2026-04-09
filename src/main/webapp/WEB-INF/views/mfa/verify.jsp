@@ -42,17 +42,65 @@
                 </div>
             </c:if>
 
-            <form method="post" action="${pageContext.request.contextPath}/mfa/verify">
+            <form method="post" action="${pageContext.request.contextPath}/mfa/verify" id="mfaForm">
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                <div class="mb-4">
-                    <input type="text" name="totpCode" class="form-control totp-input"
-                           maxlength="6" pattern="[0-9]{6}" required autocomplete="off"
-                           placeholder="000000" autofocus />
+                <div class="mb-2">
+                    <input type="text" name="totpCode" id="totpInput" class="form-control totp-input"
+                           inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required autocomplete="one-time-code"
+                           placeholder="------" autofocus />
                 </div>
-                <button type="submit" class="btn btn-primary w-100" style="padding:12px;font-size:1rem;">
+                <div id="totpHint" class="mb-3" style="text-align:center;font-size:0.8rem;min-height:20px;"></div>
+                <button type="submit" id="verifyBtn" class="btn btn-primary w-100" style="padding:12px;font-size:1rem;" disabled>
                     <i class="bi bi-check-circle"></i> Verify
                 </button>
             </form>
+            <script>
+                (function() {
+                    var input = document.getElementById('totpInput');
+                    var btn = document.getElementById('verifyBtn');
+                    var hint = document.getElementById('totpHint');
+
+                    // Block non-numeric characters at keystroke level
+                    input.addEventListener('keypress', function(e) {
+                        if (e.key < '0' || e.key > '9') {
+                            e.preventDefault();
+                        }
+                    });
+
+                    // Strip non-digits on paste/input (handles paste, autofill, drag-drop)
+                    input.addEventListener('input', function() {
+                        var cleaned = this.value.replace(/[^0-9]/g, '').substring(0, 6);
+                        if (cleaned !== this.value) {
+                            this.value = cleaned;
+                        }
+                        var len = cleaned.length;
+                        if (len === 0) {
+                            hint.innerHTML = '<span style="color:#64748b;">Enter 6 digits from your authenticator app</span>';
+                            btn.disabled = true;
+                        } else if (len < 6) {
+                            hint.innerHTML = '<span style="color:#f59e0b;">' + len + ' of 6 digits entered</span>';
+                            btn.disabled = true;
+                        } else {
+                            hint.innerHTML = '<span style="color:#4ade80;">&#10003; Ready to verify</span>';
+                            btn.disabled = false;
+                        }
+                    });
+
+                    // Prevent form submission if not exactly 6 digits
+                    document.getElementById('mfaForm').addEventListener('submit', function(e) {
+                        var val = input.value.replace(/[^0-9]/g, '');
+                        if (val.length !== 6) {
+                            e.preventDefault();
+                            hint.innerHTML = '<span style="color:#ef4444;">Please enter exactly 6 digits</span>';
+                            input.focus();
+                            return false;
+                        }
+                    });
+
+                    // Initialize hint
+                    hint.innerHTML = '<span style="color:#64748b;">Enter 6 digits from your authenticator app</span>';
+                })();
+            </script>
 
             <div class="text-center mt-3">
                 <form method="post" action="${pageContext.request.contextPath}/logout" class="d-inline">
