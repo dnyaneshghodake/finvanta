@@ -1,5 +1,7 @@
 package com.finvanta.domain.entity;
 
+import com.finvanta.domain.enums.DepositAccountType;
+
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
@@ -97,19 +99,12 @@ public class DailyBalanceSnapshot extends BaseEntity {
     private BigDecimal holdAmount = BigDecimal.ZERO;
 
     /**
-     * Account type: SAVINGS, CURRENT, etc. (for filtering in interest calculation).
-     *
-     * Per Finacle PDDEF ACCT_TYPE / Temenos ACCOUNT CATEGORY: account type is a coded
-     * field in Tier-1 CBS. The source entity (DepositAccount) currently uses a raw String
-     * for accountType — this snapshot copies that value as-is for consistency.
-     *
-     * TODO (Tier-1 compliance): Introduce a DepositAccountType enum across DepositAccount,
-     * DailyBalanceSnapshot, and all repository queries that filter by accountType.
-     * This prevents data corruption from typos (e.g., "SAVING" vs "SAVINGS") that would
+     * Account type per Finacle PDDEF ACCT_TYPE / Temenos ACCOUNT CATEGORY.
+     * Enum-backed for type safety — prevents data corruption from typos that would
      * silently break interest calculation and regulatory reporting queries.
-     * Impact: DepositAccount entity, DepositAccountRepository queries, DepositAccountServiceImpl,
-     * EodOrchestrator snapshot step, and DailyBalanceSnapshotRepository queries.
+     * Denormalized from DepositAccount for reporting efficiency (avoids join).
      */
+    @Enumerated(EnumType.STRING)
     @Column(name = "account_type", nullable = false, length = 30)
-    private String accountType;
+    private DepositAccountType accountType;
 }

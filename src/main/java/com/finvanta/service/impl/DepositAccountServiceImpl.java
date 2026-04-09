@@ -10,6 +10,7 @@ import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.domain.entity.InterestAccrual;
 import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.domain.enums.DepositAccountStatus;
+import com.finvanta.domain.enums.DepositAccountType;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DepositAccountRepository;
