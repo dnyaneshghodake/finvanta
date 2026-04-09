@@ -29,6 +29,12 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableWebSecurity
 public class SecurityConfig {
 
+    private final MfaAuthenticationSuccessHandler mfaSuccessHandler;
+
+    public SecurityConfig(MfaAuthenticationSuccessHandler mfaSuccessHandler) {
+        this.mfaSuccessHandler = mfaSuccessHandler;
+    }
+
     @org.springframework.beans.factory.annotation.Value("${spring.profiles.active:prod}")
     private String activeProfile;
 
@@ -168,12 +174,14 @@ public class SecurityConfig {
                             .hasAnyRole("AUDITOR", "ADMIN")
                             .requestMatchers("/admin/mfa/**")
                             .hasRole("ADMIN")
+                            .requestMatchers("/mfa/verify")
+                            .authenticated()
                             .anyRequest()
                             .authenticated();
                 })
                 .formLogin(form -> form.loginPage("/login")
                         .loginProcessingUrl("/login")
-                        .defaultSuccessUrl("/dashboard", true)
+                        .successHandler(mfaSuccessHandler)
                         .failureUrl("/login?error")
                         .permitAll())
                 .logout(logout -> logout.logoutUrl("/logout")
