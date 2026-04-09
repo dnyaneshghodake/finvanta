@@ -125,6 +125,29 @@ public class Branch extends BaseEntity {
     @Column(name = "is_head_office", nullable = false)
     private boolean headOffice = false;
 
+    // === Lifecycle Validation ===
+
+    /**
+     * CBS Hierarchy Invariant: Ensure headOffice flag is consistent with branchType.
+     * Per Finacle: branchType is the single source of truth. If branchType is HEAD_OFFICE,
+     * headOffice must be true, and vice versa. This prevents dual-truth divergence.
+     */
+    @PrePersist
+    @PreUpdate
+    protected void validateHierarchyInvariants() {
+        // Sync headOffice flag with branchType
+        if (branchType == BranchType.HEAD_OFFICE) {
+            this.headOffice = true;
+        } else if (branchType != null) {
+            this.headOffice = false;
+        }
+        // HEAD_OFFICE must not have a parent (it's the root)
+        if (branchType == BranchType.HEAD_OFFICE && parentBranch != null) {
+            throw new IllegalStateException(
+                    "HEAD_OFFICE branch cannot have a parent branch. Branch: " + branchCode);
+        }
+    }
+
     // === Helpers ===
 
     /** Returns true if this is an operational branch (Finacle SOL) that can have customers/accounts */

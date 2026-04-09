@@ -28,6 +28,7 @@ import com.finvanta.service.LoanScheduleService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
+import com.finvanta.util.BranchAccessValidator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
@@ -86,6 +87,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final DepositAccountRepository depositAccountRepository;
     private final DepositAccountService depositAccountService;
     private final StandingInstructionServiceImpl standingInstructionService;
+    private final BranchAccessValidator branchAccessValidator;
 
     public LoanAccountServiceImpl(
             LoanAccountRepository accountRepository,
@@ -105,7 +107,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             ChargeEngine chargeEngine,
             DepositAccountRepository depositAccountRepository,
             DepositAccountService depositAccountService,
-            @Lazy StandingInstructionServiceImpl standingInstructionService) {
+            @Lazy StandingInstructionServiceImpl standingInstructionService,
+            BranchAccessValidator branchAccessValidator) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
@@ -124,6 +127,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.depositAccountRepository = depositAccountRepository;
         this.depositAccountService = depositAccountService;
         this.standingInstructionService = standingInstructionService;
+        this.branchAccessValidator = branchAccessValidator;
     }
 
     @Override
@@ -1697,10 +1701,14 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     @Override
     public LoanAccount getAccount(String accountNumber) {
         String tenantId = TenantContext.getCurrentTenant();
-        return accountRepository
+        LoanAccount account = accountRepository
                 .findByTenantIdAndAccountNumber(tenantId, accountNumber)
                 .orElseThrow(
                         () -> new BusinessException("ACCOUNT_NOT_FOUND", "Loan account not found: " + accountNumber));
+        // CBS Tier-1: Branch access enforcement on read.
+        // MAKER/CHECKER can only view loan accounts at their home branch.
+        branchAccessValidator.validateAccess(account.getBranch());
+        return account;
     }
 
     @Override
