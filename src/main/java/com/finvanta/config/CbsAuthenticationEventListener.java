@@ -12,7 +12,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.security.authentication.event.AuthenticationFailureBadCredentialsEvent;
 import org.springframework.security.authentication.event.AuthenticationSuccessEvent;
-import org.springframework.security.authentication.event.LogoutSuccessEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -69,7 +68,7 @@ public class CbsAuthenticationEventListener {
             // depending on filter registration order. Spring Security's FilterChainProxy
             // can execute before @Order(1) servlet filters in some configurations.
             // This is defensive: set it if missing, restore original state after.
-            boolean tenantWasNull = !isTenantContextSet();
+            boolean tenantWasNull = !TenantContext.isSet();
             if (tenantWasNull) {
                 TenantContext.setCurrentTenant(tenantId);
             }
@@ -117,40 +116,51 @@ public class CbsAuthenticationEventListener {
         String tenantId = resolveTenantId();
 
         try {
-            userRepository.findByTenantIdAndUsername(tenantId, username).ifPresent(user -> {
-                boolean justLocked = user.recordFailedLogin();
-                user.setUpdatedBy("SYSTEM_AUTH");
-                userRepository.save(user);
+            // CBS: Same tenant context guard as onAuthenticationSuccess — see comment there.
+            boolean tenantWasNull = !TenantContext.isSet();
+            if (tenantWasNull) {
+                TenantContext.setCurrentTenant(tenantId);
+            }
+            try {
+                userRepository.findByTenantIdAndUsername(tenantId, username).ifPresent(user -> {
+                    boolean justLocked = user.recordFailedLogin();
+                    user.setUpdatedBy("SYSTEM_AUTH");
+                    userRepository.save(user);
 
-                if (justLocked) {
-                    // Account just locked — critical security event
-                    auditService.logEvent(
-                            "AppUser", user.getId(), "ACCOUNT_LOCKED",
-                            "failedAttempts=" + user.getFailedLoginAttempts(),
-                            "LOCKED",
-                            "SECURITY",
-                            "Account LOCKED after " + AppUser.MAX_FAILED_ATTEMPTS
-                                    + " failed login attempts: user=" + username
-                                    + " | IP=" + ipAddress
-                                    + " | Auto-unlock in " + AppUser.LOCKOUT_DURATION_MINUTES + " min");
+                    if (justLocked) {
+                        // Account just locked — critical security event
+                        auditService.logEvent(
+                                "AppUser", user.getId(), "ACCOUNT_LOCKED",
+                                "failedAttempts=" + user.getFailedLoginAttempts(),
+                                "LOCKED",
+                                "SECURITY",
+                                "Account LOCKED after " + AppUser.MAX_FAILED_ATTEMPTS
+                                        + " failed login attempts: user=" + username
+                                        + " | IP=" + ipAddress
+                                        + " | Auto-unlock in " + AppUser.LOCKOUT_DURATION_MINUTES + " min");
 
-                    log.error("ACCOUNT LOCKED: user={}, ip={}, attempts={}",
-                            username, ipAddress, user.getFailedLoginAttempts());
-                } else {
-                    auditService.logEvent(
-                            "AppUser", user.getId(), "LOGIN_FAILED",
-                            "failedAttempts=" + user.getFailedLoginAttempts(),
-                            "ip=" + ipAddress,
-                            "SECURITY",
-                            "Login failed: user=" + username
-                                    + " | IP=" + ipAddress
-                                    + " | Attempt " + user.getFailedLoginAttempts()
-                                    + "/" + AppUser.MAX_FAILED_ATTEMPTS);
+                        log.error("ACCOUNT LOCKED: user={}, ip={}, attempts={}",
+                                username, ipAddress, user.getFailedLoginAttempts());
+                    } else {
+                        auditService.logEvent(
+                                "AppUser", user.getId(), "LOGIN_FAILED",
+                                "failedAttempts=" + user.getFailedLoginAttempts(),
+                                "ip=" + ipAddress,
+                                "SECURITY",
+                                "Login failed: user=" + username
+                                        + " | IP=" + ipAddress
+                                        + " | Attempt " + user.getFailedLoginAttempts()
+                                        + "/" + AppUser.MAX_FAILED_ATTEMPTS);
 
-                    log.warn("LOGIN FAILED: user={}, ip={}, attempt={}/{}",
-                            username, ipAddress, user.getFailedLoginAttempts(), AppUser.MAX_FAILED_ATTEMPTS);
+                        log.warn("LOGIN FAILED: user={}, ip={}, attempt={}/{}",
+                                username, ipAddress, user.getFailedLoginAttempts(), AppUser.MAX_FAILED_ATTEMPTS);
+                    }
+                });
+            } finally {
+                if (tenantWasNull) {
+                    TenantContext.clear();
                 }
-            });
+            }
         } catch (Exception e) {
             // Auth event handlers must NEVER block login flow — log and continue
             log.error("Failed to record login failure for {}: {}", username, e.getMessage());
