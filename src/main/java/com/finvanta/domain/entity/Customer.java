@@ -49,7 +49,8 @@ import lombok.Setter;
             @Index(name = "idx_cust_aadhaar", columnList = "tenant_id, aadhaar_number"),
             @Index(name = "idx_cust_pan_hash", columnList = "tenant_id, pan_hash"),
             @Index(name = "idx_cust_aadhaar_hash", columnList = "tenant_id, aadhaar_hash"),
-            @Index(name = "idx_cust_kyc_expiry", columnList = "tenant_id, kyc_expiry_date")
+            @Index(name = "idx_cust_kyc_expiry", columnList = "tenant_id, kyc_expiry_date"),
+            @Index(name = "idx_cust_tenant_branch", columnList = "tenant_id, branch_id")
         })
 @Getter
 @Setter
