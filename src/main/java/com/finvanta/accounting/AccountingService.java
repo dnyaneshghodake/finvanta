@@ -2,12 +2,14 @@ package com.finvanta.accounting;
 
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Branch;
+import com.finvanta.domain.entity.GLBranchBalance;
 import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.domain.entity.JournalEntryLine;
 import com.finvanta.domain.entity.TransactionBatch;
 import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.repository.BranchRepository;
+import com.finvanta.repository.GLBranchBalanceRepository;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.JournalEntryRepository;
 import com.finvanta.repository.TransactionBatchRepository;
@@ -47,6 +49,7 @@ public class AccountingService {
 
     private final JournalEntryRepository journalEntryRepository;
     private final GLMasterRepository glMasterRepository;
+    private final GLBranchBalanceRepository glBranchBalanceRepository;
     private final BranchRepository branchRepository;
     private final AuditService auditService;
     private final LedgerService ledgerService;
@@ -114,12 +117,14 @@ public class AccountingService {
     public AccountingService(
             JournalEntryRepository journalEntryRepository,
             GLMasterRepository glMasterRepository,
+            GLBranchBalanceRepository glBranchBalanceRepository,
             BranchRepository branchRepository,
             AuditService auditService,
             LedgerService ledgerService,
             TransactionBatchRepository batchRepository) {
         this.journalEntryRepository = journalEntryRepository;
         this.glMasterRepository = glMasterRepository;
+        this.glBranchBalanceRepository = glBranchBalanceRepository;
         this.branchRepository = branchRepository;
         this.auditService = auditService;
         this.ledgerService = ledgerService;
@@ -165,7 +170,7 @@ public class AccountingService {
         }
 
         JournalEntry savedEntry = journalEntryRepository.save(entry);
-        updateGLBalances(tenantId, lines);
+        updateGLBalances(tenantId, lines, savedEntry.getBranch());
         ledgerService.postToLedger(savedEntry);
 
         // CBS Batch Control
@@ -345,9 +350,21 @@ public class AccountingService {
         }
     }
 
+    /**
+     * Updates GL balances at BOTH tenant level (GLMaster) AND branch level (GLBranchBalance).
+     *
+     * Per Finacle GL_BRANCH architecture:
+     * - GLMaster holds the aggregate tenant-level balance (for consolidated reporting)
+     * - GLBranchBalance holds per-branch running balances (for branch trial balance)
+     * - Both are updated atomically within the same transaction with pessimistic locks
+     *
+     * Reconciliation invariant (verified at EOD):
+     *   GLMaster.debitBalance == SUM(GLBranchBalance.debitBalance) across all branches
+     */
     @Transactional
-    public void updateGLBalances(String tenantId, List<JournalLineRequest> lines) {
+    public void updateGLBalances(String tenantId, List<JournalLineRequest> lines, Branch branch) {
         for (JournalLineRequest line : lines) {
+            // Step 1: Update tenant-level GLMaster (aggregate balance)
             GLMaster gl = glMasterRepository
                     .findAndLockByTenantIdAndGlCode(tenantId, line.glCode())
                     .orElseThrow(() ->
@@ -358,9 +375,42 @@ public class AccountingService {
             } else {
                 gl.setCreditBalance(gl.getCreditBalance().add(line.amount()));
             }
-
             glMasterRepository.save(gl);
+
+            // Step 2: Update branch-level GLBranchBalance (per-branch running balance)
+            // Per Finacle GL_BRANCH: concurrent postings to same branch+GL are serialized
+            // via PESSIMISTIC_WRITE lock to prevent lost-update on running balances.
+            if (branch != null) {
+                GLBranchBalance branchBalance = glBranchBalanceRepository
+                        .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
+                        .orElseGet(() -> {
+                            // Auto-create branch balance row on first posting to this branch+GL
+                            GLBranchBalance newBalance = new GLBranchBalance();
+                            newBalance.setTenantId(tenantId);
+                            newBalance.setBranch(branch);
+                            newBalance.setGlCode(line.glCode());
+                            newBalance.setGlName(gl.getGlName());
+                            return newBalance;
+                        });
+
+                if (line.debitCredit() == DebitCredit.DEBIT) {
+                    branchBalance.setDebitBalance(branchBalance.getDebitBalance().add(line.amount()));
+                } else {
+                    branchBalance.setCreditBalance(branchBalance.getCreditBalance().add(line.amount()));
+                }
+                glBranchBalanceRepository.save(branchBalance);
+            }
         }
+    }
+
+    /**
+     * Backward-compatible updateGLBalances without branch (tenant-level only).
+     * @deprecated Use {@link #updateGLBalances(String, List, Branch)} with branch.
+     */
+    @Deprecated(forRemoval = true)
+    @Transactional
+    public void updateGLBalances(String tenantId, List<JournalLineRequest> lines) {
+        updateGLBalances(tenantId, lines, null);
     }
 
     public Map<String, Object> getTrialBalance() {

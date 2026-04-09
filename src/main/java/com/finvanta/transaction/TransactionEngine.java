@@ -141,18 +141,44 @@ public class TransactionEngine {
         // The engine validates the request; the module checks for duplicates.
 
         // ================================================================
-        // STEP 2: Business Date Validation
-        // Value date must exist in the business calendar
+        // STEP 2: Business Date Validation (Branch-Scoped)
+        // Value date must exist in the business calendar for the transaction's branch.
+        // Per Finacle DAYCTRL: calendar is per-branch — a date can be a holiday at
+        // Branch A (state holiday) but a working day at Branch B.
         // ================================================================
-        BusinessCalendar calendar = calendarRepository
-                .findByTenantIdAndBusinessDate(tenantId, request.getValueDate())
-                .orElseThrow(() -> new BusinessException(
-                        "INVALID_VALUE_DATE",
-                        "Value date " + request.getValueDate() + " not found in business calendar"));
+        Long branchId = null;
+        if (request.getBranchCode() != null && !request.getBranchCode().isBlank()) {
+            var branchOpt = branchRepository.findByTenantIdAndBranchCode(tenantId, request.getBranchCode());
+            if (branchOpt.isPresent()) {
+                branchId = branchOpt.get().getId();
+            }
+        }
+        if (branchId == null) {
+            branchId = SecurityUtil.getCurrentUserBranchId();
+        }
+
+        BusinessCalendar calendar;
+        if (branchId != null) {
+            calendar = calendarRepository
+                    .findByTenantIdAndBranchIdAndBusinessDate(tenantId, branchId, request.getValueDate())
+                    .orElseThrow(() -> new BusinessException(
+                            "INVALID_VALUE_DATE",
+                            "Value date " + request.getValueDate()
+                                    + " not found in business calendar for branch " + request.getBranchCode()));
+        } else {
+            // Fallback for system operations without branch context
+            calendar = calendarRepository
+                    .findByTenantIdAndBusinessDate(tenantId, request.getValueDate())
+                    .orElseThrow(() -> new BusinessException(
+                            "INVALID_VALUE_DATE",
+                            "Value date " + request.getValueDate() + " not found in business calendar"));
+        }
 
         if (calendar.isHoliday()) {
             throw new BusinessException(
-                    "HOLIDAY_POSTING", "Cannot post transactions on a holiday: " + request.getValueDate());
+                    "HOLIDAY_POSTING",
+                    "Cannot post transactions on a holiday: " + request.getValueDate()
+                            + (request.getBranchCode() != null ? " at branch " + request.getBranchCode() : ""));
         }
 
         // ================================================================

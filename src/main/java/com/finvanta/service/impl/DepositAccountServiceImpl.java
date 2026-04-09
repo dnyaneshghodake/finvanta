@@ -146,6 +146,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         txn.setTenantId(acct.getTenantId());
         txn.setTransactionRef(txnRef);
         txn.setDepositAccount(acct);
+        // CBS Tier-1: Branch attribution per Finacle TRAN_DETAIL SOL tagging.
+        // Every deposit transaction carries the account's branch for branch-level
+        // Day Book, reconciliation, and regulatory reporting.
+        txn.setBranch(acct.getBranch());
+        txn.setBranchCode(acct.getBranch().getBranchCode());
         txn.setTransactionType(txnType);
         txn.setAmount(amount);
         txn.setValueDate(valueDate);
