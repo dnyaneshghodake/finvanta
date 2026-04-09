@@ -2,6 +2,7 @@ package com.finvanta.controller;
 
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.time.LocalDate;
@@ -13,9 +14,9 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /**
  * CBS Business Calendar & Day Control Controller.
- * Per Finacle/Temenos Day Control standards:
- * - Day Open/Close lifecycle management
- * - Calendar browse with day status
+ * Per Finacle DAYCTRL / Tier-1 Branch-Level Day Control:
+ * - Day Open/Close lifecycle management PER BRANCH
+ * - Calendar browse filtered by user's branch (ADMIN sees all)
  * ADMIN-only access (enforced in SecurityConfig).
  */
 @Controller
@@ -34,8 +35,21 @@ public class CalendarController {
     public ModelAndView listCalendar() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("calendar/list");
-        mav.addObject("calendarDates", calendarRepository.findByTenantIdOrderByBusinessDateDesc(tenantId));
-        mav.addObject("openDay", businessDateService.getOpenDayOrNull());
+        // CBS Tier-1: Show branch-scoped calendar for the user's branch.
+        // ADMIN users see their branch's calendar (use branch selector for other branches).
+        Long branchId = SecurityUtil.getCurrentUserBranchId();
+        if (branchId != null) {
+            mav.addObject(
+                    "calendarDates",
+                    calendarRepository.findByTenantIdAndBranchIdOrderByBusinessDateDesc(tenantId, branchId));
+            mav.addObject("openDay", businessDateService.getOpenDayOrNull(branchId));
+        } else {
+            // Fallback for system/admin without branch — show all (deprecated path)
+            mav.addObject("calendarDates", calendarRepository.findByTenantIdOrderByBusinessDateDesc(tenantId));
+            mav.addObject("openDay", businessDateService.getOpenDayOrNull());
+        }
+        mav.addObject("currentBranchId", branchId);
+        mav.addObject("currentBranchCode", SecurityUtil.getCurrentUserBranchCode());
         return mav;
     }
 
