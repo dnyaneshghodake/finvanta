@@ -278,32 +278,35 @@ SET day_status = 'DAY_OPEN', day_opened_by = 'SYSTEM', day_opened_at = CURRENT_T
 WHERE tenant_id = 'DEFAULT' AND business_date = '2026-04-01' AND is_holiday = false;
 
 -- 2. Default transaction batches for April 1 — one per branch (required by TransactionEngine Step 5.5)
--- Per Finacle BATCH_MASTER: each branch gets its own default batch.
--- Status: CLOSED so EOD trial passes. Re-open via Batch Management if intra-day transactions needed.
+-- Per Finacle BATCH_MASTER / BusinessDateService.openDay(): when a day is opened,
+-- a default INTRA_DAY batch is auto-created in OPEN status for each branch.
+-- Status: OPEN — matches the realistic CBS state after Day Open.
+-- CBS Workflow: Day OPEN + Batch OPEN → transactions → close batch → run EOD trial → apply EOD.
+-- The ADMIN must close all batches via Batch Management before EOD trial will pass.
 INSERT INTO transaction_batches (tenant_id, business_date, batch_name, batch_type, status,
-    opened_by, opened_at, closed_by, closed_at, maker_id, checker_id,
+    opened_by, opened_at, maker_id,
     total_transactions, total_debit, total_credit,
     version, created_at, created_by, branch_id)
-VALUES ('DEFAULT', '2026-04-01', 'DEFAULT_BATCH_HQ001', 'INTRA_DAY', 'CLOSED',
-    'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM',
+VALUES ('DEFAULT', '2026-04-01', 'DEFAULT_BATCH_HQ001', 'INTRA_DAY', 'OPEN',
+    'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM',
     0, 0.00, 0.00,
     0, CURRENT_TIMESTAMP, 'SYSTEM', 1);
 
 INSERT INTO transaction_batches (tenant_id, business_date, batch_name, batch_type, status,
-    opened_by, opened_at, closed_by, closed_at, maker_id, checker_id,
+    opened_by, opened_at, maker_id,
     total_transactions, total_debit, total_credit,
     version, created_at, created_by, branch_id)
-VALUES ('DEFAULT', '2026-04-01', 'DEFAULT_BATCH_DEL001', 'INTRA_DAY', 'CLOSED',
-    'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM',
+VALUES ('DEFAULT', '2026-04-01', 'DEFAULT_BATCH_DEL001', 'INTRA_DAY', 'OPEN',
+    'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM',
     0, 0.00, 0.00,
     0, CURRENT_TIMESTAMP, 'SYSTEM', 2);
 
 INSERT INTO transaction_batches (tenant_id, business_date, batch_name, batch_type, status,
-    opened_by, opened_at, closed_by, closed_at, maker_id, checker_id,
+    opened_by, opened_at, maker_id,
     total_transactions, total_debit, total_credit,
     version, created_at, created_by, branch_id)
-VALUES ('DEFAULT', '2026-04-01', 'DEFAULT_BATCH_BLR001', 'INTRA_DAY', 'CLOSED',
-    'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM',
+VALUES ('DEFAULT', '2026-04-01', 'DEFAULT_BATCH_BLR001', 'INTRA_DAY', 'OPEN',
+    'SYSTEM', CURRENT_TIMESTAMP, 'SYSTEM',
     0, 0.00, 0.00,
     0, CURRENT_TIMESTAMP, 'SYSTEM', 3);
 
