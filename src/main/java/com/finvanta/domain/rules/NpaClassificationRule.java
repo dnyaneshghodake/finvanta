@@ -2,6 +2,7 @@ package com.finvanta.domain.rules;
 
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.LoanStatus;
+
 import org.springframework.stereotype.Component;
 
 /**
@@ -63,7 +64,8 @@ public class NpaClassificationRule {
         if (currentStatus.isNpa() && !dpdBasedStatus.isNpa()) {
             return currentStatus;
         }
-        if (currentStatus.isNpa() && dpdBasedStatus.isNpa()
+        if (currentStatus.isNpa()
+                && dpdBasedStatus.isNpa()
                 && getSeverity(dpdBasedStatus) < getSeverity(currentStatus)) {
             return currentStatus;
         }
@@ -134,7 +136,7 @@ public class NpaClassificationRule {
             return false;
         }
         return account.getDaysPastDue() == 0
-            && account.getOverduePrincipal().signum() <= 0
-            && account.getOverdueInterest().signum() <= 0;
+                && account.getOverduePrincipal().signum() <= 0
+                && account.getOverdueInterest().signum() <= 0;
     }
 }

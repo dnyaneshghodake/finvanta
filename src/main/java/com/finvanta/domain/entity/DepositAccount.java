@@ -1,13 +1,15 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.DepositAccountStatus;
+
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * CBS CASA (Current Account Savings Account) Entity per Finacle CUSTACCT / Temenos ACCOUNT.
@@ -41,13 +43,15 @@ import java.time.LocalDate;
  *   TDS: DR Customer Deposits / CR TDS Payable (2500)
  */
 @Entity
-@Table(name = "deposit_accounts", indexes = {
-    @Index(name = "idx_depacc_tenant_accno", columnList = "tenant_id, account_number", unique = true),
-    @Index(name = "idx_depacc_tenant_customer", columnList = "tenant_id, customer_id"),
-    @Index(name = "idx_depacc_tenant_status", columnList = "tenant_id, account_status"),
-    @Index(name = "idx_depacc_tenant_branch", columnList = "tenant_id, branch_id"),
-    @Index(name = "idx_depacc_tenant_type", columnList = "tenant_id, account_type")
-})
+@Table(
+        name = "deposit_accounts",
+        indexes = {
+            @Index(name = "idx_depacc_tenant_accno", columnList = "tenant_id, account_number", unique = true),
+            @Index(name = "idx_depacc_tenant_customer", columnList = "tenant_id, customer_id"),
+            @Index(name = "idx_depacc_tenant_status", columnList = "tenant_id, account_status"),
+            @Index(name = "idx_depacc_tenant_branch", columnList = "tenant_id, branch_id"),
+            @Index(name = "idx_depacc_tenant_type", columnList = "tenant_id, account_type")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

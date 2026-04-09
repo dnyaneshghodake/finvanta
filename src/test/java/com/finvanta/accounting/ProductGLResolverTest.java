@@ -3,6 +3,9 @@ package com.finvanta.accounting;
 import com.finvanta.domain.entity.ProductMaster;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.util.TenantContext;
+
+import java.util.Optional;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -12,8 +15,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -48,7 +49,7 @@ class ProductGLResolverTest {
     private ProductMaster createProduct(String code) {
         ProductMaster product = new ProductMaster();
         product.setProductCode(code);
-        product.setGlLoanAsset("1010");       // Different from GLConstants.LOAN_ASSET ("1001")
+        product.setGlLoanAsset("1010"); // Different from GLConstants.LOAN_ASSET ("1001")
         product.setGlInterestReceivable("1020");
         product.setGlBankOperations("1200");
         product.setGlInterestIncome("4010");
@@ -66,7 +67,7 @@ class ProductGLResolverTest {
     void productConfigured_returnsProductGL() {
         ProductMaster product = createProduct("HOME_LOAN");
         when(productRepository.findByTenantIdAndProductCode("DEFAULT", "HOME_LOAN"))
-            .thenReturn(Optional.of(product));
+                .thenReturn(Optional.of(product));
 
         assertEquals("1010", glResolver.getLoanAssetGL("HOME_LOAN"));
         assertEquals("1020", glResolver.getInterestReceivableGL("HOME_LOAN"));
@@ -84,7 +85,7 @@ class ProductGLResolverTest {
     @DisplayName("Product not configured → falls back to GLConstants")
     void productNotConfigured_fallsBackToConstants() {
         when(productRepository.findByTenantIdAndProductCode("DEFAULT", "UNKNOWN_PRODUCT"))
-            .thenReturn(Optional.empty());
+                .thenReturn(Optional.empty());
 
         assertEquals(GLConstants.LOAN_ASSET, glResolver.getLoanAssetGL("UNKNOWN_PRODUCT"));
         assertEquals(GLConstants.INTEREST_RECEIVABLE, glResolver.getInterestReceivableGL("UNKNOWN_PRODUCT"));
@@ -110,7 +111,7 @@ class ProductGLResolverTest {
     void getProduct_returnsProduct() {
         ProductMaster product = createProduct("GOLD_LOAN");
         when(productRepository.findByTenantIdAndProductCode("DEFAULT", "GOLD_LOAN"))
-            .thenReturn(Optional.of(product));
+                .thenReturn(Optional.of(product));
 
         ProductMaster result = glResolver.getProduct("GOLD_LOAN");
         assertNotNull(result);
@@ -121,7 +122,7 @@ class ProductGLResolverTest {
     @DisplayName("getProduct returns null when not configured")
     void getProduct_returnsNull() {
         when(productRepository.findByTenantIdAndProductCode("DEFAULT", "UNKNOWN"))
-            .thenReturn(Optional.empty());
+                .thenReturn(Optional.empty());
 
         assertNull(glResolver.getProduct("UNKNOWN"));
     }

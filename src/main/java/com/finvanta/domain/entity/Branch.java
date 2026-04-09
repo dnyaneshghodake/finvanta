@@ -1,14 +1,15 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "branches", indexes = {
-    @Index(name = "idx_branch_tenant_code", columnList = "tenant_id, branch_code", unique = true)
-})
+@Table(
+        name = "branches",
+        indexes = {@Index(name = "idx_branch_tenant_code", columnList = "tenant_id, branch_code", unique = true)})
 @Getter
 @Setter
 @NoArgsConstructor

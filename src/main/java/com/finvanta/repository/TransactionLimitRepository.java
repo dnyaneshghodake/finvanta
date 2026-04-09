@@ -1,13 +1,14 @@
 package com.finvanta.repository;
 
 import com.finvanta.domain.entity.TransactionLimit;
+
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-
-import java.util.List;
-import java.util.Optional;
 
 /**
  * CBS Transaction Limit Repository per Finacle/Temenos Internal Controls.
@@ -19,19 +20,15 @@ public interface TransactionLimitRepository extends JpaRepository<TransactionLim
      * Find applicable limit for a role and transaction type.
      * Returns the most specific limit: type-specific first, then 'ALL' fallback.
      */
-    @Query("SELECT tl FROM TransactionLimit tl WHERE tl.tenantId = :tenantId " +
-           "AND tl.role = :role AND tl.transactionType = :txnType AND tl.active = true")
+    @Query("SELECT tl FROM TransactionLimit tl WHERE tl.tenantId = :tenantId "
+            + "AND tl.role = :role AND tl.transactionType = :txnType AND tl.active = true")
     Optional<TransactionLimit> findByRoleAndType(
-        @Param("tenantId") String tenantId,
-        @Param("role") String role,
-        @Param("txnType") String txnType);
+            @Param("tenantId") String tenantId, @Param("role") String role, @Param("txnType") String txnType);
 
     /** Fallback: find limit for role with transaction type 'ALL' */
-    @Query("SELECT tl FROM TransactionLimit tl WHERE tl.tenantId = :tenantId " +
-           "AND tl.role = :role AND tl.transactionType = 'ALL' AND tl.active = true")
-    Optional<TransactionLimit> findByRoleForAllTypes(
-        @Param("tenantId") String tenantId,
-        @Param("role") String role);
+    @Query("SELECT tl FROM TransactionLimit tl WHERE tl.tenantId = :tenantId "
+            + "AND tl.role = :role AND tl.transactionType = 'ALL' AND tl.active = true")
+    Optional<TransactionLimit> findByRoleForAllTypes(@Param("tenantId") String tenantId, @Param("role") String role);
 
     /** All limits for a tenant (for admin management UI) */
     List<TransactionLimit> findByTenantIdOrderByRoleAscTransactionTypeAsc(String tenantId);

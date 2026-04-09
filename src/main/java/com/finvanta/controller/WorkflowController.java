@@ -1,6 +1,7 @@
 package com.finvanta.controller;
 
 import com.finvanta.workflow.ApprovalWorkflowService;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
@@ -24,9 +25,7 @@ public class WorkflowController {
     }
 
     @PostMapping("/approve/{id}")
-    public String approve(@PathVariable Long id,
-                           @RequestParam String remarks,
-                           RedirectAttributes redirectAttributes) {
+    public String approve(@PathVariable Long id, @RequestParam String remarks, RedirectAttributes redirectAttributes) {
         try {
             workflowService.approve(id, remarks);
             redirectAttributes.addFlashAttribute("success", "Approved successfully");
@@ -37,9 +36,7 @@ public class WorkflowController {
     }
 
     @PostMapping("/reject/{id}")
-    public String reject(@PathVariable Long id,
-                          @RequestParam String remarks,
-                          RedirectAttributes redirectAttributes) {
+    public String reject(@PathVariable Long id, @RequestParam String remarks, RedirectAttributes redirectAttributes) {
         try {
             workflowService.reject(id, remarks);
             redirectAttributes.addFlashAttribute("success", "Rejected successfully");

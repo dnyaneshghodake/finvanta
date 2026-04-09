@@ -3,14 +3,16 @@ package com.finvanta.accounting;
 import com.finvanta.domain.entity.ProductMaster;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.util.TenantContext;
+
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
 /**
  * CBS Product-Aware GL Code Resolver per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
@@ -53,10 +55,10 @@ public class ProductGLResolver {
      * - Optional.empty() cached for unconfigured products to avoid repeated DB misses
      */
     private final Cache<String, Optional<ProductMaster>> productCache = Caffeine.newBuilder()
-        .expireAfterWrite(15, TimeUnit.MINUTES)
-        .maximumSize(100)
-        .recordStats()
-        .build();
+            .expireAfterWrite(15, TimeUnit.MINUTES)
+            .maximumSize(100)
+            .recordStats()
+            .build();
 
     public ProductGLResolver(ProductMasterRepository productRepository) {
         this.productRepository = productRepository;
@@ -132,18 +134,15 @@ public class ProductGLResolver {
      * Core GL resolution: product-specific → fallback to constant.
      * Uses cached product lookup to avoid DB round-trip on every GL resolution.
      */
-    private String resolveGL(String productType,
-                              java.util.function.Function<ProductMaster, String> glExtractor,
-                              String fallback) {
+    private String resolveGL(
+            String productType, java.util.function.Function<ProductMaster, String> glExtractor, String fallback) {
         if (productType == null) {
             return fallback;
         }
-        return findCached(productType)
-            .map(glExtractor)
-            .orElseGet(() -> {
-                log.debug("Product '{}' not in product_master — using default GL: {}", productType, fallback);
-                return fallback;
-            });
+        return findCached(productType).map(glExtractor).orElseGet(() -> {
+            log.debug("Product '{}' not in product_master — using default GL: {}", productType, fallback);
+            return fallback;
+        });
     }
 
     /**
@@ -154,7 +153,6 @@ public class ProductGLResolver {
     private Optional<ProductMaster> findCached(String productType) {
         String tenantId = TenantContext.getCurrentTenant();
         String cacheKey = tenantId + ":" + productType;
-        return productCache.get(cacheKey, k ->
-            productRepository.findByTenantIdAndProductCode(tenantId, productType));
+        return productCache.get(cacheKey, k -> productRepository.findByTenantIdAndProductCode(tenantId, productType));
     }
 }

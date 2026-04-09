@@ -5,6 +5,12 @@ import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.repository.TransactionLimitRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,11 +23,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -62,8 +63,7 @@ class TransactionLimitServiceTest {
 
     private void setCurrentUser(String username, String role) {
         var auth = new UsernamePasswordAuthenticationToken(
-            username, "password",
-            List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+                username, "password", List.of(new SimpleGrantedAuthority("ROLE_" + role)));
         SecurityContextHolder.getContext().setAuthentication(auth);
     }
 
@@ -76,11 +76,10 @@ class TransactionLimitServiceTest {
         limit.setPerTransactionLimit(new BigDecimal("1000000"));
         limit.setActive(true);
 
-        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT"))
-            .thenReturn(Optional.of(limit));
+        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT")).thenReturn(Optional.of(limit));
 
-        assertDoesNotThrow(() ->
-            limitService.validateTransactionLimit(new BigDecimal("500000"), "REPAYMENT", BUSINESS_DATE));
+        assertDoesNotThrow(
+                () -> limitService.validateTransactionLimit(new BigDecimal("500000"), "REPAYMENT", BUSINESS_DATE));
     }
 
     @Test
@@ -92,11 +91,11 @@ class TransactionLimitServiceTest {
         limit.setPerTransactionLimit(new BigDecimal("1000000"));
         limit.setActive(true);
 
-        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT"))
-            .thenReturn(Optional.of(limit));
+        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT")).thenReturn(Optional.of(limit));
 
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            limitService.validateTransactionLimit(new BigDecimal("1500000"), "REPAYMENT", BUSINESS_DATE));
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> limitService.validateTransactionLimit(new BigDecimal("1500000"), "REPAYMENT", BUSINESS_DATE));
         assertEquals("TRANSACTION_LIMIT_EXCEEDED", ex.getErrorCode());
     }
 
@@ -105,13 +104,11 @@ class TransactionLimitServiceTest {
     void noLimitConfigured_allows() {
         setCurrentUser("maker1", "MAKER");
 
-        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT"))
-            .thenReturn(Optional.empty());
-        when(limitRepository.findByRoleForAllTypes("DEFAULT", "MAKER"))
-            .thenReturn(Optional.empty());
+        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT")).thenReturn(Optional.empty());
+        when(limitRepository.findByRoleForAllTypes("DEFAULT", "MAKER")).thenReturn(Optional.empty());
 
-        assertDoesNotThrow(() ->
-            limitService.validateTransactionLimit(new BigDecimal("99999999"), "REPAYMENT", BUSINESS_DATE));
+        assertDoesNotThrow(
+                () -> limitService.validateTransactionLimit(new BigDecimal("99999999"), "REPAYMENT", BUSINESS_DATE));
     }
 
     @Test
@@ -124,12 +121,12 @@ class TransactionLimitServiceTest {
         allLimit.setActive(true);
 
         when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "PREPAYMENT"))
-            .thenReturn(Optional.empty());
-        when(limitRepository.findByRoleForAllTypes("DEFAULT", "MAKER"))
-            .thenReturn(Optional.of(allLimit));
+                .thenReturn(Optional.empty());
+        when(limitRepository.findByRoleForAllTypes("DEFAULT", "MAKER")).thenReturn(Optional.of(allLimit));
 
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            limitService.validateTransactionLimit(new BigDecimal("2000000"), "PREPAYMENT", BUSINESS_DATE));
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> limitService.validateTransactionLimit(new BigDecimal("2000000"), "PREPAYMENT", BUSINESS_DATE));
         assertEquals("TRANSACTION_LIMIT_EXCEEDED", ex.getErrorCode());
     }
 
@@ -142,11 +139,11 @@ class TransactionLimitServiceTest {
         zeroLimit.setPerTransactionLimit(BigDecimal.ZERO);
         zeroLimit.setActive(true);
 
-        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "WRITE_OFF"))
-            .thenReturn(Optional.of(zeroLimit));
+        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "WRITE_OFF")).thenReturn(Optional.of(zeroLimit));
 
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            limitService.validateTransactionLimit(new BigDecimal("1"), "WRITE_OFF", BUSINESS_DATE));
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> limitService.validateTransactionLimit(new BigDecimal("1"), "WRITE_OFF", BUSINESS_DATE));
         assertEquals("TRANSACTION_LIMIT_EXCEEDED", ex.getErrorCode());
     }
 
@@ -161,10 +158,10 @@ class TransactionLimitServiceTest {
         unlimitedLimit.setActive(true);
 
         when(limitRepository.findByRoleAndType("DEFAULT", "ADMIN", "REPAYMENT"))
-            .thenReturn(Optional.of(unlimitedLimit));
+                .thenReturn(Optional.of(unlimitedLimit));
 
-        assertDoesNotThrow(() ->
-            limitService.validateTransactionLimit(new BigDecimal("999999999"), "REPAYMENT", BUSINESS_DATE));
+        assertDoesNotThrow(
+                () -> limitService.validateTransactionLimit(new BigDecimal("999999999"), "REPAYMENT", BUSINESS_DATE));
     }
 
     @Test
@@ -177,15 +174,15 @@ class TransactionLimitServiceTest {
         limit.setDailyAggregateLimit(new BigDecimal("5000000"));
         limit.setActive(true);
 
-        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT"))
-            .thenReturn(Optional.of(limit));
+        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT")).thenReturn(Optional.of(limit));
         // User already processed ₹45L today
         when(transactionRepository.sumDailyAmountByUser(eq("DEFAULT"), eq("maker1"), eq(BUSINESS_DATE)))
-            .thenReturn(new BigDecimal("4500000"));
+                .thenReturn(new BigDecimal("4500000"));
 
         // This ₹6L transaction would push total to ₹51L, exceeding ₹50L daily limit
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            limitService.validateTransactionLimit(new BigDecimal("600000"), "REPAYMENT", BUSINESS_DATE));
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> limitService.validateTransactionLimit(new BigDecimal("600000"), "REPAYMENT", BUSINESS_DATE));
         assertEquals("DAILY_LIMIT_EXCEEDED", ex.getErrorCode());
     }
 
@@ -199,14 +196,13 @@ class TransactionLimitServiceTest {
         limit.setDailyAggregateLimit(new BigDecimal("5000000"));
         limit.setActive(true);
 
-        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT"))
-            .thenReturn(Optional.of(limit));
+        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT")).thenReturn(Optional.of(limit));
         // User already processed ₹30L today
         when(transactionRepository.sumDailyAmountByUser(eq("DEFAULT"), eq("maker1"), eq(BUSINESS_DATE)))
-            .thenReturn(new BigDecimal("3000000"));
+                .thenReturn(new BigDecimal("3000000"));
 
         // This ₹5L transaction would push total to ₹35L, within ₹50L daily limit
-        assertDoesNotThrow(() ->
-            limitService.validateTransactionLimit(new BigDecimal("500000"), "REPAYMENT", BUSINESS_DATE));
+        assertDoesNotThrow(
+                () -> limitService.validateTransactionLimit(new BigDecimal("500000"), "REPAYMENT", BUSINESS_DATE));
     }
 }

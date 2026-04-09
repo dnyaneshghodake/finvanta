@@ -32,34 +32,53 @@ public interface DepositAccountService {
      * RBI: Current accounts cannot bear interest. Savings rate floor tracked.
      * GL: Initial deposit via TransactionEngine if amount > 0.
      */
-    DepositAccount openAccount(Long customerId, Long branchId, String accountType,
-                                String productCode, BigDecimal initialDeposit,
-                                String nomineeName, String nomineeRelationship);
+    DepositAccount openAccount(
+            Long customerId,
+            Long branchId,
+            String accountType,
+            String productCode,
+            BigDecimal initialDeposit,
+            String nomineeName,
+            String nomineeRelationship);
 
     /**
      * Cash deposit - DR Bank Ops (1100) / CR Customer Deposits (2010/2020).
      * Credits allowed on ACTIVE, DORMANT (reactivates), FROZEN (unless CREDIT_FREEZE).
      * All postings via TransactionEngine 10-step chain.
      */
-    DepositTransaction deposit(String accountNumber, BigDecimal amount, LocalDate businessDate,
-                                String narration, String idempotencyKey, String channel);
+    DepositTransaction deposit(
+            String accountNumber,
+            BigDecimal amount,
+            LocalDate businessDate,
+            String narration,
+            String idempotencyKey,
+            String channel);
 
     /**
      * Cash withdrawal - DR Customer Deposits / CR Bank Ops.
      * Validates: account ACTIVE, not DEBIT_FREEZE/TOTAL_FREEZE, sufficient funds.
      * Available = ledgerBalance - holdAmount - unclearedAmount + odLimit.
      */
-    DepositTransaction withdraw(String accountNumber, BigDecimal amount, LocalDate businessDate,
-                                 String narration, String idempotencyKey, String channel);
+    DepositTransaction withdraw(
+            String accountNumber,
+            BigDecimal amount,
+            LocalDate businessDate,
+            String narration,
+            String idempotencyKey,
+            String channel);
 
     /**
      * Fund transfer between deposit accounts (internal).
      * Atomic: debit source + credit target in single TransactionEngine call.
      * DR source deposit GL / CR target deposit GL.
      */
-    DepositTransaction transfer(String fromAccountNumber, String toAccountNumber,
-                                 BigDecimal amount, LocalDate businessDate,
-                                 String narration, String idempotencyKey);
+    DepositTransaction transfer(
+            String fromAccountNumber,
+            String toAccountNumber,
+            BigDecimal amount,
+            LocalDate businessDate,
+            String narration,
+            String idempotencyKey);
 
     /**
      * Daily interest accrual for savings accounts (EOD Step).

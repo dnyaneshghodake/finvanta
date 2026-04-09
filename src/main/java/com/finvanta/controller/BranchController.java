@@ -6,8 +6,9 @@ import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.util.BusinessException;
-import com.finvanta.util.TenantContext;
 import com.finvanta.util.SecurityUtil;
+import com.finvanta.util.TenantContext;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -28,10 +29,11 @@ public class BranchController {
     private final LoanAccountRepository accountRepository;
     private final AuditService auditService;
 
-    public BranchController(BranchRepository branchRepository,
-                             CustomerRepository customerRepository,
-                             LoanAccountRepository accountRepository,
-                             AuditService auditService) {
+    public BranchController(
+            BranchRepository branchRepository,
+            CustomerRepository customerRepository,
+            LoanAccountRepository accountRepository,
+            AuditService auditService) {
         this.branchRepository = branchRepository;
         this.customerRepository = customerRepository;
         this.accountRepository = accountRepository;
@@ -63,9 +65,14 @@ public class BranchController {
             branch.setCreatedBy(currentUser);
             Branch saved = branchRepository.save(branch);
 
-            auditService.logEvent("Branch", saved.getId(), "CREATE",
-                null, saved.getBranchCode(), "BRANCH",
-                "Branch created: " + saved.getBranchCode() + " — " + saved.getBranchName());
+            auditService.logEvent(
+                    "Branch",
+                    saved.getId(),
+                    "CREATE",
+                    null,
+                    saved.getBranchCode(),
+                    "BRANCH",
+                    "Branch created: " + saved.getBranchCode() + " — " + saved.getBranchName());
 
             redirectAttributes.addFlashAttribute("success", "Branch added: " + branch.getBranchCode());
         } catch (Exception e) {
@@ -78,30 +85,29 @@ public class BranchController {
     @GetMapping("/view/{id}")
     public ModelAndView viewBranch(@PathVariable Long id) {
         String tenantId = TenantContext.getCurrentTenant();
-        Branch branch = branchRepository.findById(id)
-            .filter(b -> b.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException(
-                "BRANCH_NOT_FOUND", "Branch not found: " + id));
+        Branch branch = branchRepository
+                .findById(id)
+                .filter(b -> b.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "Branch not found: " + id));
         ModelAndView mav = new ModelAndView("branch/view");
         mav.addObject("branch", branch);
-        mav.addObject("customers",
-            customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, id));
-        mav.addObject("totalOutstanding",
-            accountRepository.calculateTotalOutstandingByBranch(tenantId, id));
+        mav.addObject("customers", customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, id));
+        mav.addObject("totalOutstanding", accountRepository.calculateTotalOutstandingByBranch(tenantId, id));
 
         // CBS Branch Portfolio: loan accounts at this branch with cross-links
         var branchAccounts = accountRepository.findByTenantIdAndBranchId(tenantId, id);
         mav.addObject("loanAccounts", branchAccounts);
 
         // CBS Branch NPA Summary: count by status for branch-level risk view
-        long npaCount = branchAccounts.stream()
-            .filter(a -> a.getStatus().isNpa()).count();
-        long smaCount = branchAccounts.stream()
-            .filter(a -> a.getStatus().isSma()).count();
+        long npaCount =
+                branchAccounts.stream().filter(a -> a.getStatus().isNpa()).count();
+        long smaCount =
+                branchAccounts.stream().filter(a -> a.getStatus().isSma()).count();
         mav.addObject("npaCount", npaCount);
         mav.addObject("smaCount", smaCount);
-        mav.addObject("activeCount", branchAccounts.stream()
-            .filter(a -> !a.getStatus().isTerminal()).count());
+        mav.addObject(
+                "activeCount",
+                branchAccounts.stream().filter(a -> !a.getStatus().isTerminal()).count());
 
         return mav;
     }
@@ -110,10 +116,10 @@ public class BranchController {
     @GetMapping("/edit/{id}")
     public ModelAndView showEditForm(@PathVariable Long id) {
         String tenantId = TenantContext.getCurrentTenant();
-        Branch branch = branchRepository.findById(id)
-            .filter(b -> b.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException(
-                "BRANCH_NOT_FOUND", "Branch not found: " + id));
+        Branch branch = branchRepository
+                .findById(id)
+                .filter(b -> b.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "Branch not found: " + id));
         ModelAndView mav = new ModelAndView("branch/edit");
         mav.addObject("branch", branch);
         return mav;
@@ -121,16 +127,15 @@ public class BranchController {
 
     @PostMapping("/edit/{id}")
     @Transactional
-    public String updateBranch(@PathVariable Long id,
-                                @ModelAttribute Branch updated,
-                                RedirectAttributes redirectAttributes) {
+    public String updateBranch(
+            @PathVariable Long id, @ModelAttribute Branch updated, RedirectAttributes redirectAttributes) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
         try {
-            Branch existing = branchRepository.findById(id)
-                .filter(b -> b.getTenantId().equals(tenantId))
-                .orElseThrow(() -> new BusinessException(
-                    "BRANCH_NOT_FOUND", "Branch not found: " + id));
+            Branch existing = branchRepository
+                    .findById(id)
+                    .filter(b -> b.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "Branch not found: " + id));
 
             existing.setBranchName(updated.getBranchName());
             existing.setIfscCode(updated.getIfscCode());
@@ -142,12 +147,16 @@ public class BranchController {
             existing.setUpdatedBy(currentUser);
             branchRepository.save(existing);
 
-            auditService.logEvent("Branch", existing.getId(), "UPDATE",
-                null, existing.getBranchCode(), "BRANCH",
-                "Branch updated by " + currentUser);
+            auditService.logEvent(
+                    "Branch",
+                    existing.getId(),
+                    "UPDATE",
+                    null,
+                    existing.getBranchCode(),
+                    "BRANCH",
+                    "Branch updated by " + currentUser);
 
-            redirectAttributes.addFlashAttribute("success",
-                "Branch updated: " + existing.getBranchCode());
+            redirectAttributes.addFlashAttribute("success", "Branch updated: " + existing.getBranchCode());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }

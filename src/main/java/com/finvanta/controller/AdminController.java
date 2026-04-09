@@ -12,6 +12,7 @@ import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
@@ -42,12 +43,13 @@ public class AdminController {
     private final ProductGLResolver glResolver;
     private final AuditService auditService;
 
-    public AdminController(ProductMasterRepository productRepository,
-                            TransactionLimitRepository limitRepository,
-                            ChargeConfigRepository chargeConfigRepository,
-                            GLMasterRepository glMasterRepository,
-                            ProductGLResolver glResolver,
-                            AuditService auditService) {
+    public AdminController(
+            ProductMasterRepository productRepository,
+            TransactionLimitRepository limitRepository,
+            ChargeConfigRepository chargeConfigRepository,
+            GLMasterRepository glMasterRepository,
+            ProductGLResolver glResolver,
+            AuditService auditService) {
         this.productRepository = productRepository;
         this.limitRepository = limitRepository;
         this.chargeConfigRepository = chargeConfigRepository;
@@ -73,10 +75,10 @@ public class AdminController {
     @GetMapping("/products/{id}")
     public ModelAndView viewProduct(@PathVariable Long id) {
         String tenantId = TenantContext.getCurrentTenant();
-        var product = productRepository.findById(id)
-            .filter(p -> p.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException("PRODUCT_NOT_FOUND",
-                "Product not found: " + id));
+        var product = productRepository
+                .findById(id)
+                .filter(p -> p.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new BusinessException("PRODUCT_NOT_FOUND", "Product not found: " + id));
         ModelAndView mav = new ModelAndView("admin/product-detail");
         mav.addObject("product", product);
         return mav;
@@ -97,34 +99,37 @@ public class AdminController {
      * Per CBS standards: every product must have complete GL mapping before activation.
      */
     @PostMapping("/products/create")
-    public String createProduct(@RequestParam String productCode,
-                                 @RequestParam String productName,
-                                 @RequestParam String productCategory,
-                                 @RequestParam(required = false) String description,
-                                 @RequestParam(defaultValue = "ACTUAL_365") String interestMethod,
-                                 @RequestParam(defaultValue = "FIXED") String interestType,
-                                 @RequestParam BigDecimal minInterestRate,
-                                 @RequestParam BigDecimal maxInterestRate,
-                                 @RequestParam(defaultValue = "2.0000") BigDecimal defaultPenalRate,
-                                 @RequestParam BigDecimal minLoanAmount,
-                                 @RequestParam BigDecimal maxLoanAmount,
-                                 @RequestParam int minTenureMonths,
-                                 @RequestParam int maxTenureMonths,
-                                 @RequestParam(defaultValue = "MONTHLY") String repaymentFrequency,
-                                 @RequestParam String glLoanAsset,
-                                 @RequestParam String glInterestReceivable,
-                                 @RequestParam String glBankOperations,
-                                 @RequestParam String glInterestIncome,
-                                 @RequestParam String glFeeIncome,
-                                 @RequestParam String glPenalIncome,
-                                 @RequestParam String glProvisionExpense,
-                                 @RequestParam String glProvisionNpa,
-                                 @RequestParam String glWriteOffExpense,
-                                 @RequestParam String glInterestSuspense,
-                                 RedirectAttributes redirectAttributes) {
+    public String createProduct(
+            @RequestParam String productCode,
+            @RequestParam String productName,
+            @RequestParam String productCategory,
+            @RequestParam(required = false) String description,
+            @RequestParam(defaultValue = "ACTUAL_365") String interestMethod,
+            @RequestParam(defaultValue = "FIXED") String interestType,
+            @RequestParam BigDecimal minInterestRate,
+            @RequestParam BigDecimal maxInterestRate,
+            @RequestParam(defaultValue = "2.0000") BigDecimal defaultPenalRate,
+            @RequestParam BigDecimal minLoanAmount,
+            @RequestParam BigDecimal maxLoanAmount,
+            @RequestParam int minTenureMonths,
+            @RequestParam int maxTenureMonths,
+            @RequestParam(defaultValue = "MONTHLY") String repaymentFrequency,
+            @RequestParam String glLoanAsset,
+            @RequestParam String glInterestReceivable,
+            @RequestParam String glBankOperations,
+            @RequestParam String glInterestIncome,
+            @RequestParam String glFeeIncome,
+            @RequestParam String glPenalIncome,
+            @RequestParam String glProvisionExpense,
+            @RequestParam String glProvisionNpa,
+            @RequestParam String glWriteOffExpense,
+            @RequestParam String glInterestSuspense,
+            RedirectAttributes redirectAttributes) {
         String tenantId = TenantContext.getCurrentTenant();
         try {
-            if (productRepository.findByTenantIdAndProductCode(tenantId, productCode).isPresent()) {
+            if (productRepository
+                    .findByTenantIdAndProductCode(tenantId, productCode)
+                    .isPresent()) {
                 throw new BusinessException("DUPLICATE_PRODUCT", "Product code already exists: " + productCode);
             }
 
@@ -163,10 +168,15 @@ public class AdminController {
             // Evict GL cache so new product's GL codes are loaded
             glResolver.evictCache();
 
-            auditService.logEvent("ProductMaster", saved.getId(), "PRODUCT_CREATED",
-                null, productCode, "PRODUCT_MASTER",
-                "Product created: " + productCode + " — " + productName
-                    + " | Category: " + productCategory + " | By: " + SecurityUtil.getCurrentUsername());
+            auditService.logEvent(
+                    "ProductMaster",
+                    saved.getId(),
+                    "PRODUCT_CREATED",
+                    null,
+                    productCode,
+                    "PRODUCT_MASTER",
+                    "Product created: " + productCode + " — " + productName + " | Category: " + productCategory
+                            + " | By: " + SecurityUtil.getCurrentUsername());
 
             redirectAttributes.addFlashAttribute("success", "Product created: " + productCode);
         } catch (Exception e) {
@@ -184,8 +194,8 @@ public class AdminController {
     @PostMapping("/products/evict-cache")
     public String evictProductCache(RedirectAttributes redirectAttributes) {
         glResolver.evictCache();
-        redirectAttributes.addFlashAttribute("success",
-            "Product GL cache evicted. New GL codes will be loaded on next transaction.");
+        redirectAttributes.addFlashAttribute(
+                "success", "Product GL cache evicted. New GL codes will be loaded on next transaction.");
         return "redirect:/admin/products";
     }
 
@@ -198,8 +208,7 @@ public class AdminController {
     public ModelAndView listLimits() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("admin/limits");
-        mav.addObject("limits",
-            limitRepository.findByTenantIdOrderByRoleAscTransactionTypeAsc(tenantId));
+        mav.addObject("limits", limitRepository.findByTenantIdOrderByRoleAscTransactionTypeAsc(tenantId));
         return mav;
     }
 
@@ -212,8 +221,7 @@ public class AdminController {
     public ModelAndView listCharges() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("admin/charges");
-        mav.addObject("charges",
-            chargeConfigRepository.findByTenantIdAndIsActiveTrueOrderByEventTriggerAsc(tenantId));
+        mav.addObject("charges", chargeConfigRepository.findByTenantIdAndIsActiveTrueOrderByEventTriggerAsc(tenantId));
         return mav;
     }
 }

@@ -4,15 +4,14 @@ import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.enums.GLAccountType;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.util.TenantContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
 /**
  * CBS Financial Statement Generation Service per RBI/Ind AS standards.
@@ -63,12 +62,10 @@ public class FinancialStatementService {
         List<GLLineItem> liabilities = buildSection(tenantId, GLAccountType.LIABILITY, false);
         List<GLLineItem> equity = buildSection(tenantId, GLAccountType.EQUITY, false);
 
-        BigDecimal totalAssets = assets.stream()
-            .map(GLLineItem::balance).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalLiabilities = liabilities.stream()
-            .map(GLLineItem::balance).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalEquity = equity.stream()
-            .map(GLLineItem::balance).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalAssets = assets.stream().map(GLLineItem::balance).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalLiabilities =
+                liabilities.stream().map(GLLineItem::balance).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalEquity = equity.stream().map(GLLineItem::balance).reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // Retained earnings = Income - Expenses (current period P&L not yet closed)
         BigDecimal retainedEarnings = calculateRetainedEarnings(tenantId);
@@ -77,14 +74,24 @@ public class FinancialStatementService {
 
         boolean isBalanced = totalAssets.compareTo(totalLiabilitiesAndEquity) == 0;
 
-        log.info("Balance Sheet generated: assets={}, liabilities={}, equity={}, retained={}, balanced={}",
-            totalAssets, totalLiabilities, totalEquity, retainedEarnings, isBalanced);
+        log.info(
+                "Balance Sheet generated: assets={}, liabilities={}, equity={}, retained={}, balanced={}",
+                totalAssets,
+                totalLiabilities,
+                totalEquity,
+                retainedEarnings,
+                isBalanced);
 
         return new BalanceSheet(
-            assets, liabilities, equity,
-            totalAssets, totalLiabilities, totalEquity,
-            retainedEarnings, totalLiabilitiesAndEquity, isBalanced
-        );
+                assets,
+                liabilities,
+                equity,
+                totalAssets,
+                totalLiabilities,
+                totalEquity,
+                retainedEarnings,
+                totalLiabilitiesAndEquity,
+                isBalanced);
     }
 
     /**
@@ -98,14 +105,11 @@ public class FinancialStatementService {
         List<GLLineItem> income = buildSection(tenantId, GLAccountType.INCOME, false);
         List<GLLineItem> expenses = buildSection(tenantId, GLAccountType.EXPENSE, true);
 
-        BigDecimal totalIncome = income.stream()
-            .map(GLLineItem::balance).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalExpenses = expenses.stream()
-            .map(GLLineItem::balance).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalIncome = income.stream().map(GLLineItem::balance).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalExpenses = expenses.stream().map(GLLineItem::balance).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal netProfit = totalIncome.subtract(totalExpenses);
 
-        log.info("P&L generated: income={}, expenses={}, netProfit={}",
-            totalIncome, totalExpenses, netProfit);
+        log.info("P&L generated: income={}, expenses={}, netProfit={}", totalIncome, totalExpenses, netProfit);
 
         return new ProfitAndLoss(income, expenses, totalIncome, totalExpenses, netProfit);
     }
@@ -125,17 +129,24 @@ public class FinancialStatementService {
 
         for (GLMaster gl : accounts) {
             lines.add(new TrialBalanceLine(
-                gl.getGlCode(), gl.getGlName(), gl.getAccountType().name(),
-                gl.getDebitBalance(), gl.getCreditBalance(), gl.getNetBalance()
-            ));
+                    gl.getGlCode(),
+                    gl.getGlName(),
+                    gl.getAccountType().name(),
+                    gl.getDebitBalance(),
+                    gl.getCreditBalance(),
+                    gl.getNetBalance()));
             totalDebit = totalDebit.add(gl.getDebitBalance());
             totalCredit = totalCredit.add(gl.getCreditBalance());
         }
 
         boolean isBalanced = totalDebit.compareTo(totalCredit) == 0;
 
-        log.info("Trial Balance: accounts={}, debit={}, credit={}, balanced={}",
-            lines.size(), totalDebit, totalCredit, isBalanced);
+        log.info(
+                "Trial Balance: accounts={}, debit={}, credit={}, balanced={}",
+                lines.size(),
+                totalDebit,
+                totalCredit,
+                isBalanced);
 
         return new TrialBalance(lines, totalDebit, totalCredit, isBalanced);
     }
@@ -156,8 +167,8 @@ public class FinancialStatementService {
 
         for (GLMaster gl : accounts) {
             BigDecimal balance = debitNormal
-                ? gl.getDebitBalance().subtract(gl.getCreditBalance())
-                : gl.getCreditBalance().subtract(gl.getDebitBalance());
+                    ? gl.getDebitBalance().subtract(gl.getCreditBalance())
+                    : gl.getCreditBalance().subtract(gl.getDebitBalance());
 
             // Only include accounts with non-zero balance
             if (balance.signum() != 0) {
@@ -177,12 +188,12 @@ public class FinancialStatementService {
         List<GLMaster> expenseAccounts = glMasterRepository.findPostableByType(tenantId, GLAccountType.EXPENSE);
 
         BigDecimal totalIncome = incomeAccounts.stream()
-            .map(gl -> gl.getCreditBalance().subtract(gl.getDebitBalance()))
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .map(gl -> gl.getCreditBalance().subtract(gl.getDebitBalance()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal totalExpenses = expenseAccounts.stream()
-            .map(gl -> gl.getDebitBalance().subtract(gl.getCreditBalance()))
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .map(gl -> gl.getDebitBalance().subtract(gl.getCreditBalance()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return totalIncome.subtract(totalExpenses);
     }
@@ -192,34 +203,31 @@ public class FinancialStatementService {
     public record GLLineItem(String glCode, String glName, BigDecimal balance) {}
 
     public record BalanceSheet(
-        List<GLLineItem> assets,
-        List<GLLineItem> liabilities,
-        List<GLLineItem> equity,
-        BigDecimal totalAssets,
-        BigDecimal totalLiabilities,
-        BigDecimal totalEquity,
-        BigDecimal retainedEarnings,
-        BigDecimal totalLiabilitiesAndEquity,
-        boolean isBalanced
-    ) {}
+            List<GLLineItem> assets,
+            List<GLLineItem> liabilities,
+            List<GLLineItem> equity,
+            BigDecimal totalAssets,
+            BigDecimal totalLiabilities,
+            BigDecimal totalEquity,
+            BigDecimal retainedEarnings,
+            BigDecimal totalLiabilitiesAndEquity,
+            boolean isBalanced) {}
 
     public record ProfitAndLoss(
-        List<GLLineItem> income,
-        List<GLLineItem> expenses,
-        BigDecimal totalIncome,
-        BigDecimal totalExpenses,
-        BigDecimal netProfit
-    ) {}
+            List<GLLineItem> income,
+            List<GLLineItem> expenses,
+            BigDecimal totalIncome,
+            BigDecimal totalExpenses,
+            BigDecimal netProfit) {}
 
     public record TrialBalanceLine(
-        String glCode, String glName, String accountType,
-        BigDecimal debitBalance, BigDecimal creditBalance, BigDecimal netBalance
-    ) {}
+            String glCode,
+            String glName,
+            String accountType,
+            BigDecimal debitBalance,
+            BigDecimal creditBalance,
+            BigDecimal netBalance) {}
 
     public record TrialBalance(
-        List<TrialBalanceLine> lines,
-        BigDecimal totalDebit,
-        BigDecimal totalCredit,
-        boolean isBalanced
-    ) {}
+            List<TrialBalanceLine> lines, BigDecimal totalDebit, BigDecimal totalCredit, boolean isBalanced) {}
 }

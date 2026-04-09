@@ -2,14 +2,15 @@ package com.finvanta.config;
 
 import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.service.BusinessDateService;
+
+import java.time.format.DateTimeFormatter;
+
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.ui.Model;
-
-import java.time.format.DateTimeFormatter;
 
 /**
  * Populates model attributes required by the layout (topbar) on every page.
@@ -44,10 +45,10 @@ public class CommonModelAdvice {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
             String role = auth.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .findFirst()
-                .map(r -> r.replace("ROLE_", ""))
-                .orElse("USER");
+                    .map(GrantedAuthority::getAuthority)
+                    .findFirst()
+                    .map(r -> r.replace("ROLE_", ""))
+                    .orElse("USER");
             model.addAttribute("userRole", role);
         }
     }

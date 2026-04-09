@@ -5,14 +5,15 @@ import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
-import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.repository.LoanAccountRepository;
+import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.PiiMaskingUtil;
 import com.finvanta.util.ReferenceGenerator;
-import com.finvanta.util.TenantContext;
 import com.finvanta.util.SecurityUtil;
+import com.finvanta.util.TenantContext;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -35,12 +36,13 @@ public class CustomerController {
     private final AuditService auditService;
     private final BusinessDateService businessDateService;
 
-    public CustomerController(CustomerRepository customerRepository,
-                               BranchRepository branchRepository,
-                               LoanApplicationRepository applicationRepository,
-                               LoanAccountRepository accountRepository,
-                               AuditService auditService,
-                               BusinessDateService businessDateService) {
+    public CustomerController(
+            CustomerRepository customerRepository,
+            BranchRepository branchRepository,
+            LoanApplicationRepository applicationRepository,
+            LoanAccountRepository accountRepository,
+            AuditService auditService,
+            BusinessDateService businessDateService) {
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.applicationRepository = applicationRepository;
@@ -64,8 +66,8 @@ public class CustomerController {
         } else {
             Long branchId = SecurityUtil.getCurrentUserBranchId();
             if (branchId != null) {
-                mav.addObject("customers",
-                    customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, branchId));
+                mav.addObject(
+                        "customers", customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, branchId));
             } else {
                 // CBS: No branch assigned — show empty list per fail-safe principle.
                 // Per RBI Operational Risk: no-branch users must not see all data.
@@ -95,8 +97,8 @@ public class CustomerController {
             } else {
                 Long branchId = SecurityUtil.getCurrentUserBranchId();
                 if (branchId != null) {
-                    mav.addObject("customers",
-                        customerRepository.searchCustomersByBranch(tenantId, branchId, q.trim()));
+                    mav.addObject(
+                            "customers", customerRepository.searchCustomersByBranch(tenantId, branchId, q.trim()));
                 } else {
                     mav.addObject("customers", java.util.Collections.emptyList());
                 }
@@ -109,8 +111,8 @@ public class CustomerController {
             } else {
                 Long branchId = SecurityUtil.getCurrentUserBranchId();
                 if (branchId != null) {
-                    mav.addObject("customers",
-                        customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, branchId));
+                    mav.addObject(
+                            "customers", customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, branchId));
                 } else {
                     mav.addObject("customers", java.util.Collections.emptyList());
                 }
@@ -134,30 +136,32 @@ public class CustomerController {
      */
     @PostMapping("/add")
     @Transactional
-    public String addCustomer(@ModelAttribute Customer customer,
-                               @RequestParam Long branchId,
-                               RedirectAttributes redirectAttributes) {
+    public String addCustomer(
+            @ModelAttribute Customer customer, @RequestParam Long branchId, RedirectAttributes redirectAttributes) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
         try {
-            Branch branch = branchRepository.findById(branchId)
-                .filter(b -> b.getTenantId().equals(tenantId))
-                .orElseThrow(() -> new BusinessException(
-                    "BRANCH_NOT_FOUND", "Branch not found: " + branchId));
+            Branch branch = branchRepository
+                    .findById(branchId)
+                    .filter(b -> b.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "Branch not found: " + branchId));
 
             // P1 Gap 5.2: Duplicate CIF detection per RBI KYC norms.
             // Per RBI: one PAN = one CIF. Duplicate CIFs cause exposure miscalculation.
             if (customer.getPanNumber() != null && !customer.getPanNumber().isBlank()) {
                 if (customerRepository.existsByTenantIdAndPanNumber(tenantId, customer.getPanNumber())) {
-                    throw new BusinessException("DUPLICATE_PAN",
-                        "Customer with PAN " + customer.getPanNumber() + " already exists. "
-                            + "Per RBI KYC norms, one PAN = one CIF.");
+                    throw new BusinessException(
+                            "DUPLICATE_PAN",
+                            "Customer with PAN " + customer.getPanNumber() + " already exists. "
+                                    + "Per RBI KYC norms, one PAN = one CIF.");
                 }
             }
-            if (customer.getAadhaarNumber() != null && !customer.getAadhaarNumber().isBlank()) {
+            if (customer.getAadhaarNumber() != null
+                    && !customer.getAadhaarNumber().isBlank()) {
                 if (customerRepository.existsByTenantIdAndAadhaarNumber(tenantId, customer.getAadhaarNumber())) {
-                    throw new BusinessException("DUPLICATE_AADHAAR",
-                        "Customer with Aadhaar already exists. Duplicate CIFs are prohibited per RBI KYC.");
+                    throw new BusinessException(
+                            "DUPLICATE_AADHAAR",
+                            "Customer with Aadhaar already exists. Duplicate CIFs are prohibited per RBI KYC.");
                 }
             }
 
@@ -181,12 +185,17 @@ public class CustomerController {
 
             Customer saved = customerRepository.save(customer);
 
-            auditService.logEvent("Customer", saved.getId(), "CREATE",
-                null, saved.getCustomerNumber(), "CIF",
-                "Customer created: " + saved.getFullName() + " at branch " + branch.getBranchCode());
+            auditService.logEvent(
+                    "Customer",
+                    saved.getId(),
+                    "CREATE",
+                    null,
+                    saved.getCustomerNumber(),
+                    "CIF",
+                    "Customer created: " + saved.getFullName() + " at branch " + branch.getBranchCode());
 
-            redirectAttributes.addFlashAttribute("success",
-                "Customer created: " + saved.getCustomerNumber() + " - " + saved.getFullName());
+            redirectAttributes.addFlashAttribute(
+                    "success", "Customer created: " + saved.getCustomerNumber() + " - " + saved.getFullName());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -197,20 +206,18 @@ public class CustomerController {
     public ModelAndView viewCustomer(@PathVariable Long id) {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("customer/view");
-        Customer customer = customerRepository.findById(id)
-            .filter(c -> c.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException(
-                "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
+        Customer customer = customerRepository
+                .findById(id)
+                .filter(c -> c.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND", "Customer not found: " + id));
         mav.addObject("customer", customer);
         // CBS: PII masking per RBI IT Governance Direction 2023 / UIDAI Aadhaar Act 2016.
         // Full PII is never exposed in UI — only masked values (last 4 digits visible).
         mav.addObject("maskedPan", PiiMaskingUtil.maskPan(customer.getPanNumber()));
         mav.addObject("maskedAadhaar", PiiMaskingUtil.maskAadhaar(customer.getAadhaarNumber()));
         mav.addObject("maskedMobile", PiiMaskingUtil.maskMobile(customer.getMobileNumber()));
-        mav.addObject("loanApplications",
-            applicationRepository.findByTenantIdAndCustomerId(tenantId, id));
-        mav.addObject("loanAccounts",
-            accountRepository.findByTenantIdAndCustomerId(tenantId, id));
+        mav.addObject("loanApplications", applicationRepository.findByTenantIdAndCustomerId(tenantId, id));
+        mav.addObject("loanAccounts", accountRepository.findByTenantIdAndCustomerId(tenantId, id));
         return mav;
     }
 
@@ -218,10 +225,10 @@ public class CustomerController {
     @GetMapping("/edit/{id}")
     public ModelAndView showEditForm(@PathVariable Long id) {
         String tenantId = TenantContext.getCurrentTenant();
-        Customer customer = customerRepository.findById(id)
-            .filter(c -> c.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException(
-                "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
+        Customer customer = customerRepository
+                .findById(id)
+                .filter(c -> c.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND", "Customer not found: " + id));
         ModelAndView mav = new ModelAndView("customer/edit");
         mav.addObject("customer", customer);
         // CBS: PII masking for immutable disabled fields in edit form
@@ -237,22 +244,23 @@ public class CustomerController {
      */
     @PostMapping("/edit/{id}")
     @Transactional
-    public String updateCustomer(@PathVariable Long id,
-                                  @ModelAttribute Customer updated,
-                                  @RequestParam Long branchId,
-                                  RedirectAttributes redirectAttributes) {
+    public String updateCustomer(
+            @PathVariable Long id,
+            @ModelAttribute Customer updated,
+            @RequestParam Long branchId,
+            RedirectAttributes redirectAttributes) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
         try {
-            Customer existing = customerRepository.findById(id)
-                .filter(c -> c.getTenantId().equals(tenantId))
-                .orElseThrow(() -> new BusinessException(
-                    "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
+            Customer existing = customerRepository
+                    .findById(id)
+                    .filter(c -> c.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND", "Customer not found: " + id));
 
-            Branch branch = branchRepository.findById(branchId)
-                .filter(b -> b.getTenantId().equals(tenantId))
-                .orElseThrow(() -> new BusinessException(
-                    "BRANCH_NOT_FOUND", "Branch not found: " + branchId));
+            Branch branch = branchRepository
+                    .findById(branchId)
+                    .filter(b -> b.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "Branch not found: " + branchId));
 
             String beforeState = existing.getFullName() + "|" + existing.getMobileNumber();
 
@@ -286,12 +294,16 @@ public class CustomerController {
             existing.setUpdatedBy(currentUser);
             customerRepository.save(existing);
 
-            auditService.logEvent("Customer", existing.getId(), "UPDATE",
-                beforeState, existing.getFullName() + "|" + existing.getMobileNumber(), "CIF",
-                "Customer updated by " + currentUser);
+            auditService.logEvent(
+                    "Customer",
+                    existing.getId(),
+                    "UPDATE",
+                    beforeState,
+                    existing.getFullName() + "|" + existing.getMobileNumber(),
+                    "CIF",
+                    "Customer updated by " + currentUser);
 
-            redirectAttributes.addFlashAttribute("success",
-                "Customer updated: " + existing.getCustomerNumber());
+            redirectAttributes.addFlashAttribute("success", "Customer updated: " + existing.getCustomerNumber());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -305,10 +317,10 @@ public class CustomerController {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
         try {
-            Customer customer = customerRepository.findById(id)
-                .filter(c -> c.getTenantId().equals(tenantId))
-                .orElseThrow(() -> new BusinessException(
-                    "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
+            Customer customer = customerRepository
+                    .findById(id)
+                    .filter(c -> c.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND", "Customer not found: " + id));
 
             customer.setKycVerified(true);
             customer.setKycVerifiedDate(businessDateService.getCurrentBusinessDate());
@@ -323,14 +335,19 @@ public class CustomerController {
             customer.setUpdatedBy(currentUser);
             customerRepository.save(customer);
 
-            auditService.logEvent("Customer", customer.getId(), "KYC_VERIFY",
-                "KYC_PENDING", "KYC_VERIFIED", "CIF",
-                "KYC verified by " + currentUser
-                    + " | Risk: " + customer.getKycRiskCategory()
-                    + " | Expiry: " + customer.getKycExpiryDate());
+            auditService.logEvent(
+                    "Customer",
+                    customer.getId(),
+                    "KYC_VERIFY",
+                    "KYC_PENDING",
+                    "KYC_VERIFIED",
+                    "CIF",
+                    "KYC verified by " + currentUser
+                            + " | Risk: " + customer.getKycRiskCategory()
+                            + " | Expiry: " + customer.getKycExpiryDate());
 
-            redirectAttributes.addFlashAttribute("success",
-                "KYC verified for customer: " + customer.getCustomerNumber());
+            redirectAttributes.addFlashAttribute(
+                    "success", "KYC verified for customer: " + customer.getCustomerNumber());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -347,28 +364,34 @@ public class CustomerController {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
         try {
-            Customer customer = customerRepository.findById(id)
-                .filter(c -> c.getTenantId().equals(tenantId))
-                .orElseThrow(() -> new BusinessException(
-                    "CUSTOMER_NOT_FOUND", "Customer not found: " + id));
+            Customer customer = customerRepository
+                    .findById(id)
+                    .filter(c -> c.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND", "Customer not found: " + id));
 
-            long activeAccounts = accountRepository.findByTenantIdAndCustomerId(tenantId, id)
-                .stream().filter(a -> !a.getStatus().isTerminal()).count();
+            long activeAccounts = accountRepository.findByTenantIdAndCustomerId(tenantId, id).stream()
+                    .filter(a -> !a.getStatus().isTerminal())
+                    .count();
             if (activeAccounts > 0) {
-                throw new BusinessException("CUSTOMER_HAS_ACTIVE_ACCOUNTS",
-                    "Cannot deactivate customer with " + activeAccounts + " active loan account(s)");
+                throw new BusinessException(
+                        "CUSTOMER_HAS_ACTIVE_ACCOUNTS",
+                        "Cannot deactivate customer with " + activeAccounts + " active loan account(s)");
             }
 
             customer.setActive(false);
             customer.setUpdatedBy(currentUser);
             customerRepository.save(customer);
 
-            auditService.logEvent("Customer", customer.getId(), "DEACTIVATE",
-                "ACTIVE", "INACTIVE", "CIF",
-                "Customer deactivated by " + currentUser);
+            auditService.logEvent(
+                    "Customer",
+                    customer.getId(),
+                    "DEACTIVATE",
+                    "ACTIVE",
+                    "INACTIVE",
+                    "CIF",
+                    "Customer deactivated by " + currentUser);
 
-            redirectAttributes.addFlashAttribute("success",
-                "Customer deactivated: " + customer.getCustomerNumber());
+            redirectAttributes.addFlashAttribute("success", "Customer deactivated: " + customer.getCustomerNumber());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }

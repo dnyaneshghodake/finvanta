@@ -8,13 +8,14 @@ import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 import com.finvanta.workflow.ApprovalWorkflowService;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
 
 /**
  * CBS Loan Restructuring Service per RBI CDR/SDR Framework.
@@ -46,11 +47,12 @@ public class LoanRestructuringService {
     private final com.finvanta.domain.rules.InterestCalculationRule interestRule;
     private final ApprovalWorkflowService workflowService;
 
-    public LoanRestructuringService(LoanAccountRepository accountRepository,
-                                     LoanScheduleService scheduleService,
-                                     AuditService auditService,
-                                     com.finvanta.domain.rules.InterestCalculationRule interestRule,
-                                     ApprovalWorkflowService workflowService) {
+    public LoanRestructuringService(
+            LoanAccountRepository accountRepository,
+            LoanScheduleService scheduleService,
+            AuditService auditService,
+            com.finvanta.domain.rules.InterestCalculationRule interestRule,
+            ApprovalWorkflowService workflowService) {
         this.accountRepository = accountRepository;
         this.scheduleService = scheduleService;
         this.auditService = auditService;
@@ -69,47 +71,40 @@ public class LoanRestructuringService {
      * @return The restructured account
      */
     @Transactional
-    public LoanAccount restructureLoan(String accountNumber,
-                                        BigDecimal newRate,
-                                        int additionalMonths,
-                                        String reason,
-                                        LocalDate businessDate) {
+    public LoanAccount restructureLoan(
+            String accountNumber, BigDecimal newRate, int additionalMonths, String reason, LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
         if (reason == null || reason.isBlank()) {
-            throw new BusinessException("RESTRUCTURE_REASON_REQUIRED",
-                "Restructuring reason is mandatory per RBI CDR norms");
+            throw new BusinessException(
+                    "RESTRUCTURE_REASON_REQUIRED", "Restructuring reason is mandatory per RBI CDR norms");
         }
 
         if (newRate == null && additionalMonths <= 0) {
-            throw new BusinessException("RESTRUCTURE_NO_CHANGE",
-                "At least one term must be modified (rate or tenure)");
+            throw new BusinessException("RESTRUCTURE_NO_CHANGE", "At least one term must be modified (rate or tenure)");
         }
 
         LoanAccount account = accountRepository
-            .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
-            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
-                "Loan account not found: " + accountNumber));
+                .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
+                .orElseThrow(
+                        () -> new BusinessException("ACCOUNT_NOT_FOUND", "Loan account not found: " + accountNumber));
 
         if (account.getStatus().isTerminal()) {
-            throw new BusinessException("ACCOUNT_TERMINAL",
-                "Cannot restructure " + account.getStatus() + " account");
+            throw new BusinessException("ACCOUNT_TERMINAL", "Cannot restructure " + account.getStatus() + " account");
         }
 
         // Capture before state for audit
         BigDecimal oldRate = account.getInterestRate();
         int oldTenure = account.getTenureMonths();
-        int oldRemaining = account.getRemainingTenure() != null
-            ? account.getRemainingTenure() : 0;
+        int oldRemaining = account.getRemainingTenure() != null ? account.getRemainingTenure() : 0;
         LoanStatus oldStatus = account.getStatus();
 
         // Apply rate change
         if (newRate != null) {
-            if (newRate.compareTo(BigDecimal.ZERO) <= 0
-                    || newRate.compareTo(new BigDecimal("50")) > 0) {
-                throw new BusinessException("INVALID_RATE",
-                    "Interest rate must be between 0 and 50%. Provided: " + newRate);
+            if (newRate.compareTo(BigDecimal.ZERO) <= 0 || newRate.compareTo(new BigDecimal("50")) > 0) {
+                throw new BusinessException(
+                        "INVALID_RATE", "Interest rate must be between 0 and 50%. Provided: " + newRate);
             }
             account.setInterestRate(newRate);
         }
@@ -117,9 +112,9 @@ public class LoanRestructuringService {
         // Apply tenure extension
         if (additionalMonths > 0) {
             if (additionalMonths > 120) {
-                throw new BusinessException("INVALID_TENURE_EXTENSION",
-                    "Tenure extension cannot exceed 120 months. Provided: "
-                        + additionalMonths);
+                throw new BusinessException(
+                        "INVALID_TENURE_EXTENSION",
+                        "Tenure extension cannot exceed 120 months. Provided: " + additionalMonths);
             }
             int newTotalTenure = account.getTenureMonths() + additionalMonths;
             int newRemaining = oldRemaining + additionalMonths;
@@ -127,17 +122,15 @@ public class LoanRestructuringService {
             account.setRemainingTenure(newRemaining);
 
             if (account.getMaturityDate() != null) {
-                account.setMaturityDate(
-                    account.getMaturityDate().plusMonths(additionalMonths));
+                account.setMaturityDate(account.getMaturityDate().plusMonths(additionalMonths));
             }
         }
 
         // Recalculate EMI based on new terms
         BigDecimal newEmi = interestRule.calculateEmi(
-            account.getOutstandingPrincipal(),
-            account.getInterestRate(),
-            account.getRemainingTenure() != null ? account.getRemainingTenure() : 1
-        );
+                account.getOutstandingPrincipal(),
+                account.getInterestRate(),
+                account.getRemainingTenure() != null ? account.getRemainingTenure() : 1);
         account.setEmiAmount(newEmi);
 
         // CBS: Regenerate amortization schedule from restructuring date.
@@ -148,14 +141,12 @@ public class LoanRestructuringService {
         // DPD miscalculation and incorrect overdue marking during EOD.
         try {
             scheduleService.regenerateSchedule(account, businessDate);
-            log.info("Schedule regenerated after restructuring: accNo={}, newEmi={}",
-                accountNumber, newEmi);
+            log.info("Schedule regenerated after restructuring: accNo={}, newEmi={}", accountNumber, newEmi);
         } catch (Exception e) {
             // Schedule regeneration failure should not block restructuring.
             // The restructured terms (rate, tenure, EMI) are already saved on the account.
             // Schedule can be regenerated manually via admin action.
-            log.warn("Schedule regeneration failed after restructuring for {}: {}",
-                accountNumber, e.getMessage());
+            log.warn("Schedule regeneration failed after restructuring for {}: {}", accountNumber, e.getMessage());
         }
 
         // Mark as RESTRUCTURED per RBI CDR (unless already NPA)
@@ -171,15 +162,20 @@ public class LoanRestructuringService {
 
         // Audit trail with before/after
         String auditDesc = "Loan restructured: reason=" + reason
-            + " | Rate: " + oldRate + " -> " + account.getInterestRate()
-            + " | Tenure: " + oldTenure + " -> " + account.getTenureMonths()
-            + " | Remaining: " + oldRemaining + " -> " + account.getRemainingTenure()
-            + " | EMI: " + newEmi
-            + " | Status: " + oldStatus + " -> " + account.getStatus();
+                + " | Rate: " + oldRate + " -> " + account.getInterestRate()
+                + " | Tenure: " + oldTenure + " -> " + account.getTenureMonths()
+                + " | Remaining: " + oldRemaining + " -> " + account.getRemainingTenure()
+                + " | EMI: " + newEmi
+                + " | Status: " + oldStatus + " -> " + account.getStatus();
 
-        auditService.logEvent("LoanAccount", account.getId(), "RESTRUCTURE",
-            oldStatus.name(), account.getStatus().name(), "LOAN_RESTRUCTURING",
-            auditDesc);
+        auditService.logEvent(
+                "LoanAccount",
+                account.getId(),
+                "RESTRUCTURE",
+                oldStatus.name(),
+                account.getStatus().name(),
+                "LOAN_RESTRUCTURING",
+                auditDesc);
 
         // CBS: Initiate maker-checker approval workflow for restructuring.
         // Per RBI CDR Framework and Finacle APPR_MASTER: restructuring requires
@@ -189,23 +185,30 @@ public class LoanRestructuringService {
         // state that defers term application until checker approval.
         try {
             String payload = "RESTRUCTURE|" + accountNumber
-                + "|rate=" + oldRate + "->" + account.getInterestRate()
-                + "|tenure=" + oldTenure + "->" + account.getTenureMonths()
-                + "|emi=" + newEmi + "|reason=" + reason;
-            workflowService.initiateApproval("LoanAccount", account.getId(),
-                "LOAN_RESTRUCTURING", "Loan restructuring: " + accountNumber, payload);
-            log.info("Restructuring maker-checker initiated: accNo={}, maker={}",
-                accountNumber, currentUser);
+                    + "|rate=" + oldRate + "->" + account.getInterestRate()
+                    + "|tenure=" + oldTenure + "->" + account.getTenureMonths()
+                    + "|emi=" + newEmi + "|reason=" + reason;
+            workflowService.initiateApproval(
+                    "LoanAccount",
+                    account.getId(),
+                    "LOAN_RESTRUCTURING",
+                    "Loan restructuring: " + accountNumber,
+                    payload);
+            log.info("Restructuring maker-checker initiated: accNo={}, maker={}", accountNumber, currentUser);
         } catch (Exception e) {
             // Workflow initiation failure should not block restructuring.
             // The terms are already applied and audited.
-            log.warn("Restructuring maker-checker initiation failed for {}: {}",
-                accountNumber, e.getMessage());
+            log.warn("Restructuring maker-checker initiation failed for {}: {}", accountNumber, e.getMessage());
         }
 
-        log.info("Loan restructured: accNo={}, rate={}->{}, tenure={}->{}, emi={}",
-            accountNumber, oldRate, account.getInterestRate(),
-            oldTenure, account.getTenureMonths(), newEmi);
+        log.info(
+                "Loan restructured: accNo={}, rate={}->{}, tenure={}->{}, emi={}",
+                accountNumber,
+                oldRate,
+                account.getInterestRate(),
+                oldTenure,
+                account.getTenureMonths(),
+                newEmi);
 
         return saved;
     }
@@ -222,31 +225,29 @@ public class LoanRestructuringService {
      * @return The modified account
      */
     @Transactional
-    public LoanAccount applyMoratorium(String accountNumber,
-                                        int moratoriumMonths,
-                                        String reason,
-                                        LocalDate businessDate) {
+    public LoanAccount applyMoratorium(
+            String accountNumber, int moratoriumMonths, String reason, LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
         if (moratoriumMonths <= 0 || moratoriumMonths > 24) {
-            throw new BusinessException("INVALID_MORATORIUM",
-                "Moratorium period must be 1-24 months. Provided: " + moratoriumMonths);
+            throw new BusinessException(
+                    "INVALID_MORATORIUM", "Moratorium period must be 1-24 months. Provided: " + moratoriumMonths);
         }
 
         if (reason == null || reason.isBlank()) {
-            throw new BusinessException("MORATORIUM_REASON_REQUIRED",
-                "Moratorium reason is mandatory per RBI guidelines");
+            throw new BusinessException(
+                    "MORATORIUM_REASON_REQUIRED", "Moratorium reason is mandatory per RBI guidelines");
         }
 
         LoanAccount account = accountRepository
-            .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
-            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
-                "Loan account not found: " + accountNumber));
+                .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
+                .orElseThrow(
+                        () -> new BusinessException("ACCOUNT_NOT_FOUND", "Loan account not found: " + accountNumber));
 
         if (account.getStatus().isTerminal()) {
-            throw new BusinessException("ACCOUNT_TERMINAL",
-                "Cannot apply moratorium on " + account.getStatus() + " account");
+            throw new BusinessException(
+                    "ACCOUNT_TERMINAL", "Cannot apply moratorium on " + account.getStatus() + " account");
         }
 
         // Extend next EMI date and maturity by moratorium period
@@ -254,20 +255,17 @@ public class LoanRestructuringService {
         LocalDate oldMaturity = account.getMaturityDate();
 
         if (account.getNextEmiDate() != null) {
-            account.setNextEmiDate(
-                account.getNextEmiDate().plusMonths(moratoriumMonths));
+            account.setNextEmiDate(account.getNextEmiDate().plusMonths(moratoriumMonths));
         }
         if (account.getMaturityDate() != null) {
-            account.setMaturityDate(
-                account.getMaturityDate().plusMonths(moratoriumMonths));
+            account.setMaturityDate(account.getMaturityDate().plusMonths(moratoriumMonths));
         }
 
         // Extend tenure
         int oldTenure = account.getTenureMonths();
         account.setTenureMonths(oldTenure + moratoriumMonths);
         if (account.getRemainingTenure() != null) {
-            account.setRemainingTenure(
-                account.getRemainingTenure() + moratoriumMonths);
+            account.setRemainingTenure(account.getRemainingTenure() + moratoriumMonths);
         }
 
         // CBS: Capitalize accrued interest at moratorium start.
@@ -281,19 +279,17 @@ public class LoanRestructuringService {
         BigDecimal capitalizedInterest = BigDecimal.ZERO;
         if (account.getAccruedInterest() != null && account.getAccruedInterest().signum() > 0) {
             capitalizedInterest = account.getAccruedInterest();
-            account.setOutstandingPrincipal(
-                account.getOutstandingPrincipal().add(capitalizedInterest));
+            account.setOutstandingPrincipal(account.getOutstandingPrincipal().add(capitalizedInterest));
             account.setAccruedInterest(BigDecimal.ZERO);
-            log.info("Interest capitalized at moratorium: accNo={}, capitalized={}",
-                accountNumber, capitalizedInterest);
+            log.info(
+                    "Interest capitalized at moratorium: accNo={}, capitalized={}", accountNumber, capitalizedInterest);
         }
 
         // Recalculate EMI on new outstanding principal + extended tenure
         BigDecimal newEmi = interestRule.calculateEmi(
-            account.getOutstandingPrincipal(),
-            account.getInterestRate(),
-            account.getRemainingTenure() != null ? account.getRemainingTenure() : 1
-        );
+                account.getOutstandingPrincipal(),
+                account.getInterestRate(),
+                account.getRemainingTenure() != null ? account.getRemainingTenure() : 1);
         account.setEmiAmount(newEmi);
 
         if (!account.getStatus().isNpa()) {
@@ -303,18 +299,26 @@ public class LoanRestructuringService {
         account.setUpdatedBy(currentUser);
         LoanAccount saved = accountRepository.save(account);
 
-        auditService.logEvent("LoanAccount", account.getId(), "MORATORIUM",
-            null, String.valueOf(moratoriumMonths), "LOAN_RESTRUCTURING",
-            "Moratorium applied: " + moratoriumMonths + " months"
-                + " | NextEMI: " + oldNextEmi + " -> " + account.getNextEmiDate()
-                + " | Maturity: " + oldMaturity + " -> " + account.getMaturityDate()
-                + " | Interest capitalized: INR " + capitalizedInterest
-                + " | New EMI: INR " + newEmi
-                + " | Reason: " + reason);
+        auditService.logEvent(
+                "LoanAccount",
+                account.getId(),
+                "MORATORIUM",
+                null,
+                String.valueOf(moratoriumMonths),
+                "LOAN_RESTRUCTURING",
+                "Moratorium applied: " + moratoriumMonths + " months"
+                        + " | NextEMI: " + oldNextEmi + " -> " + account.getNextEmiDate()
+                        + " | Maturity: " + oldMaturity + " -> " + account.getMaturityDate()
+                        + " | Interest capitalized: INR " + capitalizedInterest
+                        + " | New EMI: INR " + newEmi
+                        + " | Reason: " + reason);
 
-        log.info("Moratorium applied: accNo={}, months={}, nextEmi={}, maturity={}",
-            accountNumber, moratoriumMonths,
-            account.getNextEmiDate(), account.getMaturityDate());
+        log.info(
+                "Moratorium applied: accNo={}, months={}, nextEmi={}, maturity={}",
+                accountNumber,
+                moratoriumMonths,
+                account.getNextEmiDate(),
+                account.getMaturityDate());
 
         return saved;
     }

@@ -1,12 +1,13 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * CBS Disbursement Schedule per Finacle DISB_MASTER / Temenos AA.DISBURSEMENT.ARRANGEMENT.
@@ -33,10 +34,12 @@ import java.time.LocalDate;
  *   - Interest is charged only on the disbursed amount
  */
 @Entity
-@Table(name = "disbursement_schedules", indexes = {
-    @Index(name = "idx_disbsched_account", columnList = "tenant_id, loan_account_id"),
-    @Index(name = "idx_disbsched_status", columnList = "tenant_id, status")
-})
+@Table(
+        name = "disbursement_schedules",
+        indexes = {
+            @Index(name = "idx_disbsched_account", columnList = "tenant_id, loan_account_id"),
+            @Index(name = "idx_disbsched_status", columnList = "tenant_id, status")
+        })
 @Getter
 @Setter
 @NoArgsConstructor
@@ -111,9 +114,23 @@ public class DisbursementSchedule extends BaseEntity {
     @Column(name = "beneficiary_account", length = 40)
     private String beneficiaryAccount;
 
-    public boolean isPlanned() { return "PLANNED".equals(status); }
-    public boolean isConditionMet() { return "CONDITION_MET".equals(status); }
-    public boolean isApproved() { return "APPROVED".equals(status); }
-    public boolean isDisbursed() { return "DISBURSED".equals(status); }
-    public boolean isCancelled() { return "CANCELLED".equals(status); }
+    public boolean isPlanned() {
+        return "PLANNED".equals(status);
+    }
+
+    public boolean isConditionMet() {
+        return "CONDITION_MET".equals(status);
+    }
+
+    public boolean isApproved() {
+        return "APPROVED".equals(status);
+    }
+
+    public boolean isDisbursed() {
+        return "DISBURSED".equals(status);
+    }
+
+    public boolean isCancelled() {
+        return "CANCELLED".equals(status);
+    }
 }

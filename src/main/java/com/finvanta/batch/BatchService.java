@@ -1,10 +1,8 @@
 package com.finvanta.batch;
 
+import com.finvanta.accounting.AccountingReconciliationEngine;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.ProductGLResolver;
-import com.finvanta.accounting.AccountingReconciliationEngine;
-import com.finvanta.transaction.TransactionEngine;
-import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BatchJob;
 import com.finvanta.domain.entity.BusinessCalendar;
@@ -20,19 +18,22 @@ import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
 import com.finvanta.service.TransactionBatchService;
 import com.finvanta.service.impl.StandingInstructionServiceImpl;
+import com.finvanta.transaction.TransactionEngine;
+import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * CBS End-of-Day (EOD) Batch Processing Service.
@@ -75,18 +76,19 @@ public class BatchService {
     @org.springframework.beans.factory.annotation.Autowired
     private BatchService self;
 
-    public BatchService(BatchJobRepository batchJobRepository,
-                        BusinessCalendarRepository calendarRepository,
-                        LoanAccountRepository loanAccountRepository,
-                        LoanAccountService loanAccountService,
-                        ProvisioningRule provisioningRule,
-                        AuditService auditService,
-                        AccountingReconciliationEngine reconciliationService,
-                        TransactionEngine transactionEngine,
-                        LoanScheduleService scheduleService,
-                        TransactionBatchService transactionBatchService,
-                        ProductGLResolver glResolver,
-                        StandingInstructionServiceImpl standingInstructionService) {
+    public BatchService(
+            BatchJobRepository batchJobRepository,
+            BusinessCalendarRepository calendarRepository,
+            LoanAccountRepository loanAccountRepository,
+            LoanAccountService loanAccountService,
+            ProvisioningRule provisioningRule,
+            AuditService auditService,
+            AccountingReconciliationEngine reconciliationService,
+            TransactionEngine transactionEngine,
+            LoanScheduleService scheduleService,
+            TransactionBatchService transactionBatchService,
+            ProductGLResolver glResolver,
+            StandingInstructionServiceImpl standingInstructionService) {
         this.batchJobRepository = batchJobRepository;
         this.calendarRepository = calendarRepository;
         this.loanAccountRepository = loanAccountRepository;
@@ -156,8 +158,10 @@ public class BatchService {
                 } catch (Exception e) {
                     failedRecords++;
                     errorLog.append("Interest accrual failed for ")
-                        .append(account.getAccountNumber()).append(": ")
-                        .append(e.getMessage()).append("\n");
+                            .append(account.getAccountNumber())
+                            .append(": ")
+                            .append(e.getMessage())
+                            .append("\n");
                     log.error("Interest accrual failed: accNo={}", account.getAccountNumber(), e);
                 }
             }
@@ -173,8 +177,10 @@ public class BatchService {
                     loanAccountService.applyPenalInterest(account.getAccountNumber(), businessDate);
                 } catch (Exception e) {
                     errorLog.append("Penal interest failed for ")
-                        .append(account.getAccountNumber()).append(": ")
-                        .append(e.getMessage()).append("\n");
+                            .append(account.getAccountNumber())
+                            .append(": ")
+                            .append(e.getMessage())
+                            .append("\n");
                     log.error("Penal interest failed: accNo={}", account.getAccountNumber(), e);
                 }
             }
@@ -190,8 +196,10 @@ public class BatchService {
                     self.updateDaysPastDue(account, businessDate);
                 } catch (Exception e) {
                     errorLog.append("DPD update failed for ")
-                        .append(account.getAccountNumber()).append(": ")
-                        .append(e.getMessage()).append("\n");
+                            .append(account.getAccountNumber())
+                            .append(": ")
+                            .append(e.getMessage())
+                            .append("\n");
                     log.error("DPD update failed: accNo={}", account.getAccountNumber(), e);
                 }
             }
@@ -202,7 +210,9 @@ public class BatchService {
                 int overdueMarked = scheduleService.markOverdueInstallments(businessDate);
                 log.info("Schedule overdue marking: {} installments marked for date={}", overdueMarked, businessDate);
             } catch (Exception e) {
-                errorLog.append("Schedule overdue marking failed: ").append(e.getMessage()).append("\n");
+                errorLog.append("Schedule overdue marking failed: ")
+                        .append(e.getMessage())
+                        .append("\n");
                 log.error("Schedule overdue marking failed: date={}", businessDate, e);
             }
 
@@ -212,16 +222,17 @@ public class BatchService {
             // Using threshold=1 ensures SMA accounts are not missed.
             self.updateBatchStep(eodJob, "NPA_CLASSIFICATION");
 
-            List<LoanAccount> classificationCandidates = loanAccountRepository
-                .findNpaCandidates(tenantId, 1);
+            List<LoanAccount> classificationCandidates = loanAccountRepository.findNpaCandidates(tenantId, 1);
 
             for (LoanAccount account : classificationCandidates) {
                 try {
                     loanAccountService.classifyNPA(account.getAccountNumber(), businessDate);
                 } catch (Exception e) {
                     errorLog.append("SMA/NPA classification failed for ")
-                        .append(account.getAccountNumber()).append(": ")
-                        .append(e.getMessage()).append("\n");
+                            .append(account.getAccountNumber())
+                            .append(": ")
+                            .append(e.getMessage())
+                            .append("\n");
                     log.error("SMA/NPA classification failed: accNo={}", account.getAccountNumber(), e);
                 }
             }
@@ -235,8 +246,10 @@ public class BatchService {
                     self.calculateProvisioning(account, businessDate);
                 } catch (Exception e) {
                     errorLog.append("Provisioning failed for ")
-                        .append(account.getAccountNumber()).append(": ")
-                        .append(e.getMessage()).append("\n");
+                            .append(account.getAccountNumber())
+                            .append(": ")
+                            .append(e.getMessage())
+                            .append("\n");
                     log.error("Provisioning failed: accNo={}", account.getAccountNumber(), e);
                 }
             }
@@ -258,31 +271,41 @@ public class BatchService {
                 if (siResult[1] > 0) {
                     errorLog.append("SI execution: ").append(siResult[1]).append(" failed\n");
                 }
-                log.info("EOD Step 7.5: SI execution — executed={}, failed={}",
-                    siResult[0], siResult[1]);
+                log.info("EOD Step 7.5: SI execution — executed={}, failed={}", siResult[0], siResult[1]);
             } catch (Exception e) {
                 errorLog.append("SI execution failed: ").append(e.getMessage()).append("\n");
                 log.error("SI execution step failed: date={}", businessDate, e);
             }
 
             // Step 8: Mark EOD complete (own transaction)
-            BatchStatus finalStatus = failedRecords > 0
-                ? BatchStatus.PARTIALLY_COMPLETED : BatchStatus.COMPLETED;
+            BatchStatus finalStatus = failedRecords > 0 ? BatchStatus.PARTIALLY_COMPLETED : BatchStatus.COMPLETED;
 
-            self.completeEodBatch(eodJob, calendar, finalStatus,
-                totalRecords, processedRecords, failedRecords,
-                errorLog.length() > 0 ? errorLog.toString() : null);
+            self.completeEodBatch(
+                    eodJob,
+                    calendar,
+                    finalStatus,
+                    totalRecords,
+                    processedRecords,
+                    failedRecords,
+                    errorLog.length() > 0 ? errorLog.toString() : null);
 
-            auditService.logEvent("BatchJob", eodJob.getId(), "EOD_COMPLETE",
-                null, eodJob, "BATCH",
-                "EOD completed: processed=" + processedRecords + ", failed=" + failedRecords);
+            auditService.logEvent(
+                    "BatchJob",
+                    eodJob.getId(),
+                    "EOD_COMPLETE",
+                    null,
+                    eodJob,
+                    "BATCH",
+                    "EOD completed: processed=" + processedRecords + ", failed=" + failedRecords);
 
-            log.info("EOD batch completed: date={}, processed={}, failed={}",
-                businessDate, processedRecords, failedRecords);
+            log.info(
+                    "EOD batch completed: date={}, processed={}, failed={}",
+                    businessDate,
+                    processedRecords,
+                    failedRecords);
 
         } catch (Exception e) {
-            self.failEodBatch(eodJob, calendar,
-                totalRecords, processedRecords, failedRecords, e.getMessage());
+            self.failEodBatch(eodJob, calendar, totalRecords, processedRecords, failedRecords, e.getMessage());
 
             log.error("EOD batch failed: date={}", businessDate, e);
             throw new BusinessException("BATCH_FAILED", "EOD batch failed: " + e.getMessage(), e);
@@ -305,28 +328,27 @@ public class BatchService {
     @Transactional
     protected BusinessCalendar validateAndLockBusinessDate(String tenantId, LocalDate businessDate) {
         BusinessCalendar calendar = calendarRepository
-            .findAndLockByTenantIdAndDate(tenantId, businessDate)
-            .orElseThrow(() -> new BusinessException("BATCH_INVALID_DATE",
-                "Business date not found in calendar: " + businessDate));
+                .findAndLockByTenantIdAndDate(tenantId, businessDate)
+                .orElseThrow(() -> new BusinessException(
+                        "BATCH_INVALID_DATE", "Business date not found in calendar: " + businessDate));
 
         if (calendar.isEodComplete()) {
-            throw new BusinessException("BATCH_ALREADY_COMPLETE",
-                "EOD already completed for date: " + businessDate);
+            throw new BusinessException("BATCH_ALREADY_COMPLETE", "EOD already completed for date: " + businessDate);
         }
 
         if (calendar.isHoliday()) {
-            throw new BusinessException("BATCH_HOLIDAY",
-                "Cannot run EOD on a holiday: " + businessDate);
+            throw new BusinessException("BATCH_HOLIDAY", "Cannot run EOD on a holiday: " + businessDate);
         }
 
         // CBS Day Control: EOD can only start from DAY_OPEN status.
         // Per Finacle DAYCTRL / Temenos COB: the day must be explicitly opened
         // by ADMIN before any financial operations (including EOD) can proceed.
         if (!calendar.getDayStatus().canStartEod()) {
-            throw new BusinessException("DAY_NOT_OPEN",
-                "Cannot run EOD for " + businessDate
-                    + ". Day status is " + calendar.getDayStatus()
-                    + ". The day must be opened first via Business Calendar.");
+            throw new BusinessException(
+                    "DAY_NOT_OPEN",
+                    "Cannot run EOD for " + businessDate
+                            + ". Day status is " + calendar.getDayStatus()
+                            + ". The day must be opened first via Business Calendar.");
         }
 
         calendar.setLocked(true);
@@ -374,11 +396,16 @@ public class BatchService {
      * For standard CBS flow, EOD completion = day close.
      */
     @Transactional
-    protected void completeEodBatch(BatchJob eodJob, BusinessCalendar calendar,
-                                     BatchStatus status, int totalRecords,
-                                     int processedRecords, int failedRecords,
-                                     String errorMessage) {
-        BusinessCalendar freshCal = calendarRepository.findById(calendar.getId()).orElse(calendar);
+    protected void completeEodBatch(
+            BatchJob eodJob,
+            BusinessCalendar calendar,
+            BatchStatus status,
+            int totalRecords,
+            int processedRecords,
+            int failedRecords,
+            String errorMessage) {
+        BusinessCalendar freshCal =
+                calendarRepository.findById(calendar.getId()).orElse(calendar);
         freshCal.setEodComplete(true);
         freshCal.setDayStatus(DayStatus.DAY_CLOSED);
         freshCal.setDayClosedBy(SecurityUtil.getCurrentUsername());
@@ -401,9 +428,13 @@ public class BatchService {
     }
 
     @Transactional
-    protected void failEodBatch(BatchJob eodJob, BusinessCalendar calendar,
-                                 int totalRecords, int processedRecords,
-                                 int failedRecords, String errorMessage) {
+    protected void failEodBatch(
+            BatchJob eodJob,
+            BusinessCalendar calendar,
+            int totalRecords,
+            int processedRecords,
+            int failedRecords,
+            String errorMessage) {
         BatchJob fresh = batchJobRepository.findById(eodJob.getId()).orElse(eodJob);
         fresh.setStatus(BatchStatus.FAILED);
         fresh.setCompletedAt(LocalDateTime.now());
@@ -414,7 +445,8 @@ public class BatchService {
         batchJobRepository.save(fresh);
 
         // Revert calendar: unlock and restore DAY_OPEN so EOD can be retried
-        BusinessCalendar freshCal = calendarRepository.findById(calendar.getId()).orElse(calendar);
+        BusinessCalendar freshCal =
+                calendarRepository.findById(calendar.getId()).orElse(calendar);
         freshCal.setLocked(false);
         freshCal.setDayStatus(DayStatus.DAY_OPEN);
         calendarRepository.save(freshCal);
@@ -422,14 +454,21 @@ public class BatchService {
         // CBS: Audit trail for EOD failure per RBI IT Governance Direction 2023.
         // EOD failure is a critical operational event that requires investigation.
         // Per REVIEW.md: every state change must be logged via AuditService.
-        auditService.logEvent("BatchJob", fresh.getId(), "EOD_FAILED",
-            "RUNNING", "FAILED", "BATCH",
-            "EOD FAILED: date=" + fresh.getBusinessDate()
-                + " | processed=" + processedRecords + "/" + totalRecords
-                + " | failed=" + failedRecords
-                + " | Calendar restored to DAY_OPEN for retry"
-                + " | Error: " + (errorMessage != null && errorMessage.length() > 500
-                    ? errorMessage.substring(0, 500) + "..." : errorMessage));
+        auditService.logEvent(
+                "BatchJob",
+                fresh.getId(),
+                "EOD_FAILED",
+                "RUNNING",
+                "FAILED",
+                "BATCH",
+                "EOD FAILED: date=" + fresh.getBusinessDate()
+                        + " | processed=" + processedRecords + "/" + totalRecords
+                        + " | failed=" + failedRecords
+                        + " | Calendar restored to DAY_OPEN for retry"
+                        + " | Error: "
+                        + (errorMessage != null && errorMessage.length() > 500
+                                ? errorMessage.substring(0, 500) + "..."
+                                : errorMessage));
     }
 
     /**
@@ -446,9 +485,11 @@ public class BatchService {
      */
     @Transactional
     protected void calculateProvisioning(LoanAccount account, LocalDate businessDate) {
-        LoanAccount fresh = loanAccountRepository.findById(account.getId())
-            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
-                "Loan account not found during provisioning: " + account.getAccountNumber()));
+        LoanAccount fresh = loanAccountRepository
+                .findById(account.getId())
+                .orElseThrow(() -> new BusinessException(
+                        "ACCOUNT_NOT_FOUND",
+                        "Loan account not found during provisioning: " + account.getAccountNumber()));
 
         BigDecimal newProvisioning = provisioningRule.calculateProvisioning(fresh);
         BigDecimal currentProvisioning = fresh.getProvisioningAmount();
@@ -461,43 +502,50 @@ public class BatchService {
 
             // Post provisioning GL entry — delta-based (only the change amount)
             BigDecimal absDelta = delta.abs();
-            DebitCredit expenseSide = delta.compareTo(BigDecimal.ZERO) > 0
-                ? DebitCredit.DEBIT : DebitCredit.CREDIT;
-            DebitCredit provisionSide = delta.compareTo(BigDecimal.ZERO) > 0
-                ? DebitCredit.CREDIT : DebitCredit.DEBIT;
+            DebitCredit expenseSide = delta.compareTo(BigDecimal.ZERO) > 0 ? DebitCredit.DEBIT : DebitCredit.CREDIT;
+            DebitCredit provisionSide = delta.compareTo(BigDecimal.ZERO) > 0 ? DebitCredit.CREDIT : DebitCredit.DEBIT;
 
             // CBS: ALL financial postings go through TransactionEngine with systemGenerated(true).
             String productType = fresh.getProductType();
             String action = delta.compareTo(BigDecimal.ZERO) > 0 ? "charge" : "release";
             try {
                 List<JournalLineRequest> lines = List.of(
-                    new JournalLineRequest(glResolver.getProvisionExpenseGL(productType), expenseSide, absDelta,
-                        "Provisioning " + action + " - " + fresh.getAccountNumber()),
-                    new JournalLineRequest(glResolver.getProvisionNpaGL(productType), provisionSide, absDelta,
-                        "Loan loss provision - " + fresh.getAccountNumber())
-                );
-                transactionEngine.execute(
-                    TransactionRequest.builder()
+                        new JournalLineRequest(
+                                glResolver.getProvisionExpenseGL(productType),
+                                expenseSide,
+                                absDelta,
+                                "Provisioning " + action + " - " + fresh.getAccountNumber()),
+                        new JournalLineRequest(
+                                glResolver.getProvisionNpaGL(productType),
+                                provisionSide,
+                                absDelta,
+                                "Loan loss provision - " + fresh.getAccountNumber()));
+                transactionEngine.execute(TransactionRequest.builder()
                         .sourceModule("PROVISIONING")
                         .transactionType("PROVISIONING_" + action.toUpperCase())
                         .accountReference(fresh.getAccountNumber())
                         .amount(absDelta)
                         .valueDate(businessDate)
-                        .branchCode(fresh.getBranch() != null ? fresh.getBranch().getBranchCode() : null)
+                        .branchCode(
+                                fresh.getBranch() != null ? fresh.getBranch().getBranchCode() : null)
                         .productType(productType)
                         .narration("RBI IRAC provisioning " + action + " for " + fresh.getAccountNumber())
                         .journalLines(lines)
                         .systemGenerated(true)
                         .initiatedBy("SYSTEM")
-                        .build()
-                );
+                        .build());
             } catch (Exception e) {
                 log.warn("Provisioning GL posting failed for {}: {}", fresh.getAccountNumber(), e.getMessage());
             }
 
-            log.info("Provisioning {}: accNo={}, old={}, new={}, delta={}, status={}",
-                action, fresh.getAccountNumber(), currentProvisioning, newProvisioning,
-                delta, fresh.getStatus());
+            log.info(
+                    "Provisioning {}: accNo={}, old={}, new={}, delta={}, status={}",
+                    action,
+                    fresh.getAccountNumber(),
+                    currentProvisioning,
+                    newProvisioning,
+                    delta,
+                    fresh.getStatus());
         }
     }
 
@@ -528,9 +576,11 @@ public class BatchService {
      */
     @Transactional
     protected void updateDaysPastDue(LoanAccount account, LocalDate businessDate) {
-        LoanAccount fresh = loanAccountRepository.findById(account.getId())
-            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
-                "Loan account not found during DPD update: " + account.getAccountNumber()));
+        LoanAccount fresh = loanAccountRepository
+                .findById(account.getId())
+                .orElseThrow(() -> new BusinessException(
+                        "ACCOUNT_NOT_FOUND",
+                        "Loan account not found during DPD update: " + account.getAccountNumber()));
 
         if (fresh.getStatus().isTerminal()) {
             return;
@@ -539,10 +589,13 @@ public class BatchService {
         LocalDate lastPayment = fresh.getLastPaymentDate();
         LocalDate nextEmi = fresh.getNextEmiDate();
 
-        if (nextEmi != null && businessDate.isAfter(nextEmi) && (lastPayment == null || lastPayment.isBefore(nextEmi))) {
+        if (nextEmi != null
+                && businessDate.isAfter(nextEmi)
+                && (lastPayment == null || lastPayment.isBefore(nextEmi))) {
             int dpd = (int) ChronoUnit.DAYS.between(nextEmi, businessDate);
             fresh.setDaysPastDue(dpd);
-            fresh.setOverduePrincipal(fresh.getEmiAmount() != null ? fresh.getEmiAmount() : fresh.getOutstandingPrincipal());
+            fresh.setOverduePrincipal(
+                    fresh.getEmiAmount() != null ? fresh.getEmiAmount() : fresh.getOutstandingPrincipal());
             fresh.setUpdatedBy("SYSTEM");
             loanAccountRepository.save(fresh);
         }
@@ -554,7 +607,8 @@ public class BatchService {
 
     public BatchJob getBatchJobByDate(LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
-        return batchJobRepository.findByTenantIdAndJobNameAndBusinessDate(tenantId, "EOD_BATCH", businessDate)
-            .orElse(null);
+        return batchJobRepository
+                .findByTenantIdAndJobNameAndBusinessDate(tenantId, "EOD_BATCH", businessDate)
+                .orElse(null);
     }
 }

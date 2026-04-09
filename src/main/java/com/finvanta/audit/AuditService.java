@@ -1,11 +1,20 @@
 package com.finvanta.audit;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.finvanta.domain.entity.AuditLog;
 import com.finvanta.repository.AuditLogRepository;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import jakarta.servlet.http.HttpServletRequest;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
+import java.util.List;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -13,12 +22,6 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
-
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * CBS Immutable Audit Trail Service.
@@ -48,9 +51,14 @@ public class AuditService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public AuditLog logEvent(String entityType, Long entityId, String action,
-                             Object beforeState, Object afterState,
-                             String module, String description) {
+    public AuditLog logEvent(
+            String entityType,
+            Long entityId,
+            String action,
+            Object beforeState,
+            Object afterState,
+            String module,
+            String description) {
         String tenantId = TenantContext.getCurrentTenant();
         String performedBy = SecurityUtil.getCurrentUsername();
         String ipAddress = resolveIpAddress();
@@ -58,9 +66,10 @@ public class AuditService {
         String beforeJson = serializeToJson(beforeState);
         String afterJson = serializeToJson(afterState);
 
-        String previousHash = auditLogRepository.findLatestByTenantId(tenantId)
-            .map(AuditLog::getHash)
-            .orElse("GENESIS");
+        String previousHash = auditLogRepository
+                .findLatestByTenantId(tenantId)
+                .map(AuditLog::getHash)
+                .orElse("GENESIS");
 
         AuditLog auditLog = new AuditLog();
         auditLog.setTenantId(tenantId);
@@ -80,16 +89,14 @@ public class AuditService {
         auditLog.setHash(hash);
 
         AuditLog saved = auditLogRepository.save(auditLog);
-        log.info("Audit log created: entity={}/{}, action={}, user={}",
-            entityType, entityId, action, performedBy);
+        log.info("Audit log created: entity={}/{}, action={}, user={}", entityType, entityId, action, performedBy);
         return saved;
     }
 
     public List<AuditLog> getAuditTrail(String entityType, Long entityId) {
         String tenantId = TenantContext.getCurrentTenant();
         return auditLogRepository.findByTenantIdAndEntityTypeAndEntityIdOrderByEventTimestampDesc(
-            tenantId, entityType, entityId
-        );
+                tenantId, entityType, entityId);
     }
 
     public boolean verifyChainIntegrity(String tenantId) {
@@ -111,7 +118,9 @@ public class AuditService {
         if (logs.size() < 500) {
             AuditLog oldest = logs.get(logs.size() - 1);
             if (!"GENESIS".equals(oldest.getPreviousHash())) {
-                log.error("Audit chain integrity violation: oldest record id={} does not link to GENESIS", oldest.getId());
+                log.error(
+                        "Audit chain integrity violation: oldest record id={} does not link to GENESIS",
+                        oldest.getId());
                 return false;
             }
         }
@@ -123,12 +132,12 @@ public class AuditService {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             String data = auditLog.getTenantId()
-                + auditLog.getEntityType()
-                + auditLog.getEntityId()
-                + auditLog.getAction()
-                + auditLog.getEventTimestamp()
-                + auditLog.getPerformedBy()
-                + previousHash;
+                    + auditLog.getEntityType()
+                    + auditLog.getEntityId()
+                    + auditLog.getAction()
+                    + auditLog.getEventTimestamp()
+                    + auditLog.getPerformedBy()
+                    + previousHash;
             byte[] hashBytes = digest.digest(data.getBytes(StandardCharsets.UTF_8));
             return bytesToHex(hashBytes);
         } catch (NoSuchAlgorithmException e) {
@@ -158,8 +167,7 @@ public class AuditService {
 
     private String resolveIpAddress() {
         try {
-            ServletRequestAttributes attrs =
-                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             if (attrs != null) {
                 HttpServletRequest request = attrs.getRequest();
                 String xForwarded = request.getHeader("X-Forwarded-For");

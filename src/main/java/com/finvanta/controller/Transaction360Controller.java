@@ -1,6 +1,7 @@
 package com.finvanta.controller;
 
 import com.finvanta.service.Transaction360Service;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
@@ -49,14 +50,12 @@ public class Transaction360Controller {
         String fullPath = request.getRequestURI();
         String contextPath = request.getContextPath();
         // Extract everything after /txn360/voucher/
-        String voucherNumber = fullPath.substring(
-            (contextPath + "/txn360/voucher/").length());
+        String voucherNumber = fullPath.substring((contextPath + "/txn360/voucher/").length());
 
         // CBS: Validate extracted voucher number to prevent path traversal.
         // Voucher format: VCH/{branchCode}/{YYYYMMDD}/{sequence}
         // Only alphanumeric, forward slashes, and hyphens are valid.
-        if (voucherNumber.isEmpty() || !voucherNumber.matches("[A-Za-z0-9/_-]+")
-                || voucherNumber.contains("..")) {
+        if (voucherNumber.isEmpty() || !voucherNumber.matches("[A-Za-z0-9/_-]+") || voucherNumber.contains("..")) {
             ModelAndView mav = new ModelAndView("txn360/view");
             mav.addObject("lookupType", "Voucher");
             mav.addObject("lookupValue", "");

@@ -1,10 +1,11 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
 
 import java.math.BigDecimal;
+
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * CBS Charge Configuration per Finacle CHRG_MASTER.
@@ -27,11 +28,13 @@ import java.math.BigDecimal;
  * Per Ind AS standards: Revenue recognized on GL 4002+ codes (income), GST on 2200+ codes (liability).
  */
 @Entity
-@Table(name = "charge_config", indexes = {
-    @Index(name = "idx_chargeconfig_tenant_code", columnList = "tenant_id, charge_code"),
-    @Index(name = "idx_chargeconfig_tenant_product", columnList = "tenant_id, product_code"),
-    @Index(name = "idx_chargeconfig_tenant_active", columnList = "tenant_id, is_active")
-})
+@Table(
+        name = "charge_config",
+        indexes = {
+            @Index(name = "idx_chargeconfig_tenant_code", columnList = "tenant_id, charge_code"),
+            @Index(name = "idx_chargeconfig_tenant_product", columnList = "tenant_id, product_code"),
+            @Index(name = "idx_chargeconfig_tenant_active", columnList = "tenant_id, is_active")
+        })
 @Getter
 @Setter
 public class ChargeConfig extends BaseEntity {
@@ -87,4 +90,3 @@ public class ChargeConfig extends BaseEntity {
     @Column(name = "is_active", nullable = false)
     private Boolean isActive; // Soft delete flag
 }
-

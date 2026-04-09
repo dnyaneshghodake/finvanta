@@ -2,6 +2,7 @@ package com.finvanta.domain.rules;
 
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.LoanStatus;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -68,8 +69,7 @@ class NpaClassificationRuleTest {
         void dpdBoundaries(int dpd, LoanStatus expected) {
             LoanAccount account = createAccount(dpd, LoanStatus.ACTIVE);
             LoanStatus result = rule.classify(account);
-            assertEquals(expected, result,
-                "DPD " + dpd + " should classify as " + expected);
+            assertEquals(expected, result, "DPD " + dpd + " should classify as " + expected);
         }
     }
 

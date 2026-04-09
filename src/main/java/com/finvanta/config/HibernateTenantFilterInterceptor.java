@@ -1,9 +1,11 @@
 package com.finvanta.config;
 
 import com.finvanta.util.TenantContext;
+
 import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+
 import org.hibernate.Session;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -39,8 +41,7 @@ public class HibernateTenantFilterInterceptor implements HandlerInterceptor {
     }
 
     @Override
-    public boolean preHandle(HttpServletRequest request, HttpServletResponse response,
-                              Object handler) {
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         try {
             String tenantId = TenantContext.getCurrentTenant();
             Session session = entityManager.unwrap(Session.class);

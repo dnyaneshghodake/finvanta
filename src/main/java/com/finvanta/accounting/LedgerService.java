@@ -6,10 +6,6 @@ import com.finvanta.domain.entity.LedgerEntry;
 import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.util.TenantContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -18,6 +14,11 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * CBS Immutable Ledger Engine per Finacle/Temenos standards.
@@ -131,10 +132,12 @@ public class LedgerService {
         List<LedgerEntry> saved = ledgerRepository.saveAll(entries);
 
         if (!saved.isEmpty()) {
-            log.debug("Ledger posted: journalRef={}, entries={}, sequences={}-{}",
-                journalEntry.getJournalRef(), saved.size(),
-                saved.get(0).getLedgerSequence(),
-                saved.get(saved.size() - 1).getLedgerSequence());
+            log.debug(
+                    "Ledger posted: journalRef={}, entries={}, sequences={}-{}",
+                    journalEntry.getJournalRef(),
+                    saved.size(),
+                    saved.get(0).getLedgerSequence(),
+                    saved.get(saved.size() - 1).getLedgerSequence());
         }
 
         return saved;
@@ -174,7 +177,7 @@ public class LedgerService {
         // chain must be walked to certify integrity.
         while (chainValid) {
             List<LedgerEntry> entries = ledgerRepository.findAllByTenantIdOrderByLedgerSequenceAsc(
-                tenantId, org.springframework.data.domain.PageRequest.of(pageNumber, pageSize));
+                    tenantId, org.springframework.data.domain.PageRequest.of(pageNumber, pageSize));
 
             if (entries.isEmpty()) {
                 // No more entries — verification complete
@@ -184,9 +187,12 @@ public class LedgerService {
             for (LedgerEntry entry : entries) {
                 // 1. Verify chain linkage: entry's previousHash must match expected
                 if (!expectedPreviousHash.equals(entry.getPreviousHash())) {
-                    log.error("LEDGER TAMPER DETECTED: Chain break at sequence {}. "
-                        + "Expected previousHash={}, found previousHash={}",
-                        entry.getLedgerSequence(), expectedPreviousHash, entry.getPreviousHash());
+                    log.error(
+                            "LEDGER TAMPER DETECTED: Chain break at sequence {}. "
+                                    + "Expected previousHash={}, found previousHash={}",
+                            entry.getLedgerSequence(),
+                            expectedPreviousHash,
+                            entry.getPreviousHash());
                     chainValid = false;
                     break;
                 }
@@ -194,9 +200,12 @@ public class LedgerService {
                 // 2. Recompute hash from entry data and verify against stored hash
                 String recomputedHash = computeHash(entry, entry.getPreviousHash());
                 if (!recomputedHash.equals(entry.getHashValue())) {
-                    log.error("LEDGER TAMPER DETECTED: Hash mismatch at sequence {}. "
-                        + "Stored hash={}, recomputed hash={}. Entry data may have been modified.",
-                        entry.getLedgerSequence(), entry.getHashValue(), recomputedHash);
+                    log.error(
+                            "LEDGER TAMPER DETECTED: Hash mismatch at sequence {}. "
+                                    + "Stored hash={}, recomputed hash={}. Entry data may have been modified.",
+                            entry.getLedgerSequence(),
+                            entry.getHashValue(),
+                            recomputedHash);
                     chainValid = false;
                     break;
                 }
@@ -218,8 +227,12 @@ public class LedgerService {
             log.info("Ledger chain integrity FULLY VERIFIED: tenant={}, entries={}", tenantId, verifiedCount);
         } else if (chainValid && verifiedCount < maxSeq) {
             // This should not happen if the paginated query is correct, but guard against it.
-            log.warn("Ledger chain verification ended early: tenant={}, verified={}/{} -- "
-                + "possible gap in ledger_sequence numbering.", tenantId, verifiedCount, maxSeq);
+            log.warn(
+                    "Ledger chain verification ended early: tenant={}, verified={}/{} -- "
+                            + "possible gap in ledger_sequence numbering.",
+                    tenantId,
+                    verifiedCount,
+                    maxSeq);
         } else {
             log.error("LEDGER CHAIN INTEGRITY FAILED: tenant={}, verified={}/{}", tenantId, verifiedCount, maxSeq);
         }
@@ -247,12 +260,16 @@ public class LedgerService {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             String data = entry.getTenantId()
-                + entry.getLedgerSequence()
-                + entry.getGlCode()
-                + entry.getDebitAmount().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
-                + entry.getCreditAmount().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
-                + entry.getBusinessDate()
-                + previousHash;
+                    + entry.getLedgerSequence()
+                    + entry.getGlCode()
+                    + entry.getDebitAmount()
+                            .setScale(2, java.math.RoundingMode.HALF_UP)
+                            .toPlainString()
+                    + entry.getCreditAmount()
+                            .setScale(2, java.math.RoundingMode.HALF_UP)
+                            .toPlainString()
+                    + entry.getBusinessDate()
+                    + previousHash;
             byte[] hashBytes = digest.digest(data.getBytes(StandardCharsets.UTF_8));
             return bytesToHex(hashBytes);
         } catch (NoSuchAlgorithmException e) {

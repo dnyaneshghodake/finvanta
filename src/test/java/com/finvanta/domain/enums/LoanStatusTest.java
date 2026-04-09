@@ -92,7 +92,6 @@ class LoanStatusTest {
         if (status.isTerminal()) groups++;
         if (status == LoanStatus.RESTRUCTURED) groups++;
 
-        assertEquals(1, groups,
-            status + " must belong to exactly one classification group");
+        assertEquals(1, groups, status + " must belong to exactly one classification group");
     }
 }

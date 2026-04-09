@@ -16,16 +16,17 @@ import com.finvanta.util.PiiMaskingUtil;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.List;
 
 /**
  * CBS Standing Instruction Execution Engine per Finacle SI_MASTER.
@@ -64,14 +65,15 @@ public class StandingInstructionServiceImpl {
      */
     private final StandingInstructionServiceImpl self;
 
-    public StandingInstructionServiceImpl(StandingInstructionRepository siRepository,
-                                           LoanAccountRepository loanAccountRepository,
-                                           DepositAccountRepository depositAccountRepository,
-                                           BusinessCalendarRepository calendarRepository,
-                                           LoanAccountService loanAccountService,
-                                           DepositAccountService depositAccountService,
-                                           AuditService auditService,
-                                           @Lazy StandingInstructionServiceImpl self) {
+    public StandingInstructionServiceImpl(
+            StandingInstructionRepository siRepository,
+            LoanAccountRepository loanAccountRepository,
+            DepositAccountRepository depositAccountRepository,
+            BusinessCalendarRepository calendarRepository,
+            LoanAccountService loanAccountService,
+            DepositAccountService depositAccountService,
+            AuditService auditService,
+            @Lazy StandingInstructionServiceImpl self) {
         this.siRepository = siRepository;
         this.loanAccountRepository = loanAccountRepository;
         this.depositAccountRepository = depositAccountRepository;
@@ -90,9 +92,10 @@ public class StandingInstructionServiceImpl {
         if (siRepository.existsActiveLoanEmiSI(tenantId, loanAccount.getAccountNumber())) return null;
 
         int execDay = loanAccount.getNextEmiDate() != null
-            ? Math.min(loanAccount.getNextEmiDate().getDayOfMonth(), 28) : 5;
-        LocalDate firstEmi = loanAccount.getNextEmiDate() != null
-            ? loanAccount.getNextEmiDate() : businessDate.plusMonths(1);
+                ? Math.min(loanAccount.getNextEmiDate().getDayOfMonth(), 28)
+                : 5;
+        LocalDate firstEmi =
+                loanAccount.getNextEmiDate() != null ? loanAccount.getNextEmiDate() : businessDate.plusMonths(1);
 
         StandingInstruction si = new StandingInstruction();
         si.setTenantId(tenantId);
@@ -114,11 +117,20 @@ public class StandingInstructionServiceImpl {
         si.setCreatedBy("SYSTEM");
 
         StandingInstruction saved = siRepository.save(si);
-        auditService.logEvent("StandingInstruction", saved.getId(), "SI_CREATED",
-            null, saved.getSiReference(), "STANDING_INSTRUCTION",
-            "LOAN_EMI SI: " + saved.getSiReference() + " | Loan: " + loanAccount.getAccountNumber()
-                + " | CASA: " + casaAccNo + " | First EMI: " + firstEmi);
-        log.info("LOAN_EMI SI created: si={}, loan={}, casa={}", saved.getSiReference(), loanAccount.getAccountNumber(), casaAccNo);
+        auditService.logEvent(
+                "StandingInstruction",
+                saved.getId(),
+                "SI_CREATED",
+                null,
+                saved.getSiReference(),
+                "STANDING_INSTRUCTION",
+                "LOAN_EMI SI: " + saved.getSiReference() + " | Loan: " + loanAccount.getAccountNumber() + " | CASA: "
+                        + casaAccNo + " | First EMI: " + firstEmi);
+        log.info(
+                "LOAN_EMI SI created: si={}, loan={}, casa={}",
+                saved.getSiReference(),
+                loanAccount.getAccountNumber(),
+                casaAccNo);
         return saved;
     }
 
@@ -135,7 +147,11 @@ public class StandingInstructionServiceImpl {
             try {
                 // CBS: MUST use self-proxy so @Transactional(REQUIRES_NEW) is intercepted.
                 // Direct call (this.executeSingleSI) would bypass Spring AOP proxy.
-                if (self.executeSingleSI(si, businessDate)) { executed++; } else { failed++; }
+                if (self.executeSingleSI(si, businessDate)) {
+                    executed++;
+                } else {
+                    failed++;
+                }
             } catch (BusinessException e) {
                 // CBS: Financial transaction rolled back — record failure in separate transaction.
                 // executeSingleSI's REQUIRES_NEW transaction was marked rollback-only by the
@@ -145,7 +161,10 @@ public class StandingInstructionServiceImpl {
                 try {
                     self.recordSIFailure(si.getId(), businessDate, e.getErrorCode(), e.getMessage());
                 } catch (Exception recordErr) {
-                    log.error("SI failure recording also failed: si={}, err={}", si.getSiReference(), recordErr.getMessage());
+                    log.error(
+                            "SI failure recording also failed: si={}, err={}",
+                            si.getSiReference(),
+                            recordErr.getMessage());
                 }
                 log.warn("SI failed: si={}, code={}, msg={}", si.getSiReference(), e.getErrorCode(), e.getMessage());
             } catch (Exception e) {
@@ -153,13 +172,16 @@ public class StandingInstructionServiceImpl {
                 try {
                     self.recordSIFailure(si.getId(), businessDate, "SYSTEM_ERROR", e.getMessage());
                 } catch (Exception recordErr) {
-                    log.error("SI failure recording also failed: si={}, err={}", si.getSiReference(), recordErr.getMessage());
+                    log.error(
+                            "SI failure recording also failed: si={}, err={}",
+                            si.getSiReference(),
+                            recordErr.getMessage());
                 }
                 log.error("SI fatal: si={}, error={}", si.getSiReference(), e.getMessage(), e);
             }
         }
         log.info("SI EOD: date={}, executed={}, failed={}, total={}", businessDate, executed, failed, dueSIs.size());
-        return new int[]{executed, failed};
+        return new int[] {executed, failed};
     }
 
     /**
@@ -182,7 +204,10 @@ public class StandingInstructionServiceImpl {
         String idempotencyKey = "SI-" + si.getSiReference() + "-" + businessDate;
         if (si.isLoanEmi()) return executeLoanEmiSI(si, businessDate, si.getTenantId(), idempotencyKey);
         else if (si.isInternalTransfer()) return executeTransferSI(si, businessDate, idempotencyKey);
-        else { markSkipped(si, businessDate, "Type not implemented"); return false; }
+        else {
+            markSkipped(si, businessDate, "Type not implemented");
+            return false;
+        }
     }
 
     /**
@@ -200,21 +225,28 @@ public class StandingInstructionServiceImpl {
         return handleFailure(si, businessDate, code, msg);
     }
 
-    private boolean executeLoanEmiSI(StandingInstruction si, LocalDate businessDate,
-                                      String tenantId, String idempotencyKey) {
-        LoanAccount loan = loanAccountRepository.findByTenantIdAndAccountNumber(tenantId, si.getLoanAccountNumber())
-            .orElseThrow(() -> new BusinessException("LOAN_NOT_FOUND", "Loan not found: " + si.getLoanAccountNumber()));
+    private boolean executeLoanEmiSI(
+            StandingInstruction si, LocalDate businessDate, String tenantId, String idempotencyKey) {
+        LoanAccount loan = loanAccountRepository
+                .findByTenantIdAndAccountNumber(tenantId, si.getLoanAccountNumber())
+                .orElseThrow(
+                        () -> new BusinessException("LOAN_NOT_FOUND", "Loan not found: " + si.getLoanAccountNumber()));
 
         if (loan.getStatus().isTerminal()) {
             si.setStatus(SIStatus.EXPIRED);
             si.setLastExecutionStatus("EXPIRED_LOAN_CLOSED");
             si.setUpdatedBy("SYSTEM_EOD");
             siRepository.save(si);
-            auditService.logEvent("StandingInstruction", si.getId(), "SI_EXPIRED",
-                "ACTIVE", "EXPIRED", "STANDING_INSTRUCTION",
-                "SI expired (loan closed): " + si.getSiReference()
-                    + " | Loan: " + si.getLoanAccountNumber()
-                    + " | Loan status: " + loan.getStatus());
+            auditService.logEvent(
+                    "StandingInstruction",
+                    si.getId(),
+                    "SI_EXPIRED",
+                    "ACTIVE",
+                    "EXPIRED",
+                    "STANDING_INSTRUCTION",
+                    "SI expired (loan closed): " + si.getSiReference()
+                            + " | Loan: " + si.getLoanAccountNumber()
+                            + " | Loan status: " + loan.getStatus());
             return false;
         }
 
@@ -224,8 +256,13 @@ public class StandingInstructionServiceImpl {
             return false;
         }
 
-        depositAccountService.withdraw(si.getSourceAccountNumber(), emiAmount, businessDate,
-            si.getNarration() + " | EMI INR " + emiAmount, idempotencyKey, "STANDING_INSTRUCTION");
+        depositAccountService.withdraw(
+                si.getSourceAccountNumber(),
+                emiAmount,
+                businessDate,
+                si.getNarration() + " | EMI INR " + emiAmount,
+                idempotencyKey,
+                "STANDING_INSTRUCTION");
 
         loanAccountService.processRepayment(loan.getAccountNumber(), emiAmount, businessDate, idempotencyKey + "-LOAN");
 
@@ -236,10 +273,12 @@ public class StandingInstructionServiceImpl {
         // In Tier-1 CBS (Finacle/Temenos), the core records a notification event and
         // an external gateway (SMS/email microservice) picks it up asynchronously.
         // Here we log the notification event for the gateway to consume.
-        logNotification(si, "SI_EXECUTION_SUCCESS",
-            "EMI of INR " + emiAmount + " debited from A/c " + si.getSourceAccountNumber()
-                + " towards loan " + loan.getAccountNumber() + " on " + businessDate
-                + ". Ref: " + si.getSiReference());
+        logNotification(
+                si,
+                "SI_EXECUTION_SUCCESS",
+                "EMI of INR " + emiAmount + " debited from A/c " + si.getSourceAccountNumber()
+                        + " towards loan " + loan.getAccountNumber() + " on " + businessDate
+                        + ". Ref: " + si.getSiReference());
 
         log.info("SI LOAN_EMI: si={}, loan={}, emi={}", si.getSiReference(), loan.getAccountNumber(), emiAmount);
         return true;
@@ -250,8 +289,13 @@ public class StandingInstructionServiceImpl {
             markFailed(si, businessDate, "INVALID_AMOUNT", "Amount is zero/null");
             return false;
         }
-        depositAccountService.transfer(si.getSourceAccountNumber(), si.getDestinationAccountNumber(),
-            si.getAmount(), businessDate, si.getNarration(), idempotencyKey);
+        depositAccountService.transfer(
+                si.getSourceAccountNumber(),
+                si.getDestinationAccountNumber(),
+                si.getAmount(),
+                businessDate,
+                si.getNarration(),
+                idempotencyKey);
         markSuccess(si, businessDate, si.getAmount());
         return true;
     }
@@ -266,11 +310,16 @@ public class StandingInstructionServiceImpl {
         si.setUpdatedBy("SYSTEM_EOD");
         if (si.getEndDate() != null && si.getNextExecutionDate().isAfter(si.getEndDate())) {
             si.setStatus(SIStatus.EXPIRED);
-            auditService.logEvent("StandingInstruction", si.getId(), "SI_EXPIRED",
-                "ACTIVE", "EXPIRED", "STANDING_INSTRUCTION",
-                "SI expired (end date reached): " + si.getSiReference()
-                    + " | End date: " + si.getEndDate()
-                    + " | Total executions: " + si.getTotalExecutions());
+            auditService.logEvent(
+                    "StandingInstruction",
+                    si.getId(),
+                    "SI_EXPIRED",
+                    "ACTIVE",
+                    "EXPIRED",
+                    "STANDING_INSTRUCTION",
+                    "SI expired (end date reached): " + si.getSiReference()
+                            + " | End date: " + si.getEndDate()
+                            + " | Total executions: " + si.getTotalExecutions());
         }
         siRepository.save(si);
     }
@@ -289,12 +338,19 @@ public class StandingInstructionServiceImpl {
         siRepository.save(si);
 
         // Gap 2: Notify customer on SI failure per RBI Digital Banking Framework 2023.
-        logNotification(si, "SI_EXECUTION_FAILED",
-            "Standing Instruction " + si.getSiReference() + " failed on " + businessDate
-                + ". Reason: " + msg + ". Please ensure sufficient balance in A/c "
-                + si.getSourceAccountNumber() + ".");
+        logNotification(
+                si,
+                "SI_EXECUTION_FAILED",
+                "Standing Instruction " + si.getSiReference() + " failed on " + businessDate
+                        + ". Reason: " + msg + ". Please ensure sufficient balance in A/c "
+                        + si.getSourceAccountNumber() + ".");
 
-        log.warn("SI failed: si={}, code={}, retries={}/{}", si.getSiReference(), code, si.getRetriesDone(), si.getMaxRetries());
+        log.warn(
+                "SI failed: si={}, code={}, retries={}/{}",
+                si.getSiReference(),
+                code,
+                si.getRetriesDone(),
+                si.getMaxRetries());
         return false;
     }
 
@@ -336,17 +392,25 @@ public class StandingInstructionServiceImpl {
             // CBS: Mask mobile number in audit log per RBI IT Governance Direction 2023.
             // PII must never appear in plaintext in logs, audit trails, or error messages.
             String maskedMobile = (si.getCustomer() != null && si.getCustomer().getMobileNumber() != null)
-                ? PiiMaskingUtil.maskMobile(si.getCustomer().getMobileNumber()) : "N/A";
-            auditService.logEvent("StandingInstruction", si.getId(), eventType,
-                si.getSiReference(), message, "NOTIFICATION",
-                "Customer: " + (si.getCustomer() != null ? si.getCustomer().getId() : "N/A")
-                    + " | Mobile: " + maskedMobile
-                    + " | Message: " + message);
+                    ? PiiMaskingUtil.maskMobile(si.getCustomer().getMobileNumber())
+                    : "N/A";
+            auditService.logEvent(
+                    "StandingInstruction",
+                    si.getId(),
+                    eventType,
+                    si.getSiReference(),
+                    message,
+                    "NOTIFICATION",
+                    "Customer: " + (si.getCustomer() != null ? si.getCustomer().getId() : "N/A")
+                            + " | Mobile: " + maskedMobile
+                            + " | Message: " + message);
             log.debug("SI notification logged: si={}, event={}", si.getSiReference(), eventType);
         } catch (Exception e) {
             // Notification logging failure must NEVER block financial processing
-            log.warn("SI notification logging failed (non-blocking): si={}, error={}",
-                si.getSiReference(), e.getMessage());
+            log.warn(
+                    "SI notification logging failed (non-blocking): si={}, error={}",
+                    si.getSiReference(),
+                    e.getMessage());
         }
     }
 
@@ -375,16 +439,22 @@ public class StandingInstructionServiceImpl {
      * @return SI in PENDING_APPROVAL status (requires checker activation)
      */
     @Transactional
-    public StandingInstruction registerManualSI(Long customerId, String sourceAccountNumber,
-                                                 String destinationType, String destinationAccountNumber,
-                                                 BigDecimal amount, SIFrequency frequency,
-                                                 int executionDay, LocalDate startDate,
-                                                 LocalDate endDate, String narration) {
+    public StandingInstruction registerManualSI(
+            Long customerId,
+            String sourceAccountNumber,
+            String destinationType,
+            String destinationAccountNumber,
+            BigDecimal amount,
+            SIFrequency frequency,
+            int executionDay,
+            LocalDate startDate,
+            LocalDate endDate,
+            String narration) {
         String tenantId = TenantContext.getCurrentTenant();
 
         if ("LOAN_EMI".equals(destinationType)) {
-            throw new BusinessException("USE_AUTO_SI",
-                "LOAN_EMI SIs are auto-created at disbursement. Use the disbursement flow instead.");
+            throw new BusinessException(
+                    "USE_AUTO_SI", "LOAN_EMI SIs are auto-created at disbursement. Use the disbursement flow instead.");
         }
         if (amount == null || amount.signum() <= 0) {
             throw new BusinessException("INVALID_AMOUNT", "SI amount must be positive for manual SIs");
@@ -400,8 +470,8 @@ public class StandingInstructionServiceImpl {
         }
         var casa = casaOpt.get();
         if (!casa.getCustomer().getId().equals(customerId)) {
-            throw new BusinessException("CIF_MISMATCH",
-                "CASA " + sourceAccountNumber + " does not belong to customer " + customerId);
+            throw new BusinessException(
+                    "CIF_MISMATCH", "CASA " + sourceAccountNumber + " does not belong to customer " + customerId);
         }
 
         var customer = casa.getCustomer();
@@ -426,13 +496,21 @@ public class StandingInstructionServiceImpl {
         si.setCreatedBy(SecurityUtil.getCurrentUsername());
 
         StandingInstruction saved = siRepository.save(si);
-        auditService.logEvent("StandingInstruction", saved.getId(), "SI_REGISTERED",
-            null, saved.getSiReference(), "STANDING_INSTRUCTION",
-            "Manual SI registered (PENDING_APPROVAL): " + saved.getSiReference()
-                + " | Type: " + destinationType + " | Amount: INR " + amount
-                + " | Source: " + sourceAccountNumber + " | Maker: " + SecurityUtil.getCurrentUsername());
-        log.info("Manual SI registered: si={}, type={}, status=PENDING_APPROVAL, maker={}",
-            saved.getSiReference(), destinationType, SecurityUtil.getCurrentUsername());
+        auditService.logEvent(
+                "StandingInstruction",
+                saved.getId(),
+                "SI_REGISTERED",
+                null,
+                saved.getSiReference(),
+                "STANDING_INSTRUCTION",
+                "Manual SI registered (PENDING_APPROVAL): " + saved.getSiReference()
+                        + " | Type: " + destinationType + " | Amount: INR " + amount
+                        + " | Source: " + sourceAccountNumber + " | Maker: " + SecurityUtil.getCurrentUsername());
+        log.info(
+                "Manual SI registered: si={}, type={}, status=PENDING_APPROVAL, maker={}",
+                saved.getSiReference(),
+                destinationType,
+                SecurityUtil.getCurrentUsername());
         return saved;
     }
 
@@ -444,23 +522,28 @@ public class StandingInstructionServiceImpl {
     public StandingInstruction approveSI(String siReference) {
         String tenantId = TenantContext.getCurrentTenant();
         String checker = SecurityUtil.getCurrentUsername();
-        StandingInstruction si = siRepository.findByTenantIdAndSiReference(tenantId, siReference)
-            .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
+        StandingInstruction si = siRepository
+                .findByTenantIdAndSiReference(tenantId, siReference)
+                .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
         if (si.getStatus() != SIStatus.PENDING_APPROVAL) {
             throw new BusinessException("SI_NOT_PENDING", "SI is not in PENDING_APPROVAL: " + si.getStatus());
         }
         // Maker-checker: checker must be different from maker
         if (checker.equals(si.getCreatedBy())) {
-            throw new BusinessException("SELF_APPROVAL",
-                "Maker and checker must be different users per RBI dual-authorization norms");
+            throw new BusinessException(
+                    "SELF_APPROVAL", "Maker and checker must be different users per RBI dual-authorization norms");
         }
         si.setStatus(SIStatus.ACTIVE);
         si.setUpdatedBy(checker);
         StandingInstruction saved = siRepository.save(si);
-        auditService.logEvent("StandingInstruction", si.getId(), "SI_APPROVED",
-            "PENDING_APPROVAL", "ACTIVE", "STANDING_INSTRUCTION",
-            "SI approved by checker: " + siReference + " | Checker: " + checker
-                + " | Maker: " + si.getCreatedBy());
+        auditService.logEvent(
+                "StandingInstruction",
+                si.getId(),
+                "SI_APPROVED",
+                "PENDING_APPROVAL",
+                "ACTIVE",
+                "STANDING_INSTRUCTION",
+                "SI approved by checker: " + siReference + " | Checker: " + checker + " | Maker: " + si.getCreatedBy());
         log.info("SI approved: si={}, checker={}, maker={}", siReference, checker, si.getCreatedBy());
         return saved;
     }
@@ -471,8 +554,9 @@ public class StandingInstructionServiceImpl {
     @Transactional
     public StandingInstruction rejectSI(String siReference, String reason) {
         String tenantId = TenantContext.getCurrentTenant();
-        StandingInstruction si = siRepository.findByTenantIdAndSiReference(tenantId, siReference)
-            .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
+        StandingInstruction si = siRepository
+                .findByTenantIdAndSiReference(tenantId, siReference)
+                .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
         if (si.getStatus() != SIStatus.PENDING_APPROVAL) {
             throw new BusinessException("SI_NOT_PENDING", "SI is not in PENDING_APPROVAL: " + si.getStatus());
         }
@@ -480,10 +564,14 @@ public class StandingInstructionServiceImpl {
         si.setLastFailureReason(reason);
         si.setUpdatedBy(SecurityUtil.getCurrentUsername());
         StandingInstruction saved = siRepository.save(si);
-        auditService.logEvent("StandingInstruction", si.getId(), "SI_REJECTED",
-            "PENDING_APPROVAL", "REJECTED", "STANDING_INSTRUCTION",
-            "SI rejected: " + siReference + " | Reason: " + reason
-                + " | By: " + SecurityUtil.getCurrentUsername());
+        auditService.logEvent(
+                "StandingInstruction",
+                si.getId(),
+                "SI_REJECTED",
+                "PENDING_APPROVAL",
+                "REJECTED",
+                "STANDING_INSTRUCTION",
+                "SI rejected: " + siReference + " | Reason: " + reason + " | By: " + SecurityUtil.getCurrentUsername());
         return saved;
     }
 
@@ -518,8 +606,9 @@ public class StandingInstructionServiceImpl {
         // Graceful fallback: if calendar data is unavailable, use raw date.
         try {
             String tenantId = si.getTenantId();
-            return calendarRepository.findNextBusinessDayOnOrAfter(tenantId, rawNext)
-                .orElse(rawNext);
+            return calendarRepository
+                    .findNextBusinessDayOnOrAfter(tenantId, rawNext)
+                    .orElse(rawNext);
         } catch (Exception e) {
             // Calendar lookup failure should not break SI processing
             log.debug("Holiday lookup failed for {}, using raw date {}", si.getSiReference(), rawNext);
@@ -538,33 +627,47 @@ public class StandingInstructionServiceImpl {
      * Per RBI Payment Systems: customer can modify SI at any time.
      */
     @Transactional
-    public StandingInstruction amendSI(String siReference, BigDecimal newAmount,
-                                        SIFrequency newFrequency, Integer newExecutionDay) {
+    public StandingInstruction amendSI(
+            String siReference, BigDecimal newAmount, SIFrequency newFrequency, Integer newExecutionDay) {
         String tenantId = TenantContext.getCurrentTenant();
-        StandingInstruction si = siRepository.findByTenantIdAndSiReference(tenantId, siReference)
-            .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
+        StandingInstruction si = siRepository
+                .findByTenantIdAndSiReference(tenantId, siReference)
+                .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
         if (si.getStatus().isTerminal()) {
             throw new BusinessException("SI_TERMINAL", "Cannot amend terminal SI: " + si.getStatus());
         }
         if (si.isLoanEmi() && newAmount != null) {
-            throw new BusinessException("SI_LOAN_EMI_AMOUNT_FIXED",
-                "LOAN_EMI SI amount cannot be amended — it is resolved dynamically from LoanAccount.emiAmount");
+            throw new BusinessException(
+                    "SI_LOAN_EMI_AMOUNT_FIXED",
+                    "LOAN_EMI SI amount cannot be amended — it is resolved dynamically from LoanAccount.emiAmount");
         }
 
         StringBuilder changes = new StringBuilder();
         if (newAmount != null && !si.isLoanEmi()) {
-            changes.append("amount: ").append(si.getAmount()).append(" → ").append(newAmount).append("; ");
+            changes.append("amount: ")
+                    .append(si.getAmount())
+                    .append(" → ")
+                    .append(newAmount)
+                    .append("; ");
             si.setAmount(newAmount);
         }
         if (newFrequency != null && newFrequency != si.getFrequency()) {
-            changes.append("frequency: ").append(si.getFrequency()).append(" → ").append(newFrequency).append("; ");
+            changes.append("frequency: ")
+                    .append(si.getFrequency())
+                    .append(" → ")
+                    .append(newFrequency)
+                    .append("; ");
             si.setFrequency(newFrequency);
         }
         if (newExecutionDay != null && newExecutionDay != si.getExecutionDay()) {
             if (newExecutionDay < 1 || newExecutionDay > 28) {
                 throw new BusinessException("INVALID_EXECUTION_DAY", "Execution day must be 1-28");
             }
-            changes.append("executionDay: ").append(si.getExecutionDay()).append(" → ").append(newExecutionDay).append("; ");
+            changes.append("executionDay: ")
+                    .append(si.getExecutionDay())
+                    .append(" → ")
+                    .append(newExecutionDay)
+                    .append("; ");
             si.setExecutionDay(newExecutionDay);
         }
 
@@ -579,9 +682,14 @@ public class StandingInstructionServiceImpl {
 
         si.setUpdatedBy(SecurityUtil.getCurrentUsername());
         StandingInstruction saved = siRepository.save(si);
-        auditService.logEvent("StandingInstruction", si.getId(), "SI_AMENDED",
-            siReference, changes.toString(), "STANDING_INSTRUCTION",
-            "SI amended: " + siReference + " | Changes: " + changes + " by " + SecurityUtil.getCurrentUsername());
+        auditService.logEvent(
+                "StandingInstruction",
+                si.getId(),
+                "SI_AMENDED",
+                siReference,
+                changes.toString(),
+                "STANDING_INSTRUCTION",
+                "SI amended: " + siReference + " | Changes: " + changes + " by " + SecurityUtil.getCurrentUsername());
         log.info("SI amended: si={}, changes={}", siReference, changes);
         return saved;
     }
@@ -590,15 +698,22 @@ public class StandingInstructionServiceImpl {
     @Transactional
     public StandingInstruction pauseSI(String siReference) {
         String tenantId = TenantContext.getCurrentTenant();
-        StandingInstruction si = siRepository.findByTenantIdAndSiReference(tenantId, siReference)
-            .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
-        if (si.getStatus() != SIStatus.ACTIVE) throw new BusinessException("SI_NOT_ACTIVE", "Cannot pause: " + si.getStatus());
+        StandingInstruction si = siRepository
+                .findByTenantIdAndSiReference(tenantId, siReference)
+                .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
+        if (si.getStatus() != SIStatus.ACTIVE)
+            throw new BusinessException("SI_NOT_ACTIVE", "Cannot pause: " + si.getStatus());
         si.setStatus(SIStatus.PAUSED);
         si.setUpdatedBy(SecurityUtil.getCurrentUsername());
         StandingInstruction saved = siRepository.save(si);
-        auditService.logEvent("StandingInstruction", si.getId(), "SI_PAUSED",
-            "ACTIVE", "PAUSED", "STANDING_INSTRUCTION",
-            "SI paused: " + siReference + " by " + SecurityUtil.getCurrentUsername());
+        auditService.logEvent(
+                "StandingInstruction",
+                si.getId(),
+                "SI_PAUSED",
+                "ACTIVE",
+                "PAUSED",
+                "STANDING_INSTRUCTION",
+                "SI paused: " + siReference + " by " + SecurityUtil.getCurrentUsername());
         return saved;
     }
 
@@ -606,15 +721,22 @@ public class StandingInstructionServiceImpl {
     @Transactional
     public StandingInstruction resumeSI(String siReference) {
         String tenantId = TenantContext.getCurrentTenant();
-        StandingInstruction si = siRepository.findByTenantIdAndSiReference(tenantId, siReference)
-            .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
-        if (si.getStatus() != SIStatus.PAUSED) throw new BusinessException("SI_NOT_PAUSED", "Cannot resume: " + si.getStatus());
+        StandingInstruction si = siRepository
+                .findByTenantIdAndSiReference(tenantId, siReference)
+                .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
+        if (si.getStatus() != SIStatus.PAUSED)
+            throw new BusinessException("SI_NOT_PAUSED", "Cannot resume: " + si.getStatus());
         si.setStatus(SIStatus.ACTIVE);
         si.setUpdatedBy(SecurityUtil.getCurrentUsername());
         StandingInstruction saved = siRepository.save(si);
-        auditService.logEvent("StandingInstruction", si.getId(), "SI_RESUMED",
-            "PAUSED", "ACTIVE", "STANDING_INSTRUCTION",
-            "SI resumed: " + siReference + " by " + SecurityUtil.getCurrentUsername());
+        auditService.logEvent(
+                "StandingInstruction",
+                si.getId(),
+                "SI_RESUMED",
+                "PAUSED",
+                "ACTIVE",
+                "STANDING_INSTRUCTION",
+                "SI resumed: " + siReference + " by " + SecurityUtil.getCurrentUsername());
         return saved;
     }
 
@@ -622,16 +744,23 @@ public class StandingInstructionServiceImpl {
     @Transactional
     public StandingInstruction cancelSI(String siReference) {
         String tenantId = TenantContext.getCurrentTenant();
-        StandingInstruction si = siRepository.findByTenantIdAndSiReference(tenantId, siReference)
-            .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
-        if (si.getStatus().isTerminal()) throw new BusinessException("SI_TERMINAL", "Already terminal: " + si.getStatus());
+        StandingInstruction si = siRepository
+                .findByTenantIdAndSiReference(tenantId, siReference)
+                .orElseThrow(() -> new BusinessException("SI_NOT_FOUND", "Not found: " + siReference));
+        if (si.getStatus().isTerminal())
+            throw new BusinessException("SI_TERMINAL", "Already terminal: " + si.getStatus());
         String prevStatus = si.getStatus().name();
         si.setStatus(SIStatus.CANCELLED);
         si.setUpdatedBy(SecurityUtil.getCurrentUsername());
         StandingInstruction saved = siRepository.save(si);
-        auditService.logEvent("StandingInstruction", si.getId(), "SI_CANCELLED",
-            prevStatus, "CANCELLED", "STANDING_INSTRUCTION",
-            "SI cancelled: " + siReference + " by " + SecurityUtil.getCurrentUsername());
+        auditService.logEvent(
+                "StandingInstruction",
+                si.getId(),
+                "SI_CANCELLED",
+                prevStatus,
+                "CANCELLED",
+                "STANDING_INSTRUCTION",
+                "SI cancelled: " + siReference + " by " + SecurityUtil.getCurrentUsername());
         return saved;
     }
 }

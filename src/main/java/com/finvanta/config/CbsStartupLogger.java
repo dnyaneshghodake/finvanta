@@ -25,7 +25,8 @@ public class CbsStartupLogger implements CommandLineRunner {
     @Override
     public void run(String... args) {
         log.info("=== Finvanta CBS Platform Started ===");
-        log.info("CBS Role Matrix: MAKER (Loan Officer) | CHECKER (Verification/Approval) | ADMIN (Branch Manager) | AUDITOR (Internal Audit)");
+        log.info(
+                "CBS Role Matrix: MAKER (Loan Officer) | CHECKER (Verification/Approval) | ADMIN (Branch Manager) | AUDITOR (Internal Audit)");
         log.info("Dev credentials: maker1/maker2/checker1/checker2/admin/auditor1 — password: finvanta123");
         log.info("=====================================");
     }

@@ -3,13 +3,14 @@ package com.finvanta.controller;
 import com.finvanta.accounting.AccountingReconciliationEngine;
 import com.finvanta.batch.SubledgerReconciliationService;
 import com.finvanta.service.BusinessDateService;
+
+import java.time.LocalDate;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.ModelAndView;
-
-import java.time.LocalDate;
 
 /**
  * CBS GL Reconciliation Controller.
@@ -28,9 +29,10 @@ public class ReconciliationController {
     private final SubledgerReconciliationService subledgerReconciliationService;
     private final BusinessDateService businessDateService;
 
-    public ReconciliationController(AccountingReconciliationEngine reconciliationService,
-                                     SubledgerReconciliationService subledgerReconciliationService,
-                                     BusinessDateService businessDateService) {
+    public ReconciliationController(
+            AccountingReconciliationEngine reconciliationService,
+            SubledgerReconciliationService subledgerReconciliationService,
+            BusinessDateService businessDateService) {
         this.reconciliationService = reconciliationService;
         this.subledgerReconciliationService = subledgerReconciliationService;
         this.businessDateService = businessDateService;
@@ -40,8 +42,7 @@ public class ReconciliationController {
     public ModelAndView reconciliationReport(@RequestParam(required = false) String businessDate) {
         LocalDate date;
         try {
-            date = businessDate != null ? LocalDate.parse(businessDate)
-                : businessDateService.getCurrentBusinessDate();
+            date = businessDate != null ? LocalDate.parse(businessDate) : businessDateService.getCurrentBusinessDate();
         } catch (Exception e) {
             date = LocalDate.now();
         }

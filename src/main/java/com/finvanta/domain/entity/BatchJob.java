@@ -1,19 +1,23 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.BatchStatus;
+
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 @Entity
-@Table(name = "batch_jobs", indexes = {
-    @Index(name = "idx_batch_tenant_date", columnList = "tenant_id, business_date"),
-    @Index(name = "idx_batch_status", columnList = "tenant_id, status")
-})
+@Table(
+        name = "batch_jobs",
+        indexes = {
+            @Index(name = "idx_batch_tenant_date", columnList = "tenant_id, business_date"),
+            @Index(name = "idx_batch_status", columnList = "tenant_id, status")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

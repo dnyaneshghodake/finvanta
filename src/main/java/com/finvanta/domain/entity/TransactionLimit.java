@@ -1,11 +1,12 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
+
+import java.math.BigDecimal;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.math.BigDecimal;
 
 /**
  * CBS Transaction Limits per Finacle/Temenos Internal Controls.
@@ -26,9 +27,9 @@ import java.math.BigDecimal;
  *   → Amounts above ₹10L require CHECKER/ADMIN approval
  */
 @Entity
-@Table(name = "transaction_limits", indexes = {
-    @Index(name = "idx_txnlimit_tenant_role", columnList = "tenant_id, role, transaction_type")
-})
+@Table(
+        name = "transaction_limits",
+        indexes = {@Index(name = "idx_txnlimit_tenant_role", columnList = "tenant_id, role, transaction_type")})
 @Getter
 @Setter
 @NoArgsConstructor

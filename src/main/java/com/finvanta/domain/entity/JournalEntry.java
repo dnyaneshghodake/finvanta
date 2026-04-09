@@ -1,9 +1,6 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -11,12 +8,18 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 @Entity
-@Table(name = "journal_entries", indexes = {
-    @Index(name = "idx_je_tenant_ref", columnList = "tenant_id, journal_ref", unique = true),
-    @Index(name = "idx_je_value_date", columnList = "tenant_id, value_date"),
-    @Index(name = "idx_je_posting_date", columnList = "tenant_id, posting_date")
-})
+@Table(
+        name = "journal_entries",
+        indexes = {
+            @Index(name = "idx_je_tenant_ref", columnList = "tenant_id, journal_ref", unique = true),
+            @Index(name = "idx_je_value_date", columnList = "tenant_id, value_date"),
+            @Index(name = "idx_je_posting_date", columnList = "tenant_id, posting_date")
+        })
 @Getter
 @Setter
 @NoArgsConstructor

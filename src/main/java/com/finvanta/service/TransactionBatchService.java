@@ -10,14 +10,15 @@ import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * CBS Enterprise Transaction Batch Service per Finacle/Temenos standards.
@@ -48,10 +49,11 @@ public class TransactionBatchService {
     private final BranchRepository branchRepository;
     private final AuditService auditService;
 
-    public TransactionBatchService(TransactionBatchRepository batchRepository,
-                                    BusinessCalendarRepository calendarRepository,
-                                    BranchRepository branchRepository,
-                                    AuditService auditService) {
+    public TransactionBatchService(
+            TransactionBatchRepository batchRepository,
+            BusinessCalendarRepository calendarRepository,
+            BranchRepository branchRepository,
+            AuditService auditService) {
         this.batchRepository = batchRepository;
         this.calendarRepository = calendarRepository;
         this.branchRepository = branchRepository;
@@ -68,8 +70,7 @@ public class TransactionBatchService {
      * @return The opened batch
      */
     @Transactional
-    public TransactionBatch openBatch(LocalDate businessDate, String batchName,
-                                       String batchType, Long branchId) {
+    public TransactionBatch openBatch(LocalDate businessDate, String batchName, String batchType, Long branchId) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
@@ -78,27 +79,26 @@ public class TransactionBatchService {
         // Without this check, batches could be opened for NOT_OPENED, DAY_CLOSED, or
         // holiday dates — breaking the CBS day control lifecycle invariant.
         BusinessCalendar calendar = calendarRepository
-            .findByTenantIdAndBusinessDate(tenantId, businessDate)
-            .orElseThrow(() -> new BusinessException("DATE_NOT_IN_CALENDAR",
-                "Business date " + businessDate + " not found in calendar."));
+                .findByTenantIdAndBusinessDate(tenantId, businessDate)
+                .orElseThrow(() -> new BusinessException(
+                        "DATE_NOT_IN_CALENDAR", "Business date " + businessDate + " not found in calendar."));
 
         if (!calendar.isDayOpen()) {
-            throw new BusinessException("DAY_NOT_OPEN",
-                "Cannot open batch for " + businessDate
-                    + " — day status is " + calendar.getDayStatus()
-                    + ". The business day must be DAY_OPEN before opening transaction batches.");
+            throw new BusinessException(
+                    "DAY_NOT_OPEN",
+                    "Cannot open batch for " + businessDate
+                            + " — day status is " + calendar.getDayStatus()
+                            + ". The business day must be DAY_OPEN before opening transaction batches.");
         }
 
         if (calendar.isHoliday()) {
-            throw new BusinessException("DAY_IS_HOLIDAY",
-                "Cannot open batch for holiday: " + businessDate);
+            throw new BusinessException("DAY_IS_HOLIDAY", "Cannot open batch for holiday: " + businessDate);
         }
 
         // Validate: no duplicate batch name for same business date
-        if (batchRepository.existsByTenantIdAndBusinessDateAndBatchName(
-                tenantId, businessDate, batchName)) {
-            throw new BusinessException("BATCH_DUPLICATE",
-                "Batch '" + batchName + "' already exists for business date " + businessDate);
+        if (batchRepository.existsByTenantIdAndBusinessDateAndBatchName(tenantId, businessDate, batchName)) {
+            throw new BusinessException(
+                    "BATCH_DUPLICATE", "Batch '" + batchName + "' already exists for business date " + businessDate);
         }
 
         TransactionBatch batch = new TransactionBatch();
@@ -113,21 +113,25 @@ public class TransactionBatchService {
         batch.setCreatedBy(currentUser);
 
         if (branchId != null) {
-            Branch branch = branchRepository.findById(branchId)
-                .filter(b -> b.getTenantId().equals(tenantId))
-                .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND",
-                    "Branch not found: " + branchId));
+            Branch branch = branchRepository
+                    .findById(branchId)
+                    .filter(b -> b.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "Branch not found: " + branchId));
             batch.setBranch(branch);
         }
 
         TransactionBatch saved = batchRepository.save(batch);
 
-        auditService.logEvent("TransactionBatch", saved.getId(), "OPEN",
-            null, saved.getBatchName(), "BATCH_CONTROL",
-            "Batch opened: " + batchName + " (" + batchType + ") for " + businessDate);
+        auditService.logEvent(
+                "TransactionBatch",
+                saved.getId(),
+                "OPEN",
+                null,
+                saved.getBatchName(),
+                "BATCH_CONTROL",
+                "Batch opened: " + batchName + " (" + batchType + ") for " + businessDate);
 
-        log.info("Batch opened: name={}, type={}, date={}, user={}",
-            batchName, batchType, businessDate, currentUser);
+        log.info("Batch opened: name={}, type={}, date={}, user={}", batchName, batchType, businessDate, currentUser);
 
         return saved;
     }
@@ -143,21 +147,23 @@ public class TransactionBatchService {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
-        TransactionBatch batch = batchRepository.findAndLockById(batchId)
-            .filter(b -> b.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException("BATCH_NOT_FOUND",
-                "Transaction batch not found: " + batchId));
+        TransactionBatch batch = batchRepository
+                .findAndLockById(batchId)
+                .filter(b -> b.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new BusinessException("BATCH_NOT_FOUND", "Transaction batch not found: " + batchId));
 
         if (!batch.isOpen()) {
-            throw new BusinessException("BATCH_NOT_OPEN",
-                "Batch '" + batch.getBatchName() + "' is not in OPEN status. Current: " + batch.getStatus());
+            throw new BusinessException(
+                    "BATCH_NOT_OPEN",
+                    "Batch '" + batch.getBatchName() + "' is not in OPEN status. Current: " + batch.getStatus());
         }
 
         // CBS double-entry integrity: debit must equal credit
         if (!batch.isBalanced()) {
-            throw new BusinessException("BATCH_IMBALANCED",
-                "Cannot close batch '" + batch.getBatchName() + "': Total Debit ("
-                    + batch.getTotalDebit() + ") != Total Credit (" + batch.getTotalCredit() + ")");
+            throw new BusinessException(
+                    "BATCH_IMBALANCED",
+                    "Cannot close batch '" + batch.getBatchName() + "': Total Debit (" + batch.getTotalDebit()
+                            + ") != Total Credit (" + batch.getTotalCredit() + ")");
         }
 
         batch.setStatus("CLOSED");
@@ -168,14 +174,22 @@ public class TransactionBatchService {
 
         TransactionBatch saved = batchRepository.save(batch);
 
-        auditService.logEvent("TransactionBatch", saved.getId(), "CLOSE",
-            "OPEN", "CLOSED", "BATCH_CONTROL",
-            "Batch closed: " + batch.getBatchName() + ", txns=" + batch.getTotalTransactions()
-                + ", debit=" + batch.getTotalDebit() + ", credit=" + batch.getTotalCredit());
+        auditService.logEvent(
+                "TransactionBatch",
+                saved.getId(),
+                "CLOSE",
+                "OPEN",
+                "CLOSED",
+                "BATCH_CONTROL",
+                "Batch closed: " + batch.getBatchName() + ", txns=" + batch.getTotalTransactions() + ", debit="
+                        + batch.getTotalDebit() + ", credit=" + batch.getTotalCredit());
 
-        log.info("Batch closed: name={}, txns={}, debit={}, credit={}",
-            batch.getBatchName(), batch.getTotalTransactions(),
-            batch.getTotalDebit(), batch.getTotalCredit());
+        log.info(
+                "Batch closed: name={}, txns={}, debit={}, credit={}",
+                batch.getBatchName(),
+                batch.getTotalTransactions(),
+                batch.getTotalDebit(),
+                batch.getTotalCredit());
 
         return saved;
     }
@@ -193,9 +207,10 @@ public class TransactionBatchService {
         List<TransactionBatch> openBatches = batchRepository.findOpenBatches(tenantId, businessDate);
 
         if (openBatches.isEmpty()) {
-            throw new BusinessException("NO_OPEN_BATCH",
-                "No OPEN transaction batch for business date " + businessDate
-                    + ". Open a batch before posting transactions.");
+            throw new BusinessException(
+                    "NO_OPEN_BATCH",
+                    "No OPEN transaction batch for business date " + businessDate
+                            + ". Open a batch before posting transactions.");
         }
 
         return openBatches.get(0);
@@ -213,9 +228,10 @@ public class TransactionBatchService {
         long openCount = batchRepository.countOpenBatches(tenantId, businessDate);
 
         if (openCount > 0) {
-            throw new BusinessException("BATCHES_STILL_OPEN",
-                openCount + " batch(es) still OPEN for business date " + businessDate
-                    + ". Close all batches before running EOD.");
+            throw new BusinessException(
+                    "BATCHES_STILL_OPEN",
+                    openCount + " batch(es) still OPEN for business date " + businessDate
+                            + ". Close all batches before running EOD.");
         }
     }
 
@@ -224,8 +240,7 @@ public class TransactionBatchService {
      */
     public List<TransactionBatch> getBatchesForDate(LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
-        return batchRepository.findByTenantIdAndBusinessDateOrderByOpenedAtAsc(
-            tenantId, businessDate);
+        return batchRepository.findByTenantIdAndBusinessDateOrderByOpenedAtAsc(tenantId, businessDate);
     }
 
     /**

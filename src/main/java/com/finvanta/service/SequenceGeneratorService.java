@@ -3,8 +3,10 @@ package com.finvanta.service;
 import com.finvanta.domain.entity.DbSequence;
 import com.finvanta.repository.DbSequenceRepository;
 import com.finvanta.util.TenantContext;
+
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -67,8 +69,8 @@ public class SequenceGeneratorService {
 
         // Try to lock and increment existing sequence
         DbSequence seq = sequenceRepository
-            .findAndLockByTenantIdAndSequenceName(tenantId, sequenceName)
-            .orElse(null);
+                .findAndLockByTenantIdAndSequenceName(tenantId, sequenceName)
+                .orElse(null);
 
         if (seq == null) {
             // Lazy init: ensure the sequence row exists using a native INSERT that
@@ -86,12 +88,13 @@ public class SequenceGeneratorService {
             //
             // Per Finacle SEQ_MASTER: sequence lazy-init must be idempotent across DB engines.
             try {
-                entityManager.createNativeQuery(
-                    "INSERT INTO db_sequences (tenant_id, sequence_name, current_value, version) "
-                    + "VALUES (:tenantId, :seqName, 0, 0)")
-                    .setParameter("tenantId", tenantId)
-                    .setParameter("seqName", sequenceName)
-                    .executeUpdate();
+                entityManager
+                        .createNativeQuery(
+                                "INSERT INTO db_sequences (tenant_id, sequence_name, current_value, version) "
+                                        + "VALUES (:tenantId, :seqName, 0, 0)")
+                        .setParameter("tenantId", tenantId)
+                        .setParameter("seqName", sequenceName)
+                        .executeUpdate();
             } catch (Exception e) {
                 // Unique constraint violation — another thread already created it.
                 // Native SQL does not poison the persistence context, so no clear() needed.
@@ -100,9 +103,9 @@ public class SequenceGeneratorService {
 
             // Now lock the row — guaranteed to exist after insert or concurrent insert
             seq = sequenceRepository
-                .findAndLockByTenantIdAndSequenceName(tenantId, sequenceName)
-                .orElseThrow(() -> new IllegalStateException(
-                    "Failed to lock sequence after init: " + sequenceName));
+                    .findAndLockByTenantIdAndSequenceName(tenantId, sequenceName)
+                    .orElseThrow(
+                            () -> new IllegalStateException("Failed to lock sequence after init: " + sequenceName));
         }
 
         long nextVal = seq.getCurrentValue() + 1;

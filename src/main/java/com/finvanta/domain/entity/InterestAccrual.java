@@ -1,11 +1,12 @@
 package com.finvanta.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * CBS Interest Accrual — Audit-grade per-day accrual record.
@@ -31,12 +32,14 @@ import java.time.LocalDate;
  * 3. Row updated with posted_flag=true, journal_entry_id, transaction_ref
  */
 @Entity
-@Table(name = "interest_accruals", indexes = {
-    @Index(name = "idx_intaccrual_tenant_account_date", columnList = "tenant_id, account_id, accrual_date"),
-    @Index(name = "idx_intaccrual_tenant_account_type", columnList = "tenant_id, account_id, accrual_type"),
-    @Index(name = "idx_intaccrual_posted_flag", columnList = "posted_flag"),
-    @Index(name = "idx_intaccrual_business_date", columnList = "business_date")
-})
+@Table(
+        name = "interest_accruals",
+        indexes = {
+            @Index(name = "idx_intaccrual_tenant_account_date", columnList = "tenant_id, account_id, accrual_date"),
+            @Index(name = "idx_intaccrual_tenant_account_type", columnList = "tenant_id, account_id, accrual_type"),
+            @Index(name = "idx_intaccrual_posted_flag", columnList = "posted_flag"),
+            @Index(name = "idx_intaccrual_business_date", columnList = "business_date")
+        })
 @Getter
 @Setter
 public class InterestAccrual extends BaseEntity {
@@ -80,4 +83,3 @@ public class InterestAccrual extends BaseEntity {
     // Audit trail: who accrued, when
     // tenantId, createdAt, createdBy inherited from BaseEntity
 }
-

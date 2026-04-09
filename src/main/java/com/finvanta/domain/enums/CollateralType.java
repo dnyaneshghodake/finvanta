@@ -19,15 +19,15 @@ package com.finvanta.domain.enums;
  *   UNSECURED:   N/A (no collateral)
  */
 public enum CollateralType {
-    GOLD,           // Gold ornaments/bullion (RBI Gold Loan Guidelines)
-    PROPERTY,       // Immovable property (LAP, Home Loan)
-    VEHICLE,        // Motor vehicle (Car Loan, Commercial Vehicle)
-    FD,             // Fixed Deposit (lien on FD)
-    SHARES,         // Listed equity shares (pledge)
-    MACHINERY,      // Plant & Machinery (MSME loans)
-    INVENTORY,      // Stock/Inventory (Working Capital)
-    RECEIVABLES,    // Book Debts / Receivables (Working Capital)
-    UNSECURED;      // No collateral (Personal Loan, Education Loan)
+    GOLD, // Gold ornaments/bullion (RBI Gold Loan Guidelines)
+    PROPERTY, // Immovable property (LAP, Home Loan)
+    VEHICLE, // Motor vehicle (Car Loan, Commercial Vehicle)
+    FD, // Fixed Deposit (lien on FD)
+    SHARES, // Listed equity shares (pledge)
+    MACHINERY, // Plant & Machinery (MSME loans)
+    INVENTORY, // Stock/Inventory (Working Capital)
+    RECEIVABLES, // Book Debts / Receivables (Working Capital)
+    UNSECURED; // No collateral (Personal Loan, Education Loan)
 
     /**
      * Returns the RBI-mandated maximum LTV ratio for this collateral type.
@@ -54,18 +54,17 @@ public enum CollateralType {
 
     /** Returns true if this collateral type requires periodic revaluation */
     public boolean requiresPeriodicValuation() {
-        return this == PROPERTY || this == GOLD || this == SHARES
-            || this == MACHINERY || this == INVENTORY;
+        return this == PROPERTY || this == GOLD || this == SHARES || this == MACHINERY || this == INVENTORY;
     }
 
     /** Returns the recommended revaluation frequency in months */
     public int getValuationFrequencyMonths() {
         return switch (this) {
-            case GOLD -> 6;        // Semi-annual (gold price volatility)
-            case PROPERTY -> 12;   // Annual
-            case SHARES -> 3;      // Quarterly (market volatility)
-            case MACHINERY -> 12;  // Annual
-            case INVENTORY -> 3;   // Quarterly
+            case GOLD -> 6; // Semi-annual (gold price volatility)
+            case PROPERTY -> 12; // Annual
+            case SHARES -> 3; // Quarterly (market volatility)
+            case MACHINERY -> 12; // Annual
+            case INVENTORY -> 3; // Quarterly
             default -> 0;
         };
     }

@@ -1,13 +1,15 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.UserRole;
+
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * CBS User Entity per Finacle USER_MASTER / Temenos USER.
@@ -20,9 +22,9 @@ import java.time.LocalDateTime;
  * - Password history: last 3 passwords cannot be reused
  */
 @Entity
-@Table(name = "app_users", indexes = {
-    @Index(name = "idx_user_tenant_username", columnList = "tenant_id, username", unique = true)
-})
+@Table(
+        name = "app_users",
+        indexes = {@Index(name = "idx_user_tenant_username", columnList = "tenant_id, username", unique = true)})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -124,8 +126,7 @@ public class AppUser extends BaseEntity {
      */
     public boolean isAutoUnlockEligible() {
         if (!locked || lockoutTime == null) return false;
-        return LocalDateTime.now().isAfter(
-            lockoutTime.plusMinutes(LOCKOUT_DURATION_MINUTES));
+        return LocalDateTime.now().isAfter(lockoutTime.plusMinutes(LOCKOUT_DURATION_MINUTES));
     }
 
     /**

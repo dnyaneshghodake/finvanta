@@ -20,16 +20,16 @@ package com.finvanta.domain.enums;
  * Terminal states: CLOSED (fully repaid), WRITTEN_OFF (loss recognized in P&L).
  */
 public enum LoanStatus {
-    ACTIVE,             // Standard performing asset — 0 DPD
-    SMA_0,              // RBI Early Warning: 1-30 DPD (Special Mention Account)
-    SMA_1,              // RBI Early Warning: 31-60 DPD
-    SMA_2,              // RBI Early Warning: 61-90 DPD
-    NPA_SUBSTANDARD,    // RBI IRAC: 91-365 DPD
-    NPA_DOUBTFUL,       // RBI IRAC: 366-1095 DPD
-    NPA_LOSS,           // RBI IRAC: >1095 DPD
-    CLOSED,             // Fully repaid — terminal state
-    WRITTEN_OFF,        // Loss recognized in P&L — terminal state
-    RESTRUCTURED;       // RBI CDR/SDR: Modified loan terms (rate/tenure/moratorium)
+    ACTIVE, // Standard performing asset — 0 DPD
+    SMA_0, // RBI Early Warning: 1-30 DPD (Special Mention Account)
+    SMA_1, // RBI Early Warning: 31-60 DPD
+    SMA_2, // RBI Early Warning: 61-90 DPD
+    NPA_SUBSTANDARD, // RBI IRAC: 91-365 DPD
+    NPA_DOUBTFUL, // RBI IRAC: 366-1095 DPD
+    NPA_LOSS, // RBI IRAC: >1095 DPD
+    CLOSED, // Fully repaid — terminal state
+    WRITTEN_OFF, // Loss recognized in P&L — terminal state
+    RESTRUCTURED; // RBI CDR/SDR: Modified loan terms (rate/tenure/moratorium)
 
     public boolean isNpa() {
         return this == NPA_SUBSTANDARD || this == NPA_DOUBTFUL || this == NPA_LOSS;

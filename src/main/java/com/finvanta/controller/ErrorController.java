@@ -2,6 +2,7 @@ package com.finvanta.controller;
 
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.http.HttpServletRequest;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,9 +27,10 @@ public class ErrorController implements org.springframework.boot.web.servlet.err
         ModelAndView mav = new ModelAndView("error/error");
         mav.addObject("errorCode", "403");
         mav.addObject("errorTitle", "Access Denied");
-        mav.addObject("errorMessage",
-            "You do not have permission to access this resource. "
-                + "This action requires a higher authorization level.");
+        mav.addObject(
+                "errorMessage",
+                "You do not have permission to access this resource. "
+                        + "This action requires a higher authorization level.");
         return mav;
     }
 
@@ -42,17 +44,18 @@ public class ErrorController implements org.springframework.boot.web.servlet.err
 
         if (statusCode == 403) {
             mav.addObject("errorTitle", "Access Denied");
-            mav.addObject("errorMessage",
-                "You do not have permission to access this resource. "
-                    + "This action requires a higher authorization level.");
+            mav.addObject(
+                    "errorMessage",
+                    "You do not have permission to access this resource. "
+                            + "This action requires a higher authorization level.");
         } else if (statusCode == 404) {
             mav.addObject("errorTitle", "Page Not Found");
-            mav.addObject("errorMessage",
-                "The page you are looking for does not exist or has been moved.");
+            mav.addObject("errorMessage", "The page you are looking for does not exist or has been moved.");
         } else {
             mav.addObject("errorTitle", "System Error");
-            mav.addObject("errorMessage",
-                "An unexpected error occurred. Please try again or contact your system administrator.");
+            mav.addObject(
+                    "errorMessage",
+                    "An unexpected error occurred. Please try again or contact your system administrator.");
         }
 
         return mav;

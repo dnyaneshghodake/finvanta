@@ -1,11 +1,8 @@
 package com.finvanta.service;
 
-import com.finvanta.accounting.GLConstants;
 import com.finvanta.domain.entity.Branch;
-import com.finvanta.domain.entity.Customer;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
-import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.domain.enums.DepositAccountStatus;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
@@ -17,6 +14,13 @@ import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionResult;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,12 +29,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -50,30 +48,55 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class DepositAccountServiceTest {
 
-    @Mock private DepositAccountRepository accountRepository;
-    @Mock private DepositTransactionRepository transactionRepository;
-    @Mock private CustomerRepository customerRepository;
-    @Mock private BranchRepository branchRepository;
-    @Mock private InterestAccrualRepository accrualRepository;
-    @Mock private com.finvanta.repository.ProductMasterRepository productMasterRepository;
-    @Mock private TransactionEngine transactionEngine;
-    @Mock private BusinessDateService businessDateService;
-    @Mock private com.finvanta.audit.AuditService auditService;
-    @Mock private com.finvanta.workflow.ApprovalWorkflowService workflowService;
+    @Mock
+    private DepositAccountRepository accountRepository;
+
+    @Mock
+    private DepositTransactionRepository transactionRepository;
+
+    @Mock
+    private CustomerRepository customerRepository;
+
+    @Mock
+    private BranchRepository branchRepository;
+
+    @Mock
+    private InterestAccrualRepository accrualRepository;
+
+    @Mock
+    private com.finvanta.repository.ProductMasterRepository productMasterRepository;
+
+    @Mock
+    private TransactionEngine transactionEngine;
+
+    @Mock
+    private BusinessDateService businessDateService;
+
+    @Mock
+    private com.finvanta.audit.AuditService auditService;
+
+    @Mock
+    private com.finvanta.workflow.ApprovalWorkflowService workflowService;
 
     private DepositAccountServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new DepositAccountServiceImpl(
-            accountRepository, transactionRepository,
-            customerRepository, branchRepository, accrualRepository,
-            productMasterRepository, transactionEngine, businessDateService,
-            auditService, workflowService);
+                accountRepository,
+                transactionRepository,
+                customerRepository,
+                branchRepository,
+                accrualRepository,
+                productMasterRepository,
+                transactionEngine,
+                businessDateService,
+                auditService,
+                workflowService);
         TenantContext.setCurrentTenant("DEFAULT");
-        SecurityContextHolder.getContext().setAuthentication(
-            new UsernamePasswordAuthenticationToken("maker1", "pass",
-                List.of(new SimpleGrantedAuthority("ROLE_MAKER"))));
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "maker1", "pass", List.of(new SimpleGrantedAuthority("ROLE_MAKER"))));
     }
 
     private DepositAccount buildSavingsAccount(String accNo, BigDecimal balance) {
@@ -100,22 +123,29 @@ class DepositAccountServiceTest {
     }
 
     private TransactionResult mockPostedResult() {
-        return new TransactionResult("TXN001", "VCH/HQ001/20260401/000001",
-            100L, "JRN001", new BigDecimal("10000.00"), new BigDecimal("10000.00"),
-            LocalDate.of(2026, 4, 1), LocalDateTime.now(), "POSTED");
+        return new TransactionResult(
+                "TXN001",
+                "VCH/HQ001/20260401/000001",
+                100L,
+                "JRN001",
+                new BigDecimal("10000.00"),
+                new BigDecimal("10000.00"),
+                LocalDate.of(2026, 4, 1),
+                LocalDateTime.now(),
+                "POSTED");
     }
 
     @Test
     void deposit_shouldCreditBalanceAndPostGL() {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
         when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        DepositTransaction txn = service.deposit("DEP001", new BigDecimal("10000.00"),
-            LocalDate.of(2026, 4, 1), "Cash deposit", null, "BRANCH");
+        DepositTransaction txn = service.deposit(
+                "DEP001", new BigDecimal("10000.00"), LocalDate.of(2026, 4, 1), "Cash deposit", null, "BRANCH");
 
         assertNotNull(txn);
         assertEquals("CREDIT", txn.getDebitCredit());
@@ -127,13 +157,13 @@ class DepositAccountServiceTest {
     void withdraw_shouldDebitBalanceWhenSufficientFunds() {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
         when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        DepositTransaction txn = service.withdraw("DEP001", new BigDecimal("20000.00"),
-            LocalDate.of(2026, 4, 1), "Cash withdrawal", null, "BRANCH");
+        DepositTransaction txn = service.withdraw(
+                "DEP001", new BigDecimal("20000.00"), LocalDate.of(2026, 4, 1), "Cash withdrawal", null, "BRANCH");
 
         assertNotNull(txn);
         assertEquals("DEBIT", txn.getDebitCredit());
@@ -144,11 +174,17 @@ class DepositAccountServiceTest {
     void withdraw_shouldRejectWhenInsufficientFunds() {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("5000.00"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
 
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            service.withdraw("DEP001", new BigDecimal("50000.00"),
-                LocalDate.of(2026, 4, 1), "Cash withdrawal", null, "BRANCH"));
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.withdraw(
+                        "DEP001",
+                        new BigDecimal("50000.00"),
+                        LocalDate.of(2026, 4, 1),
+                        "Cash withdrawal",
+                        null,
+                        "BRANCH"));
 
         assertEquals("INSUFFICIENT_BALANCE", ex.getErrorCode());
         verify(transactionEngine, never()).execute(any());
@@ -160,27 +196,39 @@ class DepositAccountServiceTest {
         acct.setAccountStatus(DepositAccountStatus.FROZEN);
         acct.setFreezeType("TOTAL_FREEZE");
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
 
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            service.withdraw("DEP001", new BigDecimal("1000.00"),
-                LocalDate.of(2026, 4, 1), "Cash withdrawal", null, "BRANCH"));
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.withdraw(
+                        "DEP001",
+                        new BigDecimal("1000.00"),
+                        LocalDate.of(2026, 4, 1),
+                        "Cash withdrawal",
+                        null,
+                        "BRANCH"));
 
         assertEquals("ACCOUNT_NOT_DEBITABLE", ex.getErrorCode());
     }
 
     @Test
     void transfer_shouldRejectSameAccount() {
-        assertThrows(BusinessException.class, () ->
-            service.transfer("DEP001", "DEP001", new BigDecimal("1000.00"),
-                LocalDate.of(2026, 4, 1), "Self transfer", null));
+        assertThrows(
+                BusinessException.class,
+                () -> service.transfer(
+                        "DEP001",
+                        "DEP001",
+                        new BigDecimal("1000.00"),
+                        LocalDate.of(2026, 4, 1),
+                        "Self transfer",
+                        null));
     }
 
     @Test
     void accrueInterest_shouldAccumulateDailyInterest() {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("100000.00"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.accrueInterest("DEP001", LocalDate.of(2026, 4, 1));
@@ -196,7 +244,7 @@ class DepositAccountServiceTest {
         acct.setAccountType("CURRENT");
         acct.setInterestRate(BigDecimal.ZERO);
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
 
         service.accrueInterest("DEP001", LocalDate.of(2026, 4, 1));
 
@@ -208,7 +256,7 @@ class DepositAccountServiceTest {
     void freezeAccount_shouldSetFrozenStatus() {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         DepositAccount result = service.freezeAccount("DEP001", "DEBIT_FREEZE", "Court order");
@@ -222,11 +270,11 @@ class DepositAccountServiceTest {
     void closeAccount_shouldRejectNonZeroBalance() {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("100.00"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         // closeAccount calls businessDateService only AFTER balance check passes,
         // so no mock needed here — it throws before reaching that line.
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            service.closeAccount("DEP001", "Customer request"));
+        BusinessException ex =
+                assertThrows(BusinessException.class, () -> service.closeAccount("DEP001", "Customer request"));
 
         assertEquals("NON_ZERO_BALANCE", ex.getErrorCode());
     }
@@ -238,14 +286,19 @@ class DepositAccountServiceTest {
         acct.setAccountStatus(DepositAccountStatus.FROZEN);
         acct.setFreezeType("DEBIT_FREEZE");
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
         when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         // Should NOT throw — DEBIT_FREEZE allows credits
-        DepositTransaction txn = service.deposit("DEP001", new BigDecimal("5000.00"),
-            LocalDate.of(2026, 4, 1), "Credit to frozen account", null, "BRANCH");
+        DepositTransaction txn = service.deposit(
+                "DEP001",
+                new BigDecimal("5000.00"),
+                LocalDate.of(2026, 4, 1),
+                "Credit to frozen account",
+                null,
+                "BRANCH");
         assertNotNull(txn);
         assertEquals("CREDIT", txn.getDebitCredit());
     }
@@ -257,14 +310,19 @@ class DepositAccountServiceTest {
         acct.setAccountStatus(DepositAccountStatus.FROZEN);
         acct.setFreezeType("CREDIT_FREEZE");
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
         when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         // Should NOT throw — CREDIT_FREEZE allows debits
-        DepositTransaction txn = service.withdraw("DEP001", new BigDecimal("1000.00"),
-            LocalDate.of(2026, 4, 1), "Debit from credit-frozen account", null, "BRANCH");
+        DepositTransaction txn = service.withdraw(
+                "DEP001",
+                new BigDecimal("1000.00"),
+                LocalDate.of(2026, 4, 1),
+                "Debit from credit-frozen account",
+                null,
+                "BRANCH");
         assertNotNull(txn);
         assertEquals("DEBIT", txn.getDebitCredit());
     }
@@ -275,7 +333,7 @@ class DepositAccountServiceTest {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("100000.00"));
         acct.setLastInterestAccrualDate(LocalDate.of(2026, 4, 1)); // already accrued today
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
 
         service.accrueInterest("DEP001", LocalDate.of(2026, 4, 1));
 
@@ -291,10 +349,10 @@ class DepositAccountServiceTest {
         acct.setLedgerBalance(BigDecimal.ZERO);
         acct.setAccruedInterest(new BigDecimal("125.50"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
 
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            service.closeAccount("DEP001", "Customer request"));
+        BusinessException ex =
+                assertThrows(BusinessException.class, () -> service.closeAccount("DEP001", "Customer request"));
         assertEquals("PENDING_INTEREST", ex.getErrorCode());
     }
 
@@ -305,10 +363,10 @@ class DepositAccountServiceTest {
         acct.setLedgerBalance(BigDecimal.ZERO);
         acct.setHoldAmount(new BigDecimal("10000.00"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
 
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            service.closeAccount("DEP001", "Customer request"));
+        BusinessException ex =
+                assertThrows(BusinessException.class, () -> service.closeAccount("DEP001", "Customer request"));
         assertEquals("ACTIVE_HOLD", ex.getErrorCode());
     }
 
@@ -318,13 +376,14 @@ class DepositAccountServiceTest {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("500000.00"));
         acct.setDailyWithdrawalLimit(new BigDecimal("50000.00"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         when(transactionRepository.sumDailyDebits("DEFAULT", 1L, LocalDate.of(2026, 4, 1)))
-            .thenReturn(new BigDecimal("45000.00")); // already withdrew 45K today
+                .thenReturn(new BigDecimal("45000.00")); // already withdrew 45K today
 
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            service.withdraw("DEP001", new BigDecimal("10000.00"),
-                LocalDate.of(2026, 4, 1), "Withdrawal", null, "BRANCH"));
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.withdraw(
+                        "DEP001", new BigDecimal("10000.00"), LocalDate.of(2026, 4, 1), "Withdrawal", null, "BRANCH"));
         assertEquals("DAILY_LIMIT_EXCEEDED", ex.getErrorCode());
     }
 
@@ -332,8 +391,7 @@ class DepositAccountServiceTest {
     void dormancy_shouldMarkAccountsWithNoRecentTxn() {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
         acct.setLastTransactionDate(LocalDate.of(2024, 1, 1));
-        when(accountRepository.findDormancyCandidates(eq("DEFAULT"), any()))
-            .thenReturn(List.of(acct));
+        when(accountRepository.findDormancyCandidates(eq("DEFAULT"), any())).thenReturn(List.of(acct));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         int count = service.markDormantAccounts(LocalDate.of(2026, 4, 1));
@@ -349,12 +407,13 @@ class DepositAccountServiceTest {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("10000.00"));
         acct.setMinimumBalance(new BigDecimal("5000.00"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
 
         // Withdrawing 8000 from 10000 would leave 2000 < minBal 5000
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            service.withdraw("DEP001", new BigDecimal("8000.00"),
-                LocalDate.of(2026, 4, 1), "Withdrawal", null, "BRANCH"));
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.withdraw(
+                        "DEP001", new BigDecimal("8000.00"), LocalDate.of(2026, 4, 1), "Withdrawal", null, "BRANCH"));
         assertEquals("MINIMUM_BALANCE_BREACH", ex.getErrorCode());
         verify(transactionEngine, never()).execute(any());
     }
@@ -365,14 +424,14 @@ class DepositAccountServiceTest {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("10000.00"));
         acct.setMinimumBalance(new BigDecimal("5000.00"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
         when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         // Withdrawing 4000 from 10000 leaves 6000 >= minBal 5000
-        DepositTransaction txn = service.withdraw("DEP001", new BigDecimal("4000.00"),
-            LocalDate.of(2026, 4, 1), "Withdrawal", null, "BRANCH");
+        DepositTransaction txn = service.withdraw(
+                "DEP001", new BigDecimal("4000.00"), LocalDate.of(2026, 4, 1), "Withdrawal", null, "BRANCH");
         assertNotNull(txn);
         assertEquals("DEBIT", txn.getDebitCredit());
     }
@@ -384,13 +443,13 @@ class DepositAccountServiceTest {
         acct.setAccountType("SAVINGS_PMJDY");
         acct.setMinimumBalance(BigDecimal.ZERO); // PMJDY = zero min balance
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
         when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        DepositTransaction txn = service.withdraw("DEP001", new BigDecimal("400.00"),
-            LocalDate.of(2026, 4, 1), "Withdrawal", null, "BRANCH");
+        DepositTransaction txn = service.withdraw(
+                "DEP001", new BigDecimal("400.00"), LocalDate.of(2026, 4, 1), "Withdrawal", null, "BRANCH");
         assertNotNull(txn);
     }
 
@@ -410,15 +469,14 @@ class DepositAccountServiceTest {
         original.setChannel("BRANCH");
 
         when(transactionRepository.findByTenantIdAndTransactionRef("DEFAULT", "TXN_ORIG"))
-            .thenReturn(Optional.of(original));
+                .thenReturn(Optional.of(original));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
         when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        DepositTransaction reversal = service.reverseTransaction("TXN_ORIG", "Teller error",
-            LocalDate.of(2026, 4, 1));
+        DepositTransaction reversal = service.reverseTransaction("TXN_ORIG", "Teller error", LocalDate.of(2026, 4, 1));
 
         assertNotNull(reversal);
         assertEquals("REVERSAL", reversal.getTransactionType());
@@ -436,19 +494,18 @@ class DepositAccountServiceTest {
         original.setReversed(true); // already reversed
 
         when(transactionRepository.findByTenantIdAndTransactionRef("DEFAULT", "TXN_ORIG"))
-            .thenReturn(Optional.of(original));
+                .thenReturn(Optional.of(original));
 
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            service.reverseTransaction("TXN_ORIG", "Duplicate reversal",
-                LocalDate.of(2026, 4, 1)));
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.reverseTransaction("TXN_ORIG", "Duplicate reversal", LocalDate.of(2026, 4, 1)));
         assertEquals("ALREADY_REVERSED", ex.getErrorCode());
     }
 
     @Test
     void reverseTransaction_shouldRejectWithoutReason() {
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            service.reverseTransaction("TXN_ORIG", "",
-                LocalDate.of(2026, 4, 1)));
+        BusinessException ex = assertThrows(
+                BusinessException.class, () -> service.reverseTransaction("TXN_ORIG", "", LocalDate.of(2026, 4, 1)));
         assertEquals("REASON_REQUIRED", ex.getErrorCode());
     }
 
@@ -458,14 +515,21 @@ class DepositAccountServiceTest {
         DepositAccount acct = buildSavingsAccount("DEP001", BigDecimal.ZERO);
         acct.setAccountStatus(DepositAccountStatus.PENDING_ACTIVATION);
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         DepositAccount result = service.activateAccount("DEP001");
 
         assertEquals(DepositAccountStatus.ACTIVE, result.getAccountStatus());
-        verify(auditService).logEvent(eq("DepositAccount"), any(), eq("ACCOUNT_ACTIVATED"),
-            eq("PENDING_ACTIVATION"), eq("ACTIVE"), eq("DEPOSIT"), any());
+        verify(auditService)
+                .logEvent(
+                        eq("DepositAccount"),
+                        any(),
+                        eq("ACCOUNT_ACTIVATED"),
+                        eq("PENDING_ACTIVATION"),
+                        eq("ACTIVE"),
+                        eq("DEPOSIT"),
+                        any());
     }
 
     @Test
@@ -474,10 +538,9 @@ class DepositAccountServiceTest {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
         // Already ACTIVE from buildSavingsAccount
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
 
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-            service.activateAccount("DEP001"));
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.activateAccount("DEP001"));
         assertEquals("INVALID_STATE", ex.getErrorCode());
     }
 
@@ -490,7 +553,7 @@ class DepositAccountServiceTest {
         acct.setYtdInterestCredited(new BigDecimal("35000.00")); // accumulated in FY25-26
         acct.setYtdTdsDeducted(new BigDecimal("500.00"));
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
-            .thenReturn(Optional.of(acct));
+                .thenReturn(Optional.of(acct));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         // Accrue on April 1 — should trigger FY reset

@@ -64,8 +64,7 @@ class PiiEncryptionConverterTest {
         String encrypted1 = converter.convertToDatabaseColumn(pan);
         String encrypted2 = converter.convertToDatabaseColumn(pan);
 
-        assertNotEquals(encrypted1, encrypted2,
-            "Each encryption must produce different ciphertext (unique IV)");
+        assertNotEquals(encrypted1, encrypted2, "Each encryption must produce different ciphertext (unique IV)");
 
         // Both must decrypt to the same value
         assertEquals(pan, converter.convertToEntityAttribute(encrypted1));
@@ -78,8 +77,7 @@ class PiiEncryptionConverterTest {
         // Pre-encryption data that isn't valid Base64 should pass through
         String plainPan = "ABCDE1234F";
         String result = converter.convertToEntityAttribute(plainPan);
-        assertEquals(plainPan, result,
-            "Non-Base64 plaintext should be returned as-is for backward compatibility");
+        assertEquals(plainPan, result, "Non-Base64 plaintext should be returned as-is for backward compatibility");
     }
 
     @Test
@@ -92,9 +90,11 @@ class PiiEncryptionConverterTest {
         String encryptedPan = converter.convertToDatabaseColumn(pan);
         String encryptedAadhaar = converter.convertToDatabaseColumn(aadhaar);
 
-        assertTrue(encryptedPan.length() <= 100,
-            "Encrypted PAN length " + encryptedPan.length() + " exceeds VARCHAR(100)");
-        assertTrue(encryptedAadhaar.length() <= 100,
-            "Encrypted Aadhaar length " + encryptedAadhaar.length() + " exceeds VARCHAR(100)");
+        assertTrue(
+                encryptedPan.length() <= 100,
+                "Encrypted PAN length " + encryptedPan.length() + " exceeds VARCHAR(100)");
+        assertTrue(
+                encryptedAadhaar.length() <= 100,
+                "Encrypted Aadhaar length " + encryptedAadhaar.length() + " exceeds VARCHAR(100)");
     }
 }

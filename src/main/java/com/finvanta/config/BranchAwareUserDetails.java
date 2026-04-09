@@ -1,9 +1,9 @@
 package com.finvanta.config;
 
+import java.util.Collection;
+
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.User;
-
-import java.util.Collection;
 
 /**
  * CBS Branch-Aware UserDetails per Finacle/Temenos Branch Context standards.
@@ -33,20 +33,26 @@ public class BranchAwareUserDetails extends User {
      * @param branchId              User's home branch ID
      * @param branchCode            User's home branch code
      */
-    public BranchAwareUserDetails(String username, String password,
-                                   boolean accountNonLocked,
-                                   boolean credentialsNonExpired,
-                                   Collection<? extends GrantedAuthority> authorities,
-                                   Long branchId, String branchCode) {
+    public BranchAwareUserDetails(
+            String username,
+            String password,
+            boolean accountNonLocked,
+            boolean credentialsNonExpired,
+            Collection<? extends GrantedAuthority> authorities,
+            Long branchId,
+            String branchCode) {
         super(username, password, true, true, credentialsNonExpired, accountNonLocked, authorities);
         this.branchId = branchId;
         this.branchCode = branchCode;
     }
 
     /** Backward-compatible constructor (all flags true) */
-    public BranchAwareUserDetails(String username, String password,
-                                   Collection<? extends GrantedAuthority> authorities,
-                                   Long branchId, String branchCode) {
+    public BranchAwareUserDetails(
+            String username,
+            String password,
+            Collection<? extends GrantedAuthority> authorities,
+            Long branchId,
+            String branchCode) {
         super(username, password, authorities);
         this.branchId = branchId;
         this.branchCode = branchCode;

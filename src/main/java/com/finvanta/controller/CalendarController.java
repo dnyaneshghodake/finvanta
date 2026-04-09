@@ -3,12 +3,13 @@ package com.finvanta.controller;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.TenantContext;
+
+import java.time.LocalDate;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
-
-import java.time.LocalDate;
 
 /**
  * CBS Business Calendar & Day Control Controller.
@@ -24,8 +25,7 @@ public class CalendarController {
     private final BusinessCalendarRepository calendarRepository;
     private final BusinessDateService businessDateService;
 
-    public CalendarController(BusinessCalendarRepository calendarRepository,
-                               BusinessDateService businessDateService) {
+    public CalendarController(BusinessCalendarRepository calendarRepository, BusinessDateService businessDateService) {
         this.calendarRepository = calendarRepository;
         this.businessDateService = businessDateService;
     }
@@ -34,8 +34,7 @@ public class CalendarController {
     public ModelAndView listCalendar() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("calendar/list");
-        mav.addObject("calendarDates",
-            calendarRepository.findByTenantIdOrderByBusinessDateDesc(tenantId));
+        mav.addObject("calendarDates", calendarRepository.findByTenantIdOrderByBusinessDateDesc(tenantId));
         mav.addObject("openDay", businessDateService.getOpenDayOrNull());
         return mav;
     }
@@ -73,14 +72,14 @@ public class CalendarController {
      * Idempotent — safe to call multiple times (skips existing entries).
      */
     @PostMapping("/generate")
-    public String generateCalendar(@RequestParam int year,
-                                    @RequestParam int month,
-                                    RedirectAttributes redirectAttributes) {
+    public String generateCalendar(
+            @RequestParam int year, @RequestParam int month, RedirectAttributes redirectAttributes) {
         try {
             int created = businessDateService.generateCalendarForMonth(year, month);
-            redirectAttributes.addFlashAttribute("success",
-                "Calendar generated for " + year + "-" + String.format("%02d", month)
-                    + ": " + created + " new days created");
+            redirectAttributes.addFlashAttribute(
+                    "success",
+                    "Calendar generated for " + year + "-" + String.format("%02d", month) + ": " + created
+                            + " new days created");
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -89,13 +88,11 @@ public class CalendarController {
 
     /** Add a gazetted holiday per RBI NI Act */
     @PostMapping("/add-holiday")
-    public String addHoliday(@RequestParam String date,
-                              @RequestParam String description,
-                              RedirectAttributes redirectAttributes) {
+    public String addHoliday(
+            @RequestParam String date, @RequestParam String description, RedirectAttributes redirectAttributes) {
         try {
             businessDateService.addHoliday(LocalDate.parse(date), description);
-            redirectAttributes.addFlashAttribute("success",
-                "Holiday added: " + date + " — " + description);
+            redirectAttributes.addFlashAttribute("success", "Holiday added: " + date + " — " + description);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -104,8 +101,7 @@ public class CalendarController {
 
     /** Remove holiday flag (make it a working day) */
     @PostMapping("/remove-holiday")
-    public String removeHoliday(@RequestParam String date,
-                                 RedirectAttributes redirectAttributes) {
+    public String removeHoliday(@RequestParam String date, RedirectAttributes redirectAttributes) {
         try {
             businessDateService.removeHoliday(LocalDate.parse(date));
             redirectAttributes.addFlashAttribute("success", "Holiday removed: " + date);

@@ -1,13 +1,14 @@
 package com.finvanta.repository;
 
 import com.finvanta.domain.entity.Customer;
+
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-
-import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface CustomerRepository extends JpaRepository<Customer, Long> {
@@ -34,32 +35,28 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
      * Uses LOWER() for case-insensitive matching.
      * NOTE: This searches ALL branches — use searchCustomersByBranch for MAKER/CHECKER.
      */
-    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId AND c.active = true AND (" +
-           "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "c.customerNumber LIKE CONCAT('%', :query, '%') OR " +
-           "c.mobileNumber LIKE CONCAT('%', :query, '%') OR " +
-           "c.panNumber LIKE CONCAT('%', :query, '%'))")
-    List<Customer> searchCustomers(
-        @Param("tenantId") String tenantId,
-        @Param("query") String query);
+    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId AND c.active = true AND ("
+            + "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "c.customerNumber LIKE CONCAT('%', :query, '%') OR "
+            + "c.mobileNumber LIKE CONCAT('%', :query, '%') OR "
+            + "c.panNumber LIKE CONCAT('%', :query, '%'))")
+    List<Customer> searchCustomers(@Param("tenantId") String tenantId, @Param("query") String query);
 
     /**
      * Branch-isolated customer search per Finacle BRANCH_CONTEXT.
      * MAKER/CHECKER users can only search customers at their home branch.
      * Same search logic as searchCustomers but with branch filter.
      */
-    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId AND c.active = true " +
-           "AND c.branch.id = :branchId AND (" +
-           "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "c.customerNumber LIKE CONCAT('%', :query, '%') OR " +
-           "c.mobileNumber LIKE CONCAT('%', :query, '%') OR " +
-           "c.panNumber LIKE CONCAT('%', :query, '%'))")
+    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId AND c.active = true "
+            + "AND c.branch.id = :branchId AND ("
+            + "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "c.customerNumber LIKE CONCAT('%', :query, '%') OR "
+            + "c.mobileNumber LIKE CONCAT('%', :query, '%') OR "
+            + "c.panNumber LIKE CONCAT('%', :query, '%'))")
     List<Customer> searchCustomersByBranch(
-        @Param("tenantId") String tenantId,
-        @Param("branchId") Long branchId,
-        @Param("query") String query);
+            @Param("tenantId") String tenantId, @Param("branchId") Long branchId, @Param("query") String query);
 
     // === P1 Gap 5.2: Duplicate CIF Detection (per RBI KYC: one PAN = one CIF) ===
 
@@ -76,27 +73,24 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
      * Used by EOD batch to flag customers for re-KYC outreach.
      * Only active, KYC-verified customers are included.
      */
-    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId " +
-           "AND c.active = true AND c.kycVerified = true " +
-           "AND c.kycExpiryDate IS NOT NULL AND c.kycExpiryDate < :businessDate " +
-           "AND c.rekycDue = false")
+    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId " + "AND c.active = true AND c.kycVerified = true "
+            + "AND c.kycExpiryDate IS NOT NULL AND c.kycExpiryDate < :businessDate "
+            + "AND c.rekycDue = false")
     List<Customer> findKycExpiredCustomers(
-        @Param("tenantId") String tenantId,
-        @Param("businessDate") java.time.LocalDate businessDate);
+            @Param("tenantId") String tenantId, @Param("businessDate") java.time.LocalDate businessDate);
 
     /**
      * Customers with KYC expiring within the next 90 days.
      * Used for proactive re-KYC outreach before expiry.
      */
-    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId " +
-           "AND c.active = true AND c.kycVerified = true " +
-           "AND c.kycExpiryDate IS NOT NULL " +
-           "AND c.kycExpiryDate BETWEEN :businessDate AND :warningDate " +
-           "AND c.rekycDue = false")
+    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId " + "AND c.active = true AND c.kycVerified = true "
+            + "AND c.kycExpiryDate IS NOT NULL "
+            + "AND c.kycExpiryDate BETWEEN :businessDate AND :warningDate "
+            + "AND c.rekycDue = false")
     List<Customer> findKycExpiringSoonCustomers(
-        @Param("tenantId") String tenantId,
-        @Param("businessDate") java.time.LocalDate businessDate,
-        @Param("warningDate") java.time.LocalDate warningDate);
+            @Param("tenantId") String tenantId,
+            @Param("businessDate") java.time.LocalDate businessDate,
+            @Param("warningDate") java.time.LocalDate warningDate);
 
     // === PII Hash-Based De-Duplication (per RBI KYC: one PAN = one CIF) ===
 

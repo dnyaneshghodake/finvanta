@@ -1,5 +1,6 @@
 package com.finvanta.batch;
 
+import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BatchJob;
 import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.LoanAccount;
@@ -11,16 +12,8 @@ import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
-import com.finvanta.audit.AuditService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -31,6 +24,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * CBS End-of-Day Batch Orchestrator (Phase 2) per Finacle EOD / Temenos COB.
@@ -103,22 +104,23 @@ public class EodOrchestrator {
     /** Self-proxy for per-account transaction isolation via Spring AOP. */
     private final EodOrchestrator self;
 
-    public EodOrchestrator(LoanAccountService loanAccountService,
-                           LoanAccountRepository accountRepository,
-                           LoanScheduleService scheduleService,
-                           ProvisioningService provisioningService,
-                           ReconciliationService reconciliationService,
-                           SubledgerReconciliationService subledgerReconciliationService,
-                           InterBranchSettlementService settlementService,
-                           ClearingService clearingService,
-                           BusinessCalendarRepository calendarRepository,
-                           BatchJobRepository batchJobRepository,
-                           AuditService auditService,
-                           com.finvanta.service.DepositAccountService depositAccountService,
-                           com.finvanta.repository.DepositAccountRepository depositAccountRepository,
-                           com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService,
-                           com.finvanta.repository.CustomerRepository customerRepository,
-                           @Lazy EodOrchestrator self) {
+    public EodOrchestrator(
+            LoanAccountService loanAccountService,
+            LoanAccountRepository accountRepository,
+            LoanScheduleService scheduleService,
+            ProvisioningService provisioningService,
+            ReconciliationService reconciliationService,
+            SubledgerReconciliationService subledgerReconciliationService,
+            InterBranchSettlementService settlementService,
+            ClearingService clearingService,
+            BusinessCalendarRepository calendarRepository,
+            BatchJobRepository batchJobRepository,
+            AuditService auditService,
+            com.finvanta.service.DepositAccountService depositAccountService,
+            com.finvanta.repository.DepositAccountRepository depositAccountRepository,
+            com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService,
+            com.finvanta.repository.CustomerRepository customerRepository,
+            @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;
         this.scheduleService = scheduleService;
@@ -153,205 +155,257 @@ public class EodOrchestrator {
         StringBuilder errors = new StringBuilder();
 
         try {
-        List<LoanAccount> activeAccounts = accountRepository.findAllActiveAccounts(tenantId);
-        self.updateJobTotalRecords(eodJob.getId(), activeAccounts.size());
+            List<LoanAccount> activeAccounts = accountRepository.findAllActiveAccounts(tenantId);
+            self.updateJobTotalRecords(eodJob.getId(), activeAccounts.size());
 
-        // Step 1: Mark Overdue Installments
-        failedCount += runStep(eodJob, "MARK_OVERDUE", () -> {
-            int marked = scheduleService.markOverdueInstallments(businessDate);
-            log.info("EOD Step 1: {} installments marked overdue", marked);
-        }, errors);
+            // Step 1: Mark Overdue Installments
+            failedCount += runStep(
+                    eodJob,
+                    "MARK_OVERDUE",
+                    () -> {
+                        int marked = scheduleService.markOverdueInstallments(businessDate);
+                        log.info("EOD Step 1: {} installments marked overdue", marked);
+                    },
+                    errors);
 
-        // CBS Parallel EOD: Steps 2-5 process accounts in parallel using a configurable
-        // thread pool (eod.parallel.threads, default 4). Each account has its own
-        // REQUIRES_NEW transaction and pessimistic lock, so cross-thread conflicts
-        // are prevented. Per Finacle EOD / Temenos COB parallel batch standards.
-        ExecutorService eodExecutor = Executors.newFixedThreadPool(parallelThreads);
-        String currentTenant = TenantContext.getCurrentTenant();
-        try {
+            // CBS Parallel EOD: Steps 2-5 process accounts in parallel using a configurable
+            // thread pool (eod.parallel.threads, default 4). Each account has its own
+            // REQUIRES_NEW transaction and pessimistic lock, so cross-thread conflicts
+            // are prevented. Per Finacle EOD / Temenos COB parallel batch standards.
+            ExecutorService eodExecutor = Executors.newFixedThreadPool(parallelThreads);
+            String currentTenant = TenantContext.getCurrentTenant();
+            try {
 
-        // Step 2: Update Account DPD (parallel)
-        self.updateStepName(eodJob.getId(), "UPDATE_DPD");
-        int[] step2Result = processAccountsParallel(activeAccounts, eodExecutor, currentTenant,
-            "DPD", account -> self.updateAccountDpd(account.getAccountNumber(), businessDate), errors);
-        processedCount += step2Result[0];
-        failedCount += step2Result[1];
-        log.info("EOD Step 2: DPD updated ({} threads)", parallelThreads);
+                // Step 2: Update Account DPD (parallel)
+                self.updateStepName(eodJob.getId(), "UPDATE_DPD");
+                int[] step2Result = processAccountsParallel(
+                        activeAccounts,
+                        eodExecutor,
+                        currentTenant,
+                        "DPD",
+                        account -> self.updateAccountDpd(account.getAccountNumber(), businessDate),
+                        errors);
+                processedCount += step2Result[0];
+                failedCount += step2Result[1];
+                log.info("EOD Step 2: DPD updated ({} threads)", parallelThreads);
 
-        // Step 3: Interest Accrual (parallel)
-        self.updateStepName(eodJob.getId(), "INTEREST_ACCRUAL");
-        int[] step3Result = processAccountsParallel(activeAccounts, eodExecutor, currentTenant,
-            "Accrual", account -> loanAccountService.applyInterestAccrual(
-                account.getAccountNumber(), businessDate), errors);
-        processedCount += step3Result[0];
-        failedCount += step3Result[1];
-        log.info("EOD Step 3: interest accrued for {} accounts ({} threads)", step3Result[0], parallelThreads);
+                // Step 3: Interest Accrual (parallel)
+                self.updateStepName(eodJob.getId(), "INTEREST_ACCRUAL");
+                int[] step3Result = processAccountsParallel(
+                        activeAccounts,
+                        eodExecutor,
+                        currentTenant,
+                        "Accrual",
+                        account -> loanAccountService.applyInterestAccrual(account.getAccountNumber(), businessDate),
+                        errors);
+                processedCount += step3Result[0];
+                failedCount += step3Result[1];
+                log.info("EOD Step 3: interest accrued for {} accounts ({} threads)", step3Result[0], parallelThreads);
 
-        // Step 4: Penal Interest Accrual (parallel)
-        // CBS: Do NOT guard on in-memory DPD -- applyPenalInterest() re-fetches with
-        // pessimistic lock and has its own DPD > 0 guard.
-        self.updateStepName(eodJob.getId(), "PENAL_ACCRUAL");
-        int[] step4Result = processAccountsParallel(activeAccounts, eodExecutor, currentTenant,
-            "Penal", account -> loanAccountService.applyPenalInterest(
-                account.getAccountNumber(), businessDate), errors);
-        processedCount += step4Result[0];
-        failedCount += step4Result[1];
-        log.info("EOD Step 4: penal interest done ({} threads)", parallelThreads);
+                // Step 4: Penal Interest Accrual (parallel)
+                // CBS: Do NOT guard on in-memory DPD -- applyPenalInterest() re-fetches with
+                // pessimistic lock and has its own DPD > 0 guard.
+                self.updateStepName(eodJob.getId(), "PENAL_ACCRUAL");
+                int[] step4Result = processAccountsParallel(
+                        activeAccounts,
+                        eodExecutor,
+                        currentTenant,
+                        "Penal",
+                        account -> loanAccountService.applyPenalInterest(account.getAccountNumber(), businessDate),
+                        errors);
+                processedCount += step4Result[0];
+                failedCount += step4Result[1];
+                log.info("EOD Step 4: penal interest done ({} threads)", parallelThreads);
 
-        // Step 5: NPA Classification (parallel)
-        self.updateStepName(eodJob.getId(), "NPA_CLASSIFICATION");
-        int[] step5Result = processAccountsParallel(activeAccounts, eodExecutor, currentTenant,
-            "NPA", account -> loanAccountService.classifyNPA(
-                account.getAccountNumber(), businessDate), errors);
-        processedCount += step5Result[0];
-        failedCount += step5Result[1];
-        log.info("EOD Step 5: NPA classification done ({} threads)", parallelThreads);
+                // Step 5: NPA Classification (parallel)
+                self.updateStepName(eodJob.getId(), "NPA_CLASSIFICATION");
+                int[] step5Result = processAccountsParallel(
+                        activeAccounts,
+                        eodExecutor,
+                        currentTenant,
+                        "NPA",
+                        account -> loanAccountService.classifyNPA(account.getAccountNumber(), businessDate),
+                        errors);
+                processedCount += step5Result[0];
+                failedCount += step5Result[1];
+                log.info("EOD Step 5: NPA classification done ({} threads)", parallelThreads);
 
-        } finally {
-            eodExecutor.shutdown();
-        }
-
-        // Step 6: Provisioning
-        failedCount += runStep(eodJob, "PROVISIONING", () -> {
-            provisioningService.calculateAndPostProvisioning(businessDate);
-            log.info("EOD Step 6: provisioning done");
-        }, errors);
-
-        // Step 7: GL Reconciliation
-        failedCount += runStep(eodJob, "RECONCILIATION", () -> {
-            ReconciliationService.ReconciliationResult result =
-                reconciliationService.reconcileLedgerVsGL();
-            if (!result.isBalanced()) {
-                log.warn("EOD Step 7: {} GL discrepancies", result.discrepancyCount());
-            } else {
-                log.info("EOD Step 7: GL reconciliation balanced");
+            } finally {
+                eodExecutor.shutdown();
             }
-        }, errors);
 
-        // Step 7.1: Subledger-to-GL Reconciliation (Tier-1 CBS three-way reconciliation)
-        // Verifies: loan outstanding vs GL 1001, CASA savings vs GL 2010, CASA current vs GL 2020.
-        // Non-blocking: logs discrepancies but doesn't stop EOD (manual investigation required).
-        failedCount += runStep(eodJob, "SUBLEDGER_RECONCILIATION", () -> {
-            SubledgerReconciliationService.SubledgerReconciliationResult subResult =
-                subledgerReconciliationService.reconcile();
-            if (!subResult.isBalanced()) {
-                log.warn("EOD Step 7.1: {} subledger discrepancies detected", subResult.discrepancyCount());
-            } else {
-                log.info("EOD Step 7.1: subledger reconciliation balanced");
-            }
-        }, errors);
+            // Step 6: Provisioning
+            failedCount += runStep(
+                    eodJob,
+                    "PROVISIONING",
+                    () -> {
+                        provisioningService.calculateAndPostProvisioning(businessDate);
+                        log.info("EOD Step 6: provisioning done");
+                    },
+                    errors);
 
-        // Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)
-        failedCount += runStep(eodJob, "INTER_BRANCH_SETTLEMENT", () -> {
-            settlementService.settleInterBranch(businessDate);
-            log.info("EOD Step 7.5: inter-branch settlement validated");
-        }, errors);
+            // Step 7: GL Reconciliation
+            failedCount += runStep(
+                    eodJob,
+                    "RECONCILIATION",
+                    () -> {
+                        ReconciliationService.ReconciliationResult result = reconciliationService.reconcileLedgerVsGL();
+                        if (!result.isBalanced()) {
+                            log.warn("EOD Step 7: {} GL discrepancies", result.discrepancyCount());
+                        } else {
+                            log.info("EOD Step 7: GL reconciliation balanced");
+                        }
+                    },
+                    errors);
 
-        // Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)
-        failedCount += runStep(eodJob, "CLEARING_SUSPENSE", () -> {
-            clearingService.validateSuspenseBalance(businessDate);
-            log.info("EOD Step 7.6: clearing suspense validated");
-        }, errors);
+            // Step 7.1: Subledger-to-GL Reconciliation (Tier-1 CBS three-way reconciliation)
+            // Verifies: loan outstanding vs GL 1001, CASA savings vs GL 2010, CASA current vs GL 2020.
+            // Non-blocking: logs discrepancies but doesn't stop EOD (manual investigation required).
+            failedCount += runStep(
+                    eodJob,
+                    "SUBLEDGER_RECONCILIATION",
+                    () -> {
+                        SubledgerReconciliationService.SubledgerReconciliationResult subResult =
+                                subledgerReconciliationService.reconcile();
+                        if (!subResult.isBalanced()) {
+                            log.warn("EOD Step 7.1: {} subledger discrepancies detected", subResult.discrepancyCount());
+                        } else {
+                            log.info("EOD Step 7.1: subledger reconciliation balanced");
+                        }
+                    },
+                    errors);
 
-        // === CASA EOD Steps (per Finacle CUSTACCT / RBI Savings Interest Directive) ===
+            // Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)
+            failedCount += runStep(
+                    eodJob,
+                    "INTER_BRANCH_SETTLEMENT",
+                    () -> {
+                        settlementService.settleInterBranch(businessDate);
+                        log.info("EOD Step 7.5: inter-branch settlement validated");
+                    },
+                    errors);
 
-        // Step 8: CASA Savings Interest Accrual (daily product method)
-        // Formula: closingBalance * rate / 36500 per RBI directive
-        // CBS: Individual account failures are tracked and reported in the error log,
-        // not silently swallowed. Per Finacle EOD / Temenos COB: every failure must
-        // be visible in the batch job record for operational review.
-        self.updateStepName(eodJob.getId(), "CASA_INTEREST_ACCRUAL");
-        {
-            var savingsAccounts = depositAccountRepository.findActiveSavingsAccounts(tenantId);
-            int accrued = 0;
-            for (var depAcct : savingsAccounts) {
-                try {
-                    depositAccountService.accrueInterest(depAcct.getAccountNumber(), businessDate);
-                    accrued++;
-                } catch (Exception e) {
-                    failedCount++;
-                    appendError(errors, "CASA_ACCRUAL", depAcct.getAccountNumber(), e);
-                }
-            }
-            // Quarterly credit on quarter-end dates (Mar 31, Jun 30, Sep 30, Dec 31)
-            int month = businessDate.getMonthValue();
-            int day = businessDate.getDayOfMonth();
-            boolean isQuarterEnd = (month == 3 && day == 31) || (month == 6 && day == 30)
-                || (month == 9 && day == 30) || (month == 12 && day == 31);
-            if (isQuarterEnd) {
-                int credited = 0;
+            // Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)
+            failedCount += runStep(
+                    eodJob,
+                    "CLEARING_SUSPENSE",
+                    () -> {
+                        clearingService.validateSuspenseBalance(businessDate);
+                        log.info("EOD Step 7.6: clearing suspense validated");
+                    },
+                    errors);
+
+            // === CASA EOD Steps (per Finacle CUSTACCT / RBI Savings Interest Directive) ===
+
+            // Step 8: CASA Savings Interest Accrual (daily product method)
+            // Formula: closingBalance * rate / 36500 per RBI directive
+            // CBS: Individual account failures are tracked and reported in the error log,
+            // not silently swallowed. Per Finacle EOD / Temenos COB: every failure must
+            // be visible in the batch job record for operational review.
+            self.updateStepName(eodJob.getId(), "CASA_INTEREST_ACCRUAL");
+            {
+                var savingsAccounts = depositAccountRepository.findActiveSavingsAccounts(tenantId);
+                int accrued = 0;
                 for (var depAcct : savingsAccounts) {
                     try {
-                        depositAccountService.creditInterest(depAcct.getAccountNumber(), businessDate);
-                        credited++;
+                        depositAccountService.accrueInterest(depAcct.getAccountNumber(), businessDate);
+                        accrued++;
                     } catch (Exception e) {
                         failedCount++;
-                        appendError(errors, "CASA_CREDIT", depAcct.getAccountNumber(), e);
+                        appendError(errors, "CASA_ACCRUAL", depAcct.getAccountNumber(), e);
                     }
                 }
-                log.info("EOD Step 8: CASA quarterly interest credited for {} accounts", credited);
+                // Quarterly credit on quarter-end dates (Mar 31, Jun 30, Sep 30, Dec 31)
+                int month = businessDate.getMonthValue();
+                int day = businessDate.getDayOfMonth();
+                boolean isQuarterEnd = (month == 3 && day == 31)
+                        || (month == 6 && day == 30)
+                        || (month == 9 && day == 30)
+                        || (month == 12 && day == 31);
+                if (isQuarterEnd) {
+                    int credited = 0;
+                    for (var depAcct : savingsAccounts) {
+                        try {
+                            depositAccountService.creditInterest(depAcct.getAccountNumber(), businessDate);
+                            credited++;
+                        } catch (Exception e) {
+                            failedCount++;
+                            appendError(errors, "CASA_CREDIT", depAcct.getAccountNumber(), e);
+                        }
+                    }
+                    log.info("EOD Step 8: CASA quarterly interest credited for {} accounts", credited);
+                }
+                processedCount += accrued;
+                log.info("EOD Step 8: CASA interest accrued for {} savings accounts", accrued);
             }
-            processedCount += accrued;
-            log.info("EOD Step 8: CASA interest accrued for {} savings accounts", accrued);
-        }
 
-        // Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER)
-        // Executes all due SIs: LOAN_EMI auto-debit, recurring transfers, SIP, utility.
-        // Per Finacle EOD: SI execution runs AFTER interest accrual (so interest is
-        // current before EMI split) but BEFORE dormancy check (because SI execution
-        // counts as a customer-initiated transaction that prevents dormancy).
-        // Each SI runs in its own REQUIRES_NEW transaction for isolation.
-        // CASA debit + loan repayment are ATOMIC within each SI transaction.
-        self.updateStepName(eodJob.getId(), "STANDING_INSTRUCTION_EXECUTION");
-        try {
-            int[] siResult = standingInstructionService.executeAllDueSIs(businessDate);
-            processedCount += siResult[0];
-            failedCount += siResult[1];
-            log.info("EOD Step 8.5: SI execution done — executed={}, failed={}",
-                siResult[0], siResult[1]);
-        } catch (Exception e) {
-            failedCount++;
-            appendError(errors, "SI_EXECUTION", "ALL", e);
-        }
+            // Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER)
+            // Executes all due SIs: LOAN_EMI auto-debit, recurring transfers, SIP, utility.
+            // Per Finacle EOD: SI execution runs AFTER interest accrual (so interest is
+            // current before EMI split) but BEFORE dormancy check (because SI execution
+            // counts as a customer-initiated transaction that prevents dormancy).
+            // Each SI runs in its own REQUIRES_NEW transaction for isolation.
+            // CASA debit + loan repayment are ATOMIC within each SI transaction.
+            self.updateStepName(eodJob.getId(), "STANDING_INSTRUCTION_EXECUTION");
+            try {
+                int[] siResult = standingInstructionService.executeAllDueSIs(businessDate);
+                processedCount += siResult[0];
+                failedCount += siResult[1];
+                log.info("EOD Step 8.5: SI execution done — executed={}, failed={}", siResult[0], siResult[1]);
+            } catch (Exception e) {
+                failedCount++;
+                appendError(errors, "SI_EXECUTION", "ALL", e);
+            }
 
-        // Step 9: CASA Dormancy Classification (RBI Master Direction on KYC 2016 Sec 38)
-        // Accounts with no customer-initiated txn for 24+ months -> DORMANT
-        // NOTE: Must run AFTER SI execution — SI debits update lastTransactionDate
-        // which prevents dormancy for accounts with active standing instructions.
-        failedCount += runStep(eodJob, "CASA_DORMANCY", () -> {
-            int dormantCount = depositAccountService.markDormantAccounts(businessDate);
-            log.info("EOD Step 9: {} CASA accounts marked DORMANT", dormantCount);
-        }, errors);
+            // Step 9: CASA Dormancy Classification (RBI Master Direction on KYC 2016 Sec 38)
+            // Accounts with no customer-initiated txn for 24+ months -> DORMANT
+            // NOTE: Must run AFTER SI execution — SI debits update lastTransactionDate
+            // which prevents dormancy for accounts with active standing instructions.
+            failedCount += runStep(
+                    eodJob,
+                    "CASA_DORMANCY",
+                    () -> {
+                        int dormantCount = depositAccountService.markDormantAccounts(businessDate);
+                        log.info("EOD Step 9: {} CASA accounts marked DORMANT", dormantCount);
+                    },
+                    errors);
 
-        // Step 10: KYC Expiry Flagging (RBI Master Direction on KYC 2016 Section 16)
-        // Identifies customers with expired or expiring-soon KYC and flags them for
-        // re-verification outreach. Per RBI: expired KYC must be flagged and tracked.
-        // Non-blocking: flags customers but doesn't block transactions (that's a P1 enhancement).
-        failedCount += runStep(eodJob, "KYC_EXPIRY_CHECK", () -> {
-            String tid = TenantContext.getCurrentTenant();
-            // Flag customers with expired KYC
-            var expiredCustomers = customerRepository.findKycExpiredCustomers(tid, businessDate);
-            for (var customer : expiredCustomers) {
-                customer.setRekycDue(true);
-                customer.setUpdatedBy("SYSTEM_EOD");
-                customerRepository.save(customer);
-            }
-            // Flag customers with KYC expiring within 90 days (proactive outreach)
-            var expiringSoon = customerRepository.findKycExpiringSoonCustomers(
-                tid, businessDate, businessDate.plusDays(90));
-            for (var customer : expiringSoon) {
-                customer.setRekycDue(true);
-                customer.setUpdatedBy("SYSTEM_EOD");
-                customerRepository.save(customer);
-            }
-            int total = expiredCustomers.size() + expiringSoon.size();
-            if (total > 0) {
-                log.info("EOD Step 10: {} customers flagged for re-KYC ({} expired, {} expiring soon)",
-                    total, expiredCustomers.size(), expiringSoon.size());
-            } else {
-                log.info("EOD Step 10: no KYC expiry issues detected");
-            }
-        }, errors);
+            // Step 10: KYC Expiry Flagging (RBI Master Direction on KYC 2016 Section 16)
+            // Identifies customers with expired or expiring-soon KYC and flags them for
+            // re-verification outreach. Per RBI: expired KYC must be flagged and tracked.
+            // Non-blocking: flags customers but doesn't block transactions (that's a P1 enhancement).
+            failedCount += runStep(
+                    eodJob,
+                    "KYC_EXPIRY_CHECK",
+                    () -> {
+                        String tid = TenantContext.getCurrentTenant();
+                        // Flag customers with expired KYC
+                        var expiredCustomers = customerRepository.findKycExpiredCustomers(tid, businessDate);
+                        for (var customer : expiredCustomers) {
+                            customer.setRekycDue(true);
+                            customer.setUpdatedBy("SYSTEM_EOD");
+                            customerRepository.save(customer);
+                        }
+                        // Flag customers with KYC expiring within 90 days (proactive outreach)
+                        var expiringSoon = customerRepository.findKycExpiringSoonCustomers(
+                                tid, businessDate, businessDate.plusDays(90));
+                        for (var customer : expiringSoon) {
+                            customer.setRekycDue(true);
+                            customer.setUpdatedBy("SYSTEM_EOD");
+                            customerRepository.save(customer);
+                        }
+                        int total = expiredCustomers.size() + expiringSoon.size();
+                        if (total > 0) {
+                            log.info(
+                                    "EOD Step 10: {} customers flagged for re-KYC ({} expired, {} expiring soon)",
+                                    total,
+                                    expiredCustomers.size(),
+                                    expiringSoon.size());
+                        } else {
+                            log.info("EOD Step 10: no KYC expiry issues detected");
+                        }
+                    },
+                    errors);
 
         } catch (Exception e) {
             // CBS: Top-level error handler — prevents calendar stuck in EOD_RUNNING.
@@ -362,8 +416,7 @@ public class EodOrchestrator {
             failedCount++;
         }
 
-        return self.finalizeEod(eodJob.getId(), tenantId, businessDate,
-            processedCount, failedCount, errors);
+        return self.finalizeEod(eodJob.getId(), tenantId, businessDate, processedCount, failedCount, errors);
     }
 
     /** Initialize EOD: validate day, set EOD_RUNNING, create batch job. */
@@ -397,30 +450,30 @@ public class EodOrchestrator {
 
     private BusinessCalendar validateAndLockDay(String tenantId, LocalDate businessDate) {
         BusinessCalendar calendar = calendarRepository
-            .findAndLockByTenantIdAndDate(tenantId, businessDate)
-            .orElseThrow(() -> new BusinessException("DATE_NOT_IN_CALENDAR",
-                "Business date " + businessDate + " not found in calendar."));
+                .findAndLockByTenantIdAndDate(tenantId, businessDate)
+                .orElseThrow(() -> new BusinessException(
+                        "DATE_NOT_IN_CALENDAR", "Business date " + businessDate + " not found in calendar."));
 
         if (!calendar.getDayStatus().canStartEod()) {
-            throw new BusinessException("EOD_NOT_ALLOWED",
-                "Cannot start EOD for " + businessDate
-                    + ". Day status: " + calendar.getDayStatus());
+            throw new BusinessException(
+                    "EOD_NOT_ALLOWED",
+                    "Cannot start EOD for " + businessDate + ". Day status: " + calendar.getDayStatus());
         }
         if (calendar.isEodComplete()) {
-            throw new BusinessException("EOD_ALREADY_COMPLETE",
-                "EOD already completed for " + businessDate);
+            throw new BusinessException("EOD_ALREADY_COMPLETE", "EOD already completed for " + businessDate);
         }
-        batchJobRepository.findByTenantIdAndJobNameAndBusinessDate(
-            tenantId, "EOD", businessDate).ifPresent(existing -> {
-                if (existing.getStatus() == BatchStatus.RUNNING) {
-                    throw new BusinessException("EOD_ALREADY_RUNNING",
-                        "EOD is already running for " + businessDate);
-                }
-                if (existing.getStatus() == BatchStatus.COMPLETED) {
-                    throw new BusinessException("EOD_ALREADY_COMPLETE",
-                        "EOD already completed for " + businessDate);
-                }
-            });
+        batchJobRepository
+                .findByTenantIdAndJobNameAndBusinessDate(tenantId, "EOD", businessDate)
+                .ifPresent(existing -> {
+                    if (existing.getStatus() == BatchStatus.RUNNING) {
+                        throw new BusinessException(
+                                "EOD_ALREADY_RUNNING", "EOD is already running for " + businessDate);
+                    }
+                    if (existing.getStatus() == BatchStatus.COMPLETED) {
+                        throw new BusinessException(
+                                "EOD_ALREADY_COMPLETE", "EOD already completed for " + businessDate);
+                    }
+                });
         return calendar;
     }
 
@@ -436,16 +489,18 @@ public class EodOrchestrator {
         return batchJobRepository.save(eodJob);
     }
 
-    private int runStep(BatchJob eodJob, String stepName,
-                        Runnable step, StringBuilder errors) {
+    private int runStep(BatchJob eodJob, String stepName, Runnable step, StringBuilder errors) {
         self.updateStepName(eodJob.getId(), stepName);
         try {
             step.run();
             return 0;
         } catch (Exception e) {
             log.error("EOD step {} failed: {}", stepName, e.getMessage(), e);
-            errors.append("Step ").append(stepName).append(": ")
-                .append(e.getMessage()).append("\n");
+            errors.append("Step ")
+                    .append(stepName)
+                    .append(": ")
+                    .append(e.getMessage())
+                    .append("\n");
             return 1;
         }
     }
@@ -457,12 +512,12 @@ public class EodOrchestrator {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void updateAccountDpd(String accountNumber, LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
-        LoanAccount account = accountRepository.findByTenantIdAndAccountNumber(tenantId, accountNumber)
-            .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND",
-                "Loan account not found: " + accountNumber));
+        LoanAccount account = accountRepository
+                .findByTenantIdAndAccountNumber(tenantId, accountNumber)
+                .orElseThrow(
+                        () -> new BusinessException("ACCOUNT_NOT_FOUND", "Loan account not found: " + accountNumber));
 
-        List<LoanSchedule> overdueList = scheduleService
-            .getOverdueInstallments(account.getId(), businessDate);
+        List<LoanSchedule> overdueList = scheduleService.getOverdueInstallments(account.getId(), businessDate);
 
         if (overdueList.isEmpty()) {
             if (account.getDaysPastDue() > 0) {
@@ -482,10 +537,8 @@ public class EodOrchestrator {
         BigDecimal overduePrincipal = BigDecimal.ZERO;
         BigDecimal overdueInterest = BigDecimal.ZERO;
         for (LoanSchedule inst : overdueList) {
-            overduePrincipal = overduePrincipal.add(
-                inst.getPrincipalAmount().subtract(inst.getPaidPrincipal()));
-            overdueInterest = overdueInterest.add(
-                inst.getInterestAmount().subtract(inst.getPaidInterest()));
+            overduePrincipal = overduePrincipal.add(inst.getPrincipalAmount().subtract(inst.getPaidPrincipal()));
+            overdueInterest = overdueInterest.add(inst.getInterestAmount().subtract(inst.getPaidInterest()));
         }
 
         account.setDaysPastDue(dpd);
@@ -497,10 +550,13 @@ public class EodOrchestrator {
 
     /** Finalize EOD: update batch job status, mark calendar eodComplete. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public BatchJob finalizeEod(Long jobId, String tenantId,
-                                LocalDate businessDate,
-                                int processedCount, int failedCount,
-                                StringBuilder errors) {
+    public BatchJob finalizeEod(
+            Long jobId,
+            String tenantId,
+            LocalDate businessDate,
+            int processedCount,
+            int failedCount,
+            StringBuilder errors) {
         BatchJob eodJob = batchJobRepository.findById(jobId).orElseThrow();
         eodJob.setStepName("COMPLETE");
         eodJob.setProcessedRecords(processedCount);
@@ -520,7 +576,8 @@ public class EodOrchestrator {
         batchJobRepository.save(eodJob);
 
         BusinessCalendar calendar = calendarRepository
-            .findAndLockByTenantIdAndDate(tenantId, businessDate).orElseThrow();
+                .findAndLockByTenantIdAndDate(tenantId, businessDate)
+                .orElseThrow();
 
         // CBS Day Control: Only COMPLETED EOD marks eodComplete=true and allows Day Close.
         // FAILED and PARTIALLY_COMPLETED both restore DAY_OPEN for retry.
@@ -536,22 +593,33 @@ public class EodOrchestrator {
             if (eodJob.getStatus() == BatchStatus.FAILED) {
                 log.warn("EOD FAILED for {} — calendar restored to DAY_OPEN for retry", businessDate);
             } else {
-                log.warn("EOD PARTIALLY_COMPLETED for {} — {} failures. Calendar restored to DAY_OPEN for retry",
-                    businessDate, failedCount);
+                log.warn(
+                        "EOD PARTIALLY_COMPLETED for {} — {} failures. Calendar restored to DAY_OPEN for retry",
+                        businessDate,
+                        failedCount);
             }
         }
         calendar.setUpdatedBy("SYSTEM");
         calendarRepository.save(calendar);
 
-        auditService.logEvent("BatchJob", eodJob.getId(),
-            "EOD_COMPLETE", null, eodJob.getStatus().name(), "EOD",
-            "EOD completed: date=" + businessDate
-                + ", processed=" + processedCount
-                + ", failed=" + failedCount
-                + ", status=" + eodJob.getStatus());
+        auditService.logEvent(
+                "BatchJob",
+                eodJob.getId(),
+                "EOD_COMPLETE",
+                null,
+                eodJob.getStatus().name(),
+                "EOD",
+                "EOD completed: date=" + businessDate
+                        + ", processed=" + processedCount
+                        + ", failed=" + failedCount
+                        + ", status=" + eodJob.getStatus());
 
-        log.info("EOD completed: date={}, processed={}, failed={}, status={}",
-            businessDate, processedCount, failedCount, eodJob.getStatus());
+        log.info(
+                "EOD completed: date={}, processed={}, failed={}, status={}",
+                businessDate,
+                processedCount,
+                failedCount,
+                eodJob.getStatus());
 
         return eodJob;
     }
@@ -572,46 +640,51 @@ public class EodOrchestrator {
      * @param errors    Shared error log (synchronized append)
      * @return int[2]: [0]=processed count, [1]=failed count
      */
-    private int[] processAccountsParallel(List<LoanAccount> accounts,
-                                           ExecutorService executor,
-                                           String tenantId,
-                                           String stepName,
-                                           java.util.function.Consumer<LoanAccount> action,
-                                           StringBuilder errors) {
+    private int[] processAccountsParallel(
+            List<LoanAccount> accounts,
+            ExecutorService executor,
+            String tenantId,
+            String stepName,
+            java.util.function.Consumer<LoanAccount> action,
+            StringBuilder errors) {
         AtomicInteger processed = new AtomicInteger(0);
         AtomicInteger failed = new AtomicInteger(0);
         int total = accounts.size();
 
         CompletableFuture<?>[] futures = accounts.stream()
-            .map(account -> CompletableFuture.runAsync(() -> {
-                // CBS: Propagate tenant context to worker thread (ThreadLocal)
-                TenantContext.setCurrentTenant(tenantId);
-                try {
-                    action.accept(account);
-                    int done = processed.incrementAndGet();
-                    if (done % 1000 == 0) {
-                        log.info("EOD {} progress: {}/{} accounts processed",
-                            stepName, done, total);
-                    }
-                } catch (Exception e) {
-                    failed.incrementAndGet();
-                    synchronized (errors) {
-                        appendError(errors, stepName, account.getAccountNumber(), e);
-                    }
-                } finally {
-                    TenantContext.clear();
-                }
-            }, executor))
-            .toArray(CompletableFuture[]::new);
+                .map(account -> CompletableFuture.runAsync(
+                        () -> {
+                            // CBS: Propagate tenant context to worker thread (ThreadLocal)
+                            TenantContext.setCurrentTenant(tenantId);
+                            try {
+                                action.accept(account);
+                                int done = processed.incrementAndGet();
+                                if (done % 1000 == 0) {
+                                    log.info("EOD {} progress: {}/{} accounts processed", stepName, done, total);
+                                }
+                            } catch (Exception e) {
+                                failed.incrementAndGet();
+                                synchronized (errors) {
+                                    appendError(errors, stepName, account.getAccountNumber(), e);
+                                }
+                            } finally {
+                                TenantContext.clear();
+                            }
+                        },
+                        executor))
+                .toArray(CompletableFuture[]::new);
 
         CompletableFuture.allOf(futures).join();
-        return new int[]{processed.get(), failed.get()};
+        return new int[] {processed.get(), failed.get()};
     }
 
-    private void appendError(StringBuilder errors, String step,
-                              String accountNumber, Exception e) {
+    private void appendError(StringBuilder errors, String step, String accountNumber, Exception e) {
         log.error("EOD {} failed for {}: {}", step, accountNumber, e.getMessage());
-        errors.append(step).append(" ").append(accountNumber)
-            .append(": ").append(e.getMessage()).append("\n");
+        errors.append(step)
+                .append(" ")
+                .append(accountNumber)
+                .append(": ")
+                .append(e.getMessage())
+                .append("\n");
     }
 }

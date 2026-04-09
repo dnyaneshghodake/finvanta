@@ -8,9 +8,10 @@ import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
-import org.springframework.stereotype.Service;
 
 import java.util.*;
+
+import org.springframework.stereotype.Service;
 
 /**
  * CBS Transaction 360 View Service per Finacle TI (Transaction Inquiry) /
@@ -36,9 +37,10 @@ public class Transaction360Service {
     private final JournalEntryRepository journalEntryRepository;
     private final LoanAccountRepository accountRepository;
 
-    public Transaction360Service(LoanTransactionRepository transactionRepository,
-                                  JournalEntryRepository journalEntryRepository,
-                                  LoanAccountRepository accountRepository) {
+    public Transaction360Service(
+            LoanTransactionRepository transactionRepository,
+            JournalEntryRepository journalEntryRepository,
+            LoanAccountRepository accountRepository) {
         this.transactionRepository = transactionRepository;
         this.journalEntryRepository = journalEntryRepository;
         this.accountRepository = accountRepository;
@@ -52,9 +54,10 @@ public class Transaction360Service {
     public Map<String, Object> getTransaction360(String transactionRef) {
         String tenantId = TenantContext.getCurrentTenant();
 
-        LoanTransaction txn = transactionRepository.findByTenantIdAndTransactionRef(tenantId, transactionRef)
-            .orElseThrow(() -> new BusinessException("TRANSACTION_NOT_FOUND",
-                "Transaction not found: " + transactionRef));
+        LoanTransaction txn = transactionRepository
+                .findByTenantIdAndTransactionRef(tenantId, transactionRef)
+                .orElseThrow(() ->
+                        new BusinessException("TRANSACTION_NOT_FOUND", "Transaction not found: " + transactionRef));
 
         return buildTransaction360(txn, tenantId);
     }
@@ -65,9 +68,10 @@ public class Transaction360Service {
     public Map<String, Object> getByVoucher(String voucherNumber) {
         String tenantId = TenantContext.getCurrentTenant();
 
-        LoanTransaction txn = transactionRepository.findByTenantIdAndVoucherNumber(tenantId, voucherNumber)
-            .orElseThrow(() -> new BusinessException("VOUCHER_NOT_FOUND",
-                "No transaction found for voucher: " + voucherNumber));
+        LoanTransaction txn = transactionRepository
+                .findByTenantIdAndVoucherNumber(tenantId, voucherNumber)
+                .orElseThrow(() -> new BusinessException(
+                        "VOUCHER_NOT_FOUND", "No transaction found for voucher: " + voucherNumber));
 
         return buildTransaction360(txn, tenantId);
     }
@@ -78,13 +82,13 @@ public class Transaction360Service {
     public Map<String, Object> getByJournalRef(String journalRef) {
         String tenantId = TenantContext.getCurrentTenant();
 
-        JournalEntry journal = journalEntryRepository.findByTenantIdAndJournalRef(tenantId, journalRef)
-            .orElseThrow(() -> new BusinessException("JOURNAL_NOT_FOUND",
-                "Journal entry not found: " + journalRef));
+        JournalEntry journal = journalEntryRepository
+                .findByTenantIdAndJournalRef(tenantId, journalRef)
+                .orElseThrow(
+                        () -> new BusinessException("JOURNAL_NOT_FOUND", "Journal entry not found: " + journalRef));
 
         // Find the transaction linked to this journal
-        List<LoanTransaction> txns = transactionRepository
-            .findByTenantIdAndJournalEntryId(tenantId, journal.getId());
+        List<LoanTransaction> txns = transactionRepository.findByTenantIdAndJournalEntryId(tenantId, journal.getId());
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("journal", journal);
@@ -125,10 +129,9 @@ public class Transaction360Service {
                 // CBS Compound Journal: find all related journals for this specific
                 // transaction date (not all-time). Per Finacle TRAN_POSTING, compound
                 // groups share sourceModule + sourceRef + valueDate.
-                List<JournalEntry> relatedJournals = journalEntryRepository
-                    .findByTenantIdAndSourceModuleAndSourceRefAndValueDate(
-                        tenantId, journal.getSourceModule(), journal.getSourceRef(),
-                        journal.getValueDate());
+                List<JournalEntry> relatedJournals =
+                        journalEntryRepository.findByTenantIdAndSourceModuleAndSourceRefAndValueDate(
+                                tenantId, journal.getSourceModule(), journal.getSourceRef(), journal.getValueDate());
                 if (relatedJournals.size() > 1) {
                     view.put("compoundJournals", relatedJournals);
                 }
@@ -137,14 +140,16 @@ public class Transaction360Service {
 
         // 4. Reversal linkage
         if (txn.isReversed() && txn.getReversedByRef() != null) {
-            transactionRepository.findByTenantIdAndTransactionRef(tenantId, txn.getReversedByRef())
-                .ifPresent(rev -> view.put("reversalTransaction", rev));
+            transactionRepository
+                    .findByTenantIdAndTransactionRef(tenantId, txn.getReversedByRef())
+                    .ifPresent(rev -> view.put("reversalTransaction", rev));
         }
 
         // 5. If this IS a reversal, link to original
         if (txn.getReversedByRef() != null && !txn.isReversed()) {
-            transactionRepository.findByTenantIdAndTransactionRef(tenantId, txn.getReversedByRef())
-                .ifPresent(orig -> view.put("originalTransaction", orig));
+            transactionRepository
+                    .findByTenantIdAndTransactionRef(tenantId, txn.getReversedByRef())
+                    .ifPresent(orig -> view.put("originalTransaction", orig));
         }
 
         return view;

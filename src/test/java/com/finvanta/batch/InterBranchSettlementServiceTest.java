@@ -4,14 +4,15 @@ import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.InterBranchTransaction;
 import com.finvanta.repository.InterBranchSettlementRepository;
 import com.finvanta.util.TenantContext;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.DisplayName;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -36,11 +37,11 @@ public class InterBranchSettlementServiceTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         settlementService = new InterBranchSettlementService(
-            settlementRepository,
-            null,  // BranchRepository can be null for entity tests
-            null,  // LedgerEntryRepository can be null for entity tests
-            null   // TransactionEngine can be null for entity tests
-        );
+                settlementRepository,
+                null, // BranchRepository can be null for entity tests
+                null, // LedgerEntryRepository can be null for entity tests
+                null // TransactionEngine can be null for entity tests
+                );
         TenantContext.setCurrentTenant("DEFAULT");
     }
 
@@ -105,7 +106,7 @@ public class InterBranchSettlementServiceTest {
         LocalDate businessDate = LocalDate.of(2026, 4, 7);
 
         when(settlementRepository.findByTenantIdAndBusinessDateOrderBySourceBranchAsc(tenantId, businessDate))
-            .thenReturn(java.util.Collections.emptyList());
+                .thenReturn(java.util.Collections.emptyList());
 
         // Act
         var result = settlementRepository.findByTenantIdAndBusinessDateOrderBySourceBranchAsc(tenantId, businessDate);
@@ -113,7 +114,6 @@ public class InterBranchSettlementServiceTest {
         // Assert
         assertTrue(result.isEmpty());
         verify(settlementRepository, times(1))
-            .findByTenantIdAndBusinessDateOrderBySourceBranchAsc(tenantId, businessDate);
+                .findByTenantIdAndBusinessDateOrderBySourceBranchAsc(tenantId, businessDate);
     }
 }
-

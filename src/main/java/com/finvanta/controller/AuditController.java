@@ -3,6 +3,7 @@ package com.finvanta.controller;
 import com.finvanta.audit.AuditService;
 import com.finvanta.repository.AuditLogRepository;
 import com.finvanta.util.TenantContext;
+
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,8 +16,7 @@ public class AuditController {
     private final AuditLogRepository auditLogRepository;
     private final AuditService auditService;
 
-    public AuditController(AuditLogRepository auditLogRepository,
-                            AuditService auditService) {
+    public AuditController(AuditLogRepository auditLogRepository, AuditService auditService) {
         this.auditLogRepository = auditLogRepository;
         this.auditService = auditService;
     }

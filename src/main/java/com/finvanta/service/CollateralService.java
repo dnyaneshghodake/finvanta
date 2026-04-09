@@ -2,7 +2,6 @@ package com.finvanta.service;
 
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Collateral;
-import com.finvanta.domain.entity.Customer;
 import com.finvanta.domain.entity.LoanApplication;
 import com.finvanta.domain.enums.CollateralType;
 import com.finvanta.repository.CollateralRepository;
@@ -12,14 +11,15 @@ import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * CBS Collateral Management Service per Finacle COLMAS / Temenos AA.COLLATERAL.
@@ -48,10 +48,11 @@ public class CollateralService {
     private final CustomerRepository customerRepository;
     private final AuditService auditService;
 
-    public CollateralService(CollateralRepository collateralRepository,
-                              LoanApplicationRepository applicationRepository,
-                              CustomerRepository customerRepository,
-                              AuditService auditService) {
+    public CollateralService(
+            CollateralRepository collateralRepository,
+            LoanApplicationRepository applicationRepository,
+            CustomerRepository customerRepository,
+            AuditService auditService) {
         this.collateralRepository = collateralRepository;
         this.applicationRepository = applicationRepository;
         this.customerRepository = customerRepository;
@@ -67,10 +68,11 @@ public class CollateralService {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
-        LoanApplication app = applicationRepository.findById(applicationId)
-            .filter(a -> a.getTenantId().equals(tenantId))
-            .orElseThrow(() -> new BusinessException("APPLICATION_NOT_FOUND",
-                "Loan application not found: " + applicationId));
+        LoanApplication app = applicationRepository
+                .findById(applicationId)
+                .filter(a -> a.getTenantId().equals(tenantId))
+                .orElseThrow(() ->
+                        new BusinessException("APPLICATION_NOT_FOUND", "Loan application not found: " + applicationId));
 
         // Validate type-specific mandatory fields
         validateCollateralFields(collateral);
@@ -87,16 +89,16 @@ public class CollateralService {
         if (collateral.getCollateralType() == CollateralType.GOLD
                 && collateral.getGoldNetWeightGrams() != null
                 && collateral.getGoldRatePerGram() != null) {
-            BigDecimal goldValue = collateral.getGoldNetWeightGrams()
-                .multiply(collateral.getGoldRatePerGram())
-                .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal goldValue = collateral
+                    .getGoldNetWeightGrams()
+                    .multiply(collateral.getGoldRatePerGram())
+                    .setScale(2, RoundingMode.HALF_UP);
             collateral.setMarketValue(goldValue);
             collateral.setValuationAmount(goldValue);
         }
 
         // Auto-set FD market value
-        if (collateral.getCollateralType() == CollateralType.FD
-                && collateral.getFdAmount() != null) {
+        if (collateral.getCollateralType() == CollateralType.FD && collateral.getFdAmount() != null) {
             collateral.setMarketValue(collateral.getFdAmount());
             collateral.setValuationAmount(collateral.getFdAmount());
         }
@@ -107,19 +109,28 @@ public class CollateralService {
         BigDecimal ltv = saved.calculateLtv(app.getRequestedAmount());
         BigDecimal maxLtv = saved.getCollateralType().getMaxLtvPercent();
         if (ltv != null && maxLtv != null && ltv.compareTo(maxLtv) > 0) {
-            log.warn("LTV BREACH: collateral={}, ltv={}%, max={}%, loan={}",
-                saved.getCollateralRef(), ltv, maxLtv, app.getApplicationNumber());
+            log.warn(
+                    "LTV BREACH: collateral={}, ltv={}%, max={}%, loan={}",
+                    saved.getCollateralRef(), ltv, maxLtv, app.getApplicationNumber());
         }
 
-        auditService.logEvent("Collateral", saved.getId(), "REGISTER",
-            null, saved.getCollateralRef(), "COLLATERAL",
-            "Collateral registered: type=" + saved.getCollateralType()
-                + ", marketValue=" + saved.getMarketValue()
-                + ", LTV=" + (ltv != null ? ltv + "%" : "N/A"));
+        auditService.logEvent(
+                "Collateral",
+                saved.getId(),
+                "REGISTER",
+                null,
+                saved.getCollateralRef(),
+                "COLLATERAL",
+                "Collateral registered: type=" + saved.getCollateralType()
+                        + ", marketValue=" + saved.getMarketValue()
+                        + ", LTV=" + (ltv != null ? ltv + "%" : "N/A"));
 
-        log.info("Collateral registered: ref={}, type={}, value={}, app={}",
-            saved.getCollateralRef(), saved.getCollateralType(),
-            saved.getMarketValue(), app.getApplicationNumber());
+        log.info(
+                "Collateral registered: ref={}, type={}, value={}, app={}",
+                saved.getCollateralRef(),
+                saved.getCollateralType(),
+                saved.getMarketValue(),
+                app.getApplicationNumber());
 
         return saved;
     }
@@ -134,25 +145,23 @@ public class CollateralService {
      */
     public void validateLtv(Long applicationId, BigDecimal loanAmount) {
         String tenantId = TenantContext.getCurrentTenant();
-        List<Collateral> collaterals = collateralRepository
-            .findByTenantIdAndLoanApplicationId(tenantId, applicationId);
+        List<Collateral> collaterals = collateralRepository.findByTenantIdAndLoanApplicationId(tenantId, applicationId);
 
         if (collaterals.isEmpty()) {
             // No collaterals -- unsecured loan, no LTV check needed
             return;
         }
 
-        BigDecimal totalMarketValue = collateralRepository
-            .sumMarketValueByApplication(tenantId, applicationId);
+        BigDecimal totalMarketValue = collateralRepository.sumMarketValueByApplication(tenantId, applicationId);
 
         if (totalMarketValue.signum() <= 0) {
-            throw new BusinessException("COLLATERAL_NO_VALUE",
-                "Collateral has no market value. Valuation is required before approval.");
+            throw new BusinessException(
+                    "COLLATERAL_NO_VALUE", "Collateral has no market value. Valuation is required before approval.");
         }
 
         // Overall LTV across all collaterals
-        BigDecimal overallLtv = loanAmount.multiply(new BigDecimal("100"))
-            .divide(totalMarketValue, 2, RoundingMode.HALF_UP);
+        BigDecimal overallLtv =
+                loanAmount.multiply(new BigDecimal("100")).divide(totalMarketValue, 2, RoundingMode.HALF_UP);
 
         // Check per-collateral-type LTV limits
         for (Collateral c : collaterals) {
@@ -161,25 +170,26 @@ public class CollateralService {
 
             BigDecimal ltv = c.calculateLtv(loanAmount);
             if (ltv != null && ltv.compareTo(maxLtv) > 0) {
-                throw new BusinessException("LTV_EXCEEDED",
-                    "LTV ratio " + ltv + "% exceeds RBI maximum " + maxLtv
-                        + "% for " + c.getCollateralType()
-                        + " collateral " + c.getCollateralRef()
-                        + ". Loan amount: INR " + loanAmount
-                        + ", Collateral value: INR " + c.getMarketValue());
+                throw new BusinessException(
+                        "LTV_EXCEEDED",
+                        "LTV ratio " + ltv + "% exceeds RBI maximum " + maxLtv
+                                + "% for " + c.getCollateralType()
+                                + " collateral " + c.getCollateralRef()
+                                + ". Loan amount: INR " + loanAmount
+                                + ", Collateral value: INR " + c.getMarketValue());
             }
         }
 
-        log.info("LTV validation passed: appId={}, loanAmount={}, collateralValue={}, overallLtv={}%",
-            applicationId, loanAmount, totalMarketValue, overallLtv);
+        log.info(
+                "LTV validation passed: appId={}, loanAmount={}, collateralValue={}, overallLtv={}%",
+                applicationId, loanAmount, totalMarketValue, overallLtv);
     }
 
     /**
      * Returns all collaterals for a loan application.
      */
     public List<Collateral> getCollaterals(Long applicationId) {
-        return collateralRepository.findByTenantIdAndLoanApplicationId(
-            TenantContext.getCurrentTenant(), applicationId);
+        return collateralRepository.findByTenantIdAndLoanApplicationId(TenantContext.getCurrentTenant(), applicationId);
     }
 
     /**
@@ -187,53 +197,47 @@ public class CollateralService {
      */
     private void validateCollateralFields(Collateral c) {
         if (c.getCollateralType() == null) {
-            throw new BusinessException("COLLATERAL_TYPE_REQUIRED",
-                "Collateral type is mandatory");
+            throw new BusinessException("COLLATERAL_TYPE_REQUIRED", "Collateral type is mandatory");
         }
         if (c.getOwnerName() == null || c.getOwnerName().isBlank()) {
-            throw new BusinessException("COLLATERAL_OWNER_REQUIRED",
-                "Collateral owner name is mandatory");
+            throw new BusinessException("COLLATERAL_OWNER_REQUIRED", "Collateral owner name is mandatory");
         }
 
         switch (c.getCollateralType()) {
             case GOLD -> {
                 if (c.getGoldPurity() == null || c.getGoldPurity().isBlank()) {
-                    throw new BusinessException("GOLD_PURITY_REQUIRED",
-                        "Gold purity (18K/22K/24K) is mandatory for gold collateral");
+                    throw new BusinessException(
+                            "GOLD_PURITY_REQUIRED", "Gold purity (18K/22K/24K) is mandatory for gold collateral");
                 }
                 if (c.getGoldWeightGrams() == null || c.getGoldWeightGrams().signum() <= 0) {
-                    throw new BusinessException("GOLD_WEIGHT_REQUIRED",
-                        "Gold weight in grams is mandatory");
+                    throw new BusinessException("GOLD_WEIGHT_REQUIRED", "Gold weight in grams is mandatory");
                 }
                 if (c.getGoldRatePerGram() == null || c.getGoldRatePerGram().signum() <= 0) {
-                    throw new BusinessException("GOLD_RATE_REQUIRED",
-                        "Gold rate per gram is mandatory for valuation");
+                    throw new BusinessException("GOLD_RATE_REQUIRED", "Gold rate per gram is mandatory for valuation");
                 }
             }
             case PROPERTY -> {
                 if (c.getPropertyAddress() == null || c.getPropertyAddress().isBlank()) {
-                    throw new BusinessException("PROPERTY_ADDRESS_REQUIRED",
-                        "Property address is mandatory for property collateral");
+                    throw new BusinessException(
+                            "PROPERTY_ADDRESS_REQUIRED", "Property address is mandatory for property collateral");
                 }
                 if (c.getPropertyType() == null || c.getPropertyType().isBlank()) {
-                    throw new BusinessException("PROPERTY_TYPE_REQUIRED",
-                        "Property type (RESIDENTIAL/COMMERCIAL/LAND) is mandatory");
+                    throw new BusinessException(
+                            "PROPERTY_TYPE_REQUIRED", "Property type (RESIDENTIAL/COMMERCIAL/LAND) is mandatory");
                 }
             }
             case VEHICLE -> {
-                if (c.getVehicleRegistration() == null || c.getVehicleRegistration().isBlank()) {
-                    throw new BusinessException("VEHICLE_REG_REQUIRED",
-                        "Vehicle registration number is mandatory");
+                if (c.getVehicleRegistration() == null
+                        || c.getVehicleRegistration().isBlank()) {
+                    throw new BusinessException("VEHICLE_REG_REQUIRED", "Vehicle registration number is mandatory");
                 }
             }
             case FD -> {
                 if (c.getFdNumber() == null || c.getFdNumber().isBlank()) {
-                    throw new BusinessException("FD_NUMBER_REQUIRED",
-                        "FD number is mandatory for FD collateral");
+                    throw new BusinessException("FD_NUMBER_REQUIRED", "FD number is mandatory for FD collateral");
                 }
                 if (c.getFdAmount() == null || c.getFdAmount().signum() <= 0) {
-                    throw new BusinessException("FD_AMOUNT_REQUIRED",
-                        "FD amount is mandatory");
+                    throw new BusinessException("FD_AMOUNT_REQUIRED", "FD amount is mandatory");
                 }
             }
             default -> {
@@ -241,8 +245,9 @@ public class CollateralService {
                 // Market value is the primary validation for these
                 if (c.getCollateralType() != CollateralType.UNSECURED
                         && (c.getMarketValue() == null || c.getMarketValue().signum() <= 0)) {
-                    throw new BusinessException("COLLATERAL_VALUE_REQUIRED",
-                        "Market value is mandatory for " + c.getCollateralType() + " collateral");
+                    throw new BusinessException(
+                            "COLLATERAL_VALUE_REQUIRED",
+                            "Market value is mandatory for " + c.getCollateralType() + " collateral");
                 }
             }
         }

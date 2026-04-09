@@ -3,23 +3,24 @@ package com.finvanta.controller;
 import com.finvanta.accounting.AccountingService;
 import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.enums.GLAccountType;
+import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.JournalEntryRepository;
 import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.repository.LoanTransactionRepository;
-import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.util.TenantContext;
-import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.servlet.ModelAndView;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.ModelAndView;
 
 @Controller
 @RequestMapping("/accounting")
@@ -32,12 +33,13 @@ public class AccountingController {
     private final LoanTransactionRepository loanTransactionRepository;
     private final DepositTransactionRepository depositTransactionRepository;
 
-    public AccountingController(AccountingService accountingService,
-                                 JournalEntryRepository journalEntryRepository,
-                                 GLMasterRepository glMasterRepository,
-                                 LedgerEntryRepository ledgerEntryRepository,
-                                 LoanTransactionRepository loanTransactionRepository,
-                                 DepositTransactionRepository depositTransactionRepository) {
+    public AccountingController(
+            AccountingService accountingService,
+            JournalEntryRepository journalEntryRepository,
+            GLMasterRepository glMasterRepository,
+            LedgerEntryRepository ledgerEntryRepository,
+            LoanTransactionRepository loanTransactionRepository,
+            DepositTransactionRepository depositTransactionRepository) {
         this.accountingService = accountingService;
         this.journalEntryRepository = journalEntryRepository;
         this.glMasterRepository = glMasterRepository;
@@ -54,16 +56,16 @@ public class AccountingController {
     }
 
     @GetMapping("/journal-entries")
-    public ModelAndView journalEntries(@RequestParam(required = false) String fromDate,
-                                        @RequestParam(required = false) String toDate) {
+    public ModelAndView journalEntries(
+            @RequestParam(required = false) String fromDate, @RequestParam(required = false) String toDate) {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("accounting/journal-entries");
 
-        LocalDate from = fromDate != null ? LocalDate.parse(fromDate) : LocalDate.now().minusMonths(1);
+        LocalDate from =
+                fromDate != null ? LocalDate.parse(fromDate) : LocalDate.now().minusMonths(1);
         LocalDate to = toDate != null ? LocalDate.parse(toDate) : LocalDate.now();
 
-        mav.addObject("entries",
-            journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to));
+        mav.addObject("entries", journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to));
         mav.addObject("fromDate", from);
         mav.addObject("toDate", to);
 
@@ -116,11 +118,26 @@ public class AccountingController {
             if (netBalance.signum() == 0) continue;
 
             switch (gl.getAccountType()) {
-                case ASSET -> { assets.put(label, netBalance); totalAssets = totalAssets.add(netBalance); }
-                case LIABILITY -> { liabilities.put(label, netBalance); totalLiabilities = totalLiabilities.add(netBalance); }
-                case EQUITY -> { equity.put(label, netBalance); totalEquity = totalEquity.add(netBalance); }
-                case INCOME -> { income.put(label, netBalance); totalIncome = totalIncome.add(netBalance); }
-                case EXPENSE -> { expenses.put(label, netBalance); totalExpenses = totalExpenses.add(netBalance); }
+                case ASSET -> {
+                    assets.put(label, netBalance);
+                    totalAssets = totalAssets.add(netBalance);
+                }
+                case LIABILITY -> {
+                    liabilities.put(label, netBalance);
+                    totalLiabilities = totalLiabilities.add(netBalance);
+                }
+                case EQUITY -> {
+                    equity.put(label, netBalance);
+                    totalEquity = totalEquity.add(netBalance);
+                }
+                case INCOME -> {
+                    income.put(label, netBalance);
+                    totalIncome = totalIncome.add(netBalance);
+                }
+                case EXPENSE -> {
+                    expenses.put(label, netBalance);
+                    totalExpenses = totalExpenses.add(netBalance);
+                }
             }
         }
 
@@ -138,7 +155,9 @@ public class AccountingController {
         mav.addObject("totalExpenses", totalExpenses);
         mav.addObject("netProfit", netProfit);
         // Balance check: Assets should equal Liabilities + Equity + Net Profit
-        mav.addObject("balanceCheck", totalAssets.subtract(totalLiabilities).subtract(totalEquity).subtract(netProfit));
+        mav.addObject(
+                "balanceCheck",
+                totalAssets.subtract(totalLiabilities).subtract(totalEquity).subtract(netProfit));
 
         return mav;
     }
@@ -154,20 +173,20 @@ public class AccountingController {
         ModelAndView mav = new ModelAndView("accounting/voucher-register");
         mav.addObject("pageTitle", "Voucher Register");
 
-        LocalDate date = (businessDate != null && !businessDate.isBlank())
-            ? LocalDate.parse(businessDate) : LocalDate.now();
+        LocalDate date =
+                (businessDate != null && !businessDate.isBlank()) ? LocalDate.parse(businessDate) : LocalDate.now();
 
         // Ledger entries for the date (all vouchers)
-        mav.addObject("ledgerEntries",
-            ledgerEntryRepository.findByTenantIdAndBusinessDateOrderByLedgerSequenceAsc(tenantId, date));
+        mav.addObject(
+                "ledgerEntries",
+                ledgerEntryRepository.findByTenantIdAndBusinessDateOrderByLedgerSequenceAsc(tenantId, date));
 
         // Loan transactions for the date
-        mav.addObject("loanTransactions",
-            loanTransactionRepository.findByTenantIdAndValueDateBetween(tenantId, date, date));
+        mav.addObject(
+                "loanTransactions", loanTransactionRepository.findByTenantIdAndValueDateBetween(tenantId, date, date));
 
         // Deposit transactions for the date
-        mav.addObject("depositTransactions",
-            depositTransactionRepository.findByTenantIdAndValueDate(tenantId, date));
+        mav.addObject("depositTransactions", depositTransactionRepository.findByTenantIdAndValueDate(tenantId, date));
 
         mav.addObject("reportDate", date);
         return mav;

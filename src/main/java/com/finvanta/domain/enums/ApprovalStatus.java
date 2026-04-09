@@ -9,9 +9,9 @@ package com.finvanta.domain.enums;
  * - RETURNED allows Checker to send back to Maker for correction
  */
 public enum ApprovalStatus {
-    PENDING_APPROVAL,       // Submitted by Maker, awaiting Checker action
-    APPROVED,               // Approved by Checker
-    REJECTED,               // Rejected by Checker (with reason)
-    RETURNED,               // Returned to Maker for correction
-    CANCELLED               // Cancelled by Maker before Checker action
+    PENDING_APPROVAL, // Submitted by Maker, awaiting Checker action
+    APPROVED, // Approved by Checker
+    REJECTED, // Rejected by Checker (with reason)
+    RETURNED, // Returned to Maker for correction
+    CANCELLED // Cancelled by Maker before Checker action
 }
