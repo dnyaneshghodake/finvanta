@@ -6,10 +6,14 @@ import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.LoanAccountRepository;
 
+import com.finvanta.util.TenantContext;
+
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.Optional;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -41,6 +45,16 @@ class SubledgerReconciliationServiceTest {
 
     @InjectMocks
     private SubledgerReconciliationService service;
+
+    @BeforeEach
+    void setUp() {
+        TenantContext.setCurrentTenant("DEFAULT");
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
+    }
 
     @Test
     void testReconcileBalanced() {
