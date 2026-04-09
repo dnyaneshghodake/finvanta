@@ -35,6 +35,9 @@ public class MfaAuthenticationSuccessHandler extends SavedRequestAwareAuthentica
         setAlwaysUseDefaultTargetUrl(false);
     }
 
+    /** Session attribute key for password-expired state */
+    public static final String PASSWORD_EXPIRED_ATTR = "PASSWORD_EXPIRED";
+
     @Override
     public void onAuthenticationSuccess(
             HttpServletRequest request,
@@ -42,17 +45,31 @@ public class MfaAuthenticationSuccessHandler extends SavedRequestAwareAuthentica
             Authentication authentication) throws IOException, ServletException {
 
         if (authentication.getPrincipal() instanceof BranchAwareUserDetails userDetails) {
+            // CBS: Check MFA requirement first (MFA gate runs before password expiry redirect)
             if (userDetails.isMfaRequired()) {
-                // MFA required: mark session as pending, redirect to TOTP verification
                 request.getSession().setAttribute(MFA_VERIFIED_ATTR, false);
                 getRedirectStrategy().sendRedirect(request, response,
                         request.getContextPath() + "/mfa/verify");
                 return;
             }
+
+            // CBS: Check if credentials are expired (password rotation enforcement)
+            // Per RBI IT Governance Direction 2023 §8.2: expired passwords must force
+            // a password change before granting access to any CBS functionality.
+            // Spring Security allows login with expired credentials (credentialsNonExpired=false
+            // only sets a flag), so we must enforce the redirect here.
+            if (!userDetails.isCredentialsNonExpired()) {
+                request.getSession().setAttribute(MFA_VERIFIED_ATTR, true);
+                request.getSession().setAttribute(PASSWORD_EXPIRED_ATTR, true);
+                getRedirectStrategy().sendRedirect(request, response,
+                        request.getContextPath() + "/password/change?expired=true");
+                return;
+            }
         }
 
-        // No MFA required: mark as verified (or N/A), proceed to dashboard
+        // No MFA required, password not expired: proceed to dashboard
         request.getSession().setAttribute(MFA_VERIFIED_ATTR, true);
+        request.getSession().setAttribute(PASSWORD_EXPIRED_ATTR, false);
         super.onAuthenticationSuccess(request, response, authentication);
     }
 }

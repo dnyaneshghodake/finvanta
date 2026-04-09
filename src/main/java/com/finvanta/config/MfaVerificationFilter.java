@@ -59,6 +59,7 @@ public class MfaVerificationFilter extends OncePerRequestFilter {
         String path = request.getRequestURI().substring(request.getContextPath().length());
 
         if (path.startsWith("/mfa/verify")
+                || path.startsWith("/password/change")
                 || path.startsWith("/logout")
                 || path.startsWith("/login")
                 || path.startsWith("/css/")
@@ -67,6 +68,13 @@ public class MfaVerificationFilter extends OncePerRequestFilter {
                 || path.startsWith("/img/")
                 || path.startsWith("/error")) {
             filterChain.doFilter(request, response);
+            return;
+        }
+
+        // Check if password is expired — redirect to password change instead of MFA
+        Object passwordExpired = session.getAttribute(MfaAuthenticationSuccessHandler.PASSWORD_EXPIRED_ATTR);
+        if (Boolean.TRUE.equals(passwordExpired)) {
+            response.sendRedirect(request.getContextPath() + "/password/change?expired=true");
             return;
         }
 

@@ -14,11 +14,17 @@
         <h1>FINVANTA</h1>
         <p class="subtitle">Core Banking System &mdash; RBI Compliant</p>
 
-        <c:if test="${param.error != null}">
-            <div class="fv-alert alert alert-danger" role="alert">Invalid username or password</div>
+        <c:if test="${not empty error}">
+            <div class="fv-alert alert alert-danger" role="alert"><c:out value="${error}" /></div>
+        </c:if>
+        <c:if test="${param.error != null && empty error}">
+            <div class="fv-alert alert alert-danger" role="alert">Invalid username or password. Please check your credentials and try again.</div>
+        </c:if>
+        <c:if test="${param.expired != null}">
+            <div class="fv-alert alert alert-warning" role="alert">Your password has expired. Please contact your administrator or login to change it.</div>
         </c:if>
         <c:if test="${param.logout != null}">
-            <div class="fv-alert alert alert-success" role="alert">You have been logged out successfully</div>
+            <div class="fv-alert alert alert-success" role="alert">You have been logged out successfully.</div>
         </c:if>
 
         <form method="post" action="${pageContext.request.contextPath}/login" class="fv-form">

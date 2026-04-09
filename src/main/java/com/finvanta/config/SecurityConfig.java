@@ -177,6 +177,8 @@ public class SecurityConfig {
                             .hasRole("ADMIN")
                             .requestMatchers("/mfa/verify")
                             .authenticated()
+                            .requestMatchers("/password/change")
+                            .authenticated()
                             .anyRequest()
                             .authenticated();
                 })

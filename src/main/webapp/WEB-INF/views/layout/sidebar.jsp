@@ -96,6 +96,7 @@
         <span class="fv-biz-date"><c:out value="${businessDate}" default="--" /></span>
         <span class="fv-user-role"><c:out value="${userRole}" default="USER" /></span>
         <span><c:out value="${pageContext.request.userPrincipal.name}" default="" /></span>
+        <a href="${pageContext.request.contextPath}/password/change" style="color:#90caf9;font-size:12px;text-decoration:none;margin-right:8px;" title="Change Password"><i class="bi bi-key"></i></a>
         <form method="post" action="${pageContext.request.contextPath}/logout" class="d-inline">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
             <button type="submit" class="btn btn-sm" style="color:#90caf9;background:none;border:none;cursor:pointer;font-size:12px;padding:0;">Logout</button>
