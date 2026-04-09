@@ -417,6 +417,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.DISBURSEMENT);
         txn.setAmount(disbursementAmount);
         txn.setPrincipalComponent(disbursementAmount);
@@ -606,6 +608,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.INTEREST_ACCRUAL);
         txn.setAmount(accruedAmount);
         txn.setInterestComponent(accruedAmount);
@@ -719,6 +723,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.PENALTY_CHARGE);
         txn.setAmount(penalAmount);
         txn.setPenaltyComponent(penalAmount);
@@ -917,6 +923,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.REPAYMENT_PRINCIPAL);
         txn.setAmount(amount);
         txn.setPrincipalComponent(principalPaid);
@@ -1166,6 +1174,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.WRITE_OFF);
         txn.setAmount(writeOffAmount.add(interestReceivable));
         txn.setPrincipalComponent(writeOffAmount);
@@ -1300,6 +1310,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.PREPAYMENT);
         txn.setAmount(totalOutstanding);
         txn.setPrincipalComponent(principalDue);
