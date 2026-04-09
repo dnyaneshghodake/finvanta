@@ -3,11 +3,13 @@ package com.finvanta.batch;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.lenient;
 
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.InterBranchTransaction;
 import com.finvanta.repository.InterBranchSettlementRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
 
@@ -45,6 +47,9 @@ class InterBranchSettlementServiceTest {
     @Mock
     private AuditService auditService;
 
+    @Mock
+    private BusinessDateService businessDateService;
+
     @InjectMocks
     private InterBranchSettlementService settlementService;
 
@@ -53,6 +58,7 @@ class InterBranchSettlementServiceTest {
     @BeforeEach
     void setUp() {
         TenantContext.setCurrentTenant("DEFAULT");
+        lenient().when(businessDateService.getCurrentBusinessDate()).thenReturn(BUSINESS_DATE);
     }
 
     @AfterEach
@@ -158,18 +164,21 @@ class InterBranchSettlementServiceTest {
     // === HO Manual Settle Tests ===
 
     @Test
-    @DisplayName("manualSettleStalePending settles all pending with HO auth")
-    void manualSettleStalePending_settlesAll() {
-        InterBranchTransaction txn = createPendingTxn(1L, true, BUSINESS_DATE.minusDays(1));
+    @DisplayName("manualSettleStalePending settles only prior-date pending with HO auth")
+    void manualSettleStalePending_settlesOnlyPriorDate() {
+        InterBranchTransaction staleTxn = createPendingTxn(1L, true, BUSINESS_DATE.minusDays(1));
+        InterBranchTransaction todayTxn = createPendingTxn(2L, true, BUSINESS_DATE);
         when(settlementRepository.findByTenantIdAndSettlementStatusOrderByBusinessDateAsc(anyString(), eq("PENDING")))
-                .thenReturn(List.of(txn));
+                .thenReturn(List.of(staleTxn, todayTxn));
 
         int[] result = settlementService.manualSettleStalePending("Prior EOD failed", "HO-AUTH-001");
 
+        // Only the stale prior-date txn should be settled; today's txn should be untouched
         assertEquals(1, result[0]);
         assertEquals(0, result[1]);
-        assertEquals("SETTLED", txn.getSettlementStatus());
-        assertTrue(txn.getSettlementBatchRef().contains("HO-MANUAL"));
+        assertEquals("SETTLED", staleTxn.getSettlementStatus());
+        assertTrue(staleTxn.getSettlementBatchRef().contains("HO-MANUAL"));
+        assertEquals("PENDING", todayTxn.getSettlementStatus()); // Today's txn left for normal EOD
         verify(auditService).logEvent(eq("InterBranchTransaction"), isNull(),
                 eq("HO_MANUAL_SETTLEMENT"), any(), any(), any(), any());
     }
@@ -203,15 +212,17 @@ class InterBranchSettlementServiceTest {
     }
 
     @Test
-    @DisplayName("countStalePending returns correct count")
-    void countStalePending_returnsCount() {
-        InterBranchTransaction txn1 = createPendingTxn(1L, true, BUSINESS_DATE.minusDays(1));
-        InterBranchTransaction txn2 = createPendingTxn(2L, true, BUSINESS_DATE.minusDays(2));
+    @DisplayName("countStalePending counts only prior-date transactions, excludes today's")
+    void countStalePending_countsOnlyPriorDate() {
+        InterBranchTransaction staleTxn1 = createPendingTxn(1L, true, BUSINESS_DATE.minusDays(1));
+        InterBranchTransaction staleTxn2 = createPendingTxn(2L, true, BUSINESS_DATE.minusDays(2));
+        InterBranchTransaction todayTxn = createPendingTxn(3L, true, BUSINESS_DATE);
         when(settlementRepository.findByTenantIdAndSettlementStatusOrderByBusinessDateAsc(anyString(), eq("PENDING")))
-                .thenReturn(List.of(txn1, txn2));
+                .thenReturn(List.of(staleTxn1, staleTxn2, todayTxn));
 
         long count = settlementService.countStalePending();
 
+        // Only the 2 prior-date transactions should be counted; today's is not stale
         assertEquals(2, count);
     }
 }

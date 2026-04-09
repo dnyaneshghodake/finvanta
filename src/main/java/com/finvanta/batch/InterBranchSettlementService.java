@@ -10,6 +10,7 @@ import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
@@ -48,18 +49,21 @@ public class InterBranchSettlementService {
     private final LedgerEntryRepository ledgerRepository;
     private final TransactionEngine transactionEngine;
     private final AuditService auditService;
+    private final BusinessDateService businessDateService;
 
     public InterBranchSettlementService(
             InterBranchSettlementRepository settlementRepository,
             BranchRepository branchRepository,
             LedgerEntryRepository ledgerRepository,
             TransactionEngine transactionEngine,
-            AuditService auditService) {
+            AuditService auditService,
+            BusinessDateService businessDateService) {
         this.settlementRepository = settlementRepository;
         this.branchRepository = branchRepository;
         this.ledgerRepository = ledgerRepository;
         this.transactionEngine = transactionEngine;
         this.auditService = auditService;
+        this.businessDateService = businessDateService;
     }
 
     /**
@@ -290,11 +294,20 @@ public class InterBranchSettlementService {
                     "HO authorization reference is mandatory for cross-date IB settlement");
         }
 
+        // CBS Tier-1: Get current business date to filter ONLY prior-date PENDING transactions.
+        // Today's PENDING transactions are legitimate — they will be settled by normal EOD
+        // via settleInterBranch() which uses date-scoped pessimistic locking.
+        // Only transactions from PRIOR dates are "stale" and require HO authorization.
+        LocalDate currentBusinessDate = businessDateService.getCurrentBusinessDate();
+
         List<InterBranchTransaction> stalePending =
-                settlementRepository.findByTenantIdAndSettlementStatusOrderByBusinessDateAsc(tenantId, "PENDING");
+                settlementRepository.findByTenantIdAndSettlementStatusOrderByBusinessDateAsc(tenantId, "PENDING")
+                        .stream()
+                        .filter(txn -> txn.getBusinessDate().isBefore(currentBusinessDate))
+                        .toList();
 
         if (stalePending.isEmpty()) {
-            log.info("No stale PENDING inter-branch transactions to settle");
+            log.info("No stale PENDING inter-branch transactions to settle (prior to {})", currentBusinessDate);
             return new int[] {0, 0};
         }
 
@@ -344,11 +357,19 @@ public class InterBranchSettlementService {
     }
 
     /**
-     * Get count of stale PENDING transactions (for admin dashboard display).
+     * Get count of stale PENDING transactions from PRIOR dates (for admin dashboard display).
+     *
+     * Per Finacle IB_SETTLEMENT: only transactions from dates BEFORE the current business
+     * date are "stale". Today's PENDING transactions are expected — they will be settled
+     * by normal EOD. Showing today's transactions in the stale count would mislead the
+     * admin into triggering unnecessary HO manual settlement.
      */
     public long countStalePending() {
         String tenantId = TenantContext.getCurrentTenant();
+        LocalDate currentBusinessDate = businessDateService.getCurrentBusinessDate();
         return settlementRepository.findByTenantIdAndSettlementStatusOrderByBusinessDateAsc(tenantId, "PENDING")
-                .size();
+                .stream()
+                .filter(txn -> txn.getBusinessDate().isBefore(currentBusinessDate))
+                .count();
     }
 }

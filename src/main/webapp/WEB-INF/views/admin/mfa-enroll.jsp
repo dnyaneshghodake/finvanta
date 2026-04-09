@@ -45,17 +45,27 @@
     </div>
 </div>
 
-<!-- QR Code generation via lightweight JS library (no external CDN) -->
+<!-- CBS Security: otpauth URI passed via data attribute to prevent XSS.
+     Per OWASP: never interpolate server-side values directly into JavaScript string literals.
+     Using data-uri with <c:out> HTML-escapes the value, then JavaScript reads it safely. -->
+<div id="otpData" data-uri="<c:out value='${otpAuthUri}' />" style="display:none;"></div>
 <script>
     // Simple QR code rendering using a canvas-based approach
     // In production, use a proper QR library like qrcode.js
     (function() {
-        var uri = '${otpAuthUri}';
+        var dataEl = document.getElementById('otpData');
+        var uri = dataEl ? dataEl.getAttribute('data-uri') : '';
         var container = document.getElementById('qrcode');
         if (uri && container) {
             // Fallback: show the URI as a link if QR JS is not available
-            container.innerHTML = '<p class="text-muted small">otpauth:// URI:</p>'
-                + '<code style="word-break:break-all;font-size:0.75rem;">' + uri + '</code>';
+            var code = document.createElement('code');
+            code.style.cssText = 'word-break:break-all;font-size:0.75rem;';
+            code.textContent = uri;
+            var p = document.createElement('p');
+            p.className = 'text-muted small';
+            p.textContent = 'otpauth:// URI:';
+            container.appendChild(p);
+            container.appendChild(code);
         }
     })();
 </script>

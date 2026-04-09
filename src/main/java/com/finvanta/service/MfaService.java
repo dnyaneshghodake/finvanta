@@ -116,12 +116,26 @@ public class MfaService {
         return base32Secret;
     }
 
-    /** Build otpauth:// URI for QR code generation per RFC 6238 key URI format. */
+    /**
+     * Build otpauth:// URI for QR code generation per RFC 6238 key URI format.
+     *
+     * Per Google Authenticator Key URI Format spec:
+     * - The label (issuer:account) in the path segment MUST be percent-encoded
+     * - The issuer query parameter MUST also be percent-encoded
+     * - Spaces, colons, and special characters in username must be encoded
+     *
+     * Without encoding, spaces in "Finvanta CBS" and special chars in usernames
+     * break QR code parsing on some authenticator apps (especially non-Google ones).
+     */
     public String buildOtpAuthUri(String username, String base32Secret) {
         String issuer = "Finvanta CBS";
-        return "otpauth://totp/" + issuer + ":" + username
+        String encodedIssuer = issuer.replace(" ", "%20");
+        String encodedUsername = username.replace(" ", "%20")
+                .replace("@", "%40")
+                .replace(":", "%3A");
+        return "otpauth://totp/" + encodedIssuer + ":" + encodedUsername
                 + "?secret=" + base32Secret
-                + "&issuer=" + issuer.replace(" ", "%20")
+                + "&issuer=" + encodedIssuer
                 + "&digits=" + OTP_DIGITS
                 + "&period=" + TIME_STEP_SECONDS;
     }

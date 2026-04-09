@@ -34,6 +34,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 
@@ -694,26 +695,47 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // This ensures RBI-compliant interest calculation where a customer who had
         // INR 1,00,000 for 89 days but withdrew to INR 1,000 on day 90 gets interest
         // on INR 1,000 (minimum), not the daily-product sum.
-        // Fallback: if no snapshots exist (new account, first deployment), use accrued.
+        //
+        // IMPORTANT: The day multiplier must be the ACTUAL number of days in the quarter,
+        // NOT the snapshot count. Snapshot count can be less than actual days when:
+        //   1. Feature deployed mid-quarter (snapshots start late)
+        //   2. Account opened mid-quarter (no prior snapshots)
+        //   3. Quarter-end day snapshot missing (Step 8.6 runs AFTER Step 8 in EOD)
+        // Using snapshot count as multiplier causes severe interest underpayment.
+        //
+        // Completeness guard: Only apply min-balance recalculation when snapshot coverage
+        // is sufficient (>= actualDays - 1, allowing for quarter-end day lag).
+        // When coverage is insufficient, fall through to use daily-accrued interest as-is.
         LocalDate quarterStart = getQuarterStartDate(bd);
+        long actualDaysInQuarter = ChronoUnit.DAYS.between(quarterStart, bd) + 1;
         long snapshotDays = balanceSnapshotRepository.countSnapshotsInPeriod(
                 tid, acct.getId(), quarterStart, bd);
-        if (snapshotDays > 0) {
+        if (snapshotDays > 0 && snapshotDays >= actualDaysInQuarter - 1) {
             BigDecimal minBalance = balanceSnapshotRepository.findMinBalanceInPeriod(
                     tid, acct.getId(), quarterStart, bd);
-            // Recalculate interest on minimum daily balance for the quarter
-            // Formula: minBalance * rate * days / 36500
+            // Recalculate interest on minimum daily balance for the ACTUAL quarter duration
+            // Formula: minBalance * rate * actualDays / 36500
+            // Per RBI: interest is for the full quarter period, not just snapshot-covered days
             BigDecimal recalculated = minBalance
                     .multiply(acct.getInterestRate())
-                    .multiply(BigDecimal.valueOf(snapshotDays))
+                    .multiply(BigDecimal.valueOf(actualDaysInQuarter))
                     .divide(new BigDecimal("36500"), 2, RoundingMode.HALF_UP);
             if (recalculated.compareTo(interest) < 0) {
-                log.info("Min daily balance adjustment: account={}, accrued={}, minBal recalc={}, minBalance={}, days={}",
-                        acn, interest, recalculated, minBalance, snapshotDays);
+                log.info("Min daily balance adjustment: account={}, accrued={}, minBal recalc={}, minBalance={}, "
+                        + "actualDays={}, snapshotDays={}",
+                        acn, interest, recalculated, minBalance, actualDaysInQuarter, snapshotDays);
                 interest = recalculated;
             }
             // If recalculated > accrued (shouldn't happen if snapshots are correct),
             // use the lower value (accrued) as a safety cap — never overpay interest.
+        } else if (snapshotDays > 0) {
+            // Insufficient snapshot coverage — log warning but use daily-accrued interest.
+            // Per CBS safety principle: when data is incomplete, do NOT recalculate.
+            // Daily accrual on closing balance is the conservative fallback.
+            log.warn("Min daily balance skipped: account={}, snapshotDays={}, actualDays={}, "
+                    + "coverage={:.1f}% — insufficient for recalculation, using daily-accrued interest",
+                    acn, snapshotDays, actualDaysInQuarter,
+                    (snapshotDays * 100.0 / actualDaysInQuarter));
         }
         String gl = glForAccount(acct);
         TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
