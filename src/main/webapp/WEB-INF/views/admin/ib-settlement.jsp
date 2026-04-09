@@ -46,9 +46,18 @@
                                     <small class="text-muted">Head Office authorization number for audit trail</small>
                                 </div>
                             </div>
-                            <button type="submit" class="btn btn-warning" onclick="return confirm('This will settle ${stalePendingCount} stale PENDING IB transactions. This action cannot be undone. Continue?');">
-                                <i class="bi bi-exclamation-triangle"></i> Settle ${stalePendingCount} Stale Transaction(s)
+                            <button type="submit" class="btn btn-warning" id="settleBtn"
+                                    data-count="<c:out value='${stalePendingCount}' />">
+                                <i class="bi bi-exclamation-triangle"></i> Settle <c:out value="${stalePendingCount}" /> Stale Transaction(s)
                             </button>
+                            <script>
+                                document.getElementById('settleBtn').addEventListener('click', function(e) {
+                                    var count = this.getAttribute('data-count');
+                                    if (!confirm('This will settle ' + count + ' stale PENDING IB transactions. This action cannot be undone. Continue?')) {
+                                        e.preventDefault();
+                                    }
+                                });
+                            </script>
                         </form>
                     </div>
                 </div>
