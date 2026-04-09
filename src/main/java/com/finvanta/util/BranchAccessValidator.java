@@ -71,13 +71,11 @@ public class BranchAccessValidator {
         }
 
         // ADMIN and AUDITOR bypass branch isolation (HO-level access)
-        if (SecurityUtil.isAdminRole()) {
+        // Per RBI IT Governance: ADMIN has full access, AUDITOR has read-only all-branch access.
+        // Uses hasRole()/isAuditorRole() instead of getCurrentUserRole() because the latter
+        // excludes AUDITOR from its return values (designed for transaction limit resolution only).
+        if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
             return;
-        }
-
-        String currentRole = SecurityUtil.getCurrentUserRole();
-        if ("AUDITOR".equals(currentRole)) {
-            return; // Read-only access to all branches
         }
 
         Long userBranchId = SecurityUtil.getCurrentUserBranchId();

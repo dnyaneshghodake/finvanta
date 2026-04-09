@@ -4,6 +4,7 @@ import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.LoanStatus;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
@@ -26,6 +27,10 @@ import org.springframework.web.servlet.ModelAndView;
  *
  * Per RBI audit requirements, these reports must be available daily
  * and must reflect the current business date's position.
+ *
+ * CBS Tier-1 Branch Isolation:
+ * CHECKER sees only their branch's loan accounts in reports.
+ * ADMIN/AUDITOR sees consolidated (all branches) per Finacle BRANCH_CONTEXT.
  */
 @Controller
 @RequestMapping("/reports")
@@ -40,13 +45,31 @@ public class ReportController {
     }
 
     /**
+     * Returns branch-scoped active loan accounts per Finacle BRANCH_CONTEXT.
+     * ADMIN/AUDITOR: all accounts (consolidated view).
+     * CHECKER/MAKER: only accounts at their home branch.
+     */
+    private List<LoanAccount> getBranchScopedAccounts() {
+        String tenantId = TenantContext.getCurrentTenant();
+        if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+            return accountRepository.findAllActiveAccounts(tenantId);
+        }
+        Long branchId = SecurityUtil.getCurrentUserBranchId();
+        if (branchId != null) {
+            return accountRepository.findByTenantIdAndBranchId(tenantId, branchId).stream()
+                    .filter(a -> !a.getStatus().isTerminal())
+                    .collect(Collectors.toList());
+        }
+        return Collections.emptyList();
+    }
+
+    /**
      * DPD Distribution Report — shows count and outstanding by DPD buckets.
      * Buckets: 0 DPD, 1-30, 31-60, 61-90, 91-180, 181-365, 366-1095, >1095
      */
     @GetMapping("/dpd")
     public ModelAndView dpdReport() {
-        String tenantId = TenantContext.getCurrentTenant();
-        List<LoanAccount> accounts = accountRepository.findAllActiveAccounts(tenantId);
+        List<LoanAccount> accounts = getBranchScopedAccounts();
 
         // DPD buckets per RBI Early Warning + IRAC
         int[][] buckets = {
@@ -100,8 +123,7 @@ public class ReportController {
      */
     @GetMapping("/irac")
     public ModelAndView iracReport() {
-        String tenantId = TenantContext.getCurrentTenant();
-        List<LoanAccount> accounts = accountRepository.findAllActiveAccounts(tenantId);
+        List<LoanAccount> accounts = getBranchScopedAccounts();
 
         Map<String, List<LoanAccount>> byStatus = accounts.stream()
                 .collect(Collectors.groupingBy(a -> a.getStatus().name()));
@@ -157,8 +179,7 @@ public class ReportController {
      */
     @GetMapping("/provision")
     public ModelAndView provisionReport() {
-        String tenantId = TenantContext.getCurrentTenant();
-        List<LoanAccount> accounts = accountRepository.findAllActiveAccounts(tenantId);
+        List<LoanAccount> accounts = getBranchScopedAccounts();
 
         BigDecimal totalOutstanding = BigDecimal.ZERO;
         BigDecimal totalProvisioning = BigDecimal.ZERO;
