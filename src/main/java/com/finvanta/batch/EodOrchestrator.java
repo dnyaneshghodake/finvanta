@@ -71,7 +71,8 @@ import org.springframework.transaction.annotation.Transactional;
  *   Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)
  *   Step 8: CASA Savings Interest Accrual + Quarterly Credit (per RBI directive)
  *   Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER — LOAN_EMI auto-debit)
- *   Step 8.6: Daily Balance Snapshot (per Finacle ACCT_BAL_HIST — must be AFTER all balance mutations)
+ *   Step 8.6: CASA Balance Snapshot (per Finacle ACCT_BAL_HIST — must be AFTER all balance mutations)
+ *   Step 8.7: Loan Balance Snapshot (per Finacle ACCT_BAL_HIST — sectoral exposure / NPA audit)
  *   Step 9: CASA Dormancy Classification (per RBI Master Direction on KYC 2016 Sec 38)
  *   Step 10: KYC Expiry Flagging (per RBI Master Direction on KYC 2016 Sec 16)
  *
@@ -105,9 +106,11 @@ public class EodOrchestrator {
     private final com.finvanta.repository.CustomerRepository customerRepository;
     private final com.finvanta.workflow.ApprovalWorkflowService workflowService;
     private final com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository;
+    private final com.finvanta.repository.LoanBalanceSnapshotRepository loanBalanceSnapshotRepository;
 
-    /** CBS: Snapshot step counters for audit logging */
+    /** CBS: Snapshot step constants for audit logging */
     private static final String SNAPSHOT_STEP_NAME = "DAILY_BALANCE_SNAPSHOT";
+    private static final String LOAN_SNAPSHOT_STEP_NAME = "LOAN_BALANCE_SNAPSHOT";
 
     /** Self-proxy for per-account transaction isolation via Spring AOP. */
     private final EodOrchestrator self;
@@ -131,6 +134,7 @@ public class EodOrchestrator {
             com.finvanta.repository.CustomerRepository customerRepository,
             com.finvanta.workflow.ApprovalWorkflowService workflowService,
             com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository,
+            com.finvanta.repository.LoanBalanceSnapshotRepository loanBalanceSnapshotRepository,
             @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;
@@ -150,6 +154,7 @@ public class EodOrchestrator {
         this.customerRepository = customerRepository;
         this.workflowService = workflowService;
         this.balanceSnapshotRepository = balanceSnapshotRepository;
+        this.loanBalanceSnapshotRepository = loanBalanceSnapshotRepository;
         this.self = self;
     }
 
@@ -454,6 +459,78 @@ public class EodOrchestrator {
                                 + ", captured=" + captured
                                 + ", total=" + allCasaAccounts.size()
                                 + ", skippedIdempotent=" + skippedIdempotent);
+            }
+
+            // Step 8.7: Loan Balance Snapshot (per Finacle ACCT_BAL_HIST / RBI CRILC)
+            // Captures closing balance of every active loan account at EOD for:
+            // - Sectoral exposure reporting (RBI CRILC)
+            // - NPA provisioning audit trail (outstanding at classification date)
+            // - Customer dispute resolution (balance on a specific date)
+            // Must run AFTER loan interest accrual (Steps 3-4), NPA classification (Step 5),
+            // provisioning (Step 6), and SI execution (Step 8.5 — EMI repayments).
+            // CBS: Per-account fault isolation — same pattern as CASA snapshot.
+            self.updateStepName(eodJob.getId(), LOAN_SNAPSHOT_STEP_NAME);
+            {
+                // Re-fetch active loan accounts to get post-accrual/post-SI balances
+                var loanAccounts = accountRepository.findAllActiveAccounts(tenantId);
+                int loanCaptured = 0;
+                int loanSkipped = 0;
+                for (var loan : loanAccounts) {
+                    try {
+                        if (loanBalanceSnapshotRepository.existsByTenantIdAndAccountIdAndBusinessDate(
+                                tenantId, loan.getId(), businessDate)) {
+                            loanSkipped++;
+                            continue;
+                        }
+                        if (loan.getBranch() == null) {
+                            log.error("DATA INTEGRITY: Loan {} has null branch — skipping snapshot",
+                                    loan.getAccountNumber());
+                            failedCount++;
+                            appendError(errors, LOAN_SNAPSHOT_STEP_NAME, loan.getAccountNumber(),
+                                    new IllegalStateException("Loan account has no branch assigned"));
+                            continue;
+                        }
+                        com.finvanta.domain.entity.LoanBalanceSnapshot snapshot =
+                                new com.finvanta.domain.entity.LoanBalanceSnapshot();
+                        snapshot.setTenantId(tenantId);
+                        snapshot.setAccountId(loan.getId());
+                        snapshot.setAccountNumber(loan.getAccountNumber());
+                        snapshot.setBranchId(loan.getBranch().getId());
+                        snapshot.setBusinessDate(businessDate);
+                        snapshot.setOutstandingPrincipal(loan.getOutstandingPrincipal());
+                        snapshot.setOutstandingInterest(loan.getOutstandingInterest());
+                        snapshot.setAccruedInterest(loan.getAccruedInterest());
+                        snapshot.setPenalInterestAccrued(loan.getPenalInterestAccrued());
+                        snapshot.setTotalOutstanding(loan.getTotalOutstanding());
+                        snapshot.setDaysPastDue(loan.getDaysPastDue());
+                        snapshot.setLoanStatus(loan.getStatus().name());
+                        snapshot.setProductType(loan.getProductType());
+                        snapshot.setProvisioningAmount(
+                                loan.getProvisioningAmount() != null ? loan.getProvisioningAmount()
+                                        : java.math.BigDecimal.ZERO);
+                        snapshot.setCreatedBy("SYSTEM_EOD");
+                        loanBalanceSnapshotRepository.save(snapshot);
+                        loanCaptured++;
+                    } catch (Exception e) {
+                        failedCount++;
+                        appendError(errors, LOAN_SNAPSHOT_STEP_NAME, loan.getAccountNumber(), e);
+                    }
+                }
+                processedCount += loanCaptured;
+                log.info("EOD Step 8.7: {} loan balance snapshots captured (skipped={} idempotent)",
+                        loanCaptured, loanSkipped);
+
+                auditService.logEvent(
+                        "BatchJob",
+                        eodJob.getId(),
+                        LOAN_SNAPSHOT_STEP_NAME,
+                        null,
+                        String.valueOf(loanCaptured),
+                        "EOD",
+                        "Loan balance snapshots captured: date=" + businessDate
+                                + ", captured=" + loanCaptured
+                                + ", total=" + loanAccounts.size()
+                                + ", skippedIdempotent=" + loanSkipped);
             }
 
             // Step 9: CASA Dormancy Classification (RBI Master Direction on KYC 2016 Sec 38)

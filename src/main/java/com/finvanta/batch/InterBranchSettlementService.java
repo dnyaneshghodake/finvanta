@@ -24,6 +24,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.finvanta.audit.AuditService;
+
 /**
  * CBS Inter-Branch Settlement Service per Finacle IB_SETTLEMENT.
  *
@@ -44,16 +46,19 @@ public class InterBranchSettlementService {
     private final BranchRepository branchRepository;
     private final LedgerEntryRepository ledgerRepository;
     private final TransactionEngine transactionEngine;
+    private final AuditService auditService;
 
     public InterBranchSettlementService(
             InterBranchSettlementRepository settlementRepository,
             BranchRepository branchRepository,
             LedgerEntryRepository ledgerRepository,
-            TransactionEngine transactionEngine) {
+            TransactionEngine transactionEngine,
+            AuditService auditService) {
         this.settlementRepository = settlementRepository;
         this.branchRepository = branchRepository;
         this.ledgerRepository = ledgerRepository;
         this.transactionEngine = transactionEngine;
+        this.auditService = auditService;
     }
 
     /**
@@ -252,5 +257,97 @@ public class InterBranchSettlementService {
             log.info("Inter-branch settlement completed: date={}, transactions={}, branches={}",
                     businessDate, pendingTransactions.size(), branchNetPositions.size());
         }
+    }
+
+    /**
+     * HO Manual Settlement — settle stale PENDING transactions from prior dates.
+     *
+     * Per Finacle IB_SETTLEMENT / Temenos IB.NETTING:
+     * Transactions from prior dates that remain PENDING indicate a failed prior-day EOD.
+     * These require explicit Head Office (HO) authorization to settle because:
+     * 1. The original EOD failed — root cause must be investigated before settlement
+     * 2. Cross-date settlement affects prior-day GL balances (audit implications)
+     * 3. Regulatory reporting for the prior date may already have been submitted
+     *
+     * Only ADMIN role can invoke this (enforced in SecurityConfig).
+     * Mandatory reason and authorization reference for audit trail.
+     *
+     * @param reason Mandatory reason for HO authorization (audit trail)
+     * @param hoAuthorizationRef HO authorization reference number
+     * @return int[2]: [0]=settled count, [1]=failed count
+     */
+    @Transactional
+    public int[] manualSettleStalePending(String reason, String hoAuthorizationRef) {
+        String tenantId = TenantContext.getCurrentTenant();
+
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException("REASON_REQUIRED",
+                    "Reason is mandatory for HO manual settlement per RBI audit norms");
+        }
+        if (hoAuthorizationRef == null || hoAuthorizationRef.isBlank()) {
+            throw new BusinessException("HO_AUTH_REQUIRED",
+                    "HO authorization reference is mandatory for cross-date IB settlement");
+        }
+
+        List<InterBranchTransaction> stalePending =
+                settlementRepository.findByTenantIdAndSettlementStatusOrderByBusinessDateAsc(tenantId, "PENDING");
+
+        if (stalePending.isEmpty()) {
+            log.info("No stale PENDING inter-branch transactions to settle");
+            return new int[] {0, 0};
+        }
+
+        String settlementBatchRef = "IB-HO-MANUAL-" + hoAuthorizationRef;
+        int settled = 0;
+        int failed = 0;
+
+        for (InterBranchTransaction txn : stalePending) {
+            try {
+                if (txn.getSourceJournalId() != null && txn.getTargetJournalId() != null) {
+                    txn.setSettlementStatus("SETTLED");
+                    txn.setSettlementBatchRef(settlementBatchRef);
+                    settled++;
+                } else {
+                    txn.setSettlementStatus("FAILED");
+                    txn.setFailureReason("HO manual settle: Incomplete GL posting — "
+                            + "source or target journal missing. Reason: " + reason);
+                    failed++;
+                }
+            } catch (Exception e) {
+                txn.setSettlementStatus("FAILED");
+                txn.setFailureReason("HO manual settle error: " + e.getMessage());
+                failed++;
+                log.error("HO manual settle failed for txn {}: {}", txn.getId(), e.getMessage());
+            }
+            settlementRepository.save(txn);
+        }
+
+        auditService.logEvent(
+                "InterBranchTransaction",
+                null,
+                "HO_MANUAL_SETTLEMENT",
+                "PENDING (" + stalePending.size() + " transactions)",
+                "settled=" + settled + ", failed=" + failed,
+                "INTER_BRANCH",
+                "HO manual settlement: reason=" + reason
+                        + " | hoAuth=" + hoAuthorizationRef
+                        + " | settled=" + settled
+                        + " | failed=" + failed
+                        + " | total=" + stalePending.size()
+                        + " | By: " + com.finvanta.util.SecurityUtil.getCurrentUsername());
+
+        log.info("HO manual IB settlement: settled={}, failed={}, hoAuth={}, reason={}",
+                settled, failed, hoAuthorizationRef, reason);
+
+        return new int[] {settled, failed};
+    }
+
+    /**
+     * Get count of stale PENDING transactions (for admin dashboard display).
+     */
+    public long countStalePending() {
+        String tenantId = TenantContext.getCurrentTenant();
+        return settlementRepository.findByTenantIdAndSettlementStatusOrderByBusinessDateAsc(tenantId, "PENDING")
+                .size();
     }
 }

@@ -217,14 +217,22 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 .findById(branchId)
                 .filter(b -> tid.equals(b.getTenantId()) && b.isActive())
                 .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "Branch: " + branchId));
-        if (accountType == null || (!accountType.startsWith("SAVINGS") && !accountType.startsWith("CURRENT")))
-            throw new BusinessException("INVALID_ACCOUNT_TYPE", "Must be SAVINGS* or CURRENT*");
+        // CBS Tier-1: Parse and validate account type via enum per Finacle PDDEF ACCT_TYPE.
+        // Enum validation prevents typos that would corrupt interest calculation and reporting.
+        DepositAccountType parsedAccountType;
+        try {
+            parsedAccountType = DepositAccountType.valueOf(accountType);
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new BusinessException("INVALID_ACCOUNT_TYPE",
+                    "Invalid account type: " + accountType + ". Valid types: "
+                            + java.util.Arrays.toString(DepositAccountType.values()));
+        }
 
         // CBS Phase 2: Product-driven rate and minimum balance per Finacle PDDEF.
         // Interest rate and minimum balance are resolved from ProductMaster, not hardcoded.
         // Fallback to defaults if product not found (backward compatibility with Phase 1).
         String resolvedProductCode = productCode != null ? productCode : accountType;
-        BigDecimal interestRate = accountType.startsWith("SAVINGS") ? new BigDecimal("4.0000") : BigDecimal.ZERO;
+        BigDecimal interestRate = parsedAccountType.isInterestBearing() ? new BigDecimal("4.0000") : BigDecimal.ZERO;
         BigDecimal minimumBalance = BigDecimal.ZERO;
         var productOpt = productMasterRepository.findByTenantIdAndProductCode(tid, resolvedProductCode);
         if (productOpt.isPresent()) {
@@ -254,7 +262,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         a.setAccountNumber(accNo);
         a.setCustomer(cust);
         a.setBranch(branch);
-        a.setAccountType(accountType);
+        a.setAccountType(parsedAccountType);
         a.setProductCode(resolvedProductCode);
         // CBS Phase 2: Maker-Checker for account opening per Finacle ACCTOPN.
         // Account starts in PENDING_ACTIVATION — requires CHECKER approval to activate.
