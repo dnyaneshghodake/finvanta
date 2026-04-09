@@ -72,9 +72,13 @@ public class LedgerEntry {
      * for branch-level Day Book, audit trail, and reconciliation.
      * This enables: branch-level ledger queries, branch auditor access control,
      * and branch-level hash chain verification (future enhancement).
+     *
+     * Uses @ManyToOne (consistent with JournalEntry, DepositTransaction, etc.)
+     * for referential integrity. FetchType.LAZY avoids loading Branch unless accessed.
      */
-    @Column(name = "branch_id", nullable = false)
-    private Long branchId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "branch_id", nullable = false)
+    private Branch branch;
 
     /**
      * Branch code denormalized for reporting without joins.

@@ -132,9 +132,14 @@ public class Branch extends BaseEntity {
         return branchType != null && branchType.isOperational();
     }
 
-    /** Returns true if this is the Head Office */
+    /**
+     * Returns true if this is the Head Office.
+     * Per Finacle: branchType is the single source of truth.
+     * The headOffice flag must be consistent with branchType == HEAD_OFFICE.
+     * If they diverge, branchType takes precedence (fail-safe: restrict, don't expand).
+     */
     public boolean isHO() {
-        return headOffice || branchType == BranchType.HEAD_OFFICE;
+        return branchType == BranchType.HEAD_OFFICE;
     }
 
     /** Returns true if this is an administrative/supervisory level (HO/ZO/RO) */

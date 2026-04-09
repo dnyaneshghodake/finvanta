@@ -6,6 +6,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+// Note: BusinessException is in the same package (com.finvanta.util) — no import needed.
+// SecurityUtil is also in the same package — static calls are used intentionally
+// for lightweight access to the Spring Security context. Consider refactoring to
+// an injected dependency for testability in a future PR.
+
 /**
  * CBS Branch Access Validator per Finacle BRANCH_CONTEXT / Temenos COMPANY.CHECK.
  *
