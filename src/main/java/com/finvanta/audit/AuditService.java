@@ -73,6 +73,14 @@ public class AuditService {
 
         AuditLog auditLog = new AuditLog();
         auditLog.setTenantId(tenantId);
+        // CBS Tier-1: Branch attribution on audit records per Finacle AUDIT_TRAIL.
+        // Every audit record carries the user's home branch for branch-level audit reports.
+        // Null for system/tenant-level events where no branch context exists.
+        Long userBranchId = SecurityUtil.getCurrentUserBranchId();
+        if (userBranchId != null) {
+            auditLog.setBranchId(userBranchId);
+            auditLog.setBranchCode(SecurityUtil.getCurrentUserBranchCode());
+        }
         auditLog.setEntityType(entityType);
         auditLog.setEntityId(entityId);
         auditLog.setAction(action);

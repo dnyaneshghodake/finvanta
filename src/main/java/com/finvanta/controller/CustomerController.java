@@ -8,6 +8,7 @@ import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.util.BranchAccessValidator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.PiiMaskingUtil;
 import com.finvanta.util.ReferenceGenerator;
@@ -35,6 +36,7 @@ public class CustomerController {
     private final LoanAccountRepository accountRepository;
     private final AuditService auditService;
     private final BusinessDateService businessDateService;
+    private final BranchAccessValidator branchAccessValidator;
 
     public CustomerController(
             CustomerRepository customerRepository,
@@ -42,13 +44,15 @@ public class CustomerController {
             LoanApplicationRepository applicationRepository,
             LoanAccountRepository accountRepository,
             AuditService auditService,
-            BusinessDateService businessDateService) {
+            BusinessDateService businessDateService,
+            BranchAccessValidator branchAccessValidator) {
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.applicationRepository = applicationRepository;
         this.accountRepository = accountRepository;
         this.auditService = auditService;
         this.businessDateService = businessDateService;
+        this.branchAccessValidator = branchAccessValidator;
     }
 
     /**
@@ -126,7 +130,19 @@ public class CustomerController {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("customer/add");
         mav.addObject("customer", new Customer());
-        mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+        // CBS Tier-1: MAKER/CHECKER can only create customers at their home branch.
+        // ADMIN sees all branches. Per Finacle CIF_MASTER: customer is always created
+        // at the originating branch. Branch transfer is a separate maker-checker workflow.
+        if (SecurityUtil.isAdminRole()) {
+            mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+        } else {
+            Long branchId = SecurityUtil.getCurrentUserBranchId();
+            if (branchId != null) {
+                branchRepository.findById(branchId)
+                        .filter(b -> b.getTenantId().equals(tenantId))
+                        .ifPresent(b -> mav.addObject("branches", java.util.List.of(b)));
+            }
+        }
         return mav;
     }
 
@@ -210,6 +226,9 @@ public class CustomerController {
                 .findById(id)
                 .filter(c -> c.getTenantId().equals(tenantId))
                 .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND", "Customer not found: " + id));
+        // CBS Tier-1: Branch access enforcement on customer view.
+        // MAKER/CHECKER can only view customers at their home branch.
+        branchAccessValidator.validateAccess(customer.getBranch());
         mav.addObject("customer", customer);
         // CBS: PII masking per RBI IT Governance Direction 2023 / UIDAI Aadhaar Act 2016.
         // Full PII is never exposed in UI — only masked values (last 4 digits visible).
@@ -229,12 +248,26 @@ public class CustomerController {
                 .findById(id)
                 .filter(c -> c.getTenantId().equals(tenantId))
                 .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND", "Customer not found: " + id));
+        // CBS Tier-1: Branch access enforcement on customer edit.
+        branchAccessValidator.validateAccess(customer.getBranch());
         ModelAndView mav = new ModelAndView("customer/edit");
         mav.addObject("customer", customer);
         // CBS: PII masking for immutable disabled fields in edit form
         mav.addObject("maskedPan", PiiMaskingUtil.maskPan(customer.getPanNumber()));
         mav.addObject("maskedAadhaar", PiiMaskingUtil.maskAadhaar(customer.getAadhaarNumber()));
-        mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+        // CBS Tier-1: Branch dropdown restricted per role (same as add form).
+        // MAKER/CHECKER can only see their home branch. ADMIN sees all.
+        // Per Finacle: branch transfer requires a separate approval workflow.
+        if (SecurityUtil.isAdminRole()) {
+            mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+        } else {
+            Long userBranchId = SecurityUtil.getCurrentUserBranchId();
+            if (userBranchId != null) {
+                branchRepository.findById(userBranchId)
+                        .filter(b -> b.getTenantId().equals(tenantId))
+                        .ifPresent(b -> mav.addObject("branches", java.util.List.of(b)));
+            }
+        }
         return mav;
     }
 
@@ -321,6 +354,8 @@ public class CustomerController {
                     .findById(id)
                     .filter(c -> c.getTenantId().equals(tenantId))
                     .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND", "Customer not found: " + id));
+            // CBS Tier-1: Branch access enforcement on KYC verification.
+            branchAccessValidator.validateAccess(customer.getBranch());
 
             customer.setKycVerified(true);
             customer.setKycVerifiedDate(businessDateService.getCurrentBusinessDate());
@@ -368,6 +403,8 @@ public class CustomerController {
                     .findById(id)
                     .filter(c -> c.getTenantId().equals(tenantId))
                     .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND", "Customer not found: " + id));
+            // CBS Tier-1: Branch access enforcement on customer deactivation.
+            branchAccessValidator.validateAccess(customer.getBranch());
 
             long activeAccounts = accountRepository.findByTenantIdAndCustomerId(tenantId, id).stream()
                     .filter(a -> !a.getStatus().isTerminal())

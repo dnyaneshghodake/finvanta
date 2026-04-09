@@ -1,5 +1,6 @@
 package com.finvanta.service;
 
+import com.finvanta.config.BranchAwareUserDetails;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
@@ -12,6 +13,7 @@ import com.finvanta.repository.InterestAccrualRepository;
 import com.finvanta.service.impl.DepositAccountServiceImpl;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionResult;
+import com.finvanta.util.BranchAccessValidator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
 
@@ -78,10 +80,15 @@ class DepositAccountServiceTest {
     @Mock
     private com.finvanta.workflow.ApprovalWorkflowService workflowService;
 
+    private BranchAccessValidator branchAccessValidator;
+
     private DepositAccountServiceImpl service;
 
     @BeforeEach
     void setUp() {
+        // CBS Tier-1: Use real BranchAccessValidator (not mock) to test branch enforcement.
+        // The validator reads from SecurityContext which we set up with BranchAwareUserDetails.
+        branchAccessValidator = new BranchAccessValidator();
         service = new DepositAccountServiceImpl(
                 accountRepository,
                 transactionRepository,
@@ -92,11 +99,16 @@ class DepositAccountServiceTest {
                 transactionEngine,
                 businessDateService,
                 auditService,
-                workflowService);
+                workflowService,
+                branchAccessValidator);
         TenantContext.setCurrentTenant("DEFAULT");
+        // CBS Tier-1: Use BranchAwareUserDetails so SecurityUtil.getCurrentUserBranchId() works.
+        // Branch ID=1L, branchCode="HQ001" matches the branch set in buildSavingsAccount().
+        BranchAwareUserDetails userDetails = new BranchAwareUserDetails(
+                "maker1", "pass", List.of(new SimpleGrantedAuthority("ROLE_MAKER")), 1L, "HQ001");
         SecurityContextHolder.getContext()
                 .setAuthentication(new UsernamePasswordAuthenticationToken(
-                        "maker1", "pass", List.of(new SimpleGrantedAuthority("ROLE_MAKER"))));
+                        userDetails, "pass", userDetails.getAuthorities()));
     }
 
     private DepositAccount buildSavingsAccount(String accNo, BigDecimal balance) {
@@ -116,7 +128,10 @@ class DepositAccountServiceTest {
         a.setAccruedInterest(BigDecimal.ZERO);
         a.setYtdInterestCredited(BigDecimal.ZERO);
         a.setYtdTdsDeducted(BigDecimal.ZERO);
+        // CBS Tier-1: Branch must have ID matching the user's branchId (1L)
+        // for BranchAccessValidator to pass.
         Branch branch = new Branch();
+        branch.setId(1L);
         branch.setBranchCode("HQ001");
         a.setBranch(branch);
         return a;

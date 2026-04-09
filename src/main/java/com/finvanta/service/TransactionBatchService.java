@@ -74,12 +74,14 @@ public class TransactionBatchService {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
-        // CBS CRITICAL: Business day must be DAY_OPEN before any batch can be opened.
-        // Per Finacle DAYCTRL / Temenos COB: batches are only valid for an open business day.
+        // CBS CRITICAL: Business day must be DAY_OPEN at the target branch before any batch can be opened.
+        // Per Finacle DAYCTRL / Temenos COB: batches are only valid for an open business day at the branch.
         // Without this check, batches could be opened for NOT_OPENED, DAY_CLOSED, or
         // holiday dates — breaking the CBS day control lifecycle invariant.
-        BusinessCalendar calendar = calendarRepository
-                .findByTenantIdAndBusinessDate(tenantId, businessDate)
+        Long effectiveBranchId = branchId != null ? branchId : SecurityUtil.getCurrentUserBranchId();
+        BusinessCalendar calendar = (effectiveBranchId != null
+                ? calendarRepository.findByTenantIdAndBranchIdAndBusinessDate(tenantId, effectiveBranchId, businessDate)
+                : calendarRepository.findByTenantIdAndBusinessDate(tenantId, businessDate))
                 .orElseThrow(() -> new BusinessException(
                         "DATE_NOT_IN_CALENDAR", "Business date " + businessDate + " not found in calendar."));
 

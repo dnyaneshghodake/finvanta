@@ -114,4 +114,39 @@ public final class SecurityUtil {
     public static boolean isAdminRole() {
         return "ADMIN".equals(getCurrentUserRole());
     }
+
+    /**
+     * Returns true if the current user has the specified role authority.
+     * Checks directly against Spring Security authorities (not via getCurrentUserRole()).
+     *
+     * This is needed because getCurrentUserRole() intentionally excludes AUDITOR
+     * from its return values (to prevent transaction limit bypass). For access control
+     * decisions (not transaction limits), we need to check authorities directly.
+     *
+     * Per RBI IT Governance Direction 2023: AUDITOR has read-only access to all branches
+     * for compliance inspection. This method enables BranchAccessValidator to correctly
+     * identify AUDITOR users and exempt them from branch isolation.
+     *
+     * @param role The role to check (without ROLE_ prefix), e.g., "AUDITOR", "ADMIN"
+     * @return true if the user has the specified role
+     */
+    public static boolean hasRole(String role) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getAuthorities() == null) {
+            return false;
+        }
+        String authority = "ROLE_" + role;
+        return auth.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(authority::equals);
+    }
+
+    /**
+     * Returns true if the current user has AUDITOR role.
+     * AUDITOR has read-only access to all branches per RBI audit requirements.
+     * Uses hasRole() instead of getCurrentUserRole() because the latter excludes AUDITOR.
+     */
+    public static boolean isAuditorRole() {
+        return hasRole("AUDITOR");
+    }
 }

@@ -11,9 +11,9 @@
         <div class="fv-alert alert alert-danger"><c:out value="${error}" /></div>
     </c:if>
 
-    <!-- Current Open Day Indicator -->
+    <!-- Current Open Day Indicator (branch-scoped per Tier-1 CBS) -->
     <div class="fv-card">
-        <div class="card-header">Current Business Day</div>
+        <div class="card-header">Current Business Day <c:if test="${not empty currentBranchCode}"><span class="fv-badge fv-badge-approved">Branch: <c:out value="${currentBranchCode}" /></span></c:if></div>
         <div class="card-body">
             <c:choose>
                 <c:when test="${not empty openDay}">

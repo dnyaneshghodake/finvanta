@@ -27,7 +27,8 @@ class AccountingServiceDoubleEntryTest {
     @BeforeEach
     void setUp() {
         // Create with null dependencies — we only test validateDoubleEntry()
-        accountingService = new AccountingService(null, null, null, null, null);
+        // Constructor: (journalEntryRepo, glMasterRepo, glBranchBalanceRepo, branchRepo, auditService, ledgerService, batchRepo)
+        accountingService = new AccountingService(null, null, null, null, null, null, null);
     }
 
     @Test

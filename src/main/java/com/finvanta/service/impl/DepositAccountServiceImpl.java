@@ -21,6 +21,7 @@ import com.finvanta.service.DepositAccountService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
+import com.finvanta.util.BranchAccessValidator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
@@ -81,6 +82,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     private final BusinessDateService businessDateService;
     private final AuditService auditService;
     private final ApprovalWorkflowService workflowService;
+    private final BranchAccessValidator branchAccessValidator;
 
     public DepositAccountServiceImpl(
             DepositAccountRepository accountRepository,
@@ -92,7 +94,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             TransactionEngine transactionEngine,
             BusinessDateService businessDateService,
             AuditService auditService,
-            ApprovalWorkflowService workflowService) {
+            ApprovalWorkflowService workflowService,
+            BranchAccessValidator branchAccessValidator) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
@@ -103,6 +106,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         this.businessDateService = businessDateService;
         this.auditService = auditService;
         this.workflowService = workflowService;
+        this.branchAccessValidator = branchAccessValidator;
     }
 
     /** Recompute available balance from ledger balance minus holds and uncleared. */
@@ -146,6 +150,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         txn.setTenantId(acct.getTenantId());
         txn.setTransactionRef(txnRef);
         txn.setDepositAccount(acct);
+        // CBS Tier-1: Branch attribution per Finacle TRAN_DETAIL SOL tagging.
+        // Every deposit transaction carries the account's branch for branch-level
+        // Day Book, reconciliation, and regulatory reporting.
+        txn.setBranch(acct.getBranch());
+        txn.setBranchCode(acct.getBranch().getBranchCode());
         txn.setTransactionType(txnType);
         txn.setAmount(amount);
         txn.setValueDate(valueDate);
@@ -313,6 +322,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             if (dup != null) return dup;
         }
         DepositAccount acct = lockAccount(tid, accountNumber);
+        // CBS Tier-1: Branch access enforcement per Finacle BRANCH_CONTEXT.
+        // MAKER/CHECKER can only deposit to accounts at their home branch.
+        // System-generated deposits (e.g., loan disbursement CASA credit) bypass via channel.
+        if (!"LOAN_DISBURSEMENT".equals(channel) && !"SYSTEM".equals(channel)) {
+            branchAccessValidator.validateAccess(acct.getBranch());
+        }
         if (!acct.isCreditAllowed())
             throw new BusinessException("ACCOUNT_NOT_CREDITABLE", "Status " + acct.getAccountStatus());
         String gl = glForAccount(acct);
@@ -393,6 +408,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             if (dup != null) return dup;
         }
         var acct = lockAccount(tid, acn);
+        // CBS Tier-1: Branch access enforcement per Finacle BRANCH_CONTEXT.
+        branchAccessValidator.validateAccess(acct.getBranch());
         if (!acct.isDebitAllowed())
             throw new BusinessException("ACCOUNT_NOT_DEBITABLE", "Status " + acct.getAccountStatus());
         if (!acct.hasSufficientFunds(amount))
@@ -875,9 +892,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     @Override
     public DepositAccount getAccount(String acn) {
         String tid = TenantContext.getCurrentTenant();
-        return accountRepository
+        DepositAccount acct = accountRepository
                 .findByTenantIdAndAccountNumber(tid, acn)
                 .orElseThrow(() -> new BusinessException("ACCOUNT_NOT_FOUND", "Not found: " + acn));
+        // CBS Tier-1: Branch access enforcement on read.
+        // MAKER/CHECKER can only view accounts at their home branch.
+        // ADMIN/AUDITOR can view all branches (enforced by BranchAccessValidator).
+        branchAccessValidator.validateAccess(acct.getBranch());
+        return acct;
     }
 
     @Override

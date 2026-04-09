@@ -2,6 +2,7 @@ package com.finvanta.config;
 
 import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.util.SecurityUtil;
 
 import java.time.format.DateTimeFormatter;
 
@@ -14,8 +15,11 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 
 /**
  * Populates model attributes required by the layout (topbar) on every page.
- * businessDate is sourced from the CBS Business Calendar (not system date).
- * Per Finacle/Temenos, the topbar always shows the current CBS business date.
+ *
+ * Per Finacle/Temenos Tier-1 CBS, the topbar always shows:
+ * - Current CBS business date (from branch calendar, NOT system date)
+ * - User's home branch code (for branch context awareness)
+ * - User's role (MAKER/CHECKER/ADMIN/AUDITOR)
  */
 @ControllerAdvice
 public class CommonModelAdvice {
@@ -30,7 +34,7 @@ public class CommonModelAdvice {
 
     @ModelAttribute
     public void addCommonAttributes(Model model) {
-        // CBS business date from calendar — NOT LocalDate.now()
+        // CBS business date from branch calendar — NOT LocalDate.now()
         try {
             BusinessCalendar openDay = businessDateService.getOpenDayOrNull();
             if (openDay != null) {
@@ -50,6 +54,13 @@ public class CommonModelAdvice {
                     .map(r -> r.replace("ROLE_", ""))
                     .orElse("USER");
             model.addAttribute("userRole", role);
+
+            // CBS Tier-1: Branch context in topbar per Finacle BRANCH_CONTEXT.
+            // Every page shows the user's home branch so they know which branch
+            // context they're operating in. Per RBI operational controls, branch
+            // staff must always be aware of their operating branch.
+            String branchCode = SecurityUtil.getCurrentUserBranchCode();
+            model.addAttribute("userBranchCode", branchCode != null ? branchCode : "--");
         }
     }
 }

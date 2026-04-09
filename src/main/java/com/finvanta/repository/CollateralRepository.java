@@ -21,6 +21,9 @@ public interface CollateralRepository extends JpaRepository<Collateral, Long> {
 
     List<Collateral> findByTenantIdAndLoanApplicationId(String tenantId, Long loanApplicationId);
 
+    /** Collaterals linked to a loan account (for lien release on closure) */
+    List<Collateral> findByTenantIdAndLoanAccountId(String tenantId, Long loanAccountId);
+
     List<Collateral> findByTenantIdAndCustomerId(String tenantId, Long customerId);
 
     List<Collateral> findByTenantIdAndCollateralType(String tenantId, CollateralType collateralType);

@@ -601,11 +601,27 @@ public class StandingInstructionServiceImpl {
             rawNext = currentDate.plusMonths(1);
         }
 
-        // CBS: Holiday-aware adjustment per Finacle SI_MASTER / RBI Payment Systems.
-        // If the raw next date falls on a holiday, shift to the next business day.
+        // CBS Tier-1: Holiday-aware adjustment per Finacle SI_MASTER / RBI Payment Systems.
+        // If the raw next date falls on a holiday at the source account's branch,
+        // shift to the next business day at that branch.
         // Graceful fallback: if calendar data is unavailable, use raw date.
         try {
             String tenantId = si.getTenantId();
+            // Resolve branch from source CASA account for branch-scoped holiday check
+            Long branchId = null;
+            if (si.getSourceAccountNumber() != null) {
+                var casaOpt = depositAccountRepository.findByTenantIdAndAccountNumber(
+                        tenantId, si.getSourceAccountNumber());
+                if (casaOpt.isPresent() && casaOpt.get().getBranch() != null) {
+                    branchId = casaOpt.get().getBranch().getId();
+                }
+            }
+            if (branchId != null) {
+                return calendarRepository
+                        .findNextBusinessDayOnOrAfterByBranch(tenantId, branchId, rawNext)
+                        .orElse(rawNext);
+            }
+            // Fallback: tenant-wide holiday check (deprecated but safe)
             return calendarRepository
                     .findNextBusinessDayOnOrAfter(tenantId, rawNext)
                     .orElse(rawNext);

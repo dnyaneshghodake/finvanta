@@ -72,6 +72,9 @@ public class ApprovalWorkflowService {
         workflow.setPayloadSnapshot(payloadSnapshot);
         workflow.setCreatedBy(makerUserId);
 
+        // CBS Tier-1: Set SLA deadline per action type for escalation tracking.
+        setSlaDeadline(workflow);
+
         ApprovalWorkflow saved = workflowRepository.save(workflow);
 
         auditService.logEvent(
@@ -81,7 +84,8 @@ public class ApprovalWorkflowService {
                 null,
                 saved,
                 "WORKFLOW",
-                "Approval initiated for " + entityType + "/" + entityId + " by " + makerUserId);
+                "Approval initiated for " + entityType + "/" + entityId + " by " + makerUserId
+                        + " | SLA deadline: " + saved.getSlaDeadline());
 
         log.info(
                 "Approval initiated: entity={}/{}, action={}, maker={}", entityType, entityId, actionType, makerUserId);
@@ -233,5 +237,86 @@ public class ApprovalWorkflowService {
     public List<ApprovalWorkflow> getWorkflowHistory(String entityType, Long entityId) {
         String tenantId = TenantContext.getCurrentTenant();
         return workflowRepository.findByTenantIdAndEntityTypeAndEntityId(tenantId, entityType, entityId);
+    }
+
+    // ========================================================================
+    // SLA / ESCALATION (per Finacle WORKFLOW_SLA / RBI Fair Practices Code)
+    // ========================================================================
+
+    /** Default SLA hours per action type. Configurable in production via config table. */
+    private static final java.util.Map<String, Integer> SLA_HOURS = java.util.Map.of(
+            "VERIFY", 24,       // Verification must happen within 24 hours
+            "APPROVE", 48,      // Approval within 48 hours
+            "ACCOUNT_OPENING", 4 // CASA account activation within 4 hours
+    );
+
+    /**
+     * Sets SLA deadline on a workflow based on action type.
+     * Called internally after workflow creation.
+     */
+    private void setSlaDeadline(ApprovalWorkflow workflow) {
+        int slaHours = SLA_HOURS.getOrDefault(workflow.getActionType(), 72); // Default 72 hours
+        workflow.setSlaDeadline(workflow.getSubmittedAt().plusHours(slaHours));
+    }
+
+    /**
+     * Escalates SLA-breached workflows to ADMIN.
+     * Called by EOD batch or a scheduled job to identify and escalate overdue approvals.
+     *
+     * Per RBI Fair Practices Code 2023:
+     * Banks must process loan applications within defined TAT.
+     * Breached SLAs must be escalated and tracked for regulatory reporting.
+     *
+     * @return Number of workflows escalated
+     */
+    @Transactional
+    public int escalateBreachedWorkflows() {
+        String tenantId = TenantContext.getCurrentTenant();
+        List<ApprovalWorkflow> pending = workflowRepository.findByTenantIdAndStatus(
+                tenantId, ApprovalStatus.PENDING_APPROVAL);
+
+        int escalated = 0;
+        for (ApprovalWorkflow wf : pending) {
+            if (wf.isSlaBreached() && wf.getEscalationCount() < 3) { // Max 3 escalations
+                wf.setEscalationCount(wf.getEscalationCount() + 1);
+                wf.setEscalatedTo("ADMIN");
+                wf.setEscalatedAt(LocalDateTime.now());
+                wf.setUpdatedBy("SYSTEM_SLA");
+                workflowRepository.save(wf);
+
+                auditService.logEvent(
+                        "ApprovalWorkflow",
+                        wf.getId(),
+                        "SLA_ESCALATED",
+                        "PENDING_APPROVAL",
+                        "ESCALATED_" + wf.getEscalationCount(),
+                        "WORKFLOW",
+                        "SLA breached: " + wf.getEntityType() + "/" + wf.getEntityId()
+                                + " | Action: " + wf.getActionType()
+                                + " | Deadline: " + wf.getSlaDeadline()
+                                + " | Escalation #" + wf.getEscalationCount()
+                                + " → ADMIN");
+
+                log.warn("SLA ESCALATION: workflow={}, entity={}/{}, action={}, escalation={}",
+                        wf.getId(), wf.getEntityType(), wf.getEntityId(),
+                        wf.getActionType(), wf.getEscalationCount());
+
+                escalated++;
+            }
+        }
+        if (escalated > 0) {
+            log.info("SLA escalation complete: {} workflows escalated to ADMIN", escalated);
+        }
+        return escalated;
+    }
+
+    /**
+     * Returns workflows that have breached SLA (for dashboard/reporting).
+     */
+    public List<ApprovalWorkflow> getSlaBreachedWorkflows() {
+        String tenantId = TenantContext.getCurrentTenant();
+        return workflowRepository.findByTenantIdAndStatus(tenantId, ApprovalStatus.PENDING_APPROVAL).stream()
+                .filter(ApprovalWorkflow::isSlaBreached)
+                .toList();
     }
 }

@@ -20,7 +20,8 @@ import lombok.Setter;
             @Index(name = "idx_loantxn_txnref", columnList = "tenant_id, transaction_ref", unique = true),
             @Index(name = "idx_loantxn_value_date", columnList = "tenant_id, value_date"),
             @Index(name = "idx_loantxn_type", columnList = "tenant_id, transaction_type"),
-            @Index(name = "idx_loantxn_voucher", columnList = "tenant_id, voucher_number")
+            @Index(name = "idx_loantxn_voucher", columnList = "tenant_id, voucher_number"),
+            @Index(name = "idx_loantxn_branch_date", columnList = "tenant_id, branch_id, value_date")
         }
         // CBS Idempotency: unique constraint on (tenant_id, idempotency_key) for non-null keys.
         // NOT enforced via JPA @UniqueConstraint because H2 (used in tests) treats NULL as a
@@ -42,6 +43,20 @@ public class LoanTransaction extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "loan_account_id", nullable = false)
     private LoanAccount loanAccount;
+
+    /**
+     * Branch where this transaction was posted.
+     * Per Finacle TRAN_DETAIL: every loan transaction carries the posting branch (SOL).
+     * This enables branch-level loan transaction reports, Day Book, and NPA tracking.
+     * System-generated transactions (accrual, NPA) use the loan account's branch.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "branch_id", nullable = false)
+    private Branch branch;
+
+    /** Branch code denormalized for efficient reporting and audit trail display. */
+    @Column(name = "branch_code", nullable = false, length = 20)
+    private String branchCode;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "transaction_type", nullable = false, length = 30)

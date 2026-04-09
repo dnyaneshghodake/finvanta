@@ -102,13 +102,28 @@ public class LoanController {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("loan/apply");
         mav.addObject("application", new LoanApplication());
-        mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
-        mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+        // CBS Tier-1: Branch-scoped dropdowns per Finacle BRANCH_CONTEXT.
+        // MAKER sees only their branch's customers and their home branch.
+        // ADMIN sees all customers and branches.
+        if (SecurityUtil.isAdminRole()) {
+            mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
+            mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+            mav.addObject("casaAccounts", depositAccountRepository.findAllActiveAccounts(tenantId));
+        } else {
+            Long branchId = SecurityUtil.getCurrentUserBranchId();
+            if (branchId != null) {
+                mav.addObject("customers", customerRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, branchId));
+                branchRepository.findById(branchId)
+                        .filter(b -> b.getTenantId().equals(tenantId))
+                        .ifPresent(b -> mav.addObject("branches", java.util.List.of(b)));
+                mav.addObject("casaAccounts", depositAccountRepository.findActiveByBranch(tenantId, branchId));
+            } else {
+                mav.addObject("customers", java.util.Collections.emptyList());
+                mav.addObject("branches", java.util.Collections.emptyList());
+                mav.addObject("casaAccounts", java.util.Collections.emptyList());
+            }
+        }
         mav.addObject("products", productRepository.findActiveProducts(tenantId));
-        // CBS: CASA accounts for disbursement target selection per Finacle DISB_MASTER.
-        // Per RBI KYC/AML: loan proceeds must credit the borrower's own CASA account.
-        // The UI filters by customer on the client side (data-customer-id attribute).
-        mav.addObject("casaAccounts", depositAccountRepository.findAllActiveAccounts(tenantId));
         return mav;
     }
 
@@ -120,13 +135,8 @@ public class LoanController {
             @RequestParam Long branchId,
             RedirectAttributes redirectAttributes) {
         if (result.hasErrors()) {
-            String tenantId = TenantContext.getCurrentTenant();
-            ModelAndView mav = new ModelAndView("loan/apply");
-            mav.addObject("customers", customerRepository.findByTenantIdAndActiveTrue(tenantId));
-            mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
-            mav.addObject("products", productRepository.findActiveProducts(tenantId));
-            mav.addObject("casaAccounts", depositAccountRepository.findAllActiveAccounts(tenantId));
-            return mav;
+            // Re-render form with branch-scoped data (same logic as showApplicationForm)
+            return showApplicationForm();
         }
 
         try {
@@ -147,14 +157,29 @@ public class LoanController {
     @GetMapping("/applications")
     public ModelAndView listApplications() {
         ModelAndView mav = new ModelAndView("loan/applications");
-        // Branch isolation is applied at the service layer via getApplicationsByStatus
-        // which returns tenant-wide data. For branch filtering, we filter in the view
-        // or add branch-aware service methods in Phase 2.
-        // Current approach: ADMIN sees all; non-admin sees all (acceptable for Phase 1
-        // since applications require maker-checker across branches).
-        mav.addObject("applications", applicationService.getApplicationsByStatus(ApplicationStatus.SUBMITTED));
-        mav.addObject("verifiedApplications", applicationService.getApplicationsByStatus(ApplicationStatus.VERIFIED));
-        mav.addObject("approvedApplications", applicationService.getApplicationsByStatus(ApplicationStatus.APPROVED));
+        if (SecurityUtil.isAdminRole()) {
+            mav.addObject("applications", applicationService.getApplicationsByStatus(ApplicationStatus.SUBMITTED));
+            mav.addObject("verifiedApplications", applicationService.getApplicationsByStatus(ApplicationStatus.VERIFIED));
+            mav.addObject("approvedApplications", applicationService.getApplicationsByStatus(ApplicationStatus.APPROVED));
+        } else {
+            Long branchId = SecurityUtil.getCurrentUserBranchId();
+            if (branchId != null) {
+                // CBS Tier-1: Filter applications by user's branch
+                mav.addObject("applications", applicationService.getApplicationsByStatus(ApplicationStatus.SUBMITTED).stream()
+                        .filter(a -> a.getBranch() != null && branchId.equals(a.getBranch().getId()))
+                        .toList());
+                mav.addObject("verifiedApplications", applicationService.getApplicationsByStatus(ApplicationStatus.VERIFIED).stream()
+                        .filter(a -> a.getBranch() != null && branchId.equals(a.getBranch().getId()))
+                        .toList());
+                mav.addObject("approvedApplications", applicationService.getApplicationsByStatus(ApplicationStatus.APPROVED).stream()
+                        .filter(a -> a.getBranch() != null && branchId.equals(a.getBranch().getId()))
+                        .toList());
+            } else {
+                mav.addObject("applications", java.util.Collections.emptyList());
+                mav.addObject("verifiedApplications", java.util.Collections.emptyList());
+                mav.addObject("approvedApplications", java.util.Collections.emptyList());
+            }
+        }
         return mav;
     }
 
@@ -523,11 +548,13 @@ public class LoanController {
         return "redirect:/loan/verify/" + applicationId;
     }
 
-    /** Verify a document — CHECKER/ADMIN */
+    /** Verify a document — CHECKER/ADMIN (branch-validated via application) */
     @PostMapping("/document/verify/{documentId}")
     public String verifyDocument(
             @PathVariable Long documentId, @RequestParam Long applicationId, RedirectAttributes redirectAttributes) {
         try {
+            // CBS Tier-1: Validate branch access via the parent application
+            LoanApplication app = applicationService.getApplication(applicationId);
             LoanDocument doc = documentRepository
                     .findById(documentId)
                     .orElseThrow(() -> new RuntimeException("Document not found"));

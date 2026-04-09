@@ -105,6 +105,11 @@ public class LedgerService {
 
             LedgerEntry entry = new LedgerEntry();
             entry.setTenantId(tenantId);
+            // CBS Tier-1: Branch attribution from source JournalEntry.
+            // Per Finacle GL_BRANCH: every immutable ledger record carries the branch (SOL)
+            // for branch-level Day Book, audit trail, and reconciliation.
+            entry.setBranch(journalEntry.getBranch());
+            entry.setBranchCode(journalEntry.getBranchCode());
             entry.setLedgerSequence(currentSequence);
             entry.setJournalEntryId(journalEntry.getId());
             entry.setJournalRef(journalEntry.getJournalRef());

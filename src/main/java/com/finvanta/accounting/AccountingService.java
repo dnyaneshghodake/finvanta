@@ -1,16 +1,21 @@
 package com.finvanta.accounting;
 
 import com.finvanta.audit.AuditService;
+import com.finvanta.domain.entity.Branch;
+import com.finvanta.domain.entity.GLBranchBalance;
 import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.domain.entity.JournalEntryLine;
 import com.finvanta.domain.entity.TransactionBatch;
 import com.finvanta.domain.enums.DebitCredit;
+import com.finvanta.repository.BranchRepository;
+import com.finvanta.repository.GLBranchBalanceRepository;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.JournalEntryRepository;
 import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
+import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
@@ -44,6 +49,8 @@ public class AccountingService {
 
     private final JournalEntryRepository journalEntryRepository;
     private final GLMasterRepository glMasterRepository;
+    private final GLBranchBalanceRepository glBranchBalanceRepository;
+    private final BranchRepository branchRepository;
     private final AuditService auditService;
     private final LedgerService ledgerService;
     private final TransactionBatchRepository batchRepository;
@@ -110,16 +117,96 @@ public class AccountingService {
     public AccountingService(
             JournalEntryRepository journalEntryRepository,
             GLMasterRepository glMasterRepository,
+            GLBranchBalanceRepository glBranchBalanceRepository,
+            BranchRepository branchRepository,
             AuditService auditService,
             LedgerService ledgerService,
             TransactionBatchRepository batchRepository) {
         this.journalEntryRepository = journalEntryRepository;
         this.glMasterRepository = glMasterRepository;
+        this.glBranchBalanceRepository = glBranchBalanceRepository;
+        this.branchRepository = branchRepository;
         this.auditService = auditService;
         this.ledgerService = ledgerService;
         this.batchRepository = batchRepository;
     }
 
+    /**
+     * Posts a journal entry with branch attribution.
+     * Overload that accepts branchCode for Tier-1 branch-level accounting.
+     */
+    @Transactional
+    public JournalEntry postJournalEntry(
+            LocalDate valueDate,
+            String narration,
+            String sourceModule,
+            String sourceRef,
+            List<JournalLineRequest> lines,
+            String branchCode) {
+        String tenantId = TenantContext.getCurrentTenant();
+        JournalEntry entry = postJournalEntryInternal(valueDate, narration, sourceModule, sourceRef, lines, tenantId);
+
+        // CBS Tier-1: Set branch attribution on the journal entry
+        if (branchCode != null && !branchCode.isBlank()) {
+            Branch branch = branchRepository
+                    .findByTenantIdAndBranchCode(tenantId, branchCode)
+                    .orElse(null);
+            if (branch != null) {
+                entry.setBranch(branch);
+                entry.setBranchCode(branchCode);
+            } else {
+                log.warn("Branch not found for journal attribution: {}", branchCode);
+            }
+        }
+        // Fallback: resolve from current user's branch context
+        if (entry.getBranch() == null) {
+            Long userBranchId = SecurityUtil.getCurrentUserBranchId();
+            if (userBranchId != null) {
+                branchRepository.findById(userBranchId).ifPresent(b -> {
+                    entry.setBranch(b);
+                    entry.setBranchCode(b.getBranchCode());
+                });
+            }
+        }
+
+        JournalEntry savedEntry = journalEntryRepository.save(entry);
+        updateGLBalances(tenantId, lines, savedEntry.getBranch());
+        ledgerService.postToLedger(savedEntry);
+
+        // CBS Batch Control
+        Long activeBatchId = findActiveBatchId(tenantId, valueDate);
+        if (activeBatchId != null) {
+            TransactionBatch lockedBatch =
+                    batchRepository.findAndLockById(activeBatchId).orElse(null);
+            if (lockedBatch != null && lockedBatch.isOpen()) {
+                lockedBatch.addTransaction(entry.getTotalDebit(), entry.getTotalCredit());
+                batchRepository.save(lockedBatch);
+            }
+        }
+
+        auditService.logEvent(
+                "JournalEntry",
+                savedEntry.getId(),
+                "POST",
+                null,
+                savedEntry.getJournalRef(),
+                "ACCOUNTING",
+                "Journal entry posted: " + savedEntry.getJournalRef());
+
+        log.info(
+                "Journal entry posted: ref={}, debit={}, credit={}, branch={}",
+                savedEntry.getJournalRef(),
+                entry.getTotalDebit(),
+                entry.getTotalCredit(),
+                entry.getBranchCode());
+
+        return savedEntry;
+    }
+
+    /**
+     * Backward-compatible postJournalEntry without explicit branchCode.
+     * Resolves branch from current user's security context.
+     */
     @Transactional
     public JournalEntry postJournalEntry(
             LocalDate valueDate,
@@ -127,7 +214,31 @@ public class AccountingService {
             String sourceModule,
             String sourceRef,
             List<JournalLineRequest> lines) {
-        String tenantId = TenantContext.getCurrentTenant();
+        String branchCode = SecurityUtil.getCurrentUserBranchCode();
+        return postJournalEntry(valueDate, narration, sourceModule, sourceRef, lines, branchCode);
+    }
+
+    /** Finds the first OPEN batch for a business date, or null. */
+    private Long findActiveBatchId(String tenantId, LocalDate valueDate) {
+        List<TransactionBatch> openBatches = batchRepository.findOpenBatches(tenantId, valueDate);
+        if (!openBatches.isEmpty()) {
+            return openBatches.get(0).getId();
+        }
+        log.warn("No OPEN transaction batch for date {}. Posting without batch tag.", valueDate);
+        return null;
+    }
+
+    /**
+     * Internal method that builds the JournalEntry with lines and validates double-entry.
+     * Does NOT save — caller is responsible for setting branch and saving.
+     */
+    private JournalEntry postJournalEntryInternal(
+            LocalDate valueDate,
+            String narration,
+            String sourceModule,
+            String sourceRef,
+            List<JournalLineRequest> lines,
+            String tenantId) {
 
         // CBS Defense-in-Depth: Verify this call originates from TransactionEngine.
         // Direct calls bypass day control, transaction limits, voucher generation, and audit.
@@ -162,23 +273,6 @@ public class AccountingService {
         // Direct callers of AccountingService (EOD batch steps: accrual, provisioning,
         // suspense, write-off) are already within the EOD_RUNNING lifecycle and have been
         // validated by BatchService before reaching here.
-
-        // CBS Batch Control: Find an OPEN batch for this business date.
-        // Per Finacle/Temenos, all transactions must be tagged to a batch.
-        // If no batch exists, the posting proceeds (for backward compatibility)
-        // but logs a warning. In strict mode, this would throw an exception.
-        //
-        // NOTE: We only look up the batch ID here (no lock). The pessimistic lock
-        // is acquired later via findAndLockById() just before updating totals.
-        // This avoids holding the batch row lock during the entire journal posting
-        // while still preventing lost-update on the running totals.
-        Long activeBatchId = null;
-        List<TransactionBatch> openBatches = batchRepository.findOpenBatches(tenantId, valueDate);
-        if (!openBatches.isEmpty()) {
-            activeBatchId = openBatches.get(0).getId();
-        } else {
-            log.warn("No OPEN transaction batch for date {}. Posting without batch tag.", valueDate);
-        }
 
         JournalEntry entry = new JournalEntry();
         entry.setTenantId(tenantId);
@@ -244,42 +338,7 @@ public class AccountingService {
         entry.setTotalCredit(totalCredit);
         entry.setPosted(true);
 
-        JournalEntry savedEntry = journalEntryRepository.save(entry);
-
-        updateGLBalances(tenantId, lines);
-
-        // CBS: Post to immutable ledger (append-only with hash chain)
-        ledgerService.postToLedger(savedEntry);
-
-        // CBS Batch Control: Update batch running totals for intra-day reconciliation.
-        // Acquire PESSIMISTIC_WRITE lock on the batch row to serialize concurrent
-        // total updates. Without this lock, two concurrent postings would both read
-        // the same totals, both increment, and one save would overwrite the other.
-        if (activeBatchId != null) {
-            TransactionBatch lockedBatch =
-                    batchRepository.findAndLockById(activeBatchId).orElse(null);
-            if (lockedBatch != null && lockedBatch.isOpen()) {
-                lockedBatch.addTransaction(totalDebit, totalCredit);
-                batchRepository.save(lockedBatch);
-            }
-        }
-
-        auditService.logEvent(
-                "JournalEntry",
-                savedEntry.getId(),
-                "POST",
-                null,
-                savedEntry.getJournalRef(),
-                "ACCOUNTING",
-                "Journal entry posted: " + savedEntry.getJournalRef());
-
-        log.info(
-                "Journal entry posted: ref={}, debit={}, credit={}",
-                savedEntry.getJournalRef(),
-                totalDebit,
-                totalCredit);
-
-        return savedEntry;
+        return entry;
     }
 
     public void validateDoubleEntry(BigDecimal totalDebit, BigDecimal totalCredit) {
@@ -291,9 +350,21 @@ public class AccountingService {
         }
     }
 
+    /**
+     * Updates GL balances at BOTH tenant level (GLMaster) AND branch level (GLBranchBalance).
+     *
+     * Per Finacle GL_BRANCH architecture:
+     * - GLMaster holds the aggregate tenant-level balance (for consolidated reporting)
+     * - GLBranchBalance holds per-branch running balances (for branch trial balance)
+     * - Both are updated atomically within the same transaction with pessimistic locks
+     *
+     * Reconciliation invariant (verified at EOD):
+     *   GLMaster.debitBalance == SUM(GLBranchBalance.debitBalance) across all branches
+     */
     @Transactional
-    public void updateGLBalances(String tenantId, List<JournalLineRequest> lines) {
+    public void updateGLBalances(String tenantId, List<JournalLineRequest> lines, Branch branch) {
         for (JournalLineRequest line : lines) {
+            // Step 1: Update tenant-level GLMaster (aggregate balance)
             GLMaster gl = glMasterRepository
                     .findAndLockByTenantIdAndGlCode(tenantId, line.glCode())
                     .orElseThrow(() ->
@@ -304,9 +375,42 @@ public class AccountingService {
             } else {
                 gl.setCreditBalance(gl.getCreditBalance().add(line.amount()));
             }
-
             glMasterRepository.save(gl);
+
+            // Step 2: Update branch-level GLBranchBalance (per-branch running balance)
+            // Per Finacle GL_BRANCH: concurrent postings to same branch+GL are serialized
+            // via PESSIMISTIC_WRITE lock to prevent lost-update on running balances.
+            if (branch != null) {
+                GLBranchBalance branchBalance = glBranchBalanceRepository
+                        .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
+                        .orElseGet(() -> {
+                            // Auto-create branch balance row on first posting to this branch+GL
+                            GLBranchBalance newBalance = new GLBranchBalance();
+                            newBalance.setTenantId(tenantId);
+                            newBalance.setBranch(branch);
+                            newBalance.setGlCode(line.glCode());
+                            newBalance.setGlName(gl.getGlName());
+                            return newBalance;
+                        });
+
+                if (line.debitCredit() == DebitCredit.DEBIT) {
+                    branchBalance.setDebitBalance(branchBalance.getDebitBalance().add(line.amount()));
+                } else {
+                    branchBalance.setCreditBalance(branchBalance.getCreditBalance().add(line.amount()));
+                }
+                glBranchBalanceRepository.save(branchBalance);
+            }
         }
+    }
+
+    /**
+     * Backward-compatible updateGLBalances without branch (tenant-level only).
+     * @deprecated Use {@link #updateGLBalances(String, List, Branch)} with branch.
+     */
+    @Deprecated(forRemoval = true)
+    @Transactional
+    public void updateGLBalances(String tenantId, List<JournalLineRequest> lines) {
+        updateGLBalances(tenantId, lines, null);
     }
 
     public Map<String, Object> getTrialBalance() {
