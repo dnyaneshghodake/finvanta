@@ -39,7 +39,8 @@ import lombok.Setter;
             @Index(name = "idx_deptxn_tenant_ref", columnList = "tenant_id, transaction_ref", unique = true),
             @Index(name = "idx_deptxn_value_date", columnList = "tenant_id, value_date"),
             @Index(name = "idx_deptxn_type", columnList = "tenant_id, transaction_type"),
-            @Index(name = "idx_deptxn_voucher", columnList = "tenant_id, voucher_number")
+            @Index(name = "idx_deptxn_voucher", columnList = "tenant_id, voucher_number"),
+            @Index(name = "idx_deptxn_branch_date", columnList = "tenant_id, branch_id, value_date")
         })
 @Getter
 @Setter
@@ -52,6 +53,20 @@ public class DepositTransaction extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "deposit_account_id", nullable = false)
     private DepositAccount depositAccount;
+
+    /**
+     * Branch where this transaction was posted.
+     * Per Finacle TRAN_DETAIL: every transaction carries the posting branch (SOL).
+     * This enables branch-level transaction reports, Day Book, and reconciliation.
+     * For inter-branch transfers, each leg has its own branch attribution.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "branch_id", nullable = false)
+    private Branch branch;
+
+    /** Branch code denormalized for efficient reporting and mini-statement display. */
+    @Column(name = "branch_code", nullable = false, length = 20)
+    private String branchCode;
 
     @Column(name = "transaction_type", nullable = false, length = 30)
     private String transactionType;

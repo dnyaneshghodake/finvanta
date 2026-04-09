@@ -12,15 +12,24 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * CBS Business Calendar per Finacle/Temenos Day Control standards.
+ * CBS Business Calendar per Finacle DAYCTRL / Temenos COB Day Control standards.
  *
- * Day lifecycle:
+ * <h3>Tier-1 Branch-Level Day Control:</h3>
+ * Per Finacle SOL architecture, day control operates at the BRANCH level.
+ * Each branch independently opens, processes, runs EOD, and closes its day.
+ * This enables:
+ * - Branch A open while Branch B is closed (different time zones)
+ * - Maharashtra branches closed for state holiday, Karnataka branches open
+ * - Rural branches EOD at 5 PM, metro branches at 8 PM
+ * - Independent branch-level EOD retry without affecting other branches
+ *
+ * Day lifecycle per branch:
  *   NOT_OPENED → DAY_OPEN → EOD_RUNNING → DAY_CLOSED
  *
  * Rules:
- * - Only ONE day can be in DAY_OPEN status at a time per tenant
- * - All financial transactions must use the business_date of the OPEN day
- * - Day cannot close until EOD completes successfully
+ * - Only ONE day can be in DAY_OPEN status at a time PER BRANCH
+ * - All financial transactions must use the business_date of the branch's OPEN day
+ * - Day cannot close until branch EOD completes successfully
  * - Holidays are pre-configured — no transactions allowed on holidays
  * - System date may differ from business date (e.g., EOD runs after midnight)
  *
@@ -33,21 +42,51 @@ import lombok.Setter;
  *   GAZETTED  - Government gazetted holidays (per state gazette notification)
  *
  * Previous Day Validation:
- *   Before opening a new day, the system validates that the previous business
- *   day is in DAY_CLOSED status. This prevents gaps in the day sequence
- *   (e.g., opening April 5 when April 4 is still DAY_OPEN or NOT_OPENED).
+ *   Before opening a new day at a branch, the system validates that the
+ *   previous business day at THAT BRANCH is in DAY_CLOSED status.
+ *
+ * HO Consolidation:
+ *   After ALL branches complete their EOD, the Head Office runs a
+ *   consolidation batch: inter-branch settlement, tenant-level reconciliation,
+ *   and consolidated reporting.
  */
 @Entity
 @Table(
         name = "business_calendar",
         indexes = {
-            @Index(name = "idx_buscal_tenant_date", columnList = "tenant_id, business_date", unique = true),
-            @Index(name = "idx_buscal_day_status", columnList = "tenant_id, day_status")
+            @Index(
+                    name = "idx_buscal_tenant_branch_date",
+                    columnList = "tenant_id, branch_id, business_date",
+                    unique = true),
+            @Index(name = "idx_buscal_day_status", columnList = "tenant_id, branch_id, day_status"),
+            @Index(name = "idx_buscal_tenant_date", columnList = "tenant_id, business_date")
         })
 @Getter
 @Setter
 @NoArgsConstructor
 public class BusinessCalendar extends BaseEntity {
+
+    /**
+     * Branch this calendar entry belongs to.
+     * Per Finacle DAYCTRL: day control is per-branch (SOL). Each branch
+     * independently opens and closes its day. The unique constraint
+     * (tenant_id, branch_id, business_date) ensures one calendar entry
+     * per branch per date.
+     *
+     * For tenant-wide holidays (NATIONAL, WEEKEND), a calendar entry is
+     * created for EACH branch. For STATE holidays, entries are created
+     * only for branches in the applicable region.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "branch_id", nullable = false)
+    private Branch branch;
+
+    /**
+     * Branch code denormalized for efficient queries and display.
+     * Avoids joining to branches table for calendar listing pages.
+     */
+    @Column(name = "branch_code", nullable = false, length = 20)
+    private String branchCode;
 
     @Column(name = "business_date", nullable = false)
     private LocalDate businessDate;
