@@ -3,18 +3,27 @@ package com.finvanta.batch;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BatchJob;
 import com.finvanta.domain.entity.BusinessCalendar;
+import com.finvanta.domain.entity.DailyBalanceSnapshot;
 import com.finvanta.domain.entity.LoanAccount;
+import com.finvanta.domain.entity.LoanBalanceSnapshot;
 import com.finvanta.domain.entity.LoanSchedule;
 import com.finvanta.domain.enums.BatchStatus;
 import com.finvanta.domain.enums.DayStatus;
 import com.finvanta.repository.BatchJobRepository;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
+import com.finvanta.repository.CustomerRepository;
+import com.finvanta.repository.DailyBalanceSnapshotRepository;
+import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
+import com.finvanta.repository.LoanBalanceSnapshotRepository;
+import com.finvanta.service.DepositAccountService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
+import com.finvanta.service.impl.StandingInstructionServiceImpl;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
+import com.finvanta.workflow.ApprovalWorkflowService;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -25,6 +34,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,13 +110,13 @@ public class EodOrchestrator {
     private final BranchRepository branchRepository;
     private final BatchJobRepository batchJobRepository;
     private final AuditService auditService;
-    private final com.finvanta.service.DepositAccountService depositAccountService;
-    private final com.finvanta.repository.DepositAccountRepository depositAccountRepository;
-    private final com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService;
-    private final com.finvanta.repository.CustomerRepository customerRepository;
-    private final com.finvanta.workflow.ApprovalWorkflowService workflowService;
-    private final com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository;
-    private final com.finvanta.repository.LoanBalanceSnapshotRepository loanBalanceSnapshotRepository;
+    private final DepositAccountService depositAccountService;
+    private final DepositAccountRepository depositAccountRepository;
+    private final StandingInstructionServiceImpl standingInstructionService;
+    private final CustomerRepository customerRepository;
+    private final ApprovalWorkflowService workflowService;
+    private final DailyBalanceSnapshotRepository balanceSnapshotRepository;
+    private final LoanBalanceSnapshotRepository loanBalanceSnapshotRepository;
 
     /** CBS: Snapshot step constants for audit logging */
     private static final String SNAPSHOT_STEP_NAME = "DAILY_BALANCE_SNAPSHOT";
@@ -128,13 +138,13 @@ public class EodOrchestrator {
             BranchRepository branchRepository,
             BatchJobRepository batchJobRepository,
             AuditService auditService,
-            com.finvanta.service.DepositAccountService depositAccountService,
-            com.finvanta.repository.DepositAccountRepository depositAccountRepository,
-            com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService,
-            com.finvanta.repository.CustomerRepository customerRepository,
-            com.finvanta.workflow.ApprovalWorkflowService workflowService,
-            com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository,
-            com.finvanta.repository.LoanBalanceSnapshotRepository loanBalanceSnapshotRepository,
+            DepositAccountService depositAccountService,
+            DepositAccountRepository depositAccountRepository,
+            StandingInstructionServiceImpl standingInstructionService,
+            CustomerRepository customerRepository,
+            ApprovalWorkflowService workflowService,
+            DailyBalanceSnapshotRepository balanceSnapshotRepository,
+            LoanBalanceSnapshotRepository loanBalanceSnapshotRepository,
             @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;
@@ -424,8 +434,7 @@ public class EodOrchestrator {
                                     new IllegalStateException("Account has no branch assigned"));
                             continue;
                         }
-                        com.finvanta.domain.entity.DailyBalanceSnapshot snapshot =
-                                new com.finvanta.domain.entity.DailyBalanceSnapshot();
+                        DailyBalanceSnapshot snapshot = new DailyBalanceSnapshot();
                         snapshot.setTenantId(tenantId);
                         snapshot.setAccountId(acct.getId());
                         snapshot.setAccountNumber(acct.getAccountNumber());
@@ -490,8 +499,7 @@ public class EodOrchestrator {
                                     new IllegalStateException("Loan account has no branch assigned"));
                             continue;
                         }
-                        com.finvanta.domain.entity.LoanBalanceSnapshot snapshot =
-                                new com.finvanta.domain.entity.LoanBalanceSnapshot();
+                        LoanBalanceSnapshot snapshot = new LoanBalanceSnapshot();
                         snapshot.setTenantId(tenantId);
                         snapshot.setAccountId(loan.getId());
                         snapshot.setAccountNumber(loan.getAccountNumber());
@@ -507,7 +515,7 @@ public class EodOrchestrator {
                         snapshot.setProductType(loan.getProductType());
                         snapshot.setProvisioningAmount(
                                 loan.getProvisioningAmount() != null ? loan.getProvisioningAmount()
-                                        : java.math.BigDecimal.ZERO);
+                                        : BigDecimal.ZERO);
                         snapshot.setCreatedBy("SYSTEM_EOD");
                         loanBalanceSnapshotRepository.save(snapshot);
                         loanCaptured++;
@@ -921,7 +929,7 @@ public class EodOrchestrator {
             ExecutorService executor,
             String tenantId,
             String stepName,
-            java.util.function.Consumer<LoanAccount> action,
+            Consumer<LoanAccount> action,
             StringBuilder errors) {
         AtomicInteger processed = new AtomicInteger(0);
         AtomicInteger failed = new AtomicInteger(0);
