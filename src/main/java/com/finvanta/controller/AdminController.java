@@ -42,6 +42,8 @@ public class AdminController {
     private final GLMasterRepository glMasterRepository;
     private final ProductGLResolver glResolver;
     private final AuditService auditService;
+    private final com.finvanta.service.MfaService mfaService;
+    private final com.finvanta.repository.AppUserRepository appUserRepository;
 
     public AdminController(
             ProductMasterRepository productRepository,
@@ -49,13 +51,17 @@ public class AdminController {
             ChargeConfigRepository chargeConfigRepository,
             GLMasterRepository glMasterRepository,
             ProductGLResolver glResolver,
-            AuditService auditService) {
+            AuditService auditService,
+            com.finvanta.service.MfaService mfaService,
+            com.finvanta.repository.AppUserRepository appUserRepository) {
         this.productRepository = productRepository;
         this.limitRepository = limitRepository;
         this.chargeConfigRepository = chargeConfigRepository;
         this.glMasterRepository = glMasterRepository;
         this.glResolver = glResolver;
         this.auditService = auditService;
+        this.mfaService = mfaService;
+        this.appUserRepository = appUserRepository;
     }
 
     // ========================================================================
@@ -223,5 +229,102 @@ public class AdminController {
         ModelAndView mav = new ModelAndView("admin/charges");
         mav.addObject("charges", chargeConfigRepository.findByTenantIdAndIsActiveTrueOrderByEventTriggerAsc(tenantId));
         return mav;
+    }
+
+    // ========================================================================
+    // MFA Management (per RBI IT Governance Direction 2023 Section 8.4)
+    // ========================================================================
+
+    /** MFA management dashboard — lists all users with MFA status */
+    @GetMapping("/mfa")
+    public ModelAndView mfaDashboard() {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("admin/mfa");
+        mav.addObject("users", appUserRepository.findByTenantIdOrderByRoleAscUsernameAsc(tenantId));
+        return mav;
+    }
+
+    /**
+     * Enable MFA for a user. Per RBI IT Governance Direction 2023 Section 8.4:
+     * mandatory for ADMIN, optional for MAKER/CHECKER.
+     * After enabling, user must complete enrollment before login is allowed.
+     */
+    @PostMapping("/mfa/enable")
+    public String enableMfa(@RequestParam String username, RedirectAttributes redirectAttributes) {
+        try {
+            boolean enabled = mfaService.enableMfa(username);
+            if (enabled) {
+                redirectAttributes.addFlashAttribute("success",
+                        "MFA enabled for " + username + ". User must complete enrollment to log in.");
+            } else {
+                redirectAttributes.addFlashAttribute("info", "MFA already enabled for " + username);
+            }
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/mfa";
+    }
+
+    /**
+     * Enroll MFA — generates TOTP secret and returns QR code URI.
+     * Per Finacle MFA_ENROLL: secret generated server-side, displayed as QR code.
+     */
+    @PostMapping("/mfa/enroll")
+    public ModelAndView enrollMfa(@RequestParam String username, RedirectAttributes redirectAttributes) {
+        try {
+            String base32Secret = mfaService.enrollMfa(username);
+            String otpAuthUri = mfaService.buildOtpAuthUri(username, base32Secret);
+
+            ModelAndView mav = new ModelAndView("admin/mfa-enroll");
+            mav.addObject("username", username);
+            mav.addObject("secret", base32Secret);
+            mav.addObject("otpAuthUri", otpAuthUri);
+            return mav;
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+            return new ModelAndView("redirect:/admin/mfa");
+        }
+    }
+
+    /**
+     * Verify TOTP code to complete MFA enrollment.
+     * Per Finacle MFA_ENROLL: enrollment is only complete after successful TOTP verification.
+     */
+    @PostMapping("/mfa/verify")
+    public String verifyMfa(
+            @RequestParam String username,
+            @RequestParam String totpCode,
+            RedirectAttributes redirectAttributes) {
+        try {
+            boolean verified = mfaService.verifyAndActivateMfa(username, totpCode);
+            if (verified) {
+                redirectAttributes.addFlashAttribute("success",
+                        "MFA enrollment verified for " + username + ". User can now log in with TOTP.");
+            } else {
+                redirectAttributes.addFlashAttribute("error",
+                        "Invalid TOTP code for " + username + ". Please try again with a fresh code.");
+            }
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/mfa";
+    }
+
+    /**
+     * Disable MFA for a user. Per RBI: ADMIN users cannot have MFA disabled.
+     * Requires mandatory reason for audit trail.
+     */
+    @PostMapping("/mfa/disable")
+    public String disableMfa(
+            @RequestParam String username,
+            @RequestParam String reason,
+            RedirectAttributes redirectAttributes) {
+        try {
+            mfaService.disableMfa(username, reason);
+            redirectAttributes.addFlashAttribute("success", "MFA disabled for " + username);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/mfa";
     }
 }

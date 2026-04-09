@@ -88,11 +88,14 @@ public class CustomUserDetailsService implements UserDetailsService {
         // This is cleaner than throwing UsernameNotFoundException for locked/expired accounts
         // because it provides proper error codes to the login page.
         //
-        // CBS MFA Note: When MFA enrollment/verification endpoints are implemented,
-        // this method should return a custom UserDetails that carries mfaEnabled/mfaSecret
-        // so the authentication success handler can redirect to the TOTP verification page
-        // instead of the dashboard. For now, mfa_enabled=true with a valid secret would
-        // pass through (TOTP verification is a Phase 2 enhancement).
+        // CBS MFA: mfaRequired flag is set when user has MFA enabled AND a valid secret.
+        // The authentication success handler should check isMfaRequired() and redirect
+        // to the TOTP verification page instead of the dashboard.
+        // Users with mfa_enabled=true but no secret are blocked above (enrollment gate).
+        boolean mfaRequired = appUser.isMfaEnabled()
+                && appUser.getMfaSecret() != null
+                && !appUser.getMfaSecret().isBlank();
+
         return new BranchAwareUserDetails(
                 appUser.getUsername(),
                 appUser.getPasswordHash(),
@@ -101,6 +104,7 @@ public class CustomUserDetailsService implements UserDetailsService {
                 Collections.singletonList(
                         new SimpleGrantedAuthority("ROLE_" + appUser.getRole().name())),
                 branchId,
-                branchCode);
+                branchCode,
+                mfaRequired);
     }
 }

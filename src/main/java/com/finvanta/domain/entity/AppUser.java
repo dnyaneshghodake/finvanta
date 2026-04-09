@@ -168,17 +168,20 @@ public class AppUser extends BaseEntity {
      * The secret is Base32-encoded and used to generate 6-digit OTPs that change
      * every 30 seconds. Null = MFA not enrolled for this user.
      *
-     * SECURITY WARNING: This field MUST be encrypted at rest in production.
-     * A compromised database dump with plaintext TOTP secrets allows an attacker
+     * Encrypted at rest using AES-256-GCM via {@link com.finvanta.config.MfaSecretEncryptor}.
+     * A compromised database dump with plaintext secrets would allow an attacker
      * to generate valid MFA codes for every enrolled user, completely defeating MFA.
      * Per RBI IT Governance Direction 2023: MFA secrets are authentication credentials
      * equivalent to password hashes and require PII-level encryption.
      *
-     * TODO (P0-SECURITY): Implement a JPA @Convert(converter = MfaSecretEncryptor.class)
-     * using AES-256-GCM with a key from a secrets manager (AWS KMS / HashiCorp Vault).
-     * This MUST be completed before enabling mfa_enabled=true for any user in production.
+     * Key management:
+     *   DEV: Default key in mfa.encryption.key property (deterministic for H2)
+     *   PROD: Override via environment variable or secrets manager (AWS KMS / Vault)
+     *
+     * Column length 200 accommodates Base64(IV[12] + ciphertext + tag[16]) overhead.
      */
-    @Column(name = "mfa_secret", length = 100)
+    @Convert(converter = com.finvanta.config.MfaSecretEncryptor.class)
+    @Column(name = "mfa_secret", length = 200)
     private String mfaSecret;
 
     /**

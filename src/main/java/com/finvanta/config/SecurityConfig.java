@@ -166,6 +166,8 @@ public class SecurityConfig {
                             .hasAnyRole("MAKER", "ADMIN")
                             .requestMatchers("/audit/**")
                             .hasAnyRole("AUDITOR", "ADMIN")
+                            .requestMatchers("/admin/mfa/**")
+                            .hasRole("ADMIN")
                             .anyRequest()
                             .authenticated();
                 })
