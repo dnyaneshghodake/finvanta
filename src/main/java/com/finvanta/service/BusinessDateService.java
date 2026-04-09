@@ -1,9 +1,11 @@
 package com.finvanta.service;
 
 import com.finvanta.audit.AuditService;
+import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.TransactionBatch;
 import com.finvanta.domain.enums.DayStatus;
+import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.util.BusinessException;
@@ -14,6 +16,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
