@@ -4,9 +4,8 @@ import com.finvanta.batch.BatchService;
 import com.finvanta.batch.EodOrchestrator;
 import com.finvanta.batch.EodTrialService;
 import com.finvanta.batch.EodTrialService.EodCheckResult;
-import com.finvanta.repository.BusinessCalendarRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.TransactionBatchService;
-import com.finvanta.util.TenantContext;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -39,30 +38,30 @@ public class BatchController {
     private final BatchService batchService;
     private final EodTrialService eodTrialService;
     private final TransactionBatchService transactionBatchService;
-    private final BusinessCalendarRepository calendarRepository;
+    private final BusinessDateService businessDateService;
 
     public BatchController(
             EodOrchestrator eodOrchestrator,
             BatchService batchService,
             EodTrialService eodTrialService,
             TransactionBatchService transactionBatchService,
-            BusinessCalendarRepository calendarRepository) {
+            BusinessDateService businessDateService) {
         this.eodOrchestrator = eodOrchestrator;
         this.batchService = batchService;
         this.eodTrialService = eodTrialService;
         this.transactionBatchService = transactionBatchService;
-        this.calendarRepository = calendarRepository;
+        this.businessDateService = businessDateService;
     }
 
     /** EOD dashboard — shows trial/apply forms and batch history. */
     @GetMapping("/eod")
     public ModelAndView eodPage() {
-        String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("batch/eod");
         mav.addObject("batchHistory", batchService.getBatchHistory());
-        mav.addObject(
-                "currentBusinessDate",
-                calendarRepository.findCurrentBusinessDate(tenantId).orElse(null));
+        // CBS: Use getOpenDayOrNull() which returns the DAY_OPEN calendar entry.
+        // The deprecated findCurrentBusinessDate() returned the MAX non-holiday date
+        // where EOD is not complete — which could be April 30 instead of April 1.
+        mav.addObject("currentBusinessDate", businessDateService.getOpenDayOrNull());
         return mav;
     }
 
@@ -79,9 +78,7 @@ public class BatchController {
 
             ModelAndView mav = new ModelAndView("batch/eod");
             mav.addObject("batchHistory", batchService.getBatchHistory());
-            mav.addObject(
-                    "currentBusinessDate",
-                    calendarRepository.findCurrentBusinessDate(TenantContext.getCurrentTenant()).orElse(null));
+            mav.addObject("currentBusinessDate", businessDateService.getOpenDayOrNull());
             mav.addObject("trialResults", trialResults);
             mav.addObject("trialClean", trialClean);
             mav.addObject("trialDate", businessDate);
