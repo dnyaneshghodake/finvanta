@@ -83,6 +83,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     private final AuditService auditService;
     private final ApprovalWorkflowService workflowService;
     private final BranchAccessValidator branchAccessValidator;
+    private final com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository;
 
     public DepositAccountServiceImpl(
             DepositAccountRepository accountRepository,
@@ -95,7 +96,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             BusinessDateService businessDateService,
             AuditService auditService,
             ApprovalWorkflowService workflowService,
-            BranchAccessValidator branchAccessValidator) {
+            BranchAccessValidator branchAccessValidator,
+            com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
@@ -107,6 +109,25 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         this.auditService = auditService;
         this.workflowService = workflowService;
         this.branchAccessValidator = branchAccessValidator;
+        this.balanceSnapshotRepository = balanceSnapshotRepository;
+    }
+
+    /**
+     * Returns the start date of the Indian financial quarter containing the given date.
+     * Per RBI: quarters are Apr-Jun, Jul-Sep, Oct-Dec, Jan-Mar.
+     * Interest is credited on quarter-end dates (Jun 30, Sep 30, Dec 31, Mar 31).
+     */
+    private LocalDate getQuarterStartDate(LocalDate date) {
+        int month = date.getMonthValue();
+        if (month >= 1 && month <= 3) {
+            return LocalDate.of(date.getYear(), 1, 1);
+        } else if (month >= 4 && month <= 6) {
+            return LocalDate.of(date.getYear(), 4, 1);
+        } else if (month >= 7 && month <= 9) {
+            return LocalDate.of(date.getYear(), 7, 1);
+        } else {
+            return LocalDate.of(date.getYear(), 10, 1);
+        }
     }
 
     /** Recompute available balance from ledger balance minus holds and uncleared. */
@@ -637,6 +658,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     }
 
     // === Quarterly Interest Credit with TDS ===
+    // Per RBI Savings Interest Directive / Finacle ACCT_BAL_HIST:
+    // At quarter-end, interest should be calculated on the MINIMUM daily balance
+    // for the quarter, not the closing balance. This uses DailyBalanceSnapshot data
+    // captured during EOD Step 8.6. If snapshot data is not available (e.g., account
+    // opened mid-quarter, or first quarter after snapshot feature deployment), falls
+    // back to the accrued interest already computed daily on closing balance.
     @Override
     @Transactional
     public DepositTransaction creditInterest(String acn, LocalDate bd) {
@@ -648,6 +675,34 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         if (bd.equals(acct.getLastInterestCreditDate())) {
             log.warn("Interest already credited for {} on {}, skipping", acn, bd);
             return null;
+        }
+
+        // CBS Tier-1: Minimum Daily Balance interest recalculation per RBI directive.
+        // Per Finacle ACCT_BAL_HIST: at quarter-end, recalculate interest using
+        // MIN(closing_balance) from daily snapshots instead of the daily-accrued sum.
+        // This ensures RBI-compliant interest calculation where a customer who had
+        // INR 1,00,000 for 89 days but withdrew to INR 1,000 on day 90 gets interest
+        // on INR 1,000 (minimum), not the daily-product sum.
+        // Fallback: if no snapshots exist (new account, first deployment), use accrued.
+        LocalDate quarterStart = getQuarterStartDate(bd);
+        long snapshotDays = balanceSnapshotRepository.countSnapshotsInPeriod(
+                tid, acct.getId(), quarterStart, bd);
+        if (snapshotDays > 0) {
+            BigDecimal minBalance = balanceSnapshotRepository.findMinBalanceInPeriod(
+                    tid, acct.getId(), quarterStart, bd);
+            // Recalculate interest on minimum daily balance for the quarter
+            // Formula: minBalance * rate * days / 36500
+            BigDecimal recalculated = minBalance
+                    .multiply(acct.getInterestRate())
+                    .multiply(BigDecimal.valueOf(snapshotDays))
+                    .divide(new BigDecimal("36500"), 2, RoundingMode.HALF_UP);
+            if (recalculated.compareTo(interest) < 0) {
+                log.info("Min daily balance adjustment: account={}, accrued={}, minBal recalc={}, minBalance={}, days={}",
+                        acn, interest, recalculated, minBalance, snapshotDays);
+                interest = recalculated;
+            }
+            // If recalculated > accrued (shouldn't happen if snapshots are correct),
+            // use the lower value (accrued) as a safety cap — never overpay interest.
         }
         String gl = glForAccount(acct);
         TransactionResult r = transactionEngine.execute(TransactionRequest.builder()

@@ -177,13 +177,11 @@ public class InterBranchSettlementService {
     public void settleInterBranch(LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
 
-        // CBS Tier-1: Date-scoped settlement per Finacle IB_SETTLEMENT.
-        // Only settle transactions for TODAY's business date.
+        // CBS Tier-1: Date-scoped settlement with pessimistic lock per Finacle IB_SETTLEMENT.
+        // Only settle PENDING transactions for TODAY's business date.
+        // PESSIMISTIC_WRITE lock prevents concurrent settlement (defense-in-depth).
         List<InterBranchTransaction> pendingTransactions =
-                settlementRepository.findByTenantIdAndBusinessDateOrderBySourceBranchAsc(tenantId, businessDate)
-                        .stream()
-                        .filter(txn -> "PENDING".equals(txn.getSettlementStatus()))
-                        .toList();
+                settlementRepository.findAndLockPendingByDate(tenantId, businessDate);
 
         // CBS: Warn about stale PENDING transactions from prior dates (data integrity alert)
         List<InterBranchTransaction> allPending =

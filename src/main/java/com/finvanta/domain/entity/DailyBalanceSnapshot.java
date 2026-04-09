@@ -96,7 +96,20 @@ public class DailyBalanceSnapshot extends BaseEntity {
     @Column(name = "hold_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal holdAmount = BigDecimal.ZERO;
 
-    /** Account type: SAVINGS, CURRENT (for filtering in interest calculation) */
+    /**
+     * Account type: SAVINGS, CURRENT, etc. (for filtering in interest calculation).
+     *
+     * Per Finacle PDDEF ACCT_TYPE / Temenos ACCOUNT CATEGORY: account type is a coded
+     * field in Tier-1 CBS. The source entity (DepositAccount) currently uses a raw String
+     * for accountType — this snapshot copies that value as-is for consistency.
+     *
+     * TODO (Tier-1 compliance): Introduce a DepositAccountType enum across DepositAccount,
+     * DailyBalanceSnapshot, and all repository queries that filter by accountType.
+     * This prevents data corruption from typos (e.g., "SAVING" vs "SAVINGS") that would
+     * silently break interest calculation and regulatory reporting queries.
+     * Impact: DepositAccount entity, DepositAccountRepository queries, DepositAccountServiceImpl,
+     * EodOrchestrator snapshot step, and DailyBalanceSnapshotRepository queries.
+     */
     @Column(name = "account_type", nullable = false, length = 30)
     private String accountType;
 }
