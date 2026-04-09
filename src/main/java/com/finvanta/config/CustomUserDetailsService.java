@@ -100,7 +100,7 @@ public class CustomUserDetailsService implements UserDetailsService {
                 appUser.getUsername(),
                 appUser.getPasswordHash(),
                 !appUser.isLocked(), // accountNonLocked
-                !appUser.isPasswordExpired(), // credentialsNonExpired
+                appUser.isPasswordExpired(), // passwordExpired (true = expired, handled by success handler)
                 Collections.singletonList(
                         new SimpleGrantedAuthority("ROLE_" + appUser.getRole().name())),
                 branchId,

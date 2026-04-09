@@ -53,12 +53,13 @@ public class MfaAuthenticationSuccessHandler extends SavedRequestAwareAuthentica
                 return;
             }
 
-            // CBS: Check if credentials are expired (password rotation enforcement)
+            // CBS: Check if password is expired (password rotation enforcement)
             // Per RBI IT Governance Direction 2023 §8.2: expired passwords must force
             // a password change before granting access to any CBS functionality.
-            // Spring Security allows login with expired credentials (credentialsNonExpired=false
-            // only sets a flag), so we must enforce the redirect here.
-            if (!userDetails.isCredentialsNonExpired()) {
+            // We handle this here (not via Spring's credentialsNonExpired) because
+            // Spring blocks login entirely when credentialsNonExpired=false — the user
+            // would never reach the password change page.
+            if (userDetails.isPasswordExpired()) {
                 request.getSession().setAttribute(MFA_VERIFIED_ATTR, true);
                 request.getSession().setAttribute(PASSWORD_EXPIRED_ATTR, true);
                 getRedirectStrategy().sendRedirect(request, response,
