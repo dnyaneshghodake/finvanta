@@ -45,9 +45,9 @@ public class AdminController {
     private final GLMasterRepository glMasterRepository;
     private final ProductGLResolver glResolver;
     private final AuditService auditService;
-    private final com.finvanta.service.MfaService mfaService;
-    private final com.finvanta.repository.AppUserRepository appUserRepository;
-    private final com.finvanta.batch.InterBranchSettlementService settlementService;
+    private final MfaService mfaService;
+    private final AppUserRepository appUserRepository;
+    private final InterBranchSettlementService settlementService;
 
     public AdminController(
             ProductMasterRepository productRepository,
@@ -56,9 +56,9 @@ public class AdminController {
             GLMasterRepository glMasterRepository,
             ProductGLResolver glResolver,
             AuditService auditService,
-            com.finvanta.service.MfaService mfaService,
-            com.finvanta.repository.AppUserRepository appUserRepository,
-            com.finvanta.batch.InterBranchSettlementService settlementService) {
+            MfaService mfaService,
+            AppUserRepository appUserRepository,
+            InterBranchSettlementService settlementService) {
         this.productRepository = productRepository;
         this.limitRepository = limitRepository;
         this.chargeConfigRepository = chargeConfigRepository;

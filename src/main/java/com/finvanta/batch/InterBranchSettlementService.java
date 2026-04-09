@@ -11,6 +11,7 @@ import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
 import com.finvanta.util.BusinessException;
+import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
@@ -334,7 +335,7 @@ public class InterBranchSettlementService {
                         + " | settled=" + settled
                         + " | failed=" + failed
                         + " | total=" + stalePending.size()
-                        + " | By: " + com.finvanta.util.SecurityUtil.getCurrentUsername());
+                        + " | By: " + SecurityUtil.getCurrentUsername());
 
         log.info("HO manual IB settlement: settled={}, failed={}, hoAuth={}, reason={}",
                 settled, failed, hoAuthorizationRef, reason);
