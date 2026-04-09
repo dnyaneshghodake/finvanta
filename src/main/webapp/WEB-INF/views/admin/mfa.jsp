@@ -51,18 +51,18 @@
                                     <form method="post" action="${pageContext.request.contextPath}/admin/mfa/enable" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                         <input type="hidden" name="username" value="${u.username}" />
-                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Enable MFA"><i class="bi bi-shield-plus"></i> Enable</button>
+                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Enable MFA"><i class="bi bi-lock"></i> Enable</button>
                                     </form>
                                 </c:if>
                                 <c:if test="${u.mfaEnabled && u.mfaEnrolledDate == null}">
                                     <form method="post" action="${pageContext.request.contextPath}/admin/mfa/enroll" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                         <input type="hidden" name="username" value="${u.username}" />
-                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Generate TOTP Secret"><i class="bi bi-qr-code"></i> Enroll</button>
+                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Generate TOTP Secret"><i class="bi bi-key"></i> Enroll</button>
                                     </form>
                                 </c:if>
                                 <c:if test="${u.mfaEnabled && u.role != 'ADMIN'}">
-                                    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableMfa_${u.username}" title="Disable MFA"><i class="bi bi-shield-x"></i></button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableMfa_${u.username}" title="Disable MFA"><i class="bi bi-unlock"></i></button>
                                     <!-- Disable MFA Modal -->
                                     <div class="modal fade" id="disableMfa_${u.username}" tabindex="-1">
                                         <div class="modal-dialog"><div class="modal-content">

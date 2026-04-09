@@ -36,7 +36,7 @@
     <div class="row mb-3">
         <div class="col-md-6">
             <div class="fv-card">
-                <div class="card-header"><i class="bi bi-calendar-plus"></i> Generate Calendar</div>
+                <div class="card-header"><i class="bi bi-plus-circle"></i> Generate Calendar</div>
                 <div class="card-body">
                     <p class="text-muted small">Per Finacle DAYCTRL: generates one entry per date per operational branch. Weekends auto-marked as holidays. Idempotent &mdash; safe to re-run.</p>
                     <form method="post" action="${pageContext.request.contextPath}/calendar/generate" class="row g-2 align-items-end">
@@ -57,7 +57,7 @@
                             </select>
                         </div>
                         <div class="col-auto">
-                            <button type="submit" class="btn btn-primary"><i class="bi bi-calendar-plus"></i> Generate</button>
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Generate</button>
                         </div>
                     </form>
                 </div>
@@ -65,7 +65,7 @@
         </div>
         <div class="col-md-6">
             <div class="fv-card">
-                <div class="card-header"><i class="bi bi-calendar-x"></i> Add / Remove Holiday</div>
+                <div class="card-header"><i class="bi bi-calendar-check"></i> Add / Remove Holiday</div>
                 <div class="card-body">
                     <p class="text-muted small">Per RBI NI Act: gazetted holidays must be configured. Cannot mark dates that are already DAY_OPEN or DAY_CLOSED.</p>
                     <form method="post" action="${pageContext.request.contextPath}/calendar/add-holiday" class="row g-2 align-items-end mb-2">
@@ -79,7 +79,7 @@
                             <input type="text" name="description" class="form-control" placeholder="e.g., Independence Day" required />
                         </div>
                         <div class="col-auto">
-                            <button type="submit" class="btn btn-warning"><i class="bi bi-calendar-x"></i> Add Holiday</button>
+                            <button type="submit" class="btn btn-warning"><i class="bi bi-exclamation-triangle"></i> Add Holiday</button>
                         </div>
                     </form>
                     <form method="post" action="${pageContext.request.contextPath}/calendar/remove-holiday" class="row g-2 align-items-end">
