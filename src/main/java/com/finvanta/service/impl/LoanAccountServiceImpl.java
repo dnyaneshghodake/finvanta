@@ -22,6 +22,7 @@ import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.CollateralService;
 import com.finvanta.service.DepositAccountService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
@@ -88,6 +89,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final DepositAccountService depositAccountService;
     private final StandingInstructionServiceImpl standingInstructionService;
     private final BranchAccessValidator branchAccessValidator;
+    private final CollateralService collateralService;
 
     public LoanAccountServiceImpl(
             LoanAccountRepository accountRepository,
@@ -108,7 +110,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             DepositAccountRepository depositAccountRepository,
             DepositAccountService depositAccountService,
             @Lazy StandingInstructionServiceImpl standingInstructionService,
-            BranchAccessValidator branchAccessValidator) {
+            BranchAccessValidator branchAccessValidator,
+            CollateralService collateralService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
@@ -128,6 +131,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.depositAccountService = depositAccountService;
         this.standingInstructionService = standingInstructionService;
         this.branchAccessValidator = branchAccessValidator;
+        this.collateralService = collateralService;
     }
 
     @Override
@@ -920,6 +924,13 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         // CBS: Loan closure only when all components are zero (principal + interest + penal)
         if (account.getTotalOutstanding().compareTo(BigDecimal.ZERO) == 0) {
             account.setStatus(LoanStatus.CLOSED);
+            // CBS Tier-1: Auto-release collateral liens per RBI Fair Practices Code 2023.
+            // Bank must release pledge/mortgage within 30 days of loan closure.
+            try {
+                collateralService.releaseCollateralsForLoan(account.getId(), valueDate);
+            } catch (Exception e) {
+                log.warn("Collateral release failed for {}: {}", accountNumber, e.getMessage());
+            }
             log.info("Loan account closed: accNo={}", accountNumber);
         }
 
@@ -1206,6 +1217,14 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setUpdatedBy(currentUser);
         accountRepository.save(account);
 
+        // CBS Tier-1: Auto-release collateral liens on write-off per RBI IRAC.
+        // Written-off accounts have no further recovery expectation from collateral.
+        try {
+            collateralService.releaseCollateralsForLoan(account.getId(), businessDate);
+        } catch (Exception e) {
+            log.warn("Collateral release failed for write-off {}: {}", accountNumber, e.getMessage());
+        }
+
         auditService.logEvent(
                 "LoanAccount",
                 account.getId(),
@@ -1344,6 +1363,13 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setRemainingTenure(0);
         account.setUpdatedBy(currentUser);
         accountRepository.save(account);
+
+        // CBS Tier-1: Auto-release collateral liens per RBI Fair Practices Code 2023.
+        try {
+            collateralService.releaseCollateralsForLoan(account.getId(), businessDate);
+        } catch (Exception e) {
+            log.warn("Collateral release failed for {}: {}", accountNumber, e.getMessage());
+        }
 
         auditService.logEvent(
                 "LoanAccount",

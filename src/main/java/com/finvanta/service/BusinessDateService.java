@@ -197,11 +197,14 @@ public class BusinessDateService {
         BusinessCalendar saved = calendarRepository.save(calendar);
 
         // CBS SOD: Auto-create a default INTRA_DAY transaction batch for the business date.
-        if (!batchRepository.existsByTenantIdAndBusinessDate(tenantId, businessDate)) {
+        // Per Finacle BATCH_MASTER: each branch gets its own default batch.
+        // Check uses branch-specific batch name to prevent second branch skipping batch creation.
+        String batchName = "DEFAULT_BATCH_" + branch.getBranchCode();
+        if (!batchRepository.existsByTenantIdAndBusinessDateAndBatchName(tenantId, businessDate, batchName)) {
             TransactionBatch defaultBatch = new TransactionBatch();
             defaultBatch.setTenantId(tenantId);
             defaultBatch.setBusinessDate(businessDate);
-            defaultBatch.setBatchName("DEFAULT_BATCH_" + branch.getBranchCode());
+            defaultBatch.setBatchName(batchName);
             defaultBatch.setBatchType("INTRA_DAY");
             defaultBatch.setStatus("OPEN");
             defaultBatch.setOpenedBy(currentUser);

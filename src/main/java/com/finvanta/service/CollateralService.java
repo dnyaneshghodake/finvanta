@@ -193,6 +193,53 @@ public class CollateralService {
     }
 
     /**
+     * Releases all collateral liens for a loan account on closure/write-off.
+     *
+     * Per Finacle COLMAS / RBI Secured Lending Guidelines:
+     * When a loan reaches terminal state (CLOSED, WRITTEN_OFF), all collateral liens
+     * must be released. The customer has no further obligation and the bank must
+     * release the pledge/mortgage within 30 days per RBI Fair Practices Code 2023.
+     *
+     * Called by LoanAccountServiceImpl when account transitions to terminal state.
+     *
+     * @param loanAccountId The loan account ID whose collaterals should be released
+     * @param businessDate  CBS business date for audit trail
+     */
+    @Transactional
+    public void releaseCollateralsForLoan(Long loanAccountId, java.time.LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String currentUser = SecurityUtil.getCurrentUsername();
+
+        List<Collateral> collaterals = collateralRepository.findByTenantIdAndLoanAccountId(tenantId, loanAccountId);
+        for (Collateral c : collaterals) {
+            if ("RELEASED".equals(c.getLienStatus()) || "RELEASED".equals(c.getStatus())) {
+                continue; // Already released
+            }
+
+            String previousLienStatus = c.getLienStatus();
+            c.setLienStatus("RELEASED");
+            c.setStatus("RELEASED");
+            c.setUpdatedBy(currentUser);
+            collateralRepository.save(c);
+
+            auditService.logEvent(
+                    "Collateral",
+                    c.getId(),
+                    "LIEN_RELEASED",
+                    previousLienStatus,
+                    "RELEASED",
+                    "COLLATERAL",
+                    "Collateral lien released on loan closure: " + c.getCollateralRef()
+                            + " | Type: " + c.getCollateralType()
+                            + " | Date: " + businessDate
+                            + " | By: " + currentUser);
+
+            log.info("Collateral lien released: ref={}, type={}, loanAccount={}",
+                    c.getCollateralRef(), c.getCollateralType(), loanAccountId);
+        }
+    }
+
+    /**
      * Validates type-specific mandatory fields.
      */
     private void validateCollateralFields(Collateral c) {

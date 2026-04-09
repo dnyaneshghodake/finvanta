@@ -548,11 +548,13 @@ public class LoanController {
         return "redirect:/loan/verify/" + applicationId;
     }
 
-    /** Verify a document — CHECKER/ADMIN */
+    /** Verify a document — CHECKER/ADMIN (branch-validated via application) */
     @PostMapping("/document/verify/{documentId}")
     public String verifyDocument(
             @PathVariable Long documentId, @RequestParam Long applicationId, RedirectAttributes redirectAttributes) {
         try {
+            // CBS Tier-1: Validate branch access via the parent application
+            LoanApplication app = applicationService.getApplication(applicationId);
             LoanDocument doc = documentRepository
                     .findById(documentId)
                     .orElseThrow(() -> new RuntimeException("Document not found"));
