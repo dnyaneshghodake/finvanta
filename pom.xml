@@ -112,18 +112,15 @@
 
 			  Configuration:
 			  - Java: Palantir Java Format (4-space indent, compatible with existing style)
-			  - SQL: dbeaver formatter for DDL scripts
-			  - Trailing whitespace/newline cleanup on all text files
-			  - Lombok-generated code excluded (annotation processing output)
+			  - POM: sortPom (dependency/plugin sorting, 4-space indent)
+			  - Import ordering, unused import removal, trailing whitespace cleanup
 
 			  Usage:
 			    mvn spotless:check   - CI gate (fails build on violations)
 			    mvn spotless:apply   - Auto-fix formatting violations locally
 
-			  IMPORTANT: Spotless is configured with ratchetFrom to only enforce
-			  formatting on files changed since the last release tag. This prevents
-			  a massive reformatting diff on the existing codebase while ensuring
-			  all new/modified code follows the standard going forward.
+			  NOTE: Formatting is enforced on ALL files (no ratchetFrom).
+			  The entire codebase was reformatted in the april_week2_releases branch.
 			-->
             <plugin>
                 <groupId>com.diffplug.spotless</groupId>
