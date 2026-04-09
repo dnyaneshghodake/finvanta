@@ -50,26 +50,26 @@
                                 <c:if test="${!u.mfaEnabled}">
                                     <form method="post" action="${pageContext.request.contextPath}/admin/mfa/enable" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                        <input type="hidden" name="username" value="${u.username}" />
+                                        <input type="hidden" name="username" value="<c:out value='${u.username}' />" />
                                         <button type="submit" class="btn btn-sm btn-outline-primary" title="Enable MFA"><i class="bi bi-lock"></i> Enable</button>
                                     </form>
                                 </c:if>
                                 <c:if test="${u.mfaEnabled && u.mfaEnrolledDate == null}">
                                     <form method="post" action="${pageContext.request.contextPath}/admin/mfa/enroll" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                        <input type="hidden" name="username" value="${u.username}" />
+                                        <input type="hidden" name="username" value="<c:out value='${u.username}' />" />
                                         <button type="submit" class="btn btn-sm btn-outline-success" title="Generate TOTP Secret"><i class="bi bi-key"></i> Enroll</button>
                                     </form>
                                 </c:if>
                                 <c:if test="${u.mfaEnabled && u.role != 'ADMIN'}">
-                                    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableMfa_${u.username}" title="Disable MFA"><i class="bi bi-unlock"></i></button>
-                                    <!-- Disable MFA Modal -->
-                                    <div class="modal fade" id="disableMfa_${u.username}" tabindex="-1">
+                                    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableMfa_${u.id}" title="Disable MFA"><i class="bi bi-unlock"></i></button>
+                                    <!-- Disable MFA Modal — uses numeric u.id for safe HTML id attribute -->
+                                    <div class="modal fade" id="disableMfa_${u.id}" tabindex="-1">
                                         <div class="modal-dialog"><div class="modal-content">
                                             <div class="modal-header"><h5 class="modal-title">Disable MFA: <c:out value="${u.username}" /></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
                                             <form method="post" action="${pageContext.request.contextPath}/admin/mfa/disable">
                                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                                <input type="hidden" name="username" value="${u.username}" />
+                                                <input type="hidden" name="username" value="<c:out value='${u.username}' />" />
                                                 <div class="modal-body">
                                                     <p class="text-muted">Per RBI audit norms: reason is mandatory for MFA disable.</p>
                                                     <div class="mb-3"><label class="form-label">Reason *</label><textarea name="reason" class="form-control" rows="2" required></textarea></div>

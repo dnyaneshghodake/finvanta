@@ -47,20 +47,13 @@ public class MfaVerificationFilter extends OncePerRequestFilter {
 
         Object mfaVerified = session.getAttribute(MfaAuthenticationSuccessHandler.MFA_VERIFIED_ATTR);
 
-        // If MFA_VERIFIED is null (non-MFA user or session without the attribute) → allow
-        // If MFA_VERIFIED is true → allow (MFA completed)
+        // If MFA_VERIFIED is null (non-MFA user or session without the attribute) → check password expiry
+        // If MFA_VERIFIED is true → MFA completed, check password expiry
         // If MFA_VERIFIED is false → MFA pending, restrict access
-        if (mfaVerified == null || Boolean.TRUE.equals(mfaVerified)) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        // MFA is pending — check if the request is to an allowed path
         String path = request.getRequestURI().substring(request.getContextPath().length());
 
-        if (path.startsWith("/mfa/verify")
-                || path.startsWith("/password/change")
-                || path.startsWith("/logout")
+        // Static resources and infrastructure paths — always allowed regardless of state
+        if (path.startsWith("/logout")
                 || path.startsWith("/login")
                 || path.startsWith("/css/")
                 || path.startsWith("/js/")
@@ -71,14 +64,35 @@ public class MfaVerificationFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Check if password is expired — redirect to password change instead of MFA
+        // === MFA PENDING GATE ===
+        // When MFA_VERIFIED=false, ONLY /mfa/verify is allowed.
+        // /password/change is NOT whitelisted here — an attacker who knows the password
+        // but lacks the TOTP device must NOT be able to change the victim's password
+        // without completing the second factor.
+        if (Boolean.FALSE.equals(mfaVerified)) {
+            if (path.startsWith("/mfa/verify")) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+            response.sendRedirect(request.getContextPath() + "/mfa/verify");
+            return;
+        }
+
+        // === PASSWORD EXPIRY GATE (runs after MFA is verified or not required) ===
+        // Per RBI IT Governance Direction 2023 §8.2: expired passwords must force
+        // a password change before granting access to any CBS functionality.
+        // This gate runs for ALL authenticated users (MFA and non-MFA).
         Object passwordExpired = session.getAttribute(MfaAuthenticationSuccessHandler.PASSWORD_EXPIRED_ATTR);
         if (Boolean.TRUE.equals(passwordExpired)) {
+            if (path.startsWith("/password/change")) {
+                filterChain.doFilter(request, response);
+                return;
+            }
             response.sendRedirect(request.getContextPath() + "/password/change?expired=true");
             return;
         }
 
-        // Block access — redirect to MFA verification page
-        response.sendRedirect(request.getContextPath() + "/mfa/verify");
+        // MFA verified (or not required) AND password not expired — allow all requests
+        filterChain.doFilter(request, response);
     }
 }

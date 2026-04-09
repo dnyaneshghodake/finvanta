@@ -45,6 +45,12 @@ public class MfaAuthenticationSuccessHandler extends SavedRequestAwareAuthentica
             Authentication authentication) throws IOException, ServletException {
 
         if (authentication.getPrincipal() instanceof BranchAwareUserDetails userDetails) {
+            // CBS: Always set PASSWORD_EXPIRED_ATTR regardless of MFA state.
+            // This ensures that after MFA verification completes, the MfaLoginController
+            // and MfaVerificationFilter can check password expiry and redirect accordingly.
+            // Without this, MFA users with expired passwords bypass the password change gate.
+            request.getSession().setAttribute(PASSWORD_EXPIRED_ATTR, userDetails.isPasswordExpired());
+
             // CBS: Check MFA requirement first (MFA gate runs before password expiry redirect)
             if (userDetails.isMfaRequired()) {
                 request.getSession().setAttribute(MFA_VERIFIED_ATTR, false);
@@ -61,7 +67,6 @@ public class MfaAuthenticationSuccessHandler extends SavedRequestAwareAuthentica
             // would never reach the password change page.
             if (userDetails.isPasswordExpired()) {
                 request.getSession().setAttribute(MFA_VERIFIED_ATTR, true);
-                request.getSession().setAttribute(PASSWORD_EXPIRED_ATTR, true);
                 getRedirectStrategy().sendRedirect(request, response,
                         request.getContextPath() + "/password/change?expired=true");
                 return;

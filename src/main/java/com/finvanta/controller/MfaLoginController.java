@@ -1,11 +1,13 @@
 package com.finvanta.controller;
 
+import com.finvanta.config.BranchAwareUserDetails;
 import com.finvanta.config.MfaAuthenticationSuccessHandler;
 import com.finvanta.service.MfaService;
 import com.finvanta.util.SecurityUtil;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -95,6 +97,19 @@ public class MfaLoginController {
             request.getSession().removeAttribute(MFA_ATTEMPTS_ATTR);
             request.getSession().setAttribute(MfaAuthenticationSuccessHandler.MFA_VERIFIED_ATTR, true);
             log.info("MFA login verification successful for user: {}", username);
+
+            // CBS CRITICAL: Check password expiry AFTER MFA completion.
+            // Per RBI IT Governance Direction 2023 §8.2: expired passwords must force
+            // a password change before granting access to any CBS functionality.
+            // The PASSWORD_EXPIRED_ATTR was set by MfaAuthenticationSuccessHandler
+            // BEFORE the MFA redirect, so it's available in the session now.
+            Object passwordExpired = request.getSession().getAttribute(
+                    MfaAuthenticationSuccessHandler.PASSWORD_EXPIRED_ATTR);
+            if (Boolean.TRUE.equals(passwordExpired)) {
+                log.info("MFA verified but password expired for user: {} — redirecting to password change", username);
+                return "redirect:/password/change?expired=true";
+            }
+
             return "redirect:/dashboard";
         }
 

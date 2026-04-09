@@ -713,6 +713,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         if (snapshotDays > 0 && snapshotDays >= actualDaysInQuarter - 1) {
             BigDecimal minBalance = balanceSnapshotRepository.findMinBalanceInPeriod(
                     tid, acct.getId(), quarterStart, bd);
+            // CBS: Include today's CURRENT ledger balance as a min-balance candidate.
+            // Step 8.6 (snapshot capture) runs AFTER Step 8 (interest credit) in EOD,
+            // so today's snapshot doesn't exist yet when this method executes.
+            // If the customer made a large withdrawal today, the current balance may be
+            // lower than any prior snapshot — we must use the lower of the two.
+            // Per RBI: interest on minimum daily balance means the TRUE minimum across
+            // ALL days in the quarter, including the current day.
+            minBalance = minBalance.min(acct.getLedgerBalance());
             // Recalculate interest on minimum daily balance for the ACTUAL quarter duration
             // Formula: minBalance * rate * actualDays / 36500
             // Per RBI: interest is for the full quarter period, not just snapshot-covered days
@@ -733,9 +741,9 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             // Per CBS safety principle: when data is incomplete, do NOT recalculate.
             // Daily accrual on closing balance is the conservative fallback.
             log.warn("Min daily balance skipped: account={}, snapshotDays={}, actualDays={}, "
-                    + "coverage={:.1f}% — insufficient for recalculation, using daily-accrued interest",
+                    + "coverage={}% — insufficient for recalculation, using daily-accrued interest",
                     acn, snapshotDays, actualDaysInQuarter,
-                    (snapshotDays * 100.0 / actualDaysInQuarter));
+                    String.format("%.1f", snapshotDays * 100.0 / actualDaysInQuarter));
         }
         String gl = glForAccount(acct);
         TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
