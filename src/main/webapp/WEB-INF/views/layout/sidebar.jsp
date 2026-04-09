@@ -77,6 +77,8 @@
         <li><a href="${pageContext.request.contextPath}/admin/products" class="nav-link"><i class="bi bi-box-seam"></i><span class="nav-text">Product Master</span></a></li>
         <li><a href="${pageContext.request.contextPath}/admin/charges" class="nav-link"><i class="bi bi-receipt"></i><span class="nav-text">Charge Config</span></a></li>
         <li><a href="${pageContext.request.contextPath}/admin/limits" class="nav-link"><i class="bi bi-sliders"></i><span class="nav-text">Transaction Limits</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/admin/mfa" class="nav-link"><i class="bi bi-shield-lock"></i><span class="nav-text">MFA Management</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/admin/ib-settlement" class="nav-link"><i class="bi bi-arrow-left-right"></i><span class="nav-text">IB Settlement</span></a></li>
         </c:if>
 
         <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
