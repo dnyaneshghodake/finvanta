@@ -179,7 +179,7 @@ class InterBranchSettlementServiceTest {
     void manualSettleStalePending_noReason_throws() {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> settlementService.manualSettleStalePending("", "HO-AUTH-001"));
-        assertEquals("REASON_REQUIRED", ex.getCode());
+        assertEquals("REASON_REQUIRED", ex.getErrorCode());
     }
 
     @Test
@@ -187,7 +187,7 @@ class InterBranchSettlementServiceTest {
     void manualSettleStalePending_noAuth_throws() {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> settlementService.manualSettleStalePending("Some reason", ""));
-        assertEquals("HO_AUTH_REQUIRED", ex.getCode());
+        assertEquals("HO_AUTH_REQUIRED", ex.getErrorCode());
     }
 
     @Test

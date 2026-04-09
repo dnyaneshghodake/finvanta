@@ -5,6 +5,7 @@ import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.domain.enums.DepositAccountStatus;
+import com.finvanta.domain.enums.DepositAccountType;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DepositAccountRepository;
@@ -80,6 +81,9 @@ class DepositAccountServiceTest {
     @Mock
     private com.finvanta.workflow.ApprovalWorkflowService workflowService;
 
+    @Mock
+    private com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository;
+
     private BranchAccessValidator branchAccessValidator;
 
     private DepositAccountServiceImpl service;
@@ -100,7 +104,8 @@ class DepositAccountServiceTest {
                 businessDateService,
                 auditService,
                 workflowService,
-                branchAccessValidator);
+                branchAccessValidator,
+                balanceSnapshotRepository);
         TenantContext.setCurrentTenant("DEFAULT");
         // CBS Tier-1: Use BranchAwareUserDetails so SecurityUtil.getCurrentUserBranchId() works.
         // Branch ID=1L, branchCode="HQ001" matches the branch set in buildSavingsAccount().
@@ -116,7 +121,7 @@ class DepositAccountServiceTest {
         a.setId(1L);
         a.setTenantId("DEFAULT");
         a.setAccountNumber(accNo);
-        a.setAccountType("SAVINGS");
+        a.setAccountType(DepositAccountType.SAVINGS);
         a.setAccountStatus(DepositAccountStatus.ACTIVE);
         a.setLedgerBalance(balance);
         a.setAvailableBalance(balance);
@@ -256,7 +261,7 @@ class DepositAccountServiceTest {
     @Test
     void accrueInterest_shouldSkipCurrentAccounts() {
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("100000.00"));
-        acct.setAccountType("CURRENT");
+        acct.setAccountType(DepositAccountType.CURRENT);
         acct.setInterestRate(BigDecimal.ZERO);
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
                 .thenReturn(Optional.of(acct));
@@ -455,7 +460,7 @@ class DepositAccountServiceTest {
     void withdraw_shouldAllowPmjdyZeroMinBalance() {
         // CBS: PMJDY accounts have zero minimum balance — all withdrawals allowed
         DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("500.00"));
-        acct.setAccountType("SAVINGS_PMJDY");
+        acct.setAccountType(DepositAccountType.SAVINGS_PMJDY);
         acct.setMinimumBalance(BigDecimal.ZERO); // PMJDY = zero min balance
         when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
                 .thenReturn(Optional.of(acct));

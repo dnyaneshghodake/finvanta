@@ -108,7 +108,7 @@ class MfaServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> mfaService.enrollMfa("testuser"));
-        assertEquals("MFA_NOT_ENABLED", ex.getCode());
+        assertEquals("MFA_NOT_ENABLED", ex.getErrorCode());
     }
 
     @Test
@@ -121,7 +121,7 @@ class MfaServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> mfaService.enrollMfa("testuser"));
-        assertEquals("MFA_ALREADY_ENROLLED", ex.getCode());
+        assertEquals("MFA_ALREADY_ENROLLED", ex.getErrorCode());
     }
 
     @Test
@@ -186,7 +186,7 @@ class MfaServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> mfaService.disableMfa("testuser", "Some reason"));
-        assertEquals("MFA_MANDATORY_FOR_ADMIN", ex.getCode());
+        assertEquals("MFA_MANDATORY_FOR_ADMIN", ex.getErrorCode());
     }
 
     @Test
