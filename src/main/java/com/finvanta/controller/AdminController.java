@@ -44,6 +44,7 @@ public class AdminController {
     private final AuditService auditService;
     private final com.finvanta.service.MfaService mfaService;
     private final com.finvanta.repository.AppUserRepository appUserRepository;
+    private final com.finvanta.batch.InterBranchSettlementService settlementService;
 
     public AdminController(
             ProductMasterRepository productRepository,
@@ -53,7 +54,8 @@ public class AdminController {
             ProductGLResolver glResolver,
             AuditService auditService,
             com.finvanta.service.MfaService mfaService,
-            com.finvanta.repository.AppUserRepository appUserRepository) {
+            com.finvanta.repository.AppUserRepository appUserRepository,
+            com.finvanta.batch.InterBranchSettlementService settlementService) {
         this.productRepository = productRepository;
         this.limitRepository = limitRepository;
         this.chargeConfigRepository = chargeConfigRepository;
@@ -62,6 +64,7 @@ public class AdminController {
         this.auditService = auditService;
         this.mfaService = mfaService;
         this.appUserRepository = appUserRepository;
+        this.settlementService = settlementService;
     }
 
     // ========================================================================
@@ -326,5 +329,47 @@ public class AdminController {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
         return "redirect:/admin/mfa";
+    }
+
+    // ========================================================================
+    // Inter-Branch Settlement — HO Manual Settle (per Finacle IB_SETTLEMENT)
+    // ========================================================================
+
+    /**
+     * IB Settlement dashboard — shows stale PENDING transaction count.
+     * Per Finacle IB_SETTLEMENT: HO must review and authorize cross-date settlement.
+     */
+    @GetMapping("/ib-settlement")
+    public ModelAndView ibSettlementDashboard() {
+        ModelAndView mav = new ModelAndView("admin/ib-settlement");
+        mav.addObject("stalePendingCount", settlementService.countStalePending());
+        return mav;
+    }
+
+    /**
+     * HO Manual Settlement — settle stale PENDING IB transactions from prior dates.
+     *
+     * Per Finacle IB_SETTLEMENT / Temenos IB.NETTING:
+     * Cross-date PENDING transactions require explicit HO authorization because:
+     * 1. The original EOD failed — root cause must be investigated
+     * 2. Cross-date settlement affects prior-day GL balances (audit implications)
+     * 3. Regulatory reporting for the prior date may already have been submitted
+     *
+     * Mandatory: reason + HO authorization reference number for audit trail.
+     */
+    @PostMapping("/ib-settlement/manual-settle")
+    public String manualSettleStalePending(
+            @RequestParam String reason,
+            @RequestParam String hoAuthorizationRef,
+            RedirectAttributes redirectAttributes) {
+        try {
+            int[] result = settlementService.manualSettleStalePending(reason, hoAuthorizationRef);
+            redirectAttributes.addFlashAttribute("success",
+                    "HO manual settlement completed: settled=" + result[0] + ", failed=" + result[1]
+                            + ", hoAuth=" + hoAuthorizationRef);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/ib-settlement";
     }
 }
