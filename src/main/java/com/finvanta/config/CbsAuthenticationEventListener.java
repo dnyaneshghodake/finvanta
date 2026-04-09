@@ -63,22 +63,39 @@ public class CbsAuthenticationEventListener {
         String tenantId = resolveTenantId();
 
         try {
-            userRepository.findByTenantIdAndUsername(tenantId, username).ifPresent(user -> {
-                user.recordSuccessfulLogin(ipAddress);
-                user.setUpdatedBy("SYSTEM_AUTH");
-                userRepository.save(user);
+            // CBS: Ensure TenantContext is set for this thread before calling any
+            // tenant-scoped service (AuditService, repositories).
+            // The AuthenticationSuccessEvent may fire before or after TenantFilter
+            // depending on filter registration order. Spring Security's FilterChainProxy
+            // can execute before @Order(1) servlet filters in some configurations.
+            // This is defensive: set it if missing, restore original state after.
+            boolean tenantWasNull = !isTenantContextSet();
+            if (tenantWasNull) {
+                TenantContext.setCurrentTenant(tenantId);
+            }
+            try {
+                userRepository.findByTenantIdAndUsername(tenantId, username).ifPresent(user -> {
+                    user.recordSuccessfulLogin(ipAddress);
+                    user.setUpdatedBy("SYSTEM_AUTH");
+                    userRepository.save(user);
 
-                auditService.logEvent(
-                        "AppUser", user.getId(), "LOGIN_SUCCESS", null,
-                        "ip=" + ipAddress,
-                        "SECURITY",
-                        "Login successful: user=" + username
-                                + " | IP=" + ipAddress
-                                + " | Role=" + user.getRole()
-                                + " | Branch=" + (user.getBranch() != null ? user.getBranch().getBranchCode() : "N/A"));
+                    auditService.logEvent(
+                            "AppUser", user.getId(), "LOGIN_SUCCESS", null,
+                            "ip=" + ipAddress,
+                            "SECURITY",
+                            "Login successful: user=" + username
+                                    + " | IP=" + ipAddress
+                                    + " | Role=" + user.getRole()
+                                    + " | Branch="
+                                    + (user.getBranch() != null ? user.getBranch().getBranchCode() : "N/A"));
 
-                log.info("LOGIN SUCCESS: user={}, ip={}, role={}", username, ipAddress, user.getRole());
-            });
+                    log.info("LOGIN SUCCESS: user={}, ip={}, role={}", username, ipAddress, user.getRole());
+                });
+            } finally {
+                if (tenantWasNull) {
+                    TenantContext.clear();
+                }
+            }
         } catch (Exception e) {
             // Auth event handlers must NEVER block login — log and continue
             log.error("Failed to record login success for {}: {}", username, e.getMessage());
