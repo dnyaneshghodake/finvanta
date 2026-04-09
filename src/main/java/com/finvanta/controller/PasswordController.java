@@ -155,9 +155,19 @@ public class PasswordController {
 
             log.info("Password changed: user={} (self-service)", username);
 
+            // CBS Tier-1: Invalidate session after password change per Finacle/Temenos standards.
+            // Per RBI IT Governance Direction 2023 §8.2:
+            // - The current session was authenticated with the OLD (expired) password
+            // - A session authenticated with compromised/expired credentials must not continue
+            // - User must re-login with the new password to prove they remember it
+            // - This also ensures all session attributes (MFA_VERIFIED, PASSWORD_EXPIRED) are reset
+            // Per Finacle USER_MASTER: forced password reset terminates session → re-login required
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+            request.getSession().invalidate();
+
             redirectAttributes.addFlashAttribute("success",
-                    "Password changed successfully. Your new password expires on " + user.getPasswordExpiryDate() + ".");
-            return "redirect:/dashboard";
+                    "Password changed successfully. Please login with your new password.");
+            return "redirect:/login";
 
         } catch (BusinessException e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
