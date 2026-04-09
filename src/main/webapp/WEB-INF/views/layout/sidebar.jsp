@@ -92,7 +92,25 @@
 <div class="fv-topbar">
     <h2 class="fv-page-title"><c:out value="${pageTitle}" default="Dashboard" /></h2>
     <div class="fv-topbar-right">
-        <span class="fv-branch-code" title="Home Branch"><i class="bi bi-building"></i> <c:out value="${userBranchCode}" default="--" /></span>
+        <!-- CBS Branch Context: Per Finacle SOL_SWITCH — ADMIN can switch branch -->
+        <c:choose>
+            <c:when test="${pageContext.request.isUserInRole('ROLE_ADMIN') && not empty allBranches}">
+                <form method="post" action="${pageContext.request.contextPath}/admin/switch-branch" class="d-inline" style="margin-right:8px;">
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <select name="branchId" onchange="this.form.submit()" class="form-select form-select-sm d-inline-block"
+                            style="width:auto;background:#1e293b;color:#90caf9;border:1px solid #334155;font-size:12px;padding:2px 24px 2px 8px;">
+                        <c:forEach var="br" items="${allBranches}">
+                            <option value="${br.id}" ${br.branchCode == userBranchCode ? 'selected' : ''}>
+                                <c:out value="${br.branchCode}" /> — <c:out value="${br.branchName}" />
+                            </option>
+                        </c:forEach>
+                    </select>
+                </form>
+            </c:when>
+            <c:otherwise>
+                <span class="fv-branch-code" title="Home Branch"><i class="bi bi-building"></i> <c:out value="${userBranchCode}" default="--" /></span>
+            </c:otherwise>
+        </c:choose>
         <span class="fv-biz-date"><c:out value="${businessDate}" default="--" /></span>
         <span class="fv-user-role"><c:out value="${userRole}" default="USER" /></span>
         <span><c:out value="${pageContext.request.userPrincipal.name}" default="" /></span>
