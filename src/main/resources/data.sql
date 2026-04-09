@@ -175,26 +175,26 @@ VALUES ('DEFAULT', 'DOCUMENTATION_CHARGE', 'Documentation Charge', 'DISBURSEMENT
 -- (verifier and approver MUST be different users per RBI guidelines)
 
 -- Makers (Loan Officers)
-INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'maker1', '{noop}finvanta123', 'Rajiv Menon (Loan Officer)', 'maker1@finvanta.com', 'MAKER', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'maker1', '{noop}finvanta123', 'Rajiv Menon (Loan Officer)', 'maker1@finvanta.com', 'MAKER', true, false, 0, 1, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
-INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'maker2', '{noop}finvanta123', 'Sneha Iyer (Loan Officer)', 'maker2@finvanta.com', 'MAKER', true, false, 0, 2, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'maker2', '{noop}finvanta123', 'Sneha Iyer (Loan Officer)', 'maker2@finvanta.com', 'MAKER', true, false, 0, 2, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Checkers (Verification & Approval Officers)
-INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'checker1', '{noop}finvanta123', 'Amit Deshmukh (Verification Officer)', 'checker1@finvanta.com', 'CHECKER', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'checker1', '{noop}finvanta123', 'Amit Deshmukh (Verification Officer)', 'checker1@finvanta.com', 'CHECKER', true, false, 0, 1, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
-INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'checker2', '{noop}finvanta123', 'Kavita Nair (Approval Officer)', 'checker2@finvanta.com', 'CHECKER', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'checker2', '{noop}finvanta123', 'Kavita Nair (Approval Officer)', 'checker2@finvanta.com', 'CHECKER', true, false, 0, 1, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
--- Admin (Branch Manager)
-INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'admin', '{noop}finvanta123', 'Vikram Joshi (Branch Manager)', 'admin@finvanta.com', 'ADMIN', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+-- Admin (Branch Manager) — MFA enabled per RBI IT Governance Direction 2023
+INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'admin', '{noop}finvanta123', 'Vikram Joshi (Branch Manager)', 'admin@finvanta.com', 'ADMIN', true, false, 0, 1, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Auditor (Internal Audit)
-INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_at, created_by)
-VALUES ('DEFAULT', 'auditor1', '{noop}finvanta123', 'Meera Kulkarni (Internal Auditor)', 'auditor@finvanta.com', 'AUDITOR', true, false, 0, 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'auditor1', '{noop}finvanta123', 'Meera Kulkarni (Internal Auditor)', 'auditor@finvanta.com', 'AUDITOR', true, false, 0, 1, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Transaction Limits (CBS Internal Controls -- per-role amount limits)
 -- Per RBI guidelines: every financial transaction must be validated against configured limits
