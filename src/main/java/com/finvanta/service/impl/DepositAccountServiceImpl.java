@@ -86,7 +86,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     private final AuditService auditService;
     private final ApprovalWorkflowService workflowService;
     private final BranchAccessValidator branchAccessValidator;
-    private final com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository;
+    private final DailyBalanceSnapshotRepository balanceSnapshotRepository;
 
     public DepositAccountServiceImpl(
             DepositAccountRepository accountRepository,
@@ -100,7 +100,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             AuditService auditService,
             ApprovalWorkflowService workflowService,
             BranchAccessValidator branchAccessValidator,
-            com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository) {
+            DailyBalanceSnapshotRepository balanceSnapshotRepository) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
@@ -227,7 +227,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         } catch (IllegalArgumentException | NullPointerException e) {
             throw new BusinessException("INVALID_ACCOUNT_TYPE",
                     "Invalid account type: " + accountType + ". Valid types: "
-                            + java.util.Arrays.toString(DepositAccountType.values()));
+                            + Arrays.toString(DepositAccountType.values()));
         }
 
         // CBS Phase 2: Product-driven rate and minimum balance per Finacle PDDEF.
