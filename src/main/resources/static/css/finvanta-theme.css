@@ -99,6 +99,11 @@ body {
 }
 .fv-topbar .fv-page-title { font-size: 14px; font-weight: 500; margin: 0; }
 .fv-topbar .fv-topbar-right { display: flex; align-items: center; gap: 14px; font-size: 12px; }
+.fv-topbar .fv-branch-code {
+    background: rgba(76,175,80,0.2); color: #a5d6a7;
+    padding: 2px 8px; border-radius: 3px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+}
 .fv-topbar .fv-biz-date {
     background: rgba(255,255,255,0.12);
     padding: 3px 10px; border-radius: 3px;

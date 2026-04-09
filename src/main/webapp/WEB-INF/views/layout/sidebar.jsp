@@ -86,10 +86,11 @@
     </ul>
 </nav>
 
-<!-- Top Navbar -->
+<!-- Top Navbar — Per Finacle/Temenos: always shows branch context + business date -->
 <div class="fv-topbar">
     <h2 class="fv-page-title"><c:out value="${pageTitle}" default="Dashboard" /></h2>
     <div class="fv-topbar-right">
+        <span class="fv-branch-code" title="Home Branch"><i class="bi bi-building"></i> <c:out value="${userBranchCode}" default="--" /></span>
         <span class="fv-biz-date"><c:out value="${businessDate}" default="--" /></span>
         <span class="fv-user-role"><c:out value="${userRole}" default="USER" /></span>
         <span><c:out value="${pageContext.request.userPrincipal.name}" default="" /></span>
