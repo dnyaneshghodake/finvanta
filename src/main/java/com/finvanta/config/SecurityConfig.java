@@ -6,6 +6,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
  * CBS Security Configuration — Role-Based Access Control per Finacle/Temenos standards.
@@ -179,6 +180,12 @@ public class SecurityConfig {
                             .anyRequest()
                             .authenticated();
                 })
+                // CBS MFA: Register MfaVerificationFilter INSIDE the Spring Security filter chain.
+                // Must run AFTER UsernamePasswordAuthenticationFilter so that the session
+                // and authentication context are available when the filter checks MFA_VERIFIED.
+                // This filter blocks access to all pages except /mfa/verify and /logout
+                // while MFA verification is pending (MFA_VERIFIED=false in session).
+                .addFilterAfter(new MfaVerificationFilter(), UsernamePasswordAuthenticationFilter.class)
                 .formLogin(form -> form.loginPage("/login")
                         .loginProcessingUrl("/login")
                         .successHandler(mfaSuccessHandler)

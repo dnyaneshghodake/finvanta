@@ -8,11 +8,6 @@ import jakarta.servlet.http.HttpSession;
 
 import java.io.IOException;
 
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
@@ -27,12 +22,15 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *   /logout      — Allow user to log out if they can't complete MFA
  *   /css/**, /js/**, /fonts/**, /img/**  — Static resources for the verification page
  *   /error/**    — Error pages
+ *   /login       — Login page itself
  *
  * Per Finacle/Temenos: the session is NOT fully authorized until both factors are verified.
  * This is defense-in-depth — even if a URL is guessed, the filter blocks access.
+ *
+ * IMPORTANT: This filter is NOT a @Component. It is registered explicitly in
+ * SecurityConfig via http.addFilterAfter(UsernamePasswordAuthenticationFilter.class)
+ * to ensure it runs INSIDE the Spring Security filter chain, AFTER authentication.
  */
-@Component
-@Order(Ordered.HIGHEST_PRECEDENCE + 100)
 public class MfaVerificationFilter extends OncePerRequestFilter {
 
     @Override
@@ -62,6 +60,7 @@ public class MfaVerificationFilter extends OncePerRequestFilter {
 
         if (path.startsWith("/mfa/verify")
                 || path.startsWith("/logout")
+                || path.startsWith("/login")
                 || path.startsWith("/css/")
                 || path.startsWith("/js/")
                 || path.startsWith("/fonts/")
