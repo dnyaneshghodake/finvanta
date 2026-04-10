@@ -106,6 +106,15 @@
             <version>3.5.3</version>
         </dependency>
 
+        <!-- Spring Boot Actuator — health checks for Tomcat/Docker/K8s deployment.
+             Per CBS Tier-1: production containers must expose health endpoints
+             for orchestration liveness/readiness probes. Only /health and /info
+             are exposed in prod (configured in application-prod.properties). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -198,6 +198,18 @@ public class AppUser extends BaseEntity {
     @Column(name = "mfa_enrolled_date")
     private LocalDate mfaEnrolledDate;
 
+    /**
+     * Last successfully verified TOTP time step.
+     * Per RFC 6238 §5.2: implementations SHOULD track the last successful time step
+     * and reject any code for a step <= the last verified step. This prevents replay
+     * attacks where an intercepted TOTP code is reused within the ±1 tolerance window.
+     *
+     * Stored as the raw time step value (System.currentTimeMillis() / 1000 / 30).
+     * Null = no prior verification (first login after enrollment).
+     */
+    @Column(name = "last_totp_time_step")
+    private Long lastTotpTimeStep;
+
     /** Returns true if MFA is required but not yet enrolled */
     public boolean isMfaEnrollmentRequired() {
         return mfaEnabled && (mfaSecret == null || mfaSecret.isBlank());

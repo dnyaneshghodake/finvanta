@@ -55,7 +55,9 @@ public class SecurityConfig {
                                     "/css/**",
                                     "/js/**",
                                     "/fonts/**",
-                                    "/img/**")
+                                    "/img/**",
+                                    "/actuator/health",
+                                    "/actuator/info")
                             .permitAll();
                     // CBS SECURITY: H2 console ONLY accessible in dev profile.
                     // In production, this matcher is not registered — /h2-console/**

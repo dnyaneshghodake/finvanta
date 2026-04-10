@@ -173,7 +173,11 @@ public class MfaService {
         return true;
     }
 
-    /** Verify TOTP code for an already-enrolled user (called during login). */
+    /**
+     * Verify TOTP code for an already-enrolled user (called during login).
+     * Per RFC 6238 §5.2: tracks last verified time step to prevent replay attacks.
+     */
+    @Transactional
     public boolean verifyLoginTotp(String username, String totpCode) {
         String tenantId = TenantContext.getCurrentTenant();
         AppUser user = userRepository.findByTenantIdAndUsername(tenantId, username)
@@ -183,7 +187,20 @@ public class MfaService {
             return true;
         }
 
-        return verifyTotp(user.getMfaSecret(), totpCode);
+        // CBS: Verify TOTP with replay protection per RFC 6238 §5.2.
+        // Returns the matched time step, or -1 if verification failed.
+        long matchedStep = verifyTotpWithReplayProtection(
+                user.getMfaSecret(), totpCode, user.getLastTotpTimeStep());
+
+        if (matchedStep < 0) {
+            return false;
+        }
+
+        // Record the successful time step to prevent replay of the same code
+        user.setLastTotpTimeStep(matchedStep);
+        user.setUpdatedBy("SYSTEM_AUTH");
+        userRepository.save(user);
+        return true;
     }
 
     /** Disable MFA for a user. Per RBI: ADMIN users cannot have MFA disabled. */
@@ -222,9 +239,25 @@ public class MfaService {
 
     // === TOTP Algorithm per RFC 6238 / RFC 4226 ===
 
+    /**
+     * Verify TOTP without replay protection (used for enrollment verification only).
+     * Enrollment is a one-time operation — replay protection is not needed.
+     */
     private boolean verifyTotp(String base32Secret, String code) {
+        return verifyTotpWithReplayProtection(base32Secret, code, null) >= 0;
+    }
+
+    /**
+     * Verify TOTP with replay protection per RFC 6238 §5.2.
+     *
+     * @param base32Secret The TOTP secret (Base32-encoded)
+     * @param code         The 6-digit code to verify
+     * @param lastStep     The last successfully verified time step (null = no prior verification)
+     * @return The matched time step (>= 0) if valid, or -1 if invalid/replayed
+     */
+    private long verifyTotpWithReplayProtection(String base32Secret, String code, Long lastStep) {
         if (code == null || code.length() != OTP_DIGITS) {
-            return false;
+            return -1;
         }
         try {
             int providedCode = Integer.parseInt(code);
@@ -232,17 +265,26 @@ public class MfaService {
             long currentTimeStep = System.currentTimeMillis() / 1000 / TIME_STEP_SECONDS;
 
             for (int i = -TOLERANCE_STEPS; i <= TOLERANCE_STEPS; i++) {
-                int expectedCode = generateTotp(secretBytes, currentTimeStep + i);
+                long candidateStep = currentTimeStep + i;
+
+                // RFC 6238 §5.2: Reject codes for time steps <= the last verified step.
+                // This prevents an intercepted code from being replayed within the
+                // ±1 tolerance window (90-second total window).
+                if (lastStep != null && candidateStep <= lastStep) {
+                    continue; // Skip already-used time steps
+                }
+
+                int expectedCode = generateTotp(secretBytes, candidateStep);
                 if (expectedCode == providedCode) {
-                    return true;
+                    return candidateStep; // Return the matched step for recording
                 }
             }
-            return false;
+            return -1;
         } catch (NumberFormatException e) {
-            return false;
+            return -1;
         } catch (Exception e) {
             log.error("TOTP verification error: {}", e.getMessage());
-            return false;
+            return -1;
         }
     }
 
