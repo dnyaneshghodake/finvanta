@@ -222,19 +222,21 @@
 <h5 class="mt-4">Recent Transactions</h5>
 <div class="table-responsive">
 <table class="table fv-table fv-datatable table-sm">
-<thead><tr><th>Date</th><th>Type</th><th>Channel</th><th>Narration</th><th class="text-end">Amount</th><th class="text-end">Balance</th><th>Voucher</th><th>Status</th>
+<thead><tr><th>Date</th><th>Txn Ref</th><th>Type</th><th>Channel</th><th>Narration</th><th class="text-end">Amount</th><th class="text-end">Balance</th><th>Voucher</th><th>Journal</th><th>Status</th>
 <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}"><th>Action</th></c:if>
 </tr></thead>
 <tbody>
 <c:forEach var="t" items="${transactions}">
 <tr class="${t.reversed ? 'table-secondary text-decoration-line-through' : ''}">
     <td><c:out value="${t.postingDate}"/></td>
+    <td><small class="font-monospace"><c:out value="${t.transactionRef}"/></small></td>
     <td><c:out value="${t.transactionType}"/></td>
     <td><c:out value="${t.channel}"/></td>
     <td><c:out value="${t.narration}"/></td>
     <td class="text-end ${t.debitCredit == 'DEBIT' ? 'text-danger' : 'text-success'}"><fmt:formatNumber value="${t.amount}" type="currency" currencyCode="INR"/></td>
     <td class="text-end"><fmt:formatNumber value="${t.balanceAfter}" type="currency" currencyCode="INR"/></td>
     <td><small class="font-monospace"><c:out value="${t.voucherNumber}"/></small></td>
+    <td><small class="font-monospace"><c:out value="${t.journalEntryId}" default="--"/></small></td>
     <td><c:choose>
         <c:when test="${t.reversed}"><span class="fv-badge fv-badge-npa">REVERSED</span></c:when>
         <c:when test="${t.transactionType == 'REVERSAL'}"><span class="fv-badge fv-badge-pending">REVERSAL</span></c:when>
@@ -255,7 +257,7 @@
     </c:if>
 </tr>
 </c:forEach>
-<c:if test="${empty transactions}"><tr><td colspan="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN') ? 9 : 8}" class="text-center text-muted">No transactions</td></tr></c:if>
+<c:if test="${empty transactions}"><tr><td colspan="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN') ? 11 : 10}" class="text-center text-muted">No transactions</td></tr></c:if>
 </tbody></table>
 </div>
 </div>
