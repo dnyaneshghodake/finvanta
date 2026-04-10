@@ -93,7 +93,7 @@ public class MfaSecretEncryptor implements AttributeConverter<String, String> {
      */
     @PostConstruct
     void validateEncryptionKey() {
-        boolean isDevOrTest = environment.matchesProfiles("dev", "test");
+        boolean isDevOrTest = environment.matchesProfiles("dev", "test", "sqlserver");
         if (DEV_DEFAULT_KEY.equals(hexKey)) {
             if (isDevOrTest) {
                 log.warn("CBS SECURITY: MFA encryption using DEFAULT DEV KEY. "
