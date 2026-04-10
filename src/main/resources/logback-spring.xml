@@ -68,18 +68,22 @@
     </springProfile>
 
     <!-- ================================================================== -->
-    <!-- SQL SERVER Profile: Console + File logging                          -->
-    <!-- Per CBS standards: local SQL Server development needs both console  -->
-    <!-- output for debugging AND file output for post-mortem analysis.      -->
-    <!-- Log files: logs/finvanta-cbs-app.log, logs/finvanta-cbs-error.log  -->
+    <!-- SQL SERVER Profile: Tier-1 CBS logging with console for dev         -->
+    <!-- Mirrors prod structure (dedicated channels, structured format) but   -->
+    <!-- adds console output for developer convenience during local testing.  -->
+    <!-- Console: CBS app logs only (INFO+). SQL queries suppressed.          -->
+    <!-- Files: APP, ERROR, AUDIT, TRANSACTION, EOD, SECURITY channels.      -->
     <!-- ================================================================== -->
     <springProfile name="sqlserver">
+
+        <!-- Console: CBS application logs only (no SQL queries, no framework noise) -->
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
             <encoder>
                 <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) [%X{tenantId:-SYS}/%X{branchCode:-}/%X{username:-SYS}] %cyan(%logger{36}) - %msg%n</pattern>
             </encoder>
         </appender>
 
+        <!-- === APPLICATION LOG === -->
         <appender name="APP_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
             <file>${LOG_DIR}/${APP_NAME}-app.log</file>
             <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
@@ -93,6 +97,7 @@
             </encoder>
         </appender>
 
+        <!-- === ERROR LOG (separate for operations monitoring) === -->
         <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
             <file>${LOG_DIR}/${APP_NAME}-error.log</file>
             <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
@@ -109,16 +114,128 @@
             </encoder>
         </appender>
 
+        <!-- === AUDIT LOG (per RBI IT Governance — separate channel for SIEM) === -->
+        <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_DIR}/${APP_NAME}-audit.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_DIR}/archive/${APP_NAME}-audit.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>50MB</maxFileSize>
+                <maxHistory>30</maxHistory>
+                <totalSizeCap>1GB</totalSizeCap>
+            </rollingPolicy>
+            <encoder>
+                <pattern>${FILE_PATTERN}</pattern>
+            </encoder>
+        </appender>
+
+        <!-- === TRANSACTION LOG (financial transaction lifecycle) === -->
+        <appender name="TXN_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_DIR}/${APP_NAME}-transaction.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_DIR}/archive/${APP_NAME}-transaction.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>50MB</maxFileSize>
+                <maxHistory>30</maxHistory>
+                <totalSizeCap>2GB</totalSizeCap>
+            </rollingPolicy>
+            <encoder>
+                <pattern>${FILE_PATTERN}</pattern>
+            </encoder>
+        </appender>
+
+        <!-- === EOD BATCH LOG === -->
+        <appender name="EOD_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_DIR}/${APP_NAME}-eod.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_DIR}/archive/${APP_NAME}-eod.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>50MB</maxFileSize>
+                <maxHistory>30</maxHistory>
+                <totalSizeCap>1GB</totalSizeCap>
+            </rollingPolicy>
+            <encoder>
+                <pattern>${FILE_PATTERN}</pattern>
+            </encoder>
+        </appender>
+
+        <!-- === SECURITY LOG (auth, MFA, lockout, PII encryption events) === -->
+        <appender name="SECURITY_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_DIR}/${APP_NAME}-security.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_DIR}/archive/${APP_NAME}-security.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>50MB</maxFileSize>
+                <maxHistory>30</maxHistory>
+                <totalSizeCap>500MB</totalSizeCap>
+            </rollingPolicy>
+            <encoder>
+                <pattern>${FILE_PATTERN}</pattern>
+            </encoder>
+        </appender>
+
+        <!-- === Logger → Appender Routing (mirrors prod structure) === -->
+
+        <!-- Audit: AuditService → dedicated audit log + app file (not console) -->
+        <logger name="com.finvanta.audit" level="INFO" additivity="false">
+            <appender-ref ref="AUDIT_FILE" />
+            <appender-ref ref="APP_FILE" />
+        </logger>
+
+        <!-- Transaction Engine → dedicated transaction log + app file -->
+        <logger name="com.finvanta.transaction" level="INFO" additivity="false">
+            <appender-ref ref="TXN_FILE" />
+            <appender-ref ref="APP_FILE" />
+        </logger>
+
+        <!-- Accounting: GL postings → transaction log + app file -->
+        <logger name="com.finvanta.accounting" level="INFO" additivity="false">
+            <appender-ref ref="TXN_FILE" />
+            <appender-ref ref="APP_FILE" />
+        </logger>
+
+        <!-- EOD Batch → dedicated EOD log + app file -->
+        <logger name="com.finvanta.batch" level="INFO" additivity="false">
+            <appender-ref ref="EOD_FILE" />
+            <appender-ref ref="APP_FILE" />
+        </logger>
+
+        <!-- Security: auth, MFA, PII encryption → dedicated security log + app file -->
+        <logger name="com.finvanta.config.CustomUserDetailsService" level="INFO" additivity="false">
+            <appender-ref ref="SECURITY_FILE" />
+            <appender-ref ref="APP_FILE" />
+        </logger>
+        <logger name="com.finvanta.service.MfaService" level="INFO" additivity="false">
+            <appender-ref ref="SECURITY_FILE" />
+            <appender-ref ref="APP_FILE" />
+        </logger>
+        <logger name="com.finvanta.config.MfaSecretEncryptor" level="INFO" additivity="false">
+            <appender-ref ref="SECURITY_FILE" />
+            <appender-ref ref="APP_FILE" />
+        </logger>
+        <logger name="com.finvanta.config.CbsAuthenticationEventListener" level="INFO" additivity="false">
+            <appender-ref ref="SECURITY_FILE" />
+            <appender-ref ref="APP_FILE" />
+        </logger>
+        <logger name="com.finvanta.config.PiiEncryptionConverter" level="INFO" additivity="false">
+            <appender-ref ref="SECURITY_FILE" />
+            <appender-ref ref="APP_FILE" />
+        </logger>
+
+        <!-- CBS app logs → console + app file -->
+        <logger name="com.finvanta" level="INFO" />
+
+        <!-- Root: console + app file + error file -->
         <root level="INFO">
             <appender-ref ref="CONSOLE" />
             <appender-ref ref="APP_FILE" />
             <appender-ref ref="ERROR_FILE" />
         </root>
 
-        <logger name="com.finvanta" level="DEBUG" />
-        <logger name="org.hibernate.SQL" level="DEBUG" />
+        <!-- Suppress noisy frameworks from console AND files -->
+        <logger name="org.hibernate" level="WARN" />
+        <logger name="org.hibernate.SQL" level="WARN" />
+        <logger name="org.springframework" level="WARN" />
         <logger name="org.springframework.security" level="WARN" />
+        <logger name="org.apache" level="WARN" />
         <logger name="org.apache.tomcat" level="WARN" />
+        <logger name="com.zaxxer.hikari" level="WARN" />
     </springProfile>
 
     <!-- ================================================================== -->
