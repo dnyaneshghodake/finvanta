@@ -77,9 +77,31 @@ public final class ReferenceGenerator {
         return "COL" + timestamp() + nextSequence();
     }
 
-    /** Generates deposit account number per CBS CASA convention: SB/CA + branchCode + timestamp + seq */
+    /**
+     * Generates deposit account number per Finacle CUSTACCT / Temenos ACCOUNT convention.
+     *
+     * Format: {TYPE_PREFIX}-{BRANCH_CODE}-{SERIAL_6}
+     *   SB-HQ001-000001  (Savings Bank)
+     *   CA-DEL001-000001  (Current Account)
+     *
+     * Per Finacle: account numbers are short and sequential for teller usability.
+     * The type prefix distinguishes Savings (SB) from Current (CA) per RBI norms.
+     *
+     * @param branchCode Branch SOL code (e.g., "HQ001")
+     * @param isSavings  true for Savings accounts, false for Current accounts
+     */
+    public static String generateDepositAccountNumber(String branchCode, boolean isSavings) {
+        String prefix = isSavings ? "SB" : "CA";
+        return prefix + "-" + branchCode + "-" + String.format("%06d", SEQUENCE.incrementAndGet());
+    }
+
+    /**
+     * @deprecated Use {@link #generateDepositAccountNumber(String, boolean)} with account type.
+     * Kept for backward compatibility. Defaults to SB (Savings) prefix.
+     */
+    @Deprecated(forRemoval = true)
     public static String generateDepositAccountNumber(String branchCode) {
-        return "DEP" + branchCode + timestamp() + nextSequence();
+        return generateDepositAccountNumber(branchCode, true);
     }
 
     private static String timestamp() {

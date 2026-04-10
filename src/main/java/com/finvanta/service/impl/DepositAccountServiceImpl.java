@@ -263,7 +263,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                     minimumBalance);
         }
 
-        String accNo = ReferenceGenerator.generateDepositAccountNumber(branch.getBranchCode());
+        String accNo = ReferenceGenerator.generateDepositAccountNumber(
+                branch.getBranchCode(), parsedAccountType.isSavings());
         DepositAccount a = new DepositAccount();
         a.setTenantId(tid);
         a.setAccountNumber(accNo);
@@ -799,8 +800,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // the business date (not calendar date) from their date of birth.
         BigDecimal tdsThreshold = TDS_THRESHOLD_REGULAR;
         if (acct.getCustomer() != null && acct.getCustomer().getDateOfBirth() != null) {
-            long age = java.time.temporal.ChronoUnit.YEARS.between(
-                    acct.getCustomer().getDateOfBirth(), bd);
+            long age = ChronoUnit.YEARS.between(acct.getCustomer().getDateOfBirth(), bd);
             if (age >= SENIOR_CITIZEN_AGE) {
                 tdsThreshold = TDS_THRESHOLD_SENIOR;
             }
