@@ -128,9 +128,10 @@ public class MfaLoginController {
                     username, MAX_MFA_ATTEMPTS);
             SecurityContextHolder.clearContext();
             session.invalidate();
-            redirectAttributes.addFlashAttribute("error",
-                    "Too many failed TOTP attempts. Your session has been terminated for security. Please login again.");
-            return "redirect:/login";
+            // CBS: Use query parameter instead of flash attribute because session.invalidate()
+            // destroys the session — flash attributes are stored in the session via FlashMap
+            // and would be lost. The login page must check for ?mfa_locked parameter.
+            return "redirect:/login?mfa_locked";
         }
 
         int remaining = MAX_MFA_ATTEMPTS - attempts;

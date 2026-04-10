@@ -26,6 +26,9 @@
         <c:if test="${param.timeout != null}">
             <div class="fv-alert alert alert-warning" role="alert"><i class="bi bi-clock-history"></i> Your session has expired due to inactivity. Please login again to continue.</div>
         </c:if>
+        <c:if test="${param.mfa_locked != null}">
+            <div class="fv-alert alert alert-danger" role="alert"><i class="bi bi-shield-exclamation"></i> Too many failed TOTP attempts. Your session has been terminated for security. Please login again.</div>
+        </c:if>
         <c:if test="${param.logout != null}">
             <div class="fv-alert alert alert-success" role="alert">You have been logged out successfully.</div>
         </c:if>

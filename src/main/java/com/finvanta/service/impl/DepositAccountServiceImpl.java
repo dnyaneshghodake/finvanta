@@ -745,6 +745,20 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                     acn, snapshotDays, actualDaysInQuarter,
                     String.format("%.1f", snapshotDays * 100.0 / actualDaysInQuarter));
         }
+        // CBS CRITICAL: If min-balance recalculation reduced interest to zero (e.g., customer
+        // withdrew entire balance on quarter-end day → minBalance=0 → recalculated=0),
+        // skip the GL posting entirely. A zero-amount GL entry creates phantom transactions
+        // in the ledger, corrupts the voucher register, and the TransactionEngine may reject
+        // zero amounts. Per Finacle: zero-interest quarters are valid — just clear accrued
+        // and update lastInterestCreditDate without posting.
+        if (interest.signum() <= 0) {
+            acct.setAccruedInterest(BigDecimal.ZERO);
+            acct.setLastInterestCreditDate(bd);
+            accountRepository.save(acct);
+            log.info("Zero interest after min-balance adjustment for {} on {} — no GL posting", acn, bd);
+            return null;
+        }
+
         String gl = glForAccount(acct);
         TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("DEPOSIT")

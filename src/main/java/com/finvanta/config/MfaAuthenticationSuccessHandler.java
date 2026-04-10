@@ -54,8 +54,9 @@ public class MfaAuthenticationSuccessHandler extends SavedRequestAwareAuthentica
             // CBS: Check MFA requirement first (MFA gate runs before password expiry redirect)
             if (userDetails.isMfaRequired()) {
                 request.getSession().setAttribute(MFA_VERIFIED_ATTR, false);
-                getRedirectStrategy().sendRedirect(request, response,
-                        request.getContextPath() + "/mfa/verify");
+                // CBS: Do NOT prepend request.getContextPath() — DefaultRedirectStrategy
+                // already prepends it. Double-prepending causes /ctx/ctx/mfa/verify → 404.
+                getRedirectStrategy().sendRedirect(request, response, "/mfa/verify");
                 return;
             }
 
@@ -68,7 +69,7 @@ public class MfaAuthenticationSuccessHandler extends SavedRequestAwareAuthentica
             if (userDetails.isPasswordExpired()) {
                 request.getSession().setAttribute(MFA_VERIFIED_ATTR, true);
                 getRedirectStrategy().sendRedirect(request, response,
-                        request.getContextPath() + "/password/change?expired=true");
+                        "/password/change?expired=true");
                 return;
             }
         }
