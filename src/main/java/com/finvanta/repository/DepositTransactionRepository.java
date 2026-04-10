@@ -52,6 +52,12 @@ public interface DepositTransactionRepository extends JpaRepository<DepositTrans
     /** Idempotency check */
     Optional<DepositTransaction> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
 
+    /** CBS Transaction 360: lookup by voucher number (VCH/...) */
+    Optional<DepositTransaction> findByTenantIdAndVoucherNumber(String tenantId, String voucherNumber);
+
+    /** CBS Transaction 360: lookup by journal entry ID */
+    Optional<DepositTransaction> findByTenantIdAndJournalEntryId(String tenantId, Long journalEntryId);
+
     /** All deposit transactions for a business date (for voucher register / daily report) */
     @Query("SELECT dt FROM DepositTransaction dt WHERE dt.tenantId = :tenantId "
             + "AND dt.valueDate = :date ORDER BY dt.postingDate ASC")
