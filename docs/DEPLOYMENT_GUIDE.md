@@ -121,26 +121,42 @@ Database credentials are encrypted with AES-256-GCM. The encryption key is store
 ### 5.2 Generate Encryption Key
 
 ```cmd
-java -cp target\finvanta-0.0.1-SNAPSHOT.war org.springframework.boot.loader.launch.WarLauncher --spring.main.web-application-type=none com.finvanta.config.CbsPropertyDecryptor genkey
+mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="genkey"
 ```
 
-Save the 64-character hex key output.
+Output:
+
+```
+Generated key: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
+Set as: export FINVANTA_DB_ENCRYPTION_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
+```
+
+Save the 64-character hex key. Use the SAME key for all subsequent steps.
 
 ### 5.3 Encrypt Username
 
+Replace `YOUR_KEY` with the key from Step 5.2:
+
 ```cmd
-java -cp target\finvanta-0.0.1-SNAPSHOT.war org.springframework.boot.loader.launch.WarLauncher --spring.main.web-application-type=none com.finvanta.config.CbsPropertyDecryptor encrypt YOUR_KEY sa
+mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="encrypt YOUR_KEY sa"
 ```
 
-Copy the `ENC(...)` output.
+Output:
+
+```
+Encrypted: ENC(base64-ciphertext-here)
+Paste this into your properties file.
+```
+
+Copy the entire `ENC(...)` value including the wrapper.
 
 ### 5.4 Encrypt Password
 
 ```cmd
-java -cp target\finvanta-0.0.1-SNAPSHOT.war org.springframework.boot.loader.launch.WarLauncher --spring.main.web-application-type=none com.finvanta.config.CbsPropertyDecryptor encrypt YOUR_KEY "sqlserver#123"
+mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="encrypt YOUR_KEY sqlserver#123"
 ```
 
-Copy the `ENC(...)` output.
+Copy the entire `ENC(...)` output.
 
 ### 5.5 Update Properties
 
@@ -156,6 +172,24 @@ spring.datasource.password=ENC(your-encrypted-password)
 ```cmd
 mvn clean package -DskipTests
 ```
+
+### 5.7 Verify Decryption (Optional)
+
+To confirm an encrypted value decrypts correctly:
+
+```cmd
+mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="decrypt YOUR_KEY base64-ciphertext-without-ENC-wrapper"
+```
+
+Note: For decrypt, paste only the Base64 part — without `ENC(` and `)`.
+
+### 5.8 Quick Reference
+
+| Action | Command |
+|--------|---------|
+| Generate key | `mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="genkey"` |
+| Encrypt value | `mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="encrypt KEY VALUE"` |
+| Decrypt value | `mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="decrypt KEY CIPHERTEXT"` |
 
 ---
 

@@ -199,6 +199,17 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
+            <!-- CBS Credential Encryption CLI — runs CbsPropertyDecryptor without Spring Boot.
+                 Usage:
+                   mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="genkey"
+                   mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="encrypt KEY VALUE"
+                   mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="decrypt KEY CIPHERTEXT"
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
