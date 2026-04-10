@@ -43,7 +43,7 @@
     <!-- ================================================================== -->
     <!-- DEV Profile: Console with colors                                    -->
     <!-- ================================================================== -->
-    <springProfile name="dev">
+    <springProfile name="dev | sqlserver">
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
             <encoder>
                 <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) [%X{tenantId:-SYS}/%X{branchCode:-}/%X{username:-SYS}] %cyan(%logger{36}) - %msg%n</pattern>
