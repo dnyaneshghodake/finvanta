@@ -211,25 +211,25 @@ VALUES ('DEFAULT', 'DOCUMENTATION_CHARGE', 'Documentation Charge', 'DISBURSEMENT
 
 -- Makers (Loan Officers)
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
-VALUES ('DEFAULT', 'maker1', '{noop}finvanta123', 'Rajiv Menon (Loan Officer)', 'maker1@finvanta.com', 'MAKER', true, false, 0, 1, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'maker1', '{noop}finvanta123', 'Rajiv Menon (Loan Officer)', 'maker1@finvanta.com', 'MAKER', 1, 0, 0, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
-VALUES ('DEFAULT', 'maker2', '{noop}finvanta123', 'Sneha Iyer (Loan Officer)', 'maker2@finvanta.com', 'MAKER', true, false, 0, 2, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'maker2', '{noop}finvanta123', 'Sneha Iyer (Loan Officer)', 'maker2@finvanta.com', 'MAKER', 1, 0, 0, 2, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Checkers (Verification & Approval Officers)
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
-VALUES ('DEFAULT', 'checker1', '{noop}finvanta123', 'Amit Deshmukh (Verification Officer)', 'checker1@finvanta.com', 'CHECKER', true, false, 0, 1, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'checker1', '{noop}finvanta123', 'Amit Deshmukh (Verification Officer)', 'checker1@finvanta.com', 'CHECKER', 1, 0, 0, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
-VALUES ('DEFAULT', 'checker2', '{noop}finvanta123', 'Kavita Nair (Approval Officer)', 'checker2@finvanta.com', 'CHECKER', true, false, 0, 1, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'checker2', '{noop}finvanta123', 'Kavita Nair (Approval Officer)', 'checker2@finvanta.com', 'CHECKER', 1, 0, 0, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Admin (Branch Manager) — MFA required per RBI IT Governance Direction 2023 (enrollment pending: no MFA endpoints yet)
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
-VALUES ('DEFAULT', 'admin', '{noop}finvanta123', 'Vikram Joshi (Branch Manager)', 'admin@finvanta.com', 'ADMIN', true, false, 0, 1, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'admin', '{noop}finvanta123', 'Vikram Joshi (Branch Manager)', 'admin@finvanta.com', 'ADMIN', 1, 0, 0, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Auditor (Internal Audit)
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
-VALUES ('DEFAULT', 'auditor1', '{noop}finvanta123', 'Meera Kulkarni (Internal Auditor)', 'auditor@finvanta.com', 'AUDITOR', true, false, 0, 1, false, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'auditor1', '{noop}finvanta123', 'Meera Kulkarni (Internal Auditor)', 'auditor@finvanta.com', 'AUDITOR', 1, 0, 0, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Transaction Limits (CBS Internal Controls -- per-role amount limits)
 -- Per RBI guidelines: every financial transaction must be validated against configured limits
@@ -237,16 +237,16 @@ VALUES ('DEFAULT', 'auditor1', '{noop}finvanta123', 'Meera Kulkarni (Internal Au
 -- CHECKER: INR 50L per transaction, INR 2Cr daily aggregate
 -- ADMIN: INR 5Cr per transaction, INR 20Cr daily aggregate
 INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
-VALUES ('DEFAULT', 'MAKER', 'ALL', 1000000.00, 5000000.00, true, 'Maker default limit: INR 10L per txn, INR 50L daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'MAKER', 'ALL', 1000000.00, 5000000.00, 1, 'Maker default limit: INR 10L per txn, INR 50L daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
-VALUES ('DEFAULT', 'CHECKER', 'ALL', 5000000.00, 20000000.00, true, 'Checker default limit: INR 50L per txn, INR 2Cr daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'CHECKER', 'ALL', 5000000.00, 20000000.00, 1, 'Checker default limit: INR 50L per txn, INR 2Cr daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
-VALUES ('DEFAULT', 'ADMIN', 'ALL', 50000000.00, 200000000.00, true, 'Admin default limit: INR 5Cr per txn, INR 20Cr daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'ADMIN', 'ALL', 50000000.00, 200000000.00, 1, 'Admin default limit: INR 5Cr per txn, INR 20Cr daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
-VALUES ('DEFAULT', 'MAKER', 'WRITE_OFF', 0.00, 0.00, true, 'Makers cannot perform write-offs (enforced via limit=0)', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'MAKER', 'WRITE_OFF', 0.00, 0.00, 1, 'Makers cannot perform write-offs (enforced via limit=0)', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- ============================================================
 -- E2E TEST SCENARIO SEED DATA
@@ -277,7 +277,7 @@ VALUES ('DEFAULT', 'MAKER', 'WRITE_OFF', 0.00, 0.00, true, 'Makers cannot perfor
 -- Per Finacle DAYCTRL: all operational branches must have DAY_OPEN for EOD to run.
 UPDATE business_calendar
 SET day_status = 'DAY_OPEN', day_opened_by = 'SYSTEM', day_opened_at = CURRENT_TIMESTAMP
-WHERE tenant_id = 'DEFAULT' AND business_date = '2026-04-01' AND is_holiday = false;
+WHERE tenant_id = 'DEFAULT' AND business_date = '2026-04-01' AND is_holiday = 0;
 
 -- 2. Default transaction batches for April 1 — one per branch (required by TransactionEngine Step 5.5)
 -- Per Finacle BATCH_MASTER / BusinessDateService.openDay(): when a day is opened,
@@ -330,7 +330,7 @@ VALUES ('DEFAULT', 'SB-HQ001-000001', 1, 1,
     0.00, 5000.00, 4.0000, 0.00,
     0.00, 0.00,
     '2026-04-01', '2026-04-01',
-    false, false,
+    0, 0,
     0, CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM');
 
 -- CUST002 (Priya Patel) — Savings at DEL001
@@ -348,7 +348,7 @@ VALUES ('DEFAULT', 'SB-DEL001-000001', 2, 2,
     0.00, 5000.00, 4.0000, 0.00,
     0.00, 0.00,
     '2026-04-01', '2026-04-01',
-    false, false,
+    0, 0,
     0, CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM');
 
 -- 4. Loan Application (APPROVED) — ready for account creation + disbursement
