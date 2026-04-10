@@ -47,11 +47,22 @@ public class CbsEncryptedPropertyProcessor implements EnvironmentPostProcessor {
         boolean keyResolved = false;
 
         for (String propName : SENSITIVE_PROPERTIES) {
-            String value = environment.getProperty(propName);
+            String value;
+            try {
+                value = environment.getProperty(propName);
+            } catch (IllegalArgumentException e) {
+                // Property contains unresolvable placeholder (e.g., ${SPRING_DATASOURCE_USERNAME}
+                // from prod profile when env vars aren't set). Skip — not an ENC(...) value.
+                continue;
+            }
             if (value != null && CbsPropertyDecryptor.isEncrypted(value)) {
                 // Lazy-resolve key only when ENC(...) values are found
                 if (!keyResolved) {
-                    encryptionKey = environment.getProperty(KEY_ENV_VAR);
+                    try {
+                        encryptionKey = environment.getProperty(KEY_ENV_VAR);
+                    } catch (IllegalArgumentException e) {
+                        encryptionKey = null;
+                    }
                     if (encryptionKey == null || encryptionKey.isBlank()) {
                         encryptionKey = System.getenv(KEY_ENV_VAR);
                     }
