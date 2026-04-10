@@ -55,7 +55,6 @@ public class TenantFilter implements Filter {
     private static final String MDC_TENANT = "tenantId";
     private static final String MDC_BRANCH = "branchCode";
     private static final String MDC_USER = "username";
-    private static final String MDC_TXN_REF = "txnRef";
 
     /**
      * Populate username and branchCode MDC keys from the HTTP session's SecurityContext.

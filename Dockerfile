@@ -33,6 +33,10 @@ FROM tomcat:10.1-jdk17-temurin-jammy
 # CBS Security: Remove default Tomcat webapps (manager, examples, docs)
 RUN rm -rf /usr/local/tomcat/webapps/*
 
+# Install curl for HEALTHCHECK (not guaranteed in slim base images)
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Deploy WAR as ROOT application
 COPY --from=builder /build/target/*.war /usr/local/tomcat/webapps/ROOT.war
 

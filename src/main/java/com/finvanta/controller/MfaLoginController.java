@@ -84,7 +84,7 @@ public class MfaLoginController {
 
         if (!totpCode.matches("\\d{6}")) {
             redirectAttributes.addFlashAttribute("error",
-                    "TOTP code must be exactly 6 digits (0-9). You entered: " + totpCode.length() + " characters.");
+                    "TOTP code must be exactly 6 digits (0-9).");
             return "redirect:/mfa/verify";
         }
 

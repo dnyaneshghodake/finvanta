@@ -108,8 +108,7 @@ public class MfaSecretEncryptor implements AttributeConverter<String, String> {
                                 + "Set mfa.encryption.key via environment variable or secrets manager.");
             }
         } else {
-            log.info("CBS SECURITY: MFA encryption key configured (non-default). Key length: {} hex chars.",
-                    hexKey.length());
+            log.info("CBS SECURITY: MFA encryption key configured (non-default).");
         }
     }
 
