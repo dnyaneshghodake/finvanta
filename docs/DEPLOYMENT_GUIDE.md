@@ -148,28 +148,34 @@ Save the 64-character hex key. Use the SAME key for all subsequent steps.
 
 **To set the key immediately (choose one based on your terminal):**
 
-PowerShell:
+**⚠️ PowerShell and Command Prompt use DIFFERENT syntax:**
+
+PowerShell (uses `$env:`):
 ```powershell
 $env:FINVANTA_DB_ENCRYPTION_KEY = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1"
 ```
 
-Command Prompt:
+Command Prompt (uses `set`):
 ```cmd
 set FINVANTA_DB_ENCRYPTION_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
 ```
 
+**Common mistake:** Using `set` in PowerShell does NOT work. Using `export` in Windows does NOT work. Use the correct syntax for your terminal.
+
 ### 5.3 Encrypt Username
 
-Replace `YOUR_KEY` with the key from Step 5.2:
+**⚠️ IMPORTANT:** Replace the key below with YOUR actual 64-character key from Step 5.2. Do NOT type the literal text `YOUR_KEY`.
+
+**Example:** If Step 5.2 gave you `1a768f83c273c4276ef5310afc1f6e3e5844e0755bbaf7f22a94fb2a52e37214`, then use that exact value.
 
 **PowerShell:**
 ```powershell
-mvn -q compile exec:java "-Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor" "-Dexec.args=encrypt YOUR_KEY sa"
+mvn -q compile exec:java "-Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor" "-Dexec.args=encrypt 1a768f83c273c4276ef5310afc1f6e3e5844e0755bbaf7f22a94fb2a52e37214 sa"
 ```
 
 **Command Prompt:**
 ```cmd
-mvn -q compile exec:java -Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor -Dexec.args="encrypt YOUR_KEY sa"
+mvn -q compile exec:java -Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor -Dexec.args="encrypt 1a768f83c273c4276ef5310afc1f6e3e5844e0755bbaf7f22a94fb2a52e37214 sa"
 ```
 
 Output:
@@ -183,14 +189,16 @@ Copy the entire `ENC(...)` value including the wrapper.
 
 ### 5.4 Encrypt Password
 
+Use the SAME key from Step 5.2:
+
 **PowerShell:**
 ```powershell
-mvn -q compile exec:java "-Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor" "-Dexec.args=encrypt YOUR_KEY sqlserver#123"
+mvn -q compile exec:java "-Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor" "-Dexec.args=encrypt 1a768f83c273c4276ef5310afc1f6e3e5844e0755bbaf7f22a94fb2a52e37214 sqlserver#123"
 ```
 
 **Command Prompt:**
 ```cmd
-mvn -q compile exec:java -Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor -Dexec.args="encrypt YOUR_KEY sqlserver#123"
+mvn -q compile exec:java -Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor -Dexec.args="encrypt 1a768f83c273c4276ef5310afc1f6e3e5844e0755bbaf7f22a94fb2a52e37214 sqlserver#123"
 ```
 
 Copy the entire `ENC(...)` output.
