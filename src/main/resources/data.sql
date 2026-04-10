@@ -1,22 +1,24 @@
 -- ============================================================
--- Finvanta CBS - H2 Seed Data (auto-loaded by Spring Boot)
+-- Finvanta CBS - Seed Data (auto-loaded by Spring Boot)
+-- Compatible with both H2 (dev) and SQL Server (sqlserver/prod).
+-- Uses 1/0 instead of true/false for boolean columns (SQL Server bit type).
 -- ============================================================
 
 -- Tenant (created_at required — data.sql bypasses Hibernate @CreationTimestamp)
 INSERT INTO tenants (tenant_code, tenant_name, license_type, is_active, db_schema, created_at, created_by)
-VALUES ('DEFAULT', 'Finvanta Demo Bank', 'ENTERPRISE', true, 'public', CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'Finvanta Demo Bank', 'ENTERPRISE', 1, 'public', CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Branches (with Tier-1 branch hierarchy per Finacle SOL architecture)
 -- HQ001 = Head Office (branchType=HEAD_OFFICE, is_head_office=true, no parent)
 -- DEL001, BLR001 = Operational branches (branchType=BRANCH, parent=HQ001)
 INSERT INTO branches (tenant_id, branch_code, branch_name, ifsc_code, address, city, state, pin_code, is_active, region, branch_type, is_head_office, zone_code, region_code, version, created_at, created_by)
-VALUES ('DEFAULT', 'HQ001', 'Head Office', 'FNVT0000001', 'Bandra Kurla Complex', 'Mumbai', 'Maharashtra', '400051', true, 'WEST', 'HEAD_OFFICE', true, 'WEST', 'MH', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'HQ001', 'Head Office', 'FNVT0000001', 'Bandra Kurla Complex', 'Mumbai', 'Maharashtra', '400051', 1, 'WEST', 'HEAD_OFFICE', 1, 'WEST', 'MH', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO branches (tenant_id, branch_code, branch_name, ifsc_code, address, city, state, pin_code, is_active, region, branch_type, is_head_office, parent_branch_id, zone_code, region_code, version, created_at, created_by)
-VALUES ('DEFAULT', 'DEL001', 'New Delhi Main', 'FNVT0000002', 'Connaught Place', 'New Delhi', 'Delhi', '110001', true, 'NORTH', 'BRANCH', false, 1, 'NORTH', 'DL', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'DEL001', 'New Delhi Main', 'FNVT0000002', 'Connaught Place', 'New Delhi', 'Delhi', '110001', 1, 'NORTH', 'BRANCH', 0, 1, 'NORTH', 'DL', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 INSERT INTO branches (tenant_id, branch_code, branch_name, ifsc_code, address, city, state, pin_code, is_active, region, branch_type, is_head_office, parent_branch_id, zone_code, region_code, version, created_at, created_by)
-VALUES ('DEFAULT', 'BLR001', 'Bangalore Main', 'FNVT0000003', 'MG Road', 'Bangalore', 'Karnataka', '560001', true, 'SOUTH', 'BRANCH', false, 1, 'SOUTH', 'KA', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+VALUES ('DEFAULT', 'BLR001', 'Bangalore Main', 'FNVT0000003', 'MG Road', 'Bangalore', 'Karnataka', '560001', 1, 'SOUTH', 'BRANCH', 0, 1, 'SOUTH', 'KA', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Business Calendar (April 2026) — BRANCH-SCOPED per Tier-1 CBS
 -- Per Finacle DAYCTRL: each branch has its own calendar entry per date.
