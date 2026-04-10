@@ -29,6 +29,9 @@
         <c:if test="${param.mfa_locked != null}">
             <div class="fv-alert alert alert-danger" role="alert"><i class="bi bi-shield-exclamation"></i> Too many failed TOTP attempts. Your session has been terminated for security. Please login again.</div>
         </c:if>
+        <c:if test="${param.password_changed != null}">
+            <div class="fv-alert alert alert-success" role="alert"><i class="bi bi-check-circle"></i> Password changed successfully. Please login with your new password.</div>
+        </c:if>
         <c:if test="${param.logout != null}">
             <div class="fv-alert alert alert-success" role="alert">You have been logged out successfully.</div>
         </c:if>

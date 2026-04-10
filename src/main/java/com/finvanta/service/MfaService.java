@@ -93,7 +93,13 @@ public class MfaService {
             throw new BusinessException("MFA_NOT_ENABLED",
                     "MFA is not enabled for user: " + username + ". Enable MFA first.");
         }
-        if (user.getMfaSecret() != null && !user.getMfaSecret().isBlank()) {
+        // CBS: Allow re-enrollment if secret exists but verification was never completed
+        // (mfaEnrolledDate is null). This handles the case where TOTP verification failed
+        // after initial enrollment — the admin can retry by clicking "Enroll" again,
+        // which regenerates the secret and shows a new QR code.
+        // Only block re-enrollment if the user has a VERIFIED enrollment (mfaEnrolledDate set).
+        if (user.getMfaSecret() != null && !user.getMfaSecret().isBlank()
+                && user.getMfaEnrolledDate() != null) {
             throw new BusinessException("MFA_ALREADY_ENROLLED",
                     "MFA already enrolled for user: " + username + ". Disable and re-enable to re-enroll.");
         }

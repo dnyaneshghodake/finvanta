@@ -130,6 +130,24 @@ public interface BusinessCalendarRepository extends JpaRepository<BusinessCalend
             @Param("branchId") Long branchId,
             @Param("date") LocalDate date);
 
+    /**
+     * Count business days (non-holiday) in a date range for a specific branch.
+     * Used by interest calculation to compare snapshot coverage against actual
+     * business days (not calendar days which include weekends/holidays).
+     *
+     * Per RBI: EOD only runs on business days, so snapshots only exist for
+     * business days. Comparing snapshot count against calendar days would
+     * always fail the coverage check (~63 snapshots vs ~91 calendar days).
+     */
+    @Query("SELECT COUNT(bc) FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId "
+            + "AND bc.branch.id = :branchId AND bc.businessDate BETWEEN :fromDate AND :toDate "
+            + "AND bc.holiday = false")
+    long countBusinessDaysInPeriod(
+            @Param("tenantId") String tenantId,
+            @Param("branchId") Long branchId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate);
+
     // ================================================================
     // LEGACY TENANT-WIDE QUERIES (backward compatibility — migrate away)
     // ================================================================

@@ -45,11 +45,20 @@ public class CbsLayoutAdvice {
         return code != null ? code : "--";
     }
 
-    /** Current user role for display */
+    /**
+     * Current user role for display.
+     * Uses hasRole() to check all roles including AUDITOR, because
+     * getCurrentUserRole() intentionally excludes AUDITOR from its return
+     * values (to prevent transaction limit bypass). For display purposes,
+     * we need to show the actual role.
+     */
     @ModelAttribute("userRole")
     public String userRole() {
-        String role = SecurityUtil.getCurrentUserRole();
-        return role != null ? role : "USER";
+        if (SecurityUtil.hasRole("ADMIN")) return "ADMIN";
+        if (SecurityUtil.hasRole("CHECKER")) return "CHECKER";
+        if (SecurityUtil.hasRole("MAKER")) return "MAKER";
+        if (SecurityUtil.hasRole("AUDITOR")) return "AUDITOR";
+        return "USER";
     }
 
     /** Current business date formatted for display */

@@ -16,6 +16,7 @@ import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.repository.InterestAccrualRepository;
+import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.DailyBalanceSnapshotRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.service.BusinessDateService;
@@ -88,6 +89,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     private final ApprovalWorkflowService workflowService;
     private final BranchAccessValidator branchAccessValidator;
     private final DailyBalanceSnapshotRepository balanceSnapshotRepository;
+    private final BusinessCalendarRepository calendarRepository;
 
     public DepositAccountServiceImpl(
             DepositAccountRepository accountRepository,
@@ -101,7 +103,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             AuditService auditService,
             ApprovalWorkflowService workflowService,
             BranchAccessValidator branchAccessValidator,
-            DailyBalanceSnapshotRepository balanceSnapshotRepository) {
+            DailyBalanceSnapshotRepository balanceSnapshotRepository,
+            BusinessCalendarRepository calendarRepository) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
@@ -114,6 +117,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         this.workflowService = workflowService;
         this.branchAccessValidator = branchAccessValidator;
         this.balanceSnapshotRepository = balanceSnapshotRepository;
+        this.calendarRepository = calendarRepository;
     }
 
     /**

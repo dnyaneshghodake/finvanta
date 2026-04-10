@@ -165,9 +165,11 @@ public class PasswordController {
             org.springframework.security.core.context.SecurityContextHolder.clearContext();
             request.getSession().invalidate();
 
-            redirectAttributes.addFlashAttribute("success",
-                    "Password changed successfully. Please login with your new password.");
-            return "redirect:/login";
+            // CBS: Use query parameter instead of flash attribute because session.invalidate()
+            // destroys the session — flash attributes are stored in the session via FlashMap
+            // and would be lost. The login page checks for ?password_changed parameter.
+            // This matches the pattern used by MfaLoginController for ?mfa_locked.
+            return "redirect:/login?password_changed";
 
         } catch (BusinessException e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
