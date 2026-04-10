@@ -30,7 +30,7 @@ class MfaSecretEncryptorTest {
 
     private Environment mockEnvironment() {
         Environment env = mock(Environment.class);
-        when(env.matchesProfiles("dev", "test")).thenReturn(true);
+        when(env.matchesProfiles("dev", "test", "sqlserver")).thenReturn(true);
         return env;
     }
 
@@ -131,7 +131,7 @@ class MfaSecretEncryptorTest {
     @DisplayName("Production profile with default key fails startup")
     void prodProfile_defaultKey_throwsException() {
         Environment prodEnv = mock(Environment.class);
-        when(prodEnv.matchesProfiles("dev", "test")).thenReturn(false);
+        when(prodEnv.matchesProfiles("dev", "test", "sqlserver")).thenReturn(false);
 
         MfaSecretEncryptor prodEncryptor = new MfaSecretEncryptor(prodEnv);
         ReflectionTestUtils.setField(prodEncryptor, "hexKey", TEST_KEY); // TEST_KEY == DEV_DEFAULT_KEY
@@ -144,7 +144,7 @@ class MfaSecretEncryptorTest {
     @DisplayName("Dev profile with default key logs warning but does not fail")
     void devProfile_defaultKey_doesNotThrow() {
         Environment devEnv = mock(Environment.class);
-        when(devEnv.matchesProfiles("dev", "test")).thenReturn(true);
+        when(devEnv.matchesProfiles("dev", "test", "sqlserver")).thenReturn(true);
 
         MfaSecretEncryptor devEncryptor = new MfaSecretEncryptor(devEnv);
         ReflectionTestUtils.setField(devEncryptor, "hexKey", TEST_KEY);
