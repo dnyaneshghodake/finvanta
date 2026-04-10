@@ -127,7 +127,12 @@ public final class CbsPropertyDecryptor {
             StringBuilder hex = new StringBuilder();
             for (byte b : key) hex.append(String.format("%02x", b));
             System.out.println("Generated key: " + hex);
-            System.out.println("Set as: export FINVANTA_DB_ENCRYPTION_KEY=" + hex);
+            System.out.println();
+            System.out.println("Set the key as environment variable before starting the application:");
+            System.out.println("  PowerShell:      $env:FINVANTA_DB_ENCRYPTION_KEY = \"" + hex + "\"");
+            System.out.println("  Command Prompt:  set FINVANTA_DB_ENCRYPTION_KEY=" + hex);
+            System.out.println("  Linux/Mac:       export FINVANTA_DB_ENCRYPTION_KEY=" + hex);
+            System.out.println("  IntelliJ:        Run > Edit Configurations > Environment Variables > Add FINVANTA_DB_ENCRYPTION_KEY");
             return;
         }
         if (args.length != 3) {

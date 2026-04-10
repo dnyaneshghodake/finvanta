@@ -136,10 +136,27 @@ Output:
 
 ```
 Generated key: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
-Set as: export FINVANTA_DB_ENCRYPTION_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
+
+Set the key as environment variable before starting the application:
+  PowerShell:      $env:FINVANTA_DB_ENCRYPTION_KEY = "a1b2c3d4..."
+  Command Prompt:  set FINVANTA_DB_ENCRYPTION_KEY=a1b2c3d4...
+  Linux/Mac:       export FINVANTA_DB_ENCRYPTION_KEY=a1b2c3d4...
+  IntelliJ:        Run > Edit Configurations > Environment Variables > Add FINVANTA_DB_ENCRYPTION_KEY
 ```
 
 Save the 64-character hex key. Use the SAME key for all subsequent steps.
+
+**To set the key immediately (choose one based on your terminal):**
+
+PowerShell:
+```powershell
+$env:FINVANTA_DB_ENCRYPTION_KEY = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1"
+```
+
+Command Prompt:
+```cmd
+set FINVANTA_DB_ENCRYPTION_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
+```
 
 ### 5.3 Encrypt Username
 
