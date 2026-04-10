@@ -120,9 +120,17 @@ Database credentials are encrypted with AES-256-GCM. The encryption key is store
 
 ### 5.2 Generate Encryption Key
 
-```cmd
-mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="genkey"
+**PowerShell (Windows):**
+```powershell
+mvn -q compile exec:java "-Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor" "-Dexec.args=genkey"
 ```
+
+**Command Prompt (cmd):**
+```cmd
+mvn -q compile exec:java -Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor -Dexec.args="genkey"
+```
+
+**Important:** PowerShell requires quotes around each `-D` argument. Command Prompt does not.
 
 Output:
 
@@ -137,8 +145,14 @@ Save the 64-character hex key. Use the SAME key for all subsequent steps.
 
 Replace `YOUR_KEY` with the key from Step 5.2:
 
+**PowerShell:**
+```powershell
+mvn -q compile exec:java "-Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor" "-Dexec.args=encrypt YOUR_KEY sa"
+```
+
+**Command Prompt:**
 ```cmd
-mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="encrypt YOUR_KEY sa"
+mvn -q compile exec:java -Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor -Dexec.args="encrypt YOUR_KEY sa"
 ```
 
 Output:
@@ -152,8 +166,14 @@ Copy the entire `ENC(...)` value including the wrapper.
 
 ### 5.4 Encrypt Password
 
+**PowerShell:**
+```powershell
+mvn -q compile exec:java "-Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor" "-Dexec.args=encrypt YOUR_KEY sqlserver#123"
+```
+
+**Command Prompt:**
 ```cmd
-mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="encrypt YOUR_KEY sqlserver#123"
+mvn -q compile exec:java -Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor -Dexec.args="encrypt YOUR_KEY sqlserver#123"
 ```
 
 Copy the entire `ENC(...)` output.
@@ -177,19 +197,35 @@ mvn clean package -DskipTests
 
 To confirm an encrypted value decrypts correctly:
 
+**PowerShell:**
+```powershell
+mvn -q compile exec:java "-Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor" "-Dexec.args=decrypt YOUR_KEY base64-ciphertext-without-ENC-wrapper"
+```
+
+**Command Prompt:**
 ```cmd
-mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="decrypt YOUR_KEY base64-ciphertext-without-ENC-wrapper"
+mvn -q compile exec:java -Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor -Dexec.args="decrypt YOUR_KEY base64-ciphertext-without-ENC-wrapper"
 ```
 
 Note: For decrypt, paste only the Base64 part — without `ENC(` and `)`.
 
 ### 5.8 Quick Reference
 
+**PowerShell commands (quotes around each -D):**
+
 | Action | Command |
 |--------|---------|
-| Generate key | `mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="genkey"` |
-| Encrypt value | `mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="encrypt KEY VALUE"` |
-| Decrypt value | `mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="decrypt KEY CIPHERTEXT"` |
+| Generate key | `mvn -q compile exec:java "-Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor" "-Dexec.args=genkey"` |
+| Encrypt | `mvn -q compile exec:java "-Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor" "-Dexec.args=encrypt KEY VALUE"` |
+| Decrypt | `mvn -q compile exec:java "-Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor" "-Dexec.args=decrypt KEY CIPHERTEXT"` |
+
+**Command Prompt commands:**
+
+| Action | Command |
+|--------|---------|
+| Generate key | `mvn -q compile exec:java -Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor -Dexec.args="genkey"` |
+| Encrypt | `mvn -q compile exec:java -Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor -Dexec.args="encrypt KEY VALUE"` |
+| Decrypt | `mvn -q compile exec:java -Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor -Dexec.args="decrypt KEY CIPHERTEXT"` |
 
 ---
 
