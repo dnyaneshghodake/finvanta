@@ -42,6 +42,15 @@ public class TenantFilter implements Filter {
     private static final String DEFAULT_TENANT = "DEFAULT";
     private static final String TENANT_SESSION_KEY = "TENANT_ID";
 
+    /**
+     * CBS Tenant ID validation regex per Finacle BANK_ID / Temenos COMPANY.ID.
+     * Allows alphanumeric characters only, 1-20 chars.
+     * Prevents injection of SQL/JPQL special characters via X-Tenant-Id header.
+     * Per RBI IT Governance Direction 2023: all external input must be validated.
+     */
+    private static final java.util.regex.Pattern TENANT_ID_PATTERN =
+            java.util.regex.Pattern.compile("^[A-Za-z0-9_]{1,20}$");
+
     /** MDC keys matching logback-spring.xml pattern: %X{tenantId}/%X{branchCode}/%X{username} */
     private static final String MDC_TENANT = "tenantId";
     private static final String MDC_BRANCH = "branchCode";
@@ -88,6 +97,9 @@ public class TenantFilter implements Filter {
             HttpServletRequest httpRequest = (HttpServletRequest) request;
 
             // === Resolve Tenant ID ===
+            // Priority: X-Tenant-Id header → session → DEFAULT fallback.
+            // Per Finacle BANK_MASTER: tenant ID is resolved once at login and
+            // stored in session. The header is for API/service-to-service calls.
             String tenantId = httpRequest.getHeader("X-Tenant-Id");
 
             if (tenantId == null || tenantId.isBlank()) {
@@ -101,6 +113,15 @@ public class TenantFilter implements Filter {
             }
 
             if (tenantId == null || tenantId.isBlank()) {
+                tenantId = DEFAULT_TENANT;
+            }
+
+            // CBS Security: Validate tenant ID format to prevent injection attacks.
+            // Per RBI IT Governance Direction 2023 §8.1: all external input must be
+            // validated against expected format before use. An attacker could send
+            // X-Tenant-Id with SQL/JPQL special characters to manipulate queries.
+            // Only alphanumeric + underscore, max 20 chars (matches DB column length).
+            if (!TENANT_ID_PATTERN.matcher(tenantId).matches()) {
                 tenantId = DEFAULT_TENANT;
             }
 

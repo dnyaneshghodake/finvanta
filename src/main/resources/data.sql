@@ -5,8 +5,17 @@
 -- ============================================================
 
 -- Tenant (created_at required — data.sql bypasses Hibernate @CreationTimestamp)
-INSERT INTO tenants (tenant_code, tenant_name, license_type, is_active, db_schema, created_at, created_by)
-VALUES ('DEFAULT', 'Finvanta Demo Bank', 'ENTERPRISE', 1, 'public', CURRENT_TIMESTAMP, 'SYSTEM');
+-- Per Finacle BANK_MASTER / Temenos COMPANY: tenant carries RBI regulatory identity.
+-- tenant_code 'DEFAULT' is the partition key used across all tables (maps to Finacle BANK_ID).
+-- RBI fields populated per Banking Regulation Act 1949 and RBI IT Governance Direction 2023.
+INSERT INTO tenants (tenant_code, tenant_name, license_type, is_active, db_schema,
+    rbi_bank_code, ifsc_prefix, license_number, regulatory_category,
+    country_code, base_currency, timezone,
+    created_at, created_by)
+VALUES ('DEFAULT', 'Finvanta Demo Bank', 'ENTERPRISE', 1, 'dbo',
+    '9999', 'FNVT', 'RBI/SCB/2026/DEMO-001', 'SCB',
+    'IN', 'INR', 'Asia/Kolkata',
+    CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Branches (with Tier-1 branch hierarchy per Finacle SOL architecture)
 -- HQ001 = Head Office (branchType=HEAD_OFFICE, is_head_office=true, no parent)
