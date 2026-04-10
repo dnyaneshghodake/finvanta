@@ -700,21 +700,29 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // INR 1,00,000 for 89 days but withdrew to INR 1,000 on day 90 gets interest
         // on INR 1,000 (minimum), not the daily-product sum.
         //
-        // IMPORTANT: The day multiplier must be the ACTUAL number of days in the quarter,
-        // NOT the snapshot count. Snapshot count can be less than actual days when:
-        //   1. Feature deployed mid-quarter (snapshots start late)
-        //   2. Account opened mid-quarter (no prior snapshots)
-        //   3. Quarter-end day snapshot missing (Step 8.6 runs AFTER Step 8 in EOD)
-        // Using snapshot count as multiplier causes severe interest underpayment.
+        // IMPORTANT: The day multiplier must be the ACTUAL number of CALENDAR days in
+        // the quarter (for the interest formula), but the coverage check must compare
+        // snapshot count against BUSINESS days (not calendar days).
+        //
+        // EOD only runs on business days, so snapshots only exist for business days.
+        // A typical quarter has ~91 calendar days but only ~63 business days.
+        // Comparing snapshots (~63) against calendar days (~91) would NEVER pass the
+        // coverage check, making the min-balance feature completely non-functional.
         //
         // Completeness guard: Only apply min-balance recalculation when snapshot coverage
-        // is sufficient (>= actualDays - 1, allowing for quarter-end day lag).
+        // is sufficient (>= businessDays - 1, allowing for quarter-end day lag).
         // When coverage is insufficient, fall through to use daily-accrued interest as-is.
         LocalDate quarterStart = getQuarterStartDate(bd);
         long actualDaysInQuarter = ChronoUnit.DAYS.between(quarterStart, bd) + 1;
+        // CBS: Count BUSINESS days (non-holiday) from the calendar for coverage comparison.
+        // This uses the account's branch calendar since holidays can vary by branch.
+        Long branchId = acct.getBranch() != null ? acct.getBranch().getId() : null;
+        long businessDaysInQuarter = branchId != null
+                ? calendarRepository.countBusinessDaysInPeriod(tid, branchId, quarterStart, bd)
+                : actualDaysInQuarter; // Fallback to calendar days if no branch (shouldn't happen)
         long snapshotDays = balanceSnapshotRepository.countSnapshotsInPeriod(
                 tid, acct.getId(), quarterStart, bd);
-        if (snapshotDays > 0 && snapshotDays >= actualDaysInQuarter - 1) {
+        if (snapshotDays > 0 && snapshotDays >= businessDaysInQuarter - 1) {
             BigDecimal minBalance = balanceSnapshotRepository.findMinBalanceInPeriod(
                     tid, acct.getId(), quarterStart, bd);
             // CBS: Include today's CURRENT ledger balance as a min-balance candidate.
@@ -744,10 +752,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             // Insufficient snapshot coverage — log warning but use daily-accrued interest.
             // Per CBS safety principle: when data is incomplete, do NOT recalculate.
             // Daily accrual on closing balance is the conservative fallback.
-            log.warn("Min daily balance skipped: account={}, snapshotDays={}, actualDays={}, "
+            log.warn("Min daily balance skipped: account={}, snapshotDays={}, businessDays={}, "
                     + "coverage={}% — insufficient for recalculation, using daily-accrued interest",
-                    acn, snapshotDays, actualDaysInQuarter,
-                    String.format("%.1f", snapshotDays * 100.0 / actualDaysInQuarter));
+                    acn, snapshotDays, businessDaysInQuarter,
+                    String.format("%.1f", businessDaysInQuarter > 0
+                            ? snapshotDays * 100.0 / businessDaysInQuarter : 0));
         }
         // CBS CRITICAL: If min-balance recalculation reduced interest to zero (e.g., customer
         // withdrew entire balance on quarter-end day → minBalance=0 → recalculated=0),

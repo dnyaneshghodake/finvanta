@@ -112,16 +112,34 @@ class MfaServiceTest {
     }
 
     @Test
-    @DisplayName("enrollMfa throws if already enrolled")
+    @DisplayName("enrollMfa throws if already enrolled AND verified (mfaEnrolledDate set)")
     void enrollMfa_alreadyEnrolled_throwsException() {
         testUser.setMfaEnabled(true);
         testUser.setMfaSecret("EXISTING_SECRET");
+        testUser.setMfaEnrolledDate(LocalDate.now()); // Verified enrollment
         when(userRepository.findByTenantIdAndUsername(anyString(), eq("testuser")))
                 .thenReturn(Optional.of(testUser));
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> mfaService.enrollMfa("testuser"));
         assertEquals("MFA_ALREADY_ENROLLED", ex.getErrorCode());
+    }
+
+    @Test
+    @DisplayName("enrollMfa allows re-enrollment when secret exists but not yet verified")
+    void enrollMfa_secretExistsButNotVerified_allowsReEnrollment() {
+        testUser.setMfaEnabled(true);
+        testUser.setMfaSecret("OLD_SECRET");
+        testUser.setMfaEnrolledDate(null); // Not yet verified
+        when(userRepository.findByTenantIdAndUsername(anyString(), eq("testuser")))
+                .thenReturn(Optional.of(testUser));
+
+        String newSecret = mfaService.enrollMfa("testuser");
+
+        assertNotNull(newSecret);
+        assertNotEquals("OLD_SECRET", newSecret);
+        assertTrue(newSecret.matches("[A-Z2-7]+"), "Must be valid Base32");
+        verify(userRepository).save(testUser);
     }
 
     @Test

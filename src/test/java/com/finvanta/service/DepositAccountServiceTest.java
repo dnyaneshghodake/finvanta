@@ -84,6 +84,9 @@ class DepositAccountServiceTest {
     @Mock
     private com.finvanta.repository.DailyBalanceSnapshotRepository balanceSnapshotRepository;
 
+    @Mock
+    private com.finvanta.repository.BusinessCalendarRepository calendarRepository;
+
     private BranchAccessValidator branchAccessValidator;
 
     private DepositAccountServiceImpl service;
@@ -105,7 +108,8 @@ class DepositAccountServiceTest {
                 auditService,
                 workflowService,
                 branchAccessValidator,
-                balanceSnapshotRepository);
+                balanceSnapshotRepository,
+                calendarRepository);
         TenantContext.setCurrentTenant("DEFAULT");
         // CBS Tier-1: Use BranchAwareUserDetails so SecurityUtil.getCurrentUserBranchId() works.
         // Branch ID=1L, branchCode="HQ001" matches the branch set in buildSavingsAccount().
