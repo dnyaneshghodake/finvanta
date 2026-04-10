@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
@@ -162,7 +163,7 @@ public class PasswordController {
             // - User must re-login with the new password to prove they remember it
             // - This also ensures all session attributes (MFA_VERIFIED, PASSWORD_EXPIRED) are reset
             // Per Finacle USER_MASTER: forced password reset terminates session → re-login required
-            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+            SecurityContextHolder.clearContext();
             request.getSession().invalidate();
 
             // CBS: Use query parameter instead of flash attribute because session.invalidate()

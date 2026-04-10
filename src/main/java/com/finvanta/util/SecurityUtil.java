@@ -9,6 +9,8 @@ import java.util.stream.Collectors;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * CBS Security Utility — extracts current user context from Spring Security.
@@ -152,8 +154,8 @@ public final class SecurityUtil {
     /** Helper to read a typed attribute from the current HTTP session. */
     private static <T> T getSessionAttribute(String key, Class<T> type) {
         try {
-            var attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
-            if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
+            var attrs = RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof ServletRequestAttributes servletAttrs) {
                 var session = servletAttrs.getRequest().getSession(false);
                 if (session != null) {
                     Object val = session.getAttribute(key);

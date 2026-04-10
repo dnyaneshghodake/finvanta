@@ -7,9 +7,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 
 import java.io.IOException;
+import java.util.regex.Pattern;
 
 import org.slf4j.MDC;
 import org.springframework.core.annotation.Order;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.stereotype.Component;
 
 /**
@@ -48,8 +51,8 @@ public class TenantFilter implements Filter {
      * Prevents injection of SQL/JPQL special characters via X-Tenant-Id header.
      * Per RBI IT Governance Direction 2023: all external input must be validated.
      */
-    private static final java.util.regex.Pattern TENANT_ID_PATTERN =
-            java.util.regex.Pattern.compile("^[A-Za-z0-9_]{1,20}$");
+    private static final Pattern TENANT_ID_PATTERN =
+            Pattern.compile("^[A-Za-z0-9_]{1,20}$");
 
     /** MDC keys matching logback-spring.xml pattern: %X{tenantId}/%X{branchCode}/%X{username} */
     private static final String MDC_TENANT = "tenantId";
@@ -72,8 +75,8 @@ public class TenantFilter implements Filter {
                 return;
             }
             Object ctxObj = session.getAttribute("SPRING_SECURITY_CONTEXT");
-            if (ctxObj instanceof org.springframework.security.core.context.SecurityContext securityContext) {
-                org.springframework.security.core.Authentication auth = securityContext.getAuthentication();
+            if (ctxObj instanceof SecurityContext securityContext) {
+                Authentication auth = securityContext.getAuthentication();
                 if (auth != null && auth.isAuthenticated()) {
                     MDC.put(MDC_USER, auth.getName());
 

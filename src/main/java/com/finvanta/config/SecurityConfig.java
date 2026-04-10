@@ -1,12 +1,15 @@
 package com.finvanta.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 
 /**
  * CBS Security Configuration — Role-Based Access Control per Finacle/Temenos standards.
@@ -36,7 +39,7 @@ public class SecurityConfig {
         this.mfaSuccessHandler = mfaSuccessHandler;
     }
 
-    @org.springframework.beans.factory.annotation.Value("${spring.profiles.active:prod}")
+    @Value("${spring.profiles.active:prod}")
     private String activeProfile;
 
     private boolean isDevProfile() {
@@ -240,8 +243,7 @@ public class SecurityConfig {
                     headers.contentTypeOptions(cto -> {}); // X-Content-Type-Options: nosniff
                     headers.xssProtection(xss -> {}); // X-XSS-Protection: 1; mode=block
                     headers.referrerPolicy(ref -> ref.policy(
-                            org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy
-                                    .STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
+                            ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
                     headers.permissionsPolicy(pp -> pp.policy("camera=(), microphone=(), geolocation=()"));
                     if (!isDevProfile()) {
                         headers.httpStrictTransportSecurity(
@@ -259,6 +261,6 @@ public class SecurityConfig {
      */
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return org.springframework.security.crypto.factory.PasswordEncoderFactories.createDelegatingPasswordEncoder();
+        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 }
