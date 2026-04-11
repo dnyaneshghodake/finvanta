@@ -159,8 +159,22 @@ INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance,
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2201', 'SGST Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2300', 'Inter-Branch Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
--- Clearing Suspense GL (P1-2)
+-- Clearing Suspense GL (legacy — deprecated, use rail-specific GLs below)
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2400', 'Clearing Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Rail-Specific Clearing Suspense GLs per RBI Payment Systems Act 2007
+-- Per RBI: each payment rail MUST have separate inward + outward suspense GLs
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2600', 'NEFT Outward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2601', 'NEFT Inward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2610', 'RTGS Outward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2611', 'RTGS Inward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2620', 'IMPS Outward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2621', 'IMPS Inward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2630', 'UPI Outward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2631', 'UPI Inward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- RBI Settlement (Nostro) — bank's account with RBI for NEFT/RTGS settlement
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '1400', 'RBI Settlement Nostro', 'ASSET', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- CASA Module GL Codes (Savings/Current Accounts per Finacle CUSTACCT)
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2010', 'Customer Deposits - Savings', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');

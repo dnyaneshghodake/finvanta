@@ -70,4 +70,36 @@ public enum ClearingStatus {
     public boolean isSuspenseActive() {
         return this == SUSPENSE_POSTED || this == SENT_TO_NETWORK || this == SETTLED;
     }
+
+    /**
+     * Validates whether a state transition is allowed per the CBS state machine.
+     * Per RBI Payment Systems: no state skipping. Every intermediate state must
+     * be recorded for audit trail and TAT tracking.
+     *
+     * @param target The target state to transition to
+     * @return true if the transition is valid
+     */
+    public boolean canTransitionTo(ClearingStatus target) {
+        if (this == target) return false; // No self-transition
+        if (this.isTerminal()) return false; // Terminal = no transitions
+        return switch (this) {
+            // OUTWARD flow
+            case INITIATED -> target == VALIDATED || target == VALIDATION_FAILED;
+            case VALIDATED -> target == SUSPENSE_POSTED || target == VALIDATION_FAILED;
+            case SUSPENSE_POSTED -> target == SENT_TO_NETWORK || target == COMPLETED
+                    || target == REVERSED; // COMPLETED for real-time rails
+            case SENT_TO_NETWORK -> target == SETTLED || target == NETWORK_REJECTED
+                    || target == SETTLEMENT_FAILED || target == REVERSED;
+            case SETTLED -> target == COMPLETED;
+            // INWARD flow
+            case RECEIVED -> target == VALIDATED || target == VALIDATION_FAILED;
+            case CREDITED -> target == COMPLETED;
+            // Failure states (can transition to reversal/return)
+            case SETTLEMENT_FAILED -> target == REVERSED;
+            case CREDIT_FAILED -> target == RETURNED;
+            // Terminal states
+            case COMPLETED, VALIDATION_FAILED, NETWORK_REJECTED,
+                    REVERSED, RETURNED -> false;
+        };
+    }
 }

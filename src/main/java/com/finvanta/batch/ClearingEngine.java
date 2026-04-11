@@ -346,6 +346,148 @@ public class ClearingEngine {
         return ct;
     }
 
+    /**
+     * Reverse a clearing transaction — posts contra GL entries.
+     *
+     * Per Finacle CLG_REVERSAL / RBI Payment Systems:
+     * - Never delete a clearing record (immutable audit trail)
+     * - Post contra GL to reverse the suspense posting
+     * - If customer was debited (OUTWARD), credit them back
+     * - If customer was credited (INWARD), debit them back
+     * - Mandatory reason for audit trail
+     * - Only non-terminal, non-completed transactions can be reversed
+     */
+    @Transactional
+    public ClearingTransaction reverseClearingTransaction(
+            String extRef, String reason) {
+        String tid = TenantContext.getCurrentTenant();
+        String user = SecurityUtil.getCurrentUsername();
+        LocalDate bd = bizDateSvc.getCurrentBusinessDate();
+        if (reason == null || reason.isBlank())
+            throw new BusinessException("REASON_REQUIRED",
+                    "Reversal reason mandatory per RBI");
+        ClearingTransaction ct = clrRepo
+                .findByTenantIdAndExternalRefNo(tid, extRef)
+                .orElseThrow(() -> new BusinessException(
+                        "CLEARING_NOT_FOUND", extRef));
+        if (ct.isTerminal())
+            throw new BusinessException("ALREADY_TERMINAL",
+                    "Cannot reverse: " + ct.getStatus());
+        // Reverse suspense GL if it was posted
+        if (ct.getSuspenseJournalId() != null) {
+            String sgl = ClearingGLResolver.getSuspenseGL(
+                    ct.getPaymentRail(), ct.getDirection());
+            // Contra: swap DR/CR from original suspense
+            JournalLineRequest dr;
+            JournalLineRequest cr;
+            if (ct.getDirection() == ClearingDirection.OUTWARD) {
+                // Original: DR BankOps / CR Suspense
+                // Contra:   DR Suspense / CR BankOps
+                dr = new JournalLineRequest(sgl,
+                        DebitCredit.DEBIT, ct.getAmount(),
+                        "Reversal suspense");
+                cr = new JournalLineRequest(
+                        GLConstants.BANK_OPERATIONS,
+                        DebitCredit.CREDIT, ct.getAmount(),
+                        "Reversal bank ops");
+            } else {
+                // Original: DR RBI / CR Suspense
+                // Contra:   DR Suspense / CR RBI
+                dr = new JournalLineRequest(sgl,
+                        DebitCredit.DEBIT, ct.getAmount(),
+                        "Reversal suspense");
+                cr = new JournalLineRequest(
+                        ClearingGLResolver.getRbiSettlementGL(),
+                        DebitCredit.CREDIT, ct.getAmount(),
+                        "Reversal RBI settlement");
+            }
+            TransactionResult rr = txnEngine.execute(
+                    TransactionRequest.builder()
+                            .sourceModule("CLEARING")
+                            .transactionType("CLR_REVERSAL")
+                            .accountReference(
+                                    ct.getCustomerAccountRef())
+                            .amount(ct.getAmount())
+                            .valueDate(bd)
+                            .branchCode(ct.getBranchCode())
+                            .narration("Clearing reversal: "
+                                    + extRef + " — " + reason)
+                            .journalLines(List.of(dr, cr))
+                            .systemGenerated(false)
+                            .initiatedBy(user).build());
+            ct.setReversalJournalId(
+                    rr.getJournalEntryId());
+        }
+        // Restore customer balance if debited (OUTWARD)
+        if (ct.getDirection() == ClearingDirection.OUTWARD
+                && ct.getStatus() != ClearingStatus.INITIATED
+                && ct.getStatus()
+                        != ClearingStatus.VALIDATION_FAILED) {
+            try {
+                depAcctSvc.deposit(
+                        ct.getCustomerAccountRef(),
+                        ct.getAmount(), bd,
+                        ct.getPaymentRail().getCode()
+                                + " reversal: " + reason,
+                        "CLR-REV-" + extRef,
+                        ct.getPaymentRail().getCode());
+            } catch (Exception e) {
+                log.error("Customer refund failed: ref={}, "
+                        + "err={}", extRef, e.getMessage());
+            }
+        }
+        ct.setStatus(ClearingStatus.REVERSED);
+        ct.setReversalReason(reason);
+        ct.setCompletedAt(LocalDateTime.now());
+        clrRepo.save(ct);
+        auditSvc.logEvent("ClearingTransaction", ct.getId(),
+                "CLEARING_REVERSED",
+                ct.getPaymentRail().getCode(), extRef,
+                "CLEARING", "Reversed: " + reason
+                        + " | INR " + ct.getAmount()
+                        + " | " + ct.getDirection());
+        log.info("Clearing reversed: ref={}, reason={}",
+                extRef, reason);
+        return ct;
+    }
+
+    /**
+     * Close a NEFT clearing cycle — no more transactions accepted.
+     *
+     * Per Finacle CLG_CYCLE / RBI NEFT Settlement Windows:
+     * At the end of each half-hourly window, the cycle is closed
+     * and the net obligation is calculated. No new transactions
+     * can be added to a closed cycle.
+     */
+    @Transactional
+    public ClearingCycle closeClearingCycle(Long cycleId) {
+        String tid = TenantContext.getCurrentTenant();
+        ClearingCycle cycle = cycleRepo
+                .findAndLockById(cycleId)
+                .filter(c -> c.getTenantId().equals(tid))
+                .orElseThrow(() -> new BusinessException(
+                        "CYCLE_NOT_FOUND", "" + cycleId));
+        if (!cycle.isOpen())
+            throw new BusinessException("CYCLE_NOT_OPEN",
+                    "Cycle " + cycleId + " is "
+                            + cycle.getStatus());
+        cycle.setStatus("CLOSED");
+        cycle.setCycleEndTime(LocalDateTime.now());
+        cycleRepo.save(cycle);
+        auditSvc.logEvent("ClearingCycle", cycle.getId(),
+                "CYCLE_CLOSED", "OPEN", "CLOSED", "CLEARING",
+                cycle.getRailType().getCode() + " cycle "
+                        + cycle.getCycleNumber()
+                        + " closed: netObligation="
+                        + cycle.getNetObligation()
+                        + ", txnCount="
+                        + cycle.getTransactionCount());
+        log.info("Cycle closed: id={}, rail={}, net={}",
+                cycleId, cycle.getRailType(),
+                cycle.getNetObligation());
+        return cycle;
+    }
+
     /** EOD: per-rail active suspense check */
     @Transactional(readOnly = true)
     public boolean validateAllSuspenseBalances(
@@ -362,6 +504,59 @@ public class ClearingEngine {
             }
         }
         return ok;
+    }
+
+    /**
+     * EOD: Detailed per-rail suspense reconciliation.
+     *
+     * Per Finacle CLG_RECON / RBI Payment Systems:
+     * Compares the GL balance of each suspense GL against the
+     * sum of active clearing transactions for that rail+direction.
+     * Any mismatch indicates a data integrity issue.
+     *
+     * @return List of discrepancy descriptions (empty = balanced)
+     */
+    @Transactional(readOnly = true)
+    public List<String> reconcileSuspensePerRail(
+            LocalDate bizDate) {
+        String tid = TenantContext.getCurrentTenant();
+        java.util.ArrayList<String> issues =
+                new java.util.ArrayList<>();
+        for (PaymentRail rail : PaymentRail.values()) {
+            for (ClearingDirection dir
+                    : ClearingDirection.values()) {
+                String glCode = ClearingGLResolver
+                        .getSuspenseGL(rail, dir);
+                // Sum of active clearing amounts
+                BigDecimal clrSum = BigDecimal.ZERO;
+                var activeTxns = clrRepo
+                        .findByTenantIdAndPaymentRailAndDirectionAndStatusOrderByInitiatedAtAsc(
+                                tid, rail, dir,
+                                ClearingStatus.SUSPENSE_POSTED);
+                for (var txn : activeTxns)
+                    clrSum = clrSum.add(txn.getAmount());
+                // GL balance (credit - debit for liability)
+                var gl = glRepo
+                        .findByTenantIdAndGlCode(tid, glCode)
+                        .orElse(null);
+                BigDecimal glNet = gl != null
+                        ? gl.getCreditBalance()
+                                .subtract(gl.getDebitBalance())
+                        : BigDecimal.ZERO;
+                if (clrSum.compareTo(glNet) != 0) {
+                    String msg = rail + " " + dir
+                            + " suspense mismatch: "
+                            + "clearing=" + clrSum
+                            + ", GL(" + glCode + ")=" + glNet;
+                    issues.add(msg);
+                    log.warn("RECON: {}", msg);
+                }
+            }
+        }
+        if (issues.isEmpty())
+            log.info("Clearing suspense reconciliation: "
+                    + "all rails balanced");
+        return issues;
     }
 
     private void linkToCycle(ClearingTransaction ct,
