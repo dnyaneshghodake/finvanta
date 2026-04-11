@@ -79,39 +79,10 @@ public class Transaction360Controller {
         return mav;
     }
 
-    /**
-     * Smart search — auto-detects lookup type from input prefix:
-     *   TXN... → transaction ref
-     *   VCH... → voucher number
-     *   JRN... → journal ref
-     *
-     * Input is sanitized to prevent path traversal and open redirect attacks.
-     * Only alphanumeric characters, hyphens, underscores, and forward slashes are allowed
-     * (forward slash is needed for voucher format VCH/branch/date/seq).
-     */
-    @GetMapping("/search")
-    public ModelAndView smartSearch(@RequestParam(defaultValue = "") String q) {
-        String trimmed = q.trim();
-        // Empty query — show the search form (no redirect loop)
-        if (trimmed.isEmpty()) {
-            ModelAndView mav = new ModelAndView("txn360/view");
-            mav.addObject("lookupType", "Search");
-            mav.addObject("lookupValue", "");
-            return mav;
-        }
-        // CBS: Sanitize input to prevent path traversal / CRLF injection
-        if (!trimmed.matches("[A-Za-z0-9/_-]+")) {
-            ModelAndView mav = new ModelAndView("txn360/view");
-            mav.addObject("lookupType", "Search");
-            mav.addObject("lookupValue", "");
-            return mav;
-        }
-        if (trimmed.startsWith("VCH")) {
-            return new ModelAndView("redirect:/txn360/voucher/" + trimmed);
-        } else if (trimmed.startsWith("JRN")) {
-            return new ModelAndView("redirect:/txn360/journal/" + trimmed);
-        } else {
-            return new ModelAndView("redirect:/txn360/" + trimmed);
-        }
-    }
+    // CBS: The /search endpoint has been moved to Txn360Controller which provides
+    // unified cross-module search (CASA Deposit + Loan) per Finacle TRAN_INQUIRY.
+    // This controller retains the dedicated lookup endpoints (/{ref}, /voucher/**,
+    // /journal/{ref}) which are used by txn360/view.jsp for direct reference lookups.
+    // The smartSearch method was removed to resolve the ambiguous mapping conflict
+    // with Txn360Controller#search which maps the same GET /txn360/search endpoint.
 }
