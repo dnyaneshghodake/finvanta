@@ -1,5 +1,6 @@
 package com.finvanta.controller;
 
+import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.SecurityUtil;
@@ -16,7 +17,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
  * CBS Business Calendar & Day Control Controller.
  * Per Finacle DAYCTRL / Tier-1 Branch-Level Day Control:
  * - Day Open/Close lifecycle management PER BRANCH
- * - Calendar browse filtered by user's branch (ADMIN sees all)
+ * - Calendar browse filtered by user's branch (ADMIN sees operational branch)
  * ADMIN-only access (enforced in SecurityConfig).
  */
 @Controller
@@ -24,10 +25,15 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 public class CalendarController {
 
     private final BusinessCalendarRepository calendarRepository;
+    private final BranchRepository branchRepository;
     private final BusinessDateService businessDateService;
 
-    public CalendarController(BusinessCalendarRepository calendarRepository, BusinessDateService businessDateService) {
+    public CalendarController(
+            BusinessCalendarRepository calendarRepository,
+            BranchRepository branchRepository,
+            BusinessDateService businessDateService) {
         this.calendarRepository = calendarRepository;
+        this.branchRepository = branchRepository;
         this.businessDateService = businessDateService;
     }
 
@@ -35,21 +41,40 @@ public class CalendarController {
     public ModelAndView listCalendar() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("calendar/list");
-        // CBS Tier-1: Show branch-scoped calendar for the user's branch.
-        // ADMIN users see their branch's calendar (use branch selector for other branches).
+
+        // CBS Tier-1: ADMIN sees the first operational branch's calendar by default.
+        // Per Finacle DAYCTRL: calendar/day control operates on OPERATIONAL branches
+        // (type=BRANCH), not HEAD_OFFICE. The admin is assigned to HQ001 (HEAD_OFFICE)
+        // but calendar entries are generated for BR001 (BRANCH type). Without this,
+        // the admin sees an empty calendar because HQ001 has no calendar entries.
+        // ADMIN can switch branches via the branch selector dropdown.
         Long branchId = SecurityUtil.getCurrentUserBranchId();
-        if (branchId != null) {
-            mav.addObject(
-                    "calendarDates",
+        if (SecurityUtil.isAdminRole()) {
+            // ADMIN: show first operational branch's calendar (where entries actually exist)
+            var operationalBranches = branchRepository.findAllOperationalBranches(tenantId);
+            if (!operationalBranches.isEmpty()) {
+                Long opBranchId = operationalBranches.get(0).getId();
+                mav.addObject("calendarDates",
+                        calendarRepository.findByTenantIdAndBranchIdOrderByBusinessDateDesc(tenantId, opBranchId));
+                mav.addObject("openDay", businessDateService.getOpenDayOrNull(opBranchId));
+                mav.addObject("currentBranchId", opBranchId);
+                mav.addObject("currentBranchCode", operationalBranches.get(0).getBranchCode());
+            } else {
+                mav.addObject("calendarDates", java.util.Collections.emptyList());
+                mav.addObject("currentBranchId", branchId);
+                mav.addObject("currentBranchCode", SecurityUtil.getCurrentUserBranchCode());
+            }
+        } else if (branchId != null) {
+            mav.addObject("calendarDates",
                     calendarRepository.findByTenantIdAndBranchIdOrderByBusinessDateDesc(tenantId, branchId));
             mav.addObject("openDay", businessDateService.getOpenDayOrNull(branchId));
+            mav.addObject("currentBranchId", branchId);
+            mav.addObject("currentBranchCode", SecurityUtil.getCurrentUserBranchCode());
         } else {
-            // Fallback for system/admin without branch — show all (deprecated path)
-            mav.addObject("calendarDates", calendarRepository.findByTenantIdOrderByBusinessDateDesc(tenantId));
-            mav.addObject("openDay", businessDateService.getOpenDayOrNull());
+            mav.addObject("calendarDates", java.util.Collections.emptyList());
+            mav.addObject("currentBranchId", null);
+            mav.addObject("currentBranchCode", "--");
         }
-        mav.addObject("currentBranchId", branchId);
-        mav.addObject("currentBranchCode", SecurityUtil.getCurrentUserBranchCode());
         return mav;
     }
 
@@ -90,10 +115,17 @@ public class CalendarController {
             @RequestParam int year, @RequestParam int month, RedirectAttributes redirectAttributes) {
         try {
             int created = businessDateService.generateCalendarForMonth(year, month);
-            redirectAttributes.addFlashAttribute(
-                    "success",
-                    "Calendar generated for " + year + "-" + String.format("%02d", month) + ": " + created
-                            + " new days created");
+            String monthLabel = year + "-" + String.format("%02d", month);
+            if (created > 0) {
+                redirectAttributes.addFlashAttribute("success",
+                        "Calendar generated for " + monthLabel + ": " + created + " new entries created.");
+            } else {
+                // Per Finacle DAYCTRL: idempotent generation returns 0 when all entries exist.
+                // Show a clear info message instead of confusing "0 new days created".
+                redirectAttributes.addFlashAttribute("info",
+                        "Calendar already exists for " + monthLabel
+                                + ". All entries are already present — no new entries needed.");
+            }
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }

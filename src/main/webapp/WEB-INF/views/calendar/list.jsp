@@ -7,6 +7,9 @@
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
+    <c:if test="${not empty info}">
+        <div class="fv-alert alert alert-info"><c:out value="${info}" /></div>
+    </c:if>
     <c:if test="${not empty error}">
         <div class="fv-alert alert alert-danger"><c:out value="${error}" /></div>
     </c:if>
