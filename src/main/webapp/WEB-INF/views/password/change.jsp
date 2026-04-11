@@ -22,6 +22,11 @@
         .form-label { color: #94a3b8; font-size: 0.85rem; }
         .policy-list { color: #64748b; font-size: 0.75rem; margin: 0; padding-left: 16px; }
         .policy-list li { margin-bottom: 2px; }
+        /* CBS: Dark-theme alert overrides for password change page */
+        .pwd-card .alert-warning { background: #422006; color: #fbbf24; border-color: #854d0e; }
+        .pwd-card .alert-warning strong { color: #fde68a; }
+        .pwd-card .alert-danger { background: #450a0a; color: #fca5a5; border-color: #991b1b; }
+        .pwd-card .alert-success { background: #052e16; color: #86efac; border-color: #166534; }
     </style>
 </head>
 <body style="background:#0f172a;min-height:100vh;">
