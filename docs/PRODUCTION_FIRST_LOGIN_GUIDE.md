@@ -126,19 +126,20 @@ STEP 6: DASHBOARD — Logged in as ADMIN
 
 ---
 
-## 7. Day Zero Setup (After First Login)
+## 7. Post-Login Setup (After First Login)
+
+Calendar, GL chart, and first business day are already created by bootstrap.
+Only business configuration remains:
 
 | Order | Action | Where | Notes |
 |-------|--------|-------|-------|
-| 1 | Generate Calendar | Business Calendar | Year + Month for all branches |
-| 2 | Add Holidays | Business Calendar | Gazetted holidays per NI Act |
-| 3 | Open Business Day | Business Calendar | Auto-creates txn batches |
-| 4 | Configure Limits | Transaction Limits | Per role: MAKER/CHECKER/ADMIN |
-| 5 | Create Products | Product Master | TERM_LOAN, HOME_LOAN, SAVINGS, CURRENT |
-| 6 | Configure Charges | Charge Config | Processing fee, late payment, stamp duty |
-| 7 | Create Users | User Management | MAKER, CHECKER with branch assignments |
-| 8 | Create Customers | Customers | KYC verification required |
-| 9 | Open Accounts | CASA / Loan | First transactions |
+| 1 | Add Holidays | Business Calendar | Gazetted holidays per NI Act |
+| 2 | Configure Limits | Transaction Limits | Per role: MAKER/CHECKER/ADMIN |
+| 3 | Create Products | Product Master | TERM_LOAN, HOME_LOAN, SAVINGS, CURRENT |
+| 4 | Configure Charges | Charge Config | Processing fee, late payment, stamp duty |
+| 5 | Create Users | User Management | MAKER, CHECKER with branch assignments |
+| 6 | Create Customers | Customers | KYC verification required |
+| 7 | Open Accounts | CASA / Loan | First transactions |
 
 ---
 
