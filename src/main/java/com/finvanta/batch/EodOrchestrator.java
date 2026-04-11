@@ -105,7 +105,7 @@ public class EodOrchestrator {
     private final ReconciliationService reconciliationService;
     private final SubledgerReconciliationService subledgerReconciliationService;
     private final InterBranchSettlementService settlementService;
-    private final ClearingService clearingService;
+    private final ClearingEngine clearingEngine;
     private final BusinessCalendarRepository calendarRepository;
     private final BranchRepository branchRepository;
     private final BatchJobRepository batchJobRepository;
@@ -133,7 +133,7 @@ public class EodOrchestrator {
             ReconciliationService reconciliationService,
             SubledgerReconciliationService subledgerReconciliationService,
             InterBranchSettlementService settlementService,
-            ClearingService clearingService,
+            ClearingEngine clearingEngine,
             BusinessCalendarRepository calendarRepository,
             BranchRepository branchRepository,
             BatchJobRepository batchJobRepository,
@@ -153,7 +153,7 @@ public class EodOrchestrator {
         this.reconciliationService = reconciliationService;
         this.subledgerReconciliationService = subledgerReconciliationService;
         this.settlementService = settlementService;
-        this.clearingService = clearingService;
+        this.clearingEngine = clearingEngine;
         this.calendarRepository = calendarRepository;
         this.branchRepository = branchRepository;
         this.batchJobRepository = batchJobRepository;
@@ -331,13 +331,22 @@ public class EodOrchestrator {
                     },
                     errors);
 
-            // Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)
+            // Step 7.6: Clearing Suspense Validation (per Finacle CLG_ENGINE)
+            // Uses ClearingEngine which validates per-rail suspense (NEFT/RTGS/IMPS/UPI)
+            // instead of the deprecated single GL 2400 check.
             failedCount += runStep(
                     eodJob,
                     "CLEARING_SUSPENSE",
                     () -> {
-                        clearingService.validateSuspenseBalance(businessDate);
-                        log.info("EOD Step 7.6: clearing suspense validated");
+                        boolean suspenseClear = clearingEngine
+                                .validateAllSuspenseBalances(businessDate);
+                        if (suspenseClear) {
+                            log.info("EOD Step 7.6: all clearing "
+                                    + "suspense GLs clear");
+                        } else {
+                            log.warn("EOD Step 7.6: active clearing "
+                                    + "suspense detected — investigate");
+                        }
                     },
                     errors);
 
