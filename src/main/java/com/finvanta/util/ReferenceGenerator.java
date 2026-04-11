@@ -110,7 +110,7 @@ public final class ReferenceGenerator {
      * double every SECOND digit (i.e., the rightmost digit is NOT doubled,
      * the second-from-right IS doubled, third is not, fourth is doubled, etc.).
      */
-    static int computeLuhn(String digits) {
+    public static int computeLuhn(String digits) {
         int sum = 0;
         boolean doubleNext = false; // Rightmost digit is NOT doubled
         for (int i = digits.length() - 1; i >= 0; i--) {
