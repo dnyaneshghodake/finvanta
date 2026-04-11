@@ -67,9 +67,11 @@ class ReferenceGeneratorTest {
     @DisplayName("All references fit within VARCHAR(40) column width")
     void allReferences_fitWithinColumnWidth() {
         // CBS Column Width Standard: all reference fields are VARCHAR(40)
+        // NOTE: generateAccountNumber/ApplicationNumber/CustomerNumber are @Deprecated
+        // (use CbsReferenceService for production). Testing here for backward compatibility.
         String accNo = ReferenceGenerator.generateAccountNumber("HQ001");
         String appNo = ReferenceGenerator.generateApplicationNumber("HQ001");
-        String custNo = ReferenceGenerator.generateCustomerNumber("HQ001");
+        String custNo = ReferenceGenerator.generateCustomerNumber(1L);
         String txnRef = ReferenceGenerator.generateTransactionRef();
         String jrnRef = ReferenceGenerator.generateJournalRef();
 
