@@ -81,18 +81,22 @@ public final class ReferenceGenerator {
      * Luhn algorithm (Modulus 10) check digit per ISO/IEC 7812-1.
      * Used by Finacle CIF, credit card numbers, IMEI, and ISIN.
      * Catches: 100% of single-digit errors, ~98% of transposition errors.
+     *
+     * Per ISO/IEC 7812-1: starting from the rightmost digit and moving left,
+     * double every SECOND digit (i.e., the rightmost digit is NOT doubled,
+     * the second-from-right IS doubled, third is not, fourth is doubled, etc.).
      */
     static int computeLuhn(String digits) {
         int sum = 0;
-        boolean alternate = true; // Start from rightmost digit
+        boolean doubleNext = false; // Rightmost digit is NOT doubled
         for (int i = digits.length() - 1; i >= 0; i--) {
             int n = digits.charAt(i) - '0';
-            if (alternate) {
+            if (doubleNext) {
                 n *= 2;
                 if (n > 9) n -= 9;
             }
             sum += n;
-            alternate = !alternate;
+            doubleNext = !doubleNext;
         }
         return (10 - (sum % 10)) % 10;
     }
