@@ -1,139 +1,92 @@
 package com.finvanta.util;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * CBS Reference Number Generator per Finacle/Temenos numbering conventions.
+ * CBS Reference Number Generator per Finacle/Temenos Tier-1 numbering conventions.
  *
- * Reference format: PREFIX + BRANCH_CODE + TIMESTAMP(17) + SEQUENCE(6)
+ * Per Finacle CIF / Temenos CUSTOMER / SBI / HDFC / ICICI standards:
+ * All reference numbers must be SHORT, SEQUENTIAL, and HUMAN-READABLE.
+ * Tellers type them at counters, customers quote them over phone,
+ * they're printed on passbooks/cheques, and reported to CIBIL/CRILC.
  *
- * Generated lengths (with 5-char branch code like HQ001):
- *   CUST  = Customer CIF Number     → 4 + 5 + 17 + 6 = 32 chars (column: VARCHAR 40)
- *   APP   = Loan Application Number → 3 + 5 + 17 + 6 = 31 chars (column: VARCHAR 40)
- *   LN    = Loan Account Number     → 2 + 5 + 17 + 6 = 30 chars (column: VARCHAR 40)
- *   TXN   = Transaction Reference   → 3 + 0 + 17 + 6 = 26 chars (column: VARCHAR 40)
- *   JRN   = Journal Entry Reference → 3 + 0 + 17 + 6 = 26 chars (column: VARCHAR 40)
+ * Formats:
+ *   CUST-{6-digit}              → CUST-000123          (11 chars) — Customer CIF
+ *   LN-{BRANCH}-{6-digit}      → LN-BR001-000045      (16 chars) — Loan Account
+ *   APP-{BRANCH}-{6-digit}     → APP-BR001-000045     (17 chars) — Loan Application
+ *   SB-{BRANCH}-{6-digit}      → SB-BR001-000001      (16 chars) — Savings Account
+ *   CA-{BRANCH}-{6-digit}      → CA-BR001-000001      (16 chars) — Current Account
+ *   TXN-{YYYYMMDD}-{6-digit}   → TXN-20260412-000789  (20 chars) — Transaction Ref
+ *   JRN-{YYYYMMDD}-{6-digit}   → JRN-20260412-000789  (20 chars) — Journal Ref
+ *   COL-{6-digit}              → COL-000056            (10 chars) — Collateral Ref
  *
- * CBS Column Width Standard (all reference fields: VARCHAR 40):
- *   Max generated = 32 chars (CUST with 5-char branch) → 8 chars headroom
- *
- * Uniqueness guarantees (single-JVM):
- * - Millisecond-precision timestamp (yyyyMMddHHmmssSSS) — ms granularity
- * - Monotonically increasing 6-digit sequence (never wraps, never resets)
- * - Combined: unique up to 999,999 refs per millisecond per JVM
- *
- * Production CBS deployment (clustered / HA):
- * Replace with database-backed sequence:
- *   - SQL Server: CREATE SEQUENCE finvanta_ref_seq START WITH 1 INCREMENT BY 1
- *   - Oracle: CREATE SEQUENCE finvanta_ref_seq MINVALUE 1 CACHE 1000
- *   - Or use a distributed ID generator (Snowflake / ULID)
- * The unique constraint on (tenant_id, customer_number) / (tenant_id, account_number) etc.
- * in the DDL provides a safety net — duplicate inserts fail at DB level.
+ * Each entity type has its own independent AtomicLong sequence to prevent
+ * cross-type gaps. All seeded from System.nanoTime() to avoid restart collisions.
+ * Production: replace with DB-backed sequences (CREATE SEQUENCE).
  */
 public final class ReferenceGenerator {
 
-    /**
-     * Monotonically increasing sequence for transaction/journal/application references.
-     * Initialized from System.nanoTime() modulo to avoid restart collisions.
-     * For 1M+ daily transactions, 6-digit sequence supports ~11.5 days before
-     * reaching Long.MAX_VALUE (effectively infinite).
-     */
-    private static final AtomicLong SEQUENCE = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    // Per Finacle: each entity type has its own independent sequence.
+    // All seeded from System.nanoTime() modulo to avoid restart collisions.
+    // Production: replace with DB-backed sequences (CREATE SEQUENCE).
+    private static final AtomicLong CUST_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    private static final AtomicLong LOAN_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    private static final AtomicLong APP_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    private static final AtomicLong CASA_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    private static final AtomicLong TXN_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
 
-    /**
-     * Separate sequence for deposit account numbers per Finacle CUSTACCT convention.
-     * Per Tier-1 CBS: account numbers must be sequential and predictable for teller
-     * usability (SB-BR001-000001, SB-BR001-000002, ...). Sharing the global SEQUENCE
-     * with transactions/journals causes large unpredictable gaps (e.g., 000001 → 000015)
-     * because other generators consume sequence values between account creations.
-     * Per Finacle ACCTNUM: account number sequence is independent of transaction sequence.
-     *
-     * CBS IMPORTANT: Seeded from System.nanoTime() modulo (same as SEQUENCE) to avoid
-     * duplicate account numbers across JVM restarts. Without this, restarting the app
-     * resets the counter to 0, and SB-BR001-000001 would collide with an existing account.
-     * The DB unique constraint on (tenant_id, account_number) is the safety net, but
-     * the seed prevents the collision from occurring in the first place.
-     * Production MUST use DB-backed sequence (CREATE SEQUENCE) for cluster-safe uniqueness.
-     */
-    private static final AtomicLong DEPOSIT_ACCT_SEQUENCE = new AtomicLong(Math.abs(System.nanoTime() % 100000));
-
-    /** Millisecond-precision timestamp: yyyyMMddHHmmssSS (SS = centiseconds) */
-    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private ReferenceGenerator() {}
 
-    /** Generates loan application number: APP + branchCode + timestamp + seq */
-    public static String generateApplicationNumber(String branchCode) {
-        return "APP" + branchCode + timestamp() + nextSequence();
-    }
-
-    /** Generates loan account number: LN + branchCode + timestamp + seq */
-    public static String generateAccountNumber(String branchCode) {
-        return "LN" + branchCode + timestamp() + nextSequence();
-    }
-
-    /** Generates transaction reference: TXN + timestamp + seq */
-    public static String generateTransactionRef() {
-        return "TXN" + timestamp() + nextSequence();
-    }
-
-    /** Generates journal entry reference: JRN + timestamp + seq */
-    public static String generateJournalRef() {
-        return "JRN" + timestamp() + nextSequence();
-    }
-
-    /** Generates customer number per CBS CIF convention: CUST + branchCode + timestamp + seq */
+    /** Customer CIF: CUST-{6-digit} → CUST-000123 */
     public static String generateCustomerNumber(String branchCode) {
-        return "CUST" + branchCode + timestamp() + nextSequence();
+        return "CUST-" + fmt(CUST_SEQ);
     }
 
-    /** Generates collateral reference: COL + timestamp + seq */
+    /** Loan Account: LN-{BRANCH}-{6-digit} → LN-BR001-000045 */
+    public static String generateAccountNumber(String branchCode) {
+        return "LN-" + branchCode + "-" + fmt(LOAN_SEQ);
+    }
+
+    /** Loan Application: APP-{BRANCH}-{6-digit} → APP-BR001-000045 */
+    public static String generateApplicationNumber(String branchCode) {
+        return "APP-" + branchCode + "-" + fmt(APP_SEQ);
+    }
+
+    /** Transaction Ref: TXN-{YYYYMMDD}-{6-digit} → TXN-20260412-000789 */
+    public static String generateTransactionRef() {
+        return "TXN-" + today() + "-" + fmt(TXN_SEQ);
+    }
+
+    /** Journal Ref: JRN-{YYYYMMDD}-{6-digit} → JRN-20260412-000789 */
+    public static String generateJournalRef() {
+        return "JRN-" + today() + "-" + fmt(TXN_SEQ);
+    }
+
+    /** Collateral Ref: COL-{6-digit} → COL-000056 */
     public static String generateCollateralRef() {
-        return "COL" + timestamp() + nextSequence();
+        return "COL-" + fmt(TXN_SEQ);
     }
 
-    /**
-     * Generates deposit account number per Finacle CUSTACCT / Temenos ACCOUNT convention.
-     *
-     * Format: {TYPE_PREFIX}-{BRANCH_CODE}-{SERIAL_6}
-     *   SB-HQ001-000001  (Savings Bank)
-     *   CA-DEL001-000001  (Current Account)
-     *
-     * Per Finacle: account numbers are short and sequential for teller usability.
-     * The type prefix distinguishes Savings (SB) from Current (CA) per RBI norms.
-     *
-     * @param branchCode Branch SOL code (e.g., "HQ001")
-     * @param isSavings  true for Savings accounts, false for Current accounts
-     */
+    /** CASA Account: {SB|CA}-{BRANCH}-{6-digit} → SB-BR001-000001 */
     public static String generateDepositAccountNumber(String branchCode, boolean isSavings) {
-        String prefix = isSavings ? "SB" : "CA";
-        return prefix + "-" + branchCode + "-" + String.format("%06d", DEPOSIT_ACCT_SEQUENCE.incrementAndGet());
+        return (isSavings ? "SB" : "CA") + "-" + branchCode + "-" + fmt(CASA_SEQ);
     }
 
-    /**
-     * @deprecated Use {@link #generateDepositAccountNumber(String, boolean)} with account type.
-     * Kept for backward compatibility. Defaults to SB (Savings) prefix.
-     */
+    /** @deprecated Use {@link #generateDepositAccountNumber(String, boolean)} */
     @Deprecated(forRemoval = true)
     public static String generateDepositAccountNumber(String branchCode) {
         return generateDepositAccountNumber(branchCode, true);
     }
 
-    private static String timestamp() {
-        return LocalDateTime.now().format(FORMATTER);
+    private static String today() {
+        return LocalDate.now().format(DATE_FMT);
     }
 
-    /**
-     * Returns a monotonically increasing sequence formatted to 6+ digits.
-     * Never wraps — guarantees uniqueness within JVM lifecycle.
-     * Seeded from System.nanoTime() to avoid collisions across JVM restarts.
-     * Values above 999999 produce longer strings (7+ digits), which is safe
-     * because all reference columns are VARCHAR(40) with ample headroom.
-     */
-    private static String nextSequence() {
-        long val = SEQUENCE.incrementAndGet();
-        return String.format("%06d", val);
+    private static String fmt(AtomicLong seq) {
+        return String.format("%06d", seq.incrementAndGet());
     }
 }
