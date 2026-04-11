@@ -45,8 +45,36 @@ public final class GLConstants {
     public static final String SGST_PAYABLE = "2201";
     /** Inter-Branch Payable — Settlement payable to other branches */
     public static final String INTER_BRANCH_PAYABLE = "2300";
-    /** Clearing Suspense — Temporary holding for clearing transactions */
+    // --- CLEARING SUSPENSE GL Codes (per Finacle CLG_MASTER / RBI Payment Systems) ---
+    // Per RBI: each payment rail MUST have separate inward + outward suspense GLs
+    // for independent reconciliation. A single generic suspense GL makes it impossible
+    // to reconcile NEFT vs RTGS vs IMPS independently — fails RBI inspection.
+
+    /** @deprecated Use rail-specific suspense GLs (2600-2631) instead */
+    @Deprecated(forRemoval = true)
     public static final String CLEARING_SUSPENSE = "2400";
+
+    /** NEFT Outward Suspense — funds debited from customer, pending NEFT batch settlement */
+    public static final String NEFT_OUTWARD_SUSPENSE = "2600";
+    /** NEFT Inward Suspense — funds received from NEFT, pending credit to customer */
+    public static final String NEFT_INWARD_SUSPENSE = "2601";
+    /** RTGS Outward Suspense — funds debited, pending RTGS real-time settlement */
+    public static final String RTGS_OUTWARD_SUSPENSE = "2610";
+    /** RTGS Inward Suspense — funds received from RTGS, pending credit */
+    public static final String RTGS_INWARD_SUSPENSE = "2611";
+    /** IMPS Outward Suspense — funds debited, pending IMPS settlement */
+    public static final String IMPS_OUTWARD_SUSPENSE = "2620";
+    /** IMPS Inward Suspense — funds received from IMPS, pending credit */
+    public static final String IMPS_INWARD_SUSPENSE = "2621";
+    /** UPI Outward Suspense — funds debited, pending UPI settlement */
+    public static final String UPI_OUTWARD_SUSPENSE = "2630";
+    /** UPI Inward Suspense — funds received from UPI, pending credit */
+    public static final String UPI_INWARD_SUSPENSE = "2631";
+
+    // --- SETTLEMENT GL Codes ---
+    /** RBI Settlement (Nostro) — bank's account with RBI for NEFT/RTGS settlement */
+    public static final String RBI_SETTLEMENT = "1400";
+
     /** TDS Payable — Tax Deducted at Source on deposit interest per IT Act Section 194A */
     public static final String TDS_PAYABLE = "2500";
 
