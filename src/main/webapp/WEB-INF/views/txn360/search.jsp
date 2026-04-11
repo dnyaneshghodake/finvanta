@@ -1,5 +1,6 @@
 <%@ taglib prefix="c" uri="jakarta.tags.core" %>
 <%@ taglib prefix="fmt" uri="jakarta.tags.fmt" %>
+<%@ taglib prefix="fn" uri="jakarta.tags.functions" %>
 <c:set var="pageTitle" value="Transaction 360" />
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>
@@ -117,7 +118,7 @@
     <!-- Ledger Entries (GL Postings) -->
     <c:if test="${not empty ledgerEntries}">
     <div class="fv-card">
-        <div class="card-header"><i class="bi bi-receipt-cutoff"></i> Ledger Entries (GL Postings) <span class="badge bg-secondary"><c:out value="${ledgerEntries.size()}" /></span></div>
+        <div class="card-header"><i class="bi bi-receipt-cutoff"></i> Ledger Entries (GL Postings) <span class="badge bg-secondary">${fn:length(ledgerEntries)}</span></div>
         <div class="card-body">
             <div class="table-responsive">
             <table class="table fv-table table-sm">
@@ -128,8 +129,8 @@
                         <td><c:out value="${le.ledgerSequence}" /></td>
                         <td><c:out value="${le.glCode}" /></td>
                         <td><c:out value="${le.glName}" /></td>
-                        <td class="text-end"><c:if test="${le.debitAmount.signum() > 0}"><fmt:formatNumber value="${le.debitAmount}" type="number" maxFractionDigits="2" /></c:if></td>
-                        <td class="text-end"><c:if test="${le.creditAmount.signum() > 0}"><fmt:formatNumber value="${le.creditAmount}" type="number" maxFractionDigits="2" /></c:if></td>
+                        <td class="text-end"><c:if test="${le.debitAmount > 0}"><fmt:formatNumber value="${le.debitAmount}" type="number" maxFractionDigits="2" /></c:if></td>
+                        <td class="text-end"><c:if test="${le.creditAmount > 0}"><fmt:formatNumber value="${le.creditAmount}" type="number" maxFractionDigits="2" /></c:if></td>
                         <td class="small"><c:out value="${le.narration}" /></td>
                     </tr>
                 </c:forEach>
