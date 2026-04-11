@@ -35,12 +35,22 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class ReferenceGenerator {
 
     /**
-     * Monotonically increasing sequence — never wraps, never resets within JVM lifecycle.
+     * Monotonically increasing sequence for transaction/journal/application references.
      * Initialized from System.nanoTime() modulo to avoid restart collisions.
      * For 1M+ daily transactions, 6-digit sequence supports ~11.5 days before
      * reaching Long.MAX_VALUE (effectively infinite).
      */
     private static final AtomicLong SEQUENCE = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+
+    /**
+     * Separate sequence for deposit account numbers per Finacle CUSTACCT convention.
+     * Per Tier-1 CBS: account numbers must be sequential and predictable for teller
+     * usability (SB-BR001-000001, SB-BR001-000002, ...). Sharing the global SEQUENCE
+     * with transactions/journals causes large unpredictable gaps (e.g., 000001 → 000015)
+     * because other generators consume sequence values between account creations.
+     * Per Finacle ACCTNUM: account number sequence is independent of transaction sequence.
+     */
+    private static final AtomicLong DEPOSIT_ACCT_SEQUENCE = new AtomicLong(0);
 
     /** Millisecond-precision timestamp: yyyyMMddHHmmssSS (SS = centiseconds) */
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
@@ -92,7 +102,7 @@ public final class ReferenceGenerator {
      */
     public static String generateDepositAccountNumber(String branchCode, boolean isSavings) {
         String prefix = isSavings ? "SB" : "CA";
-        return prefix + "-" + branchCode + "-" + String.format("%06d", SEQUENCE.incrementAndGet());
+        return prefix + "-" + branchCode + "-" + String.format("%06d", DEPOSIT_ACCT_SEQUENCE.incrementAndGet());
     }
 
     /**

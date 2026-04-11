@@ -253,12 +253,42 @@ public class CbsBootstrapInitializer implements ApplicationRunner {
         System.out.println();
     }
 
+    /**
+     * Generates a cryptographically secure password that GUARANTEES RBI complexity.
+     * Per RBI IT Governance Direction 2023 §8.2 and PasswordController regex:
+     * at least 1 uppercase, 1 lowercase, 1 digit, 1 special character.
+     *
+     * Per Finacle Day Zero / Temenos SYSTEM.ADMIN: the bootstrap password is a
+     * one-time credential used for exactly one login before forced change.
+     * However, it must still meet complexity rules because:
+     * 1. The PasswordController regex is the enforcement point for ALL passwords
+     * 2. If a future validation is added at login time, a non-compliant bootstrap
+     *    password would lock out the admin permanently
+     * 3. Per RBI: ALL generated credentials must meet the same policy as user-set ones
+     */
     private String generateSecurePassword() {
         SecureRandom random = new SecureRandom();
-        StringBuilder password = new StringBuilder(AUTO_PASSWORD_LENGTH);
-        for (int i = 0; i < AUTO_PASSWORD_LENGTH; i++) {
-            password.append(PASSWORD_CHARS.charAt(random.nextInt(PASSWORD_CHARS.length())));
+        // Step 1: Force one character from each required category into fixed positions
+        char[] password = new char[AUTO_PASSWORD_LENGTH];
+        String upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        String lower = "abcdefghijklmnopqrstuvwxyz";
+        String digits = "0123456789";
+        String special = "@#$%&*!";
+        password[0] = upper.charAt(random.nextInt(upper.length()));
+        password[1] = lower.charAt(random.nextInt(lower.length()));
+        password[2] = digits.charAt(random.nextInt(digits.length()));
+        password[3] = special.charAt(random.nextInt(special.length()));
+        // Step 2: Fill remaining positions from full character pool
+        for (int i = 4; i < AUTO_PASSWORD_LENGTH; i++) {
+            password[i] = PASSWORD_CHARS.charAt(random.nextInt(PASSWORD_CHARS.length()));
         }
-        return password.toString();
+        // Step 3: Fisher-Yates shuffle to eliminate positional predictability
+        for (int i = AUTO_PASSWORD_LENGTH - 1; i > 0; i--) {
+            int j = random.nextInt(i + 1);
+            char tmp = password[i];
+            password[i] = password[j];
+            password[j] = tmp;
+        }
+        return new String(password);
     }
 }

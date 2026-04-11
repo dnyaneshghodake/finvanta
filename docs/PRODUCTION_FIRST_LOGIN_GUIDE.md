@@ -8,11 +8,21 @@
 ## 1. Overview
 
 In production, **`data.sql` is NEVER loaded**. The database starts empty.
-There are **no users, no branches, no calendar, no GL accounts**.
 
-The `CbsBootstrapInitializer` automatically creates the first ADMIN user
-on startup when `app_users` is empty. It prints credentials to **console
-stdout only** (never to log files per RBI §8.2).
+The `CbsBootstrapInitializer` performs a **complete Day Zero installation**
+on first startup when `app_users` is empty — per Finacle `INSTALL_BANK`:
+
+| Step | What's Auto-Created |
+|------|-------------------|
+| 1 | Tenant record (bank identity per RBI) |
+| 2 | Head Office branch (HQ001) |
+| 3 | First Operational Branch (BR001) |
+| 4 | GL Chart of Accounts (28 Indian Banking Standard codes) |
+| 5 | ADMIN user with branch assigned + password expired |
+| 6 | Business calendar for current month |
+| 7 | First business day opened (weekdays only) |
+
+Credentials are printed to **console stdout only** (never to log files per RBI §8.2).
 
 ---
 
@@ -47,70 +57,15 @@ schema via SSMS Generate Scripts, apply on production.
 
 ---
 
-## 4. Pre-Deployment: Seed Data (DBA)
+## 4. Seed Data
 
-### 4.1 Tenant
-```sql
-INSERT INTO tenants (tenant_code, tenant_name, license_type, is_active, db_schema,
-    rbi_bank_code, ifsc_prefix, license_number, regulatory_category,
-    country_code, base_currency, timezone, created_at, created_by)
-VALUES ('DEFAULT', 'Your Bank', 'ENTERPRISE', 1, 'dbo',
-    '9999', 'XXXX', 'RBI/SCB/YYYY/XXX', 'SCB',
-    'IN', 'INR', 'Asia/Kolkata', CURRENT_TIMESTAMP, 'DBA');
-```
+**No manual seed data required.** The Day Zero bootstrap (§1) auto-creates:
+- Tenant, Head Office, Operational Branch, GL Chart (28 accounts),
+  Admin user, Calendar, and opens the first business day.
 
-### 4.2 Branches
-```sql
-INSERT INTO branches (tenant_id, branch_code, branch_name, ifsc_code,
-    address, city, state, pin_code, is_active, zone_code,
-    branch_type, is_head_office, region_code, state_code,
-    version, created_at, created_by)
-VALUES ('DEFAULT', 'HQ001', 'Head Office', 'XXXX0000001',
-    'HO Address', 'Mumbai', 'Maharashtra', '400001', 1, 'WEST',
-    'HEAD_OFFICE', 1, 'WEST', 'MH', 0, CURRENT_TIMESTAMP, 'DBA');
-
-INSERT INTO branches (tenant_id, branch_code, branch_name, ifsc_code,
-    address, city, state, pin_code, is_active, zone_code,
-    branch_type, is_head_office, parent_branch_id, region_code, state_code,
-    version, created_at, created_by)
-VALUES ('DEFAULT', 'BR001', 'Main Branch', 'XXXX0000002',
-    'Branch Address', 'Mumbai', 'Maharashtra', '400001', 1, 'WEST',
-    'BRANCH', 0, 1, 'WEST', 'MH', 0, CURRENT_TIMESTAMP, 'DBA');
-```
-
-### 4.3 GL Chart of Accounts
-```sql
-INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type,
-    debit_balance, credit_balance, is_active, is_header_account,
-    version, created_at, created_by) VALUES
-('DEFAULT','1000','Assets','ASSET',0,0,1,1,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','1001','Loan Portfolio','ASSET',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','1002','Interest Receivable','ASSET',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','1003','Provision for NPA','ASSET',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','1100','Bank Account - Ops','ASSET',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','1300','IB Receivable','ASSET',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','2000','Liabilities','LIABILITY',0,0,1,1,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','2001','Customer Deposits','LIABILITY',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','2010','Deposits - Savings','LIABILITY',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','2020','Deposits - Current','LIABILITY',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','2100','Interest Suspense','LIABILITY',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','2200','CGST Payable','LIABILITY',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','2201','SGST Payable','LIABILITY',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','2300','IB Payable','LIABILITY',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','2400','Clearing Suspense','LIABILITY',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','2500','TDS Payable §194A','LIABILITY',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','3000','Equity','EQUITY',0,0,1,1,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','3001','Share Capital','EQUITY',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','4000','Income','INCOME',0,0,1,1,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','4001','Interest Income','INCOME',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','4002','Fee Income','INCOME',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','4003','Penal Interest','INCOME',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','4010','Interest Inc Dep','INCOME',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','5000','Expenses','EXPENSE',0,0,1,1,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','5001','Provision Expense','EXPENSE',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','5002','Write-Off Expense','EXPENSE',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA'),
-('DEFAULT','5010','Interest Exp Dep','EXPENSE',0,0,1,0,0,CURRENT_TIMESTAMP,'DBA');
-```
+If you need to customize the bootstrap data (e.g., different bank name,
+branch codes, IFSC prefix), set environment variables before first startup
+or update the records via SSMS after bootstrap completes.
 
 ---
 
@@ -120,28 +75,32 @@ INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type,
 java -jar finvanta-0.0.1-SNAPSHOT.war
 ```
 
-Watch console for:
+Watch console for the Day Zero installation summary:
 ```
-╔══════════════════════════════════════════════════════════════╗
-║  CBS BOOTSTRAP: Initial Admin User Created                  ║
-╠══════════════════════════════════════════════════════════════╣
-║  Username : sysadmin                                        ║
-║  Password : xK7#mP2$nR9&vQ4!                               ║
-║  Tenant   : DEFAULT                                         ║
-║  Role     : ADMIN                                           ║
-╠══════════════════════════════════════════════════════════════╣
-║  ⚠ PASSWORD CHANGE REQUIRED ON FIRST LOGIN                  ║
-║  ⚠ NOTE: Branch must be assigned via DB before login         ║
-╚══════════════════════════════════════════════════════════════╝
+==============================================================
+  CBS DAY ZERO: Installation Complete
+==============================================================
+  Tenant   : DEFAULT
+  HO Branch: HQ001 — Head Office (Bootstrap)
+  Op Branch: BR001 — Main Branch (Bootstrap)
+  GL Codes : 28 accounts (Indian Banking Standard)
+  Calendar : 22 entries for current month
+  Day Open : 2026-04-15
+--------------------------------------------------------------
+  Username : sysadmin
+  Password : xK7#mP2$nR9&vQ4!
+  Role     : ADMIN
+  Branch   : HQ001
+--------------------------------------------------------------
+  PASSWORD CHANGE REQUIRED ON FIRST LOGIN
+  System is ready — login at /login
+==============================================================
 ```
 
 **⚠️ Copy the password NOW. It is shown ONCE and never again.**
 
-### Assign Branch to Admin (MANDATORY before login)
-```sql
-UPDATE app_users SET branch_id = 1
-WHERE tenant_id = 'DEFAULT' AND username = 'sysadmin';
-```
+No manual DBA steps required — the admin user already has a branch assigned,
+GL chart is seeded, calendar is generated, and the business day is open.
 
 ---
 
@@ -162,7 +121,7 @@ STEP 4: SESSION INVALIDATED → Redirect to /login
 STEP 5: RE-LOGIN with NEW password
            ↓
 STEP 6: DASHBOARD — Logged in as ADMIN
-        Branch: HQ001 | Date: -- | Role: ADMIN
+        Branch: HQ001 | Date: 15-Apr-2026 | Role: ADMIN
 ```
 
 ---

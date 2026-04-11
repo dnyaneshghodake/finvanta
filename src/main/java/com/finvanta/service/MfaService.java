@@ -8,6 +8,8 @@ import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 
@@ -128,22 +130,31 @@ public class MfaService {
      * Per Google Authenticator Key URI Format spec:
      * - The label (issuer:account) in the path segment MUST be percent-encoded
      * - The issuer query parameter MUST also be percent-encoded
-     * - Spaces, colons, and special characters in username must be encoded
+     * - ALL special characters in username must be encoded (not just @, :, space)
      *
-     * Without encoding, spaces in "Finvanta CBS" and special chars in usernames
-     * break QR code parsing on some authenticator apps (especially non-Google ones).
+     * Uses java.net.URLEncoder for full RFC 3986 compliance instead of manual
+     * character replacement which missed +, #, %, and non-ASCII characters.
+     * URLEncoder uses application/x-www-form-urlencoded (space→+), so we
+     * post-process to replace + with %20 per RFC 3986 (URI percent-encoding).
      */
     public String buildOtpAuthUri(String username, String base32Secret) {
         String issuer = "Finvanta CBS";
-        String encodedIssuer = issuer.replace(" ", "%20");
-        String encodedUsername = username.replace(" ", "%20")
-                .replace("@", "%40")
-                .replace(":", "%3A");
+        String encodedIssuer = urlEncode(issuer);
+        String encodedUsername = urlEncode(username);
         return "otpauth://totp/" + encodedIssuer + ":" + encodedUsername
                 + "?secret=" + base32Secret
                 + "&issuer=" + encodedIssuer
                 + "&digits=" + OTP_DIGITS
                 + "&period=" + TIME_STEP_SECONDS;
+    }
+
+    /**
+     * RFC 3986 percent-encoding via URLEncoder with space→%20 correction.
+     * URLEncoder.encode() produces application/x-www-form-urlencoded (space→+).
+     * otpauth:// URIs require RFC 3986 percent-encoding (space→%20).
+     */
+    private static String urlEncode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     /** Verify TOTP code and activate MFA enrollment. */
