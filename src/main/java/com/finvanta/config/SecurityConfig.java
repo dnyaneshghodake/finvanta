@@ -209,9 +209,14 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         // CBS: Migrate session on login to prevent session fixation attacks (OWASP A2)
                         .sessionFixation().migrateSession()
-                        // CBS: When session times out (inactivity), redirect to login with message.
-                        // Without this, user sees a generic error page or white screen.
-                        .invalidSessionUrl("/login?timeout")
+                        // CBS: invalidSessionUrl is intentionally NOT set.
+                        // Per Finacle/Temenos: invalidSessionUrl intercepts ALL requests with stale
+                        // session cookies — including intentional redirects after session.invalidate()
+                        // in PasswordController (/login?password_changed) and MfaLoginController
+                        // (/login?mfa_locked). With invalidSessionUrl set, these redirects get
+                        // overridden to /login?timeout — showing the wrong message to the user.
+                        // Without it, Spring Security redirects to /login (the configured loginPage)
+                        // which is the correct behavior for both timeout and explicit invalidation.
                         // CBS: Only one active session per user per RBI IT Governance Direction 2023 §8.3.
                         // Per Finacle USER_MASTER: concurrent login from a second browser/device
                         // terminates the first session (last-login-wins policy).

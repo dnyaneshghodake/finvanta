@@ -23,9 +23,6 @@
         <c:if test="${param.expired != null}">
             <div class="fv-alert alert alert-warning" role="alert"><i class="bi bi-exclamation-triangle"></i> Your session has been terminated because you logged in from another browser or device. Only one active session is allowed per RBI policy.</div>
         </c:if>
-        <c:if test="${param.timeout != null}">
-            <div class="fv-alert alert alert-warning" role="alert"><i class="bi bi-clock-history"></i> Your session has expired due to inactivity. Please login again to continue.</div>
-        </c:if>
         <c:if test="${param.mfa_locked != null}">
             <div class="fv-alert alert alert-danger" role="alert"><i class="bi bi-shield-exclamation"></i> Too many failed TOTP attempts. Your session has been terminated for security. Please login again.</div>
         </c:if>
