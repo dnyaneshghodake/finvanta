@@ -181,7 +181,7 @@ public class CustomerController {
                 }
             }
 
-            customer.setCustomerNumber(ReferenceGenerator.generateCustomerNumber(branch.getBranchCode()));
+            customer.setCustomerNumber(ReferenceGenerator.generateCustomerNumber(branch.getId()));
             customer.setTenantId(tenantId);
             customer.setBranch(branch);
             customer.setCreatedBy(currentUser);

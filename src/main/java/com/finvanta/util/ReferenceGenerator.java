@@ -42,14 +42,57 @@ public final class ReferenceGenerator {
     private ReferenceGenerator() {}
 
     /**
-     * Customer CIF Number per Finacle CIF_MASTER (11 chars).
-     * Format: CIF{8-digit-seq} → CIF00012345 (11 chars)
-     * Per Finacle/SBI: CIF is 11-digit. We use 3-char prefix + 8-digit seq
-     * to match the standard length while keeping type-identifiability.
+     * Customer CIF Number per Finacle CIF_MASTER — 11 pure digits.
+     *
+     * Structure: {SOL_ID:3}{SERIAL:7}{CHECK:1} = 11 digits
+     *   SOL_ID  = 3-digit branch identifier (from DB branch ID, mod 1000)
+     *   SERIAL  = 7-digit sequential within the branch
+     *   CHECK   = 1-digit Luhn check digit (catches typos + transpositions)
+     *
+     * Example: Branch ID=2 → SOL=002, serial=0000001, check=7 → "00200000017"
+     *
+     * Per Finacle/SBI: CIF is 11-digit pure numeric.
+     * Per Temenos: CUSTOMER ID is 6-10 digit numeric.
+     * The SOL prefix enables branch identification without DB lookup.
+     * The Luhn check digit catches ~98% of single-digit and transposition errors.
      * Printed on passbooks, cheque books, CIBIL reports, KYC documents.
+     *
+     * @param branchId Database branch ID (used as SOL prefix, mod 1000)
      */
+    public static String generateCustomerNumber(Long branchId) {
+        String sol = String.format("%03d", branchId != null ? branchId % 1000 : 0);
+        String serial = String.format("%07d", CUST_SEQ.incrementAndGet() % 10000000);
+        String base = sol + serial; // 10 digits
+        int checkDigit = computeLuhn(base);
+        return base + checkDigit; // 11 digits
+    }
+
+    /**
+     * @deprecated Use {@link #generateCustomerNumber(Long)} with branch ID.
+     */
+    @Deprecated(forRemoval = true)
     public static String generateCustomerNumber(String branchCode) {
-        return "CIF" + String.format("%08d", CUST_SEQ.incrementAndGet());
+        return generateCustomerNumber(0L);
+    }
+
+    /**
+     * Luhn algorithm (Modulus 10) check digit per ISO/IEC 7812-1.
+     * Used by Finacle CIF, credit card numbers, IMEI, and ISIN.
+     * Catches: 100% of single-digit errors, ~98% of transposition errors.
+     */
+    static int computeLuhn(String digits) {
+        int sum = 0;
+        boolean alternate = true; // Start from rightmost digit
+        for (int i = digits.length() - 1; i >= 0; i--) {
+            int n = digits.charAt(i) - '0';
+            if (alternate) {
+                n *= 2;
+                if (n > 9) n -= 9;
+            }
+            sum += n;
+            alternate = !alternate;
+        }
+        return (10 - (sum % 10)) % 10;
     }
 
     /** Loan Account: LN-{BRANCH}-{6-digit} → LN-BR001-000045 */

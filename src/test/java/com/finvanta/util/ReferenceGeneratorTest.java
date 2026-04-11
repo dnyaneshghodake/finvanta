@@ -50,11 +50,17 @@ class ReferenceGeneratorTest {
     }
 
     @Test
-    @DisplayName("Customer CIF is 11 chars starting with CIF per Finacle standard")
-    void customerNumber_hasCifFormat() {
-        String custNo = ReferenceGenerator.generateCustomerNumber("BLR001");
-        assertTrue(custNo.startsWith("CIF"), "Customer CIF must start with CIF");
-        assertEquals(11, custNo.length(), "Customer CIF must be exactly 11 chars per Finacle/SBI");
+    @DisplayName("Customer CIF is 11 pure digits with valid Luhn check per Finacle")
+    void customerNumber_hasFinacleCifFormat() {
+        String cif = ReferenceGenerator.generateCustomerNumber(2L);
+        assertEquals(11, cif.length(), "CIF must be exactly 11 digits per Finacle/SBI");
+        assertTrue(cif.matches("\\d{11}"), "CIF must be pure numeric (no prefix/hyphen)");
+        assertTrue(cif.startsWith("002"), "CIF must start with 3-digit SOL prefix from branch ID");
+        // Verify Luhn check digit
+        String base = cif.substring(0, 10);
+        int expectedCheck = ReferenceGenerator.computeLuhn(base);
+        int actualCheck = cif.charAt(10) - '0';
+        assertEquals(expectedCheck, actualCheck, "Luhn check digit must be valid");
     }
 
     @Test
