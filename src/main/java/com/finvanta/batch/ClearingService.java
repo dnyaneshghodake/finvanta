@@ -22,21 +22,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * CBS Clearing/Settlement Suspense Service per Finacle CLG_MASTER.
+ * CBS Clearing/Settlement Service per Finacle CLG_MASTER.
  *
- * Manages inbound and outbound clearing transactions (NEFT/RTGS/IMPS/CHEQUE/UPI)
- * with suspense account management.
+ * @deprecated This service is being replaced by {@link ClearingEngine} which provides:
+ * - Rail-specific suspense GLs (NEFT/RTGS/IMPS/UPI inward + outward)
+ * - ClearingDirection (INWARD/OUTWARD) with separate GL flows
+ * - ClearingStatus state machine with lifecycle tracking
+ * - ClearingCycle for NEFT batch netting
+ * - SettlementBatch for RBI settlement tracking
+ * - Idempotent external reference (UTR) validation
+ * - Branch-scoped clearing transactions
+ * - Maker-checker for high-value outward payments
  *
- * Lifecycle:
- * - INITIATED: Entry created, DR Customer / CR Clearing Suspense (GL 2400)
- * - PENDING: Waiting for clearing network confirmation
- * - CONFIRMED: Clearing confirmed, DR Suspense / CR Settlement GL
- * - SETTLED: Final settlement
- * - FAILED/REVERSED: Reversal posted
- *
- * Per RBI: Clearing Suspense GL balance must = 0 at EOD.
- * Non-zero suspense indicates stuck transactions (flagged for investigation).
+ * This class is retained temporarily for backward compatibility with
+ * EodOrchestrator.validateSuspenseBalance(). New clearing operations
+ * must use ClearingEngine.
  */
+@Deprecated(forRemoval = true)
 @Service
 public class ClearingService {
 
