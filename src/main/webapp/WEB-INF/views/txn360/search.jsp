@@ -124,14 +124,14 @@
             <table class="table fv-table table-sm">
                 <thead><tr><th>Seq</th><th>GL Code</th><th>GL Name</th><th class="text-end">Debit</th><th class="text-end">Credit</th><th>Narration</th></tr></thead>
                 <tbody>
-                <c:forEach var="le" items="${ledgerEntries}">
+                <c:forEach var="entry" items="${ledgerEntries}">
                     <tr>
-                        <td><c:out value="${le.ledgerSequence}" /></td>
-                        <td><c:out value="${le.glCode}" /></td>
-                        <td><c:out value="${le.glName}" /></td>
-                        <td class="text-end"><c:if test="${le.debitAmount > 0}"><fmt:formatNumber value="${le.debitAmount}" type="number" maxFractionDigits="2" /></c:if></td>
-                        <td class="text-end"><c:if test="${le.creditAmount > 0}"><fmt:formatNumber value="${le.creditAmount}" type="number" maxFractionDigits="2" /></c:if></td>
-                        <td class="small"><c:out value="${le.narration}" /></td>
+                        <td><c:out value="${entry.ledgerSequence}" /></td>
+                        <td><c:out value="${entry.glCode}" /></td>
+                        <td><c:out value="${entry.glName}" /></td>
+                        <td class="text-end"><c:if test="${entry.debitAmount > 0}"><fmt:formatNumber value="${entry.debitAmount}" type="number" maxFractionDigits="2" /></c:if></td>
+                        <td class="text-end"><c:if test="${entry.creditAmount > 0}"><fmt:formatNumber value="${entry.creditAmount}" type="number" maxFractionDigits="2" /></c:if></td>
+                        <td class="small"><c:out value="${entry.narration}" /></td>
                     </tr>
                 </c:forEach>
                 </tbody>
