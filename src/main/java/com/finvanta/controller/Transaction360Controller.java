@@ -9,14 +9,16 @@ import org.springframework.web.servlet.ModelAndView;
 /**
  * CBS Transaction 360 Controller per Finacle TI / Temenos TRANSACTION.360.
  *
- * Provides a unified inquiry screen for any financial transaction.
+ * Provides dedicated lookup endpoints for Loan transaction inquiry.
  * Accessible by all authenticated roles — read-only, no mutations.
  *
- * Lookup paths:
+ * Lookup paths (Loan-specific, used by txn360/view.jsp):
  *   GET /txn360/{transactionRef}        — by transaction reference
  *   GET /txn360/voucher/{voucherNumber} — by voucher number
  *   GET /txn360/journal/{journalRef}    — by journal reference
- *   GET /txn360/search?q=...            — smart search (auto-detects type)
+ *
+ * Unified cross-module search (CASA + Loan) is handled by
+ * {@link Txn360Controller} at GET /txn360/search.
  */
 @Controller
 @RequestMapping("/txn360")
