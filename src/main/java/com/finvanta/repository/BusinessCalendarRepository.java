@@ -156,16 +156,26 @@ public interface BusinessCalendarRepository extends JpaRepository<BusinessCalend
      * @deprecated Use {@link #findByTenantIdAndBranchIdAndBusinessDate} instead.
      * Retained for backward compatibility during branch-level migration.
      * Returns the FIRST matching calendar entry across all branches.
+     *
+     * CBS CRITICAL: With branch-level calendars, multiple rows exist per tenant+date
+     * (one per branch). The derived query Optional return type causes
+     * NonUniqueResultException when multiple branches have entries for the same date.
+     * Fixed with explicit JPQL + LIMIT 1 to return the first match safely.
      */
     @Deprecated(forRemoval = true)
-    Optional<BusinessCalendar> findByTenantIdAndBusinessDate(String tenantId, LocalDate businessDate);
+    @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId "
+            + "AND bc.businessDate = :date ORDER BY bc.branch.id ASC LIMIT 1")
+    Optional<BusinessCalendar> findByTenantIdAndBusinessDate(
+            @Param("tenantId") String tenantId, @Param("date") LocalDate businessDate);
 
     /**
      * @deprecated Use {@link #findAndLockByTenantIdAndBranchIdAndDate} instead.
+     * CBS: LIMIT 1 prevents NonUniqueResultException with multi-branch calendars.
      */
     @Deprecated(forRemoval = true)
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId AND bc.businessDate = :date")
+    @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId "
+            + "AND bc.businessDate = :date ORDER BY bc.branch.id ASC LIMIT 1")
     Optional<BusinessCalendar> findAndLockByTenantIdAndDate(
             @Param("tenantId") String tenantId, @Param("date") LocalDate date);
 
@@ -179,11 +189,12 @@ public interface BusinessCalendarRepository extends JpaRepository<BusinessCalend
 
     /**
      * @deprecated Use {@link #findCurrentBusinessDateByBranch} instead.
+     * CBS: LIMIT 1 prevents NonUniqueResultException with multi-branch calendars.
      */
     @Deprecated(forRemoval = true)
     @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId AND bc.businessDate = "
             + "(SELECT MAX(bc2.businessDate) FROM BusinessCalendar bc2 WHERE bc2.tenantId = :tenantId "
-            + "AND bc2.eodComplete = false AND bc2.holiday = false)")
+            + "AND bc2.eodComplete = false AND bc2.holiday = false) ORDER BY bc.branch.id ASC LIMIT 1")
     Optional<BusinessCalendar> findCurrentBusinessDate(@Param("tenantId") String tenantId);
 
     /**
@@ -194,9 +205,11 @@ public interface BusinessCalendarRepository extends JpaRepository<BusinessCalend
 
     /**
      * @deprecated Use {@link #findOpenDayByBranch} instead.
+     * CBS: LIMIT 1 prevents NonUniqueResultException when multiple branches are DAY_OPEN.
      */
     @Deprecated(forRemoval = true)
-    @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId AND bc.dayStatus = 'DAY_OPEN'")
+    @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId "
+            + "AND bc.dayStatus = 'DAY_OPEN' ORDER BY bc.branch.id ASC LIMIT 1")
     Optional<BusinessCalendar> findOpenDay(@Param("tenantId") String tenantId);
 
     /**
