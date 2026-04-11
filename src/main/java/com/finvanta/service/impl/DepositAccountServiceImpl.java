@@ -20,6 +20,7 @@ import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.DailyBalanceSnapshotRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.CbsReferenceService;
 import com.finvanta.service.DepositAccountService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
@@ -90,6 +91,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     private final BranchAccessValidator branchAccessValidator;
     private final DailyBalanceSnapshotRepository balanceSnapshotRepository;
     private final BusinessCalendarRepository calendarRepository;
+    private final CbsReferenceService cbsReferenceService;
 
     public DepositAccountServiceImpl(
             DepositAccountRepository accountRepository,
@@ -104,7 +106,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             ApprovalWorkflowService workflowService,
             BranchAccessValidator branchAccessValidator,
             DailyBalanceSnapshotRepository balanceSnapshotRepository,
-            BusinessCalendarRepository calendarRepository) {
+            BusinessCalendarRepository calendarRepository,
+            CbsReferenceService cbsReferenceService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
@@ -118,6 +121,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         this.branchAccessValidator = branchAccessValidator;
         this.balanceSnapshotRepository = balanceSnapshotRepository;
         this.calendarRepository = calendarRepository;
+        this.cbsReferenceService = cbsReferenceService;
     }
 
     /**
@@ -263,7 +267,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                     minimumBalance);
         }
 
-        String accNo = ReferenceGenerator.generateDepositAccountNumber(
+        // CBS Tier-1: Account number generated via DB-backed sequence (SequenceGeneratorService).
+        // Produces sequential, deterministic account numbers that survive JVM restarts.
+        // Branch-scoped: each branch has its own sequence starting from 1.
+        // Format: {SB|CA}-{BRANCH}-{6-digit} → SB-BR001-000001
+        String accNo = cbsReferenceService.generateDepositAccountNumber(
                 branch.getBranchCode(), parsedAccountType.isSavings());
         DepositAccount a = new DepositAccount();
         a.setTenantId(tid);

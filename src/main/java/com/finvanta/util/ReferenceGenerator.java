@@ -22,21 +22,45 @@ import java.util.concurrent.atomic.AtomicLong;
  *   JRN-{YYYYMMDD}-{6-digit}   → JRN-20260412-000789  (20 chars) — Journal Ref
  *   COL-{6-digit}              → COL-000056            (10 chars) — Collateral Ref
  *
- * Each entity type has its own independent AtomicLong sequence to prevent
- * cross-type gaps. All seeded from System.nanoTime() to avoid restart collisions.
- * Production: replace with DB-backed sequences (CREATE SEQUENCE).
+ * CBS ARCHITECTURE — Two-tier sequence strategy:
+ *
+ * PERSISTENT references (CIF, Account Numbers, Loan Numbers, Collateral Refs):
+ *   These are printed on passbooks, reported to CIBIL/CRILC, and must be globally
+ *   unique across JVM restarts and cluster nodes. They MUST use DB-backed sequences
+ *   via {@link com.finvanta.service.SequenceGeneratorService}. The static methods
+ *   in this class for CIF/Account generation are DEPRECATED — callers must use
+ *   {@link com.finvanta.service.CbsReferenceService} instead.
+ *
+ * EPHEMERAL references (TXN refs, JRN refs):
+ *   These are generated within a single @Transactional boundary and are immediately
+ *   persisted with a DB unique constraint as safety net. In-memory AtomicLong is
+ *   acceptable here because duplicates are caught by the constraint and the entire
+ *   transaction retries. These do NOT need to be sequential across restarts.
  */
 public final class ReferenceGenerator {
 
-    // Per Finacle: each entity type has its own independent sequence.
-    // All seeded from System.nanoTime() modulo to avoid restart collisions.
-    // Production: replace with DB-backed sequences (CREATE SEQUENCE).
-    private static final AtomicLong CUST_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
-    private static final AtomicLong LOAN_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
-    private static final AtomicLong APP_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
-    private static final AtomicLong CASA_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    // CBS: In-memory sequences for EPHEMERAL references only (TXN, JRN).
+    // These are generated within a @Transactional and protected by DB unique constraints.
+    // Seeded from System.nanoTime() to reduce (not eliminate) restart collision probability.
+    // For persistent references (CIF, Account), use CbsReferenceService (DB-backed).
     private static final AtomicLong TXN_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
     private static final AtomicLong JRN_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+
+    // DEPRECATED: In-memory sequences for persistent references.
+    // These produce non-sequential, non-deterministic numbers that start at random
+    // offsets on each JVM restart. NOT suitable for CIF/Account numbers that are
+    // printed on passbooks, reported to CIBIL, and must be sequential.
+    // Retained ONLY for backward compatibility — callers should migrate to
+    // CbsReferenceService which uses DB-backed SequenceGeneratorService.
+    @Deprecated(forRemoval = true)
+    private static final AtomicLong CUST_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    @Deprecated(forRemoval = true)
+    private static final AtomicLong LOAN_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    @Deprecated(forRemoval = true)
+    private static final AtomicLong APP_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    @Deprecated(forRemoval = true)
+    private static final AtomicLong CASA_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    @Deprecated(forRemoval = true)
     private static final AtomicLong COL_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
