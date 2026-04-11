@@ -139,9 +139,14 @@ public class AuditService {
     private String computeHash(AuditLog auditLog, String previousHash) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            // CBS: Use "0" for null entityId in hash computation to maintain
+            // deterministic hash chain. Null entityId occurs for system-level events
+            // (calendar generation, holiday management) that don't reference a specific entity.
+            String entityIdStr = auditLog.getEntityId() != null
+                    ? auditLog.getEntityId().toString() : "0";
             String data = auditLog.getTenantId()
                     + auditLog.getEntityType()
-                    + auditLog.getEntityId()
+                    + entityIdStr
                     + auditLog.getAction()
                     + auditLog.getEventTimestamp()
                     + auditLog.getPerformedBy()

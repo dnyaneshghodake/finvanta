@@ -49,7 +49,13 @@ public class AuditLog {
     @Column(name = "entity_type", nullable = false, length = 50)
     private String entityType;
 
-    @Column(name = "entity_id", nullable = false)
+    /**
+     * Entity ID for entity-level audit events. Nullable for tenant/system-level
+     * events (calendar generation, holiday management, HO settlement) that don't
+     * reference a specific entity row.
+     * Per Finacle AUDIT_TRAIL: entity_id is optional for system-wide operations.
+     */
+    @Column(name = "entity_id")
     private Long entityId;
 
     @Column(name = "action", nullable = false, length = 50)
