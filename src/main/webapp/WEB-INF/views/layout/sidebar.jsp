@@ -101,7 +101,7 @@
                             style="width:auto;background:#1e293b;color:#90caf9;border:1px solid #334155;font-size:12px;padding:2px 24px 2px 8px;">
                         <c:forEach var="br" items="${allBranches}">
                             <option value="${br.id}" ${br.branchCode == userBranchCode ? 'selected' : ''}>
-                                <c:out value="${br.branchCode}" /> — <c:out value="${br.branchName}" />
+                                <c:out value="${br.branchCode}" /> &mdash; <c:out value="${br.branchName}" />
                             </option>
                         </c:forEach>
                     </select>

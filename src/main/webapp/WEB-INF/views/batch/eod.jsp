@@ -47,8 +47,8 @@
                         <i class="bi ${trialClean ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'}"></i>
                         EOD Trial Results for <c:out value="${trialDate}" />
                         &mdash; <c:choose>
-                            <c:when test="${trialClean}"><strong>ALL CHECKS PASSED</strong> — Ready to Apply</c:when>
-                            <c:otherwise><strong>BLOCKERS FOUND</strong> — Resolve before Apply</c:otherwise>
+                            <c:when test="${trialClean}"><strong>ALL CHECKS PASSED</strong> &mdash; Ready to Apply</c:when>
+                            <c:otherwise><strong>BLOCKERS FOUND</strong> &mdash; Resolve before Apply</c:otherwise>
                         </c:choose>
                     </div>
                     <div class="card-body p-0">
@@ -102,7 +102,7 @@
                     </c:when>
                     <c:otherwise>
                         <button class="btn btn-secondary btn-lg" disabled title="Resolve all BLOCKER checks before Apply">
-                            <i class="bi bi-lock"></i> Apply EOD (Blocked — resolve issues above)
+                            <i class="bi bi-lock"></i> Apply EOD (Blocked &mdash; resolve issues above)
                         </button>
                     </c:otherwise>
                 </c:choose>
