@@ -170,6 +170,24 @@
             </encoder>
         </appender>
 
+        <!-- === SQL LOG (per Finacle DBA_TRACE / Temenos SQL.MONITOR) === -->
+        <!-- Dedicated file for Hibernate SQL queries — NEVER on console.
+             Per Tier-1 CBS: SQL logs are critical for DBA performance tuning,
+             slow query analysis, and RBI forensic investigation.
+             Kept separate from app logs to avoid noise in operational monitoring. -->
+        <appender name="SQL_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_DIR}/${APP_NAME}-sql.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_DIR}/archive/${APP_NAME}-sql.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>50MB</maxFileSize>
+                <maxHistory>7</maxHistory>
+                <totalSizeCap>500MB</totalSizeCap>
+            </rollingPolicy>
+            <encoder>
+                <pattern>${FILE_PATTERN}</pattern>
+            </encoder>
+        </appender>
+
         <!-- === Logger → Appender Routing (mirrors prod structure) === -->
 
         <!-- Audit: AuditService → dedicated audit log + app file (not console) -->
@@ -218,6 +236,14 @@
             <appender-ref ref="APP_FILE" />
         </logger>
 
+        <!-- SQL: Hibernate queries → dedicated SQL log file ONLY (never console, never app log) -->
+        <logger name="org.hibernate.SQL" level="DEBUG" additivity="false">
+            <appender-ref ref="SQL_FILE" />
+        </logger>
+        <logger name="org.hibernate.orm.jdbc.bind" level="TRACE" additivity="false">
+            <appender-ref ref="SQL_FILE" />
+        </logger>
+
         <!-- CBS app logs → console + app file -->
         <logger name="com.finvanta" level="INFO" />
 
@@ -230,7 +256,6 @@
 
         <!-- Suppress noisy frameworks from console AND files -->
         <logger name="org.hibernate" level="WARN" />
-        <logger name="org.hibernate.SQL" level="WARN" />
         <logger name="org.springframework" level="WARN" />
         <logger name="org.springframework.security" level="WARN" />
         <logger name="org.apache" level="WARN" />
@@ -347,6 +372,20 @@
             </encoder>
         </appender>
 
+        <!-- === SQL LOG (per Finacle DBA_TRACE / Temenos SQL.MONITOR) === -->
+        <appender name="SQL_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_DIR}/${APP_NAME}-sql.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_DIR}/archive/${APP_NAME}-sql.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>100MB</maxFileSize>
+                <maxHistory>365</maxHistory>
+                <totalSizeCap>5GB</totalSizeCap>
+            </rollingPolicy>
+            <encoder>
+                <pattern>${FILE_PATTERN}</pattern>
+            </encoder>
+        </appender>
+
         <!-- === ASYNC WRAPPERS (non-blocking for production throughput) === -->
         <appender name="ASYNC_APP" class="ch.qos.logback.classic.AsyncAppender">
             <queueSize>1024</queueSize>
@@ -404,6 +443,14 @@
         <logger name="com.finvanta.config.MfaSecretEncryptor" level="INFO" additivity="false">
             <appender-ref ref="SECURITY_FILE" />
             <appender-ref ref="ASYNC_APP" />
+        </logger>
+
+        <!-- SQL: Hibernate queries → dedicated SQL log file ONLY (never console) -->
+        <logger name="org.hibernate.SQL" level="DEBUG" additivity="false">
+            <appender-ref ref="SQL_FILE" />
+        </logger>
+        <logger name="org.hibernate.orm.jdbc.bind" level="TRACE" additivity="false">
+            <appender-ref ref="SQL_FILE" />
         </logger>
 
         <!-- Root: application + error logs -->
