@@ -1096,10 +1096,16 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     // === Transaction Reversal ===
     // Per Finacle TRAN_REVERSAL / Temenos REVERSAL:
     // 1. Find original transaction (must exist, must not already be reversed)
-    // 2. Post contra GL entries via TransactionEngine (swap DR/CR legs)
-    // 3. Restore account balance (add back for debits, subtract for credits)
-    // 4. Mark original as reversed (never delete per CBS audit rules)
-    // 5. Create reversal DepositTransaction linked to original
+    // 2. For TRANSFERS: find and reverse BOTH legs (TRANSFER_DEBIT + TRANSFER_CREDIT)
+    //    — lock both accounts in alphabetical order to prevent deadlock
+    // 3. Post contra GL entries via TransactionEngine (swap DR/CR legs)
+    // 4. Restore account balance (add back for debits, subtract for credits)
+    // 5. Mark original(s) as reversed (never delete per CBS audit rules)
+    // 6. Create reversal DepositTransaction linked to original
+    //
+    // CBS CRITICAL: Fund transfers create TWO subledger entries sharing one journal entry.
+    // Reversing only one leg leaves the counterparty balance and subledger incorrect —
+    // a net money creation/destruction event that violates conservation-of-funds.
     @Override
     @Transactional
     public DepositTransaction reverseTransaction(String transactionRef, String reason, LocalDate businessDate) {
@@ -1117,6 +1123,17 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             throw new BusinessException("ALREADY_REVERSED", "Transaction " + transactionRef + " is already reversed");
         }
 
+        // CBS Tier-1: Detect fund transfer reversal — requires both-leg handling.
+        // Per Finacle TRAN_REVERSAL: TRANSFER_DEBIT and TRANSFER_CREDIT are paired.
+        // Without both-leg reversal, the source balance is restored but the target retains
+        // the credit — net money creation that corrupts GL trial balance.
+        boolean isTransferReversal = "TRANSFER_DEBIT".equals(original.getTransactionType())
+                || "TRANSFER_CREDIT".equals(original.getTransactionType());
+        if (isTransferReversal) {
+            return reverseTransfer(original, reason, businessDate, tid);
+        }
+
+        // === Non-transfer reversal (deposit, withdrawal, charge, etc.) ===
         // Step 2: Lock the account
         var acct = lockAccount(tid, original.getDepositAccount().getAccountNumber());
         if (acct.isClosed()) {
@@ -1220,5 +1237,148 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 null,
                 original.getChannel(),
                 null);
+    }
+
+    /**
+     * Reverse a fund transfer — handles BOTH legs (TRANSFER_DEBIT + TRANSFER_CREDIT) atomically.
+     *
+     * Per Finacle TRAN_REVERSAL / Temenos REVERSAL:
+     * Fund transfers create two subledger entries sharing one GL journal entry. Both legs
+     * must be reversed in a single atomic transaction to maintain subledger ↔ GL consistency.
+     *
+     * Without both-leg reversal, the source account's balance would be restored but the target
+     * account would retain the credited amount — a net money creation event that violates
+     * conservation-of-funds and corrupts the GL trial balance.
+     *
+     * Account locking follows the same alphabetical ordering as the transfer() method
+     * to prevent ABBA deadlocks between concurrent transfer + reversal operations.
+     */
+    private DepositTransaction reverseTransfer(
+            DepositTransaction original, String reason, LocalDate businessDate, String tid) {
+        BigDecimal amount = original.getAmount();
+        String counterpartyAccNo = original.getCounterpartyAccount();
+
+        if (counterpartyAccNo == null || counterpartyAccNo.isBlank()) {
+            throw new BusinessException("REVERSAL_FAILED",
+                    "Cannot reverse transfer: counterparty account not recorded on transaction "
+                            + original.getTransactionRef());
+        }
+
+        // Identify debit-side and credit-side account numbers
+        String debitAccNo;
+        String creditAccNo;
+        if ("TRANSFER_DEBIT".equals(original.getTransactionType())) {
+            debitAccNo = original.getDepositAccount().getAccountNumber();
+            creditAccNo = counterpartyAccNo;
+        } else {
+            creditAccNo = original.getDepositAccount().getAccountNumber();
+            debitAccNo = counterpartyAccNo;
+        }
+
+        // Lock BOTH accounts in alphabetical order per deadlock prevention convention
+        boolean debitFirst = debitAccNo.compareTo(creditAccNo) < 0;
+        var firstAcct = lockAccount(tid, debitFirst ? debitAccNo : creditAccNo);
+        var secondAcct = lockAccount(tid, debitFirst ? creditAccNo : debitAccNo);
+        var debitAcct = debitFirst ? firstAcct : secondAcct;
+        var creditAcct = debitFirst ? secondAcct : firstAcct;
+
+        if (debitAcct.isClosed()) {
+            throw new BusinessException("ACCOUNT_CLOSED",
+                    "Cannot reverse transfer: source account closed: " + debitAccNo);
+        }
+        if (creditAcct.isClosed()) {
+            throw new BusinessException("ACCOUNT_CLOSED",
+                    "Cannot reverse transfer: target account closed: " + creditAccNo);
+        }
+
+        // Find the counterparty leg (to mark it reversed too)
+        DepositTransaction counterpartyTxn = null;
+        if (original.getJournalEntryId() != null) {
+            List<DepositTransaction> journalTxns = transactionRepository
+                    .findByTenantIdAndJournalEntryId(tid, original.getJournalEntryId());
+            for (DepositTransaction jt : journalTxns) {
+                if (!jt.getId().equals(original.getId()) && !jt.isReversed()) {
+                    counterpartyTxn = jt;
+                    break;
+                }
+            }
+        }
+        if (counterpartyTxn != null && counterpartyTxn.isReversed()) {
+            throw new BusinessException("ALREADY_REVERSED",
+                    "Counterparty leg " + counterpartyTxn.getTransactionRef() + " is already reversed");
+        }
+
+        // Post contra GL entries: reverse the original transfer journal
+        // Original: DR source_gl / CR target_gl → Reversal: DR target_gl / CR source_gl
+        String srcGl = glForAccount(debitAcct);
+        String tgtGl = glForAccount(creditAcct);
+        TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
+                .sourceModule("DEPOSIT")
+                .transactionType("REVERSAL")
+                .accountReference(debitAccNo)
+                .amount(amount)
+                .valueDate(businessDate)
+                .branchCode(debitAcct.getBranch().getBranchCode())
+                .narration("Transfer reversal: " + original.getTransactionRef() + " — " + reason)
+                .journalLines(List.of(
+                        new JournalLineRequest(tgtGl, DebitCredit.DEBIT, amount,
+                                "Reversal debit " + creditAccNo),
+                        new JournalLineRequest(srcGl, DebitCredit.CREDIT, amount,
+                                "Reversal credit " + debitAccNo)))
+                .systemGenerated(false)
+                .build());
+
+        // Restore both account balances
+        // Debit account: was debited in original → credit back (add)
+        debitAcct.setLedgerBalance(debitAcct.getLedgerBalance().add(amount));
+        recomputeAvailable(debitAcct);
+        debitAcct.setLastTransactionDate(businessDate);
+        debitAcct.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        accountRepository.save(debitAcct);
+
+        // Credit account: was credited in original → debit back (subtract)
+        creditAcct.setLedgerBalance(creditAcct.getLedgerBalance().subtract(amount));
+        recomputeAvailable(creditAcct);
+        creditAcct.setLastTransactionDate(businessDate);
+        creditAcct.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        accountRepository.save(creditAcct);
+
+        // Mark BOTH legs as reversed
+        original.setReversed(true);
+        original.setReversedByRef(r.getTransactionRef());
+        original.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        transactionRepository.save(original);
+
+        if (counterpartyTxn != null) {
+            counterpartyTxn.setReversed(true);
+            counterpartyTxn.setReversedByRef(r.getTransactionRef());
+            counterpartyTxn.setUpdatedBy(SecurityUtil.getCurrentUsername());
+            transactionRepository.save(counterpartyTxn);
+        }
+
+        auditService.logEvent(
+                "DepositTransaction",
+                original.getId(),
+                "TRANSFER_REVERSAL",
+                original.getTransactionRef(),
+                r.getTransactionRef(),
+                "DEPOSIT",
+                "Transfer reversed (both legs): " + original.getTransactionRef()
+                        + " | Reason: " + reason + " | Amount: INR " + amount
+                        + " | Source: " + debitAccNo + " | Target: " + creditAccNo
+                        + (counterpartyTxn != null ? " | Counterparty ref: " + counterpartyTxn.getTransactionRef() : ""));
+
+        log.info("Transfer reversed (both legs): ref={}, amount={}, src={}, tgt={}, reason={}",
+                original.getTransactionRef(), amount, debitAccNo, creditAccNo, reason);
+
+        // Create reversal subledger entries for BOTH accounts
+        String creditReversalRef = ReferenceGenerator.generateTransactionRef();
+        buildTxn(creditAcct, amount, "REVERSAL", "DEBIT", businessDate,
+                "Transfer reversal debit: " + original.getTransactionRef() + " — " + reason,
+                r, creditReversalRef, null, "INTERNAL", debitAccNo);
+
+        return buildTxn(debitAcct, amount, "REVERSAL", "CREDIT", businessDate,
+                "Transfer reversal credit: " + original.getTransactionRef() + " — " + reason,
+                r, r.getTransactionRef(), null, "INTERNAL", creditAccNo);
     }
 }

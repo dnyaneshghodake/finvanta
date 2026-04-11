@@ -61,6 +61,20 @@ public interface DepositTransactionRepository extends JpaRepository<DepositTrans
     BigDecimal sumDailyTransferDebits(
             @Param("tenantId") String tenantId, @Param("accountId") Long accountId, @Param("date") LocalDate date);
 
+    /**
+     * CBS Daily Aggregate: sum of all non-reversed deposit transactions by a user on a date.
+     * Used by TransactionLimitService for cross-module daily aggregate limit validation.
+     * Per Finacle TRAN_AUTH / RBI Internal Controls: daily aggregate limits must span
+     * ALL financial modules (Loan + Deposit) to prevent limit bypass via module splitting.
+     */
+    @Query("SELECT COALESCE(SUM(dt.amount), 0) FROM DepositTransaction dt "
+            + "WHERE dt.tenantId = :tenantId AND dt.createdBy = :username "
+            + "AND dt.valueDate = :valueDate AND dt.reversed = false")
+    BigDecimal sumDailyAmountByUser(
+            @Param("tenantId") String tenantId,
+            @Param("username") String username,
+            @Param("valueDate") LocalDate valueDate);
+
     /** Idempotency check */
     Optional<DepositTransaction> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
 
