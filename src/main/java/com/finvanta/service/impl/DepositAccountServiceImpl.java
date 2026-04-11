@@ -447,7 +447,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         }
         var acct = lockAccount(tid, acn);
         // CBS Tier-1: Branch access enforcement per Finacle BRANCH_CONTEXT.
-        branchAccessValidator.validateAccess(acct.getBranch());
+        // System-generated withdrawals (Standing Instructions: EMI auto-debit, SIP, utility)
+        // bypass branch access check because the SI engine runs as SYSTEM_EOD and the CASA
+        // account's branch may differ from the loan account's branch in cross-branch EMI.
+        // Per Finacle SI_ENGINE: SI debits are system-initiated, not user-initiated.
+        if (!"STANDING_INSTRUCTION".equals(channel) && !"SYSTEM".equals(channel)
+                && !"LOAN_EMI_DEBIT".equals(channel)) {
+            branchAccessValidator.validateAccess(acct.getBranch());
+        }
         if (!acct.isDebitAllowed())
             throw new BusinessException("ACCOUNT_NOT_DEBITABLE", "Status " + acct.getAccountStatus());
         if (!acct.hasSufficientFunds(amount))
@@ -550,6 +557,20 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                         "MINIMUM_BALANCE_BREACH",
                         "Transfer of INR " + amount + " would breach minimum balance of INR " + src.getMinimumBalance()
                                 + " on source account " + from);
+            }
+        }
+        // CBS Tier-1: Daily transfer limit enforcement per Finacle ACCTLIMIT / Temenos LIMIT.CHECK.
+        // Per RBI Operational Risk Guidelines: transfer limits are independent of withdrawal limits.
+        // A customer may have INR 2L daily withdrawal limit but INR 5L daily transfer limit.
+        // The daily transfer limit caps the aggregate of all TRANSFER_DEBIT amounts on the
+        // source account for the business date. Reversed transfers are excluded from the sum.
+        if (src.getDailyTransferLimit() != null && src.getDailyTransferLimit().signum() > 0) {
+            BigDecimal dailyTransfers = transactionRepository.sumDailyTransferDebits(tid, src.getId(), bd);
+            if (dailyTransfers.add(amount).compareTo(src.getDailyTransferLimit()) > 0) {
+                throw new BusinessException(
+                        "DAILY_TRANSFER_LIMIT_EXCEEDED",
+                        "Daily transfer limit INR " + src.getDailyTransferLimit() + " exceeded on account " + from
+                                + ". Today's transfers: INR " + dailyTransfers + ", requested: INR " + amount);
             }
         }
         var r = transactionEngine.execute(TransactionRequest.builder()
