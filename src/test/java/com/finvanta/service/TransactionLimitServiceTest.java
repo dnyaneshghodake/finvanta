@@ -1,6 +1,7 @@
 package com.finvanta.service;
 
 import com.finvanta.domain.entity.TransactionLimit;
+import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.repository.TransactionLimitRepository;
 import com.finvanta.util.BusinessException;
@@ -31,6 +32,7 @@ import static org.mockito.Mockito.*;
  * TransactionLimitService Tests per CBS Internal Controls.
  *
  * Validates per-role, per-transaction-type amount limit enforcement.
+ * CBS: Daily aggregate now spans ALL modules (Loan + Deposit) per Finacle TRAN_AUTH.
  */
 @ExtendWith(MockitoExtension.class)
 class TransactionLimitServiceTest {
@@ -39,7 +41,10 @@ class TransactionLimitServiceTest {
     private TransactionLimitRepository limitRepository;
 
     @Mock
-    private LoanTransactionRepository transactionRepository;
+    private LoanTransactionRepository loanTransactionRepository;
+
+    @Mock
+    private DepositTransactionRepository depositTransactionRepository;
 
     @InjectMocks
     private TransactionLimitService limitService;
@@ -165,7 +170,7 @@ class TransactionLimitServiceTest {
     }
 
     @Test
-    @DisplayName("Daily aggregate limit exceeded throws DAILY_LIMIT_EXCEEDED")
+    @DisplayName("Daily aggregate limit exceeded throws DAILY_LIMIT_EXCEEDED (cross-module)")
     void dailyAggregateExceeded_throws() {
         setCurrentUser("maker1", "MAKER");
 
@@ -175,9 +180,12 @@ class TransactionLimitServiceTest {
         limit.setActive(true);
 
         when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT")).thenReturn(Optional.of(limit));
-        // User already processed ₹45L today
-        when(transactionRepository.sumDailyAmountByUser(eq("DEFAULT"), eq("maker1"), eq(BUSINESS_DATE)))
-                .thenReturn(new BigDecimal("4500000"));
+        // CBS: Daily aggregate now spans BOTH loan + deposit modules per Finacle TRAN_AUTH.
+        // User processed ₹30L in loans + ₹15L in deposits = ₹45L total today.
+        when(loanTransactionRepository.sumDailyAmountByUser(eq("DEFAULT"), eq("maker1"), eq(BUSINESS_DATE)))
+                .thenReturn(new BigDecimal("3000000"));
+        when(depositTransactionRepository.sumDailyAmountByUser(eq("DEFAULT"), eq("maker1"), eq(BUSINESS_DATE)))
+                .thenReturn(new BigDecimal("1500000"));
 
         // This ₹6L transaction would push total to ₹51L, exceeding ₹50L daily limit
         BusinessException ex = assertThrows(
@@ -187,7 +195,7 @@ class TransactionLimitServiceTest {
     }
 
     @Test
-    @DisplayName("Daily aggregate within limit passes")
+    @DisplayName("Daily aggregate within limit passes (cross-module)")
     void dailyAggregateWithinLimit_passes() {
         setCurrentUser("maker1", "MAKER");
 
@@ -197,12 +205,40 @@ class TransactionLimitServiceTest {
         limit.setActive(true);
 
         when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "REPAYMENT")).thenReturn(Optional.of(limit));
-        // User already processed ₹30L today
-        when(transactionRepository.sumDailyAmountByUser(eq("DEFAULT"), eq("maker1"), eq(BUSINESS_DATE)))
-                .thenReturn(new BigDecimal("3000000"));
+        // CBS: Cross-module aggregate: ₹20L loans + ₹10L deposits = ₹30L total today.
+        when(loanTransactionRepository.sumDailyAmountByUser(eq("DEFAULT"), eq("maker1"), eq(BUSINESS_DATE)))
+                .thenReturn(new BigDecimal("2000000"));
+        when(depositTransactionRepository.sumDailyAmountByUser(eq("DEFAULT"), eq("maker1"), eq(BUSINESS_DATE)))
+                .thenReturn(new BigDecimal("1000000"));
 
         // This ₹5L transaction would push total to ₹35L, within ₹50L daily limit
         assertDoesNotThrow(
                 () -> limitService.validateTransactionLimit(new BigDecimal("500000"), "REPAYMENT", BUSINESS_DATE));
+    }
+
+    @Test
+    @DisplayName("Daily aggregate catches cross-module bypass attempt")
+    void dailyAggregate_crossModuleBypass_detected() {
+        // CBS CRITICAL: Without cross-module aggregation, a MAKER could process
+        // their full limit in loans AND deposits independently — effectively 2x the limit.
+        setCurrentUser("maker1", "MAKER");
+
+        TransactionLimit limit = new TransactionLimit();
+        limit.setPerTransactionLimit(new BigDecimal("1000000"));
+        limit.setDailyAggregateLimit(new BigDecimal("5000000"));
+        limit.setActive(true);
+
+        when(limitRepository.findByRoleAndType("DEFAULT", "MAKER", "CASH_DEPOSIT")).thenReturn(Optional.of(limit));
+        // User processed ₹0 in loans but ₹48L in deposits today
+        when(loanTransactionRepository.sumDailyAmountByUser(eq("DEFAULT"), eq("maker1"), eq(BUSINESS_DATE)))
+                .thenReturn(BigDecimal.ZERO);
+        when(depositTransactionRepository.sumDailyAmountByUser(eq("DEFAULT"), eq("maker1"), eq(BUSINESS_DATE)))
+                .thenReturn(new BigDecimal("4800000"));
+
+        // This ₹3L deposit would push CROSS-MODULE total to ₹51L — must be rejected
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> limitService.validateTransactionLimit(new BigDecimal("300000"), "CASH_DEPOSIT", BUSINESS_DATE));
+        assertEquals("DAILY_LIMIT_EXCEEDED", ex.getErrorCode());
     }
 }

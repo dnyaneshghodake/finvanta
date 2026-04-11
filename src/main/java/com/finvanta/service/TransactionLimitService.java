@@ -1,6 +1,7 @@
 package com.finvanta.service;
 
 import com.finvanta.domain.entity.TransactionLimit;
+import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.repository.TransactionLimitRepository;
 import com.finvanta.util.BusinessException;
@@ -31,6 +32,12 @@ import org.springframework.stereotype.Service;
  * 2. Role + ALL (e.g., MAKER + ALL)
  * 3. No limit configured → transaction proceeds (backward compatible)
  *
+ * CBS CRITICAL: Daily aggregate MUST span ALL modules (Loan + Deposit + Remittance).
+ * Per Finacle TRAN_AUTH / RBI Internal Controls: a user's daily aggregate limit is
+ * a single cap across all financial operations. Without cross-module aggregation,
+ * a MAKER with INR 50L daily limit could process INR 50L in loans AND INR 50L in
+ * deposits — effectively INR 1Cr daily, bypassing the intended control.
+ *
  * This service is called before any financial operation in the service layer.
  */
 @Service
@@ -39,12 +46,16 @@ public class TransactionLimitService {
     private static final Logger log = LoggerFactory.getLogger(TransactionLimitService.class);
 
     private final TransactionLimitRepository limitRepository;
-    private final LoanTransactionRepository transactionRepository;
+    private final LoanTransactionRepository loanTransactionRepository;
+    private final DepositTransactionRepository depositTransactionRepository;
 
     public TransactionLimitService(
-            TransactionLimitRepository limitRepository, LoanTransactionRepository transactionRepository) {
+            TransactionLimitRepository limitRepository,
+            LoanTransactionRepository loanTransactionRepository,
+            DepositTransactionRepository depositTransactionRepository) {
         this.limitRepository = limitRepository;
-        this.transactionRepository = transactionRepository;
+        this.loanTransactionRepository = loanTransactionRepository;
+        this.depositTransactionRepository = depositTransactionRepository;
     }
 
     /**
@@ -105,17 +116,23 @@ public class TransactionLimitService {
                             + ". Requires higher authority approval.");
         }
 
-        // Daily aggregate limit check
-        // Per Finacle/Temenos: sum of all transactions by this user today + proposed amount
+        // Daily aggregate limit check — CROSS-MODULE per Finacle TRAN_AUTH.
+        // CBS CRITICAL: Sum across ALL financial modules (Loan + Deposit) for the user today.
+        // Per RBI Internal Controls: daily aggregate is a single cap across all operations.
+        // Without cross-module aggregation, a MAKER could process their full limit in EACH
+        // module independently, effectively multiplying their authorized daily capacity.
         if (limit.getDailyAggregateLimit() != null) {
             String username = SecurityUtil.getCurrentUsername();
-            BigDecimal todayTotal = transactionRepository.sumDailyAmountByUser(tenantId, username, businessDate);
+            BigDecimal loanTotal = loanTransactionRepository.sumDailyAmountByUser(tenantId, username, businessDate);
+            BigDecimal depositTotal = depositTransactionRepository.sumDailyAmountByUser(tenantId, username, businessDate);
+            BigDecimal todayTotal = loanTotal.add(depositTotal);
             BigDecimal projectedTotal = todayTotal.add(amount);
 
             if (projectedTotal.compareTo(limit.getDailyAggregateLimit()) > 0) {
                 throw new BusinessException(
                         "DAILY_LIMIT_EXCEEDED",
-                        "Daily aggregate INR " + projectedTotal + " (existing INR " + todayTotal
+                        "Daily aggregate INR " + projectedTotal + " (existing: loan INR " + loanTotal
+                                + " + deposit INR " + depositTotal
                                 + " + this INR " + amount + ") exceeds daily limit of INR "
                                 + limit.getDailyAggregateLimit() + " for role " + role + ".");
             }

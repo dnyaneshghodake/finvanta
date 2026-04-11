@@ -2,11 +2,14 @@ package com.finvanta.repository;
 
 import com.finvanta.domain.entity.InterBranchTransaction;
 
+import jakarta.persistence.LockModeType;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -29,6 +32,18 @@ public interface InterBranchSettlementRepository extends JpaRepository<InterBran
     @Query("SELECT i FROM InterBranchTransaction i WHERE i.tenantId = :tenantId "
             + "AND i.businessDate = :businessDate ORDER BY i.sourceBranch.id ASC")
     List<InterBranchTransaction> findByTenantIdAndBusinessDateOrderBySourceBranchAsc(
+            @Param("tenantId") String tenantId, @Param("businessDate") LocalDate businessDate);
+
+    /**
+     * Find and LOCK PENDING transactions for a business date (for settlement).
+     * Per Finacle IB_SETTLEMENT: pessimistic lock prevents concurrent settlement
+     * of the same transactions (defense-in-depth alongside EOD_ALREADY_RUNNING guard).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT i FROM InterBranchTransaction i WHERE i.tenantId = :tenantId "
+            + "AND i.businessDate = :businessDate AND i.settlementStatus = 'PENDING' "
+            + "ORDER BY i.sourceBranch.id ASC")
+    List<InterBranchTransaction> findAndLockPendingByDate(
             @Param("tenantId") String tenantId, @Param("businessDate") LocalDate businessDate);
 
     /**

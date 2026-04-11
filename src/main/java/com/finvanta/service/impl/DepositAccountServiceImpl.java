@@ -10,13 +10,17 @@ import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.domain.entity.InterestAccrual;
 import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.domain.enums.DepositAccountStatus;
+import com.finvanta.domain.enums.DepositAccountType;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.repository.InterestAccrualRepository;
+import com.finvanta.repository.BusinessCalendarRepository;
+import com.finvanta.repository.DailyBalanceSnapshotRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.CbsReferenceService;
 import com.finvanta.service.DepositAccountService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
@@ -32,6 +36,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -83,6 +89,9 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     private final AuditService auditService;
     private final ApprovalWorkflowService workflowService;
     private final BranchAccessValidator branchAccessValidator;
+    private final DailyBalanceSnapshotRepository balanceSnapshotRepository;
+    private final BusinessCalendarRepository calendarRepository;
+    private final CbsReferenceService cbsReferenceService;
 
     public DepositAccountServiceImpl(
             DepositAccountRepository accountRepository,
@@ -95,7 +104,10 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             BusinessDateService businessDateService,
             AuditService auditService,
             ApprovalWorkflowService workflowService,
-            BranchAccessValidator branchAccessValidator) {
+            BranchAccessValidator branchAccessValidator,
+            DailyBalanceSnapshotRepository balanceSnapshotRepository,
+            BusinessCalendarRepository calendarRepository,
+            CbsReferenceService cbsReferenceService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
@@ -107,6 +119,27 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         this.auditService = auditService;
         this.workflowService = workflowService;
         this.branchAccessValidator = branchAccessValidator;
+        this.balanceSnapshotRepository = balanceSnapshotRepository;
+        this.calendarRepository = calendarRepository;
+        this.cbsReferenceService = cbsReferenceService;
+    }
+
+    /**
+     * Returns the start date of the Indian financial quarter containing the given date.
+     * Per RBI: quarters are Apr-Jun, Jul-Sep, Oct-Dec, Jan-Mar.
+     * Interest is credited on quarter-end dates (Jun 30, Sep 30, Dec 31, Mar 31).
+     */
+    private LocalDate getQuarterStartDate(LocalDate date) {
+        int month = date.getMonthValue();
+        if (month >= 1 && month <= 3) {
+            return LocalDate.of(date.getYear(), 1, 1);
+        } else if (month >= 4 && month <= 6) {
+            return LocalDate.of(date.getYear(), 4, 1);
+        } else if (month >= 7 && month <= 9) {
+            return LocalDate.of(date.getYear(), 7, 1);
+        } else {
+            return LocalDate.of(date.getYear(), 10, 1);
+        }
     }
 
     /** Recompute available balance from ledger balance minus holds and uncleared. */
@@ -195,14 +228,22 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 .findById(branchId)
                 .filter(b -> tid.equals(b.getTenantId()) && b.isActive())
                 .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "Branch: " + branchId));
-        if (accountType == null || (!accountType.startsWith("SAVINGS") && !accountType.startsWith("CURRENT")))
-            throw new BusinessException("INVALID_ACCOUNT_TYPE", "Must be SAVINGS* or CURRENT*");
+        // CBS Tier-1: Parse and validate account type via enum per Finacle PDDEF ACCT_TYPE.
+        // Enum validation prevents typos that would corrupt interest calculation and reporting.
+        DepositAccountType parsedAccountType;
+        try {
+            parsedAccountType = DepositAccountType.valueOf(accountType);
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new BusinessException("INVALID_ACCOUNT_TYPE",
+                    "Invalid account type: " + accountType + ". Valid types: "
+                            + Arrays.toString(DepositAccountType.values()));
+        }
 
         // CBS Phase 2: Product-driven rate and minimum balance per Finacle PDDEF.
         // Interest rate and minimum balance are resolved from ProductMaster, not hardcoded.
         // Fallback to defaults if product not found (backward compatibility with Phase 1).
         String resolvedProductCode = productCode != null ? productCode : accountType;
-        BigDecimal interestRate = accountType.startsWith("SAVINGS") ? new BigDecimal("4.0000") : BigDecimal.ZERO;
+        BigDecimal interestRate = parsedAccountType.isInterestBearing() ? new BigDecimal("4.0000") : BigDecimal.ZERO;
         BigDecimal minimumBalance = BigDecimal.ZERO;
         var productOpt = productMasterRepository.findByTenantIdAndProductCode(tid, resolvedProductCode);
         if (productOpt.isPresent()) {
@@ -226,13 +267,18 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                     minimumBalance);
         }
 
-        String accNo = ReferenceGenerator.generateDepositAccountNumber(branch.getBranchCode());
+        // CBS Tier-1: Account number generated via DB-backed sequence (SequenceGeneratorService).
+        // Produces sequential, deterministic account numbers that survive JVM restarts.
+        // Branch-scoped: each branch has its own sequence starting from 1.
+        // Format: {SB|CA}-{BRANCH}-{6-digit} → SB-BR001-000001
+        String accNo = cbsReferenceService.generateDepositAccountNumber(
+                branch.getBranchCode(), parsedAccountType.isSavings());
         DepositAccount a = new DepositAccount();
         a.setTenantId(tid);
         a.setAccountNumber(accNo);
         a.setCustomer(cust);
         a.setBranch(branch);
-        a.setAccountType(accountType);
+        a.setAccountType(parsedAccountType);
         a.setProductCode(resolvedProductCode);
         // CBS Phase 2: Maker-Checker for account opening per Finacle ACCTOPN.
         // Account starts in PENDING_ACTIVATION — requires CHECKER approval to activate.
@@ -409,7 +455,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         }
         var acct = lockAccount(tid, acn);
         // CBS Tier-1: Branch access enforcement per Finacle BRANCH_CONTEXT.
-        branchAccessValidator.validateAccess(acct.getBranch());
+        // System-generated withdrawals (Standing Instructions: EMI auto-debit, SIP, utility)
+        // bypass branch access check because the SI engine runs as SYSTEM_EOD and the CASA
+        // account's branch may differ from the loan account's branch in cross-branch EMI.
+        // Per Finacle SI_ENGINE: SI debits are system-initiated, not user-initiated.
+        if (!"STANDING_INSTRUCTION".equals(channel) && !"SYSTEM".equals(channel)
+                && !"LOAN_EMI_DEBIT".equals(channel)) {
+            branchAccessValidator.validateAccess(acct.getBranch());
+        }
         if (!acct.isDebitAllowed())
             throw new BusinessException("ACCOUNT_NOT_DEBITABLE", "Status " + acct.getAccountStatus());
         if (!acct.hasSufficientFunds(amount))
@@ -512,6 +565,20 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                         "MINIMUM_BALANCE_BREACH",
                         "Transfer of INR " + amount + " would breach minimum balance of INR " + src.getMinimumBalance()
                                 + " on source account " + from);
+            }
+        }
+        // CBS Tier-1: Daily transfer limit enforcement per Finacle ACCTLIMIT / Temenos LIMIT.CHECK.
+        // Per RBI Operational Risk Guidelines: transfer limits are independent of withdrawal limits.
+        // A customer may have INR 2L daily withdrawal limit but INR 5L daily transfer limit.
+        // The daily transfer limit caps the aggregate of all TRANSFER_DEBIT amounts on the
+        // source account for the business date. Reversed transfers are excluded from the sum.
+        if (src.getDailyTransferLimit() != null && src.getDailyTransferLimit().signum() > 0) {
+            BigDecimal dailyTransfers = transactionRepository.sumDailyTransferDebits(tid, src.getId(), bd);
+            if (dailyTransfers.add(amount).compareTo(src.getDailyTransferLimit()) > 0) {
+                throw new BusinessException(
+                        "DAILY_TRANSFER_LIMIT_EXCEEDED",
+                        "Daily transfer limit INR " + src.getDailyTransferLimit() + " exceeded on account " + from
+                                + ". Today's transfers: INR " + dailyTransfers + ", requested: INR " + amount);
             }
         }
         var r = transactionEngine.execute(TransactionRequest.builder()
@@ -637,6 +704,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     }
 
     // === Quarterly Interest Credit with TDS ===
+    // Per RBI Savings Interest Directive / Finacle ACCT_BAL_HIST:
+    // At quarter-end, interest should be calculated on the MINIMUM daily balance
+    // for the quarter, not the closing balance. This uses DailyBalanceSnapshot data
+    // captured during EOD Step 8.6. If snapshot data is not available (e.g., account
+    // opened mid-quarter, or first quarter after snapshot feature deployment), falls
+    // back to the accrued interest already computed daily on closing balance.
     @Override
     @Transactional
     public DepositTransaction creditInterest(String acn, LocalDate bd) {
@@ -649,6 +722,86 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             log.warn("Interest already credited for {} on {}, skipping", acn, bd);
             return null;
         }
+
+        // CBS Tier-1: Minimum Daily Balance interest recalculation per RBI directive.
+        // Per Finacle ACCT_BAL_HIST: at quarter-end, recalculate interest using
+        // MIN(closing_balance) from daily snapshots instead of the daily-accrued sum.
+        // This ensures RBI-compliant interest calculation where a customer who had
+        // INR 1,00,000 for 89 days but withdrew to INR 1,000 on day 90 gets interest
+        // on INR 1,000 (minimum), not the daily-product sum.
+        //
+        // IMPORTANT: The day multiplier must be the ACTUAL number of CALENDAR days in
+        // the quarter (for the interest formula), but the coverage check must compare
+        // snapshot count against BUSINESS days (not calendar days).
+        //
+        // EOD only runs on business days, so snapshots only exist for business days.
+        // A typical quarter has ~91 calendar days but only ~63 business days.
+        // Comparing snapshots (~63) against calendar days (~91) would NEVER pass the
+        // coverage check, making the min-balance feature completely non-functional.
+        //
+        // Completeness guard: Only apply min-balance recalculation when snapshot coverage
+        // is sufficient (>= businessDays - 1, allowing for quarter-end day lag).
+        // When coverage is insufficient, fall through to use daily-accrued interest as-is.
+        LocalDate quarterStart = getQuarterStartDate(bd);
+        long actualDaysInQuarter = ChronoUnit.DAYS.between(quarterStart, bd) + 1;
+        // CBS: Count BUSINESS days (non-holiday) from the calendar for coverage comparison.
+        // This uses the account's branch calendar since holidays can vary by branch.
+        Long branchId = acct.getBranch() != null ? acct.getBranch().getId() : null;
+        long businessDaysInQuarter = branchId != null
+                ? calendarRepository.countBusinessDaysInPeriod(tid, branchId, quarterStart, bd)
+                : actualDaysInQuarter; // Fallback to calendar days if no branch (shouldn't happen)
+        long snapshotDays = balanceSnapshotRepository.countSnapshotsInPeriod(
+                tid, acct.getId(), quarterStart, bd);
+        if (snapshotDays > 0 && snapshotDays >= businessDaysInQuarter - 1) {
+            BigDecimal minBalance = balanceSnapshotRepository.findMinBalanceInPeriod(
+                    tid, acct.getId(), quarterStart, bd);
+            // CBS: Include today's CURRENT ledger balance as a min-balance candidate.
+            // Step 8.6 (snapshot capture) runs AFTER Step 8 (interest credit) in EOD,
+            // so today's snapshot doesn't exist yet when this method executes.
+            // If the customer made a large withdrawal today, the current balance may be
+            // lower than any prior snapshot — we must use the lower of the two.
+            // Per RBI: interest on minimum daily balance means the TRUE minimum across
+            // ALL days in the quarter, including the current day.
+            minBalance = minBalance.min(acct.getLedgerBalance());
+            // Recalculate interest on minimum daily balance for the ACTUAL quarter duration
+            // Formula: minBalance * rate * actualDays / 36500
+            // Per RBI: interest is for the full quarter period, not just snapshot-covered days
+            BigDecimal recalculated = minBalance
+                    .multiply(acct.getInterestRate())
+                    .multiply(BigDecimal.valueOf(actualDaysInQuarter))
+                    .divide(new BigDecimal("36500"), 2, RoundingMode.HALF_UP);
+            if (recalculated.compareTo(interest) < 0) {
+                log.info("Min daily balance adjustment: account={}, accrued={}, minBal recalc={}, minBalance={}, "
+                        + "actualDays={}, snapshotDays={}",
+                        acn, interest, recalculated, minBalance, actualDaysInQuarter, snapshotDays);
+                interest = recalculated;
+            }
+            // If recalculated > accrued (shouldn't happen if snapshots are correct),
+            // use the lower value (accrued) as a safety cap — never overpay interest.
+        } else if (snapshotDays > 0) {
+            // Insufficient snapshot coverage — log warning but use daily-accrued interest.
+            // Per CBS safety principle: when data is incomplete, do NOT recalculate.
+            // Daily accrual on closing balance is the conservative fallback.
+            log.warn("Min daily balance skipped: account={}, snapshotDays={}, businessDays={}, "
+                    + "coverage={}% — insufficient for recalculation, using daily-accrued interest",
+                    acn, snapshotDays, businessDaysInQuarter,
+                    String.format("%.1f", businessDaysInQuarter > 0
+                            ? snapshotDays * 100.0 / businessDaysInQuarter : 0));
+        }
+        // CBS CRITICAL: If min-balance recalculation reduced interest to zero (e.g., customer
+        // withdrew entire balance on quarter-end day → minBalance=0 → recalculated=0),
+        // skip the GL posting entirely. A zero-amount GL entry creates phantom transactions
+        // in the ledger, corrupts the voucher register, and the TransactionEngine may reject
+        // zero amounts. Per Finacle: zero-interest quarters are valid — just clear accrued
+        // and update lastInterestCreditDate without posting.
+        if (interest.signum() <= 0) {
+            acct.setAccruedInterest(BigDecimal.ZERO);
+            acct.setLastInterestCreditDate(bd);
+            accountRepository.save(acct);
+            log.info("Zero interest after min-balance adjustment for {} on {} — no GL posting", acn, bd);
+            return null;
+        }
+
         String gl = glForAccount(acct);
         TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("DEPOSIT")
@@ -676,8 +829,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // the business date (not calendar date) from their date of birth.
         BigDecimal tdsThreshold = TDS_THRESHOLD_REGULAR;
         if (acct.getCustomer() != null && acct.getCustomer().getDateOfBirth() != null) {
-            long age = java.time.temporal.ChronoUnit.YEARS.between(
-                    acct.getCustomer().getDateOfBirth(), bd);
+            long age = ChronoUnit.YEARS.between(acct.getCustomer().getDateOfBirth(), bd);
             if (age >= SENIOR_CITIZEN_AGE) {
                 tdsThreshold = TDS_THRESHOLD_SENIOR;
             }
@@ -952,10 +1104,16 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     // === Transaction Reversal ===
     // Per Finacle TRAN_REVERSAL / Temenos REVERSAL:
     // 1. Find original transaction (must exist, must not already be reversed)
-    // 2. Post contra GL entries via TransactionEngine (swap DR/CR legs)
-    // 3. Restore account balance (add back for debits, subtract for credits)
-    // 4. Mark original as reversed (never delete per CBS audit rules)
-    // 5. Create reversal DepositTransaction linked to original
+    // 2. For TRANSFERS: find and reverse BOTH legs (TRANSFER_DEBIT + TRANSFER_CREDIT)
+    //    — lock both accounts in alphabetical order to prevent deadlock
+    // 3. Post contra GL entries via TransactionEngine (swap DR/CR legs)
+    // 4. Restore account balance (add back for debits, subtract for credits)
+    // 5. Mark original(s) as reversed (never delete per CBS audit rules)
+    // 6. Create reversal DepositTransaction linked to original
+    //
+    // CBS CRITICAL: Fund transfers create TWO subledger entries sharing one journal entry.
+    // Reversing only one leg leaves the counterparty balance and subledger incorrect —
+    // a net money creation/destruction event that violates conservation-of-funds.
     @Override
     @Transactional
     public DepositTransaction reverseTransaction(String transactionRef, String reason, LocalDate businessDate) {
@@ -973,6 +1131,17 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             throw new BusinessException("ALREADY_REVERSED", "Transaction " + transactionRef + " is already reversed");
         }
 
+        // CBS Tier-1: Detect fund transfer reversal — requires both-leg handling.
+        // Per Finacle TRAN_REVERSAL: TRANSFER_DEBIT and TRANSFER_CREDIT are paired.
+        // Without both-leg reversal, the source balance is restored but the target retains
+        // the credit — net money creation that corrupts GL trial balance.
+        boolean isTransferReversal = "TRANSFER_DEBIT".equals(original.getTransactionType())
+                || "TRANSFER_CREDIT".equals(original.getTransactionType());
+        if (isTransferReversal) {
+            return reverseTransfer(original, reason, businessDate, tid);
+        }
+
+        // === Non-transfer reversal (deposit, withdrawal, charge, etc.) ===
         // Step 2: Lock the account
         var acct = lockAccount(tid, original.getDepositAccount().getAccountNumber());
         if (acct.isClosed()) {
@@ -1076,5 +1245,148 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 null,
                 original.getChannel(),
                 null);
+    }
+
+    /**
+     * Reverse a fund transfer — handles BOTH legs (TRANSFER_DEBIT + TRANSFER_CREDIT) atomically.
+     *
+     * Per Finacle TRAN_REVERSAL / Temenos REVERSAL:
+     * Fund transfers create two subledger entries sharing one GL journal entry. Both legs
+     * must be reversed in a single atomic transaction to maintain subledger ↔ GL consistency.
+     *
+     * Without both-leg reversal, the source account's balance would be restored but the target
+     * account would retain the credited amount — a net money creation event that violates
+     * conservation-of-funds and corrupts the GL trial balance.
+     *
+     * Account locking follows the same alphabetical ordering as the transfer() method
+     * to prevent ABBA deadlocks between concurrent transfer + reversal operations.
+     */
+    private DepositTransaction reverseTransfer(
+            DepositTransaction original, String reason, LocalDate businessDate, String tid) {
+        BigDecimal amount = original.getAmount();
+        String counterpartyAccNo = original.getCounterpartyAccount();
+
+        if (counterpartyAccNo == null || counterpartyAccNo.isBlank()) {
+            throw new BusinessException("REVERSAL_FAILED",
+                    "Cannot reverse transfer: counterparty account not recorded on transaction "
+                            + original.getTransactionRef());
+        }
+
+        // Identify debit-side and credit-side account numbers
+        String debitAccNo;
+        String creditAccNo;
+        if ("TRANSFER_DEBIT".equals(original.getTransactionType())) {
+            debitAccNo = original.getDepositAccount().getAccountNumber();
+            creditAccNo = counterpartyAccNo;
+        } else {
+            creditAccNo = original.getDepositAccount().getAccountNumber();
+            debitAccNo = counterpartyAccNo;
+        }
+
+        // Lock BOTH accounts in alphabetical order per deadlock prevention convention
+        boolean debitFirst = debitAccNo.compareTo(creditAccNo) < 0;
+        var firstAcct = lockAccount(tid, debitFirst ? debitAccNo : creditAccNo);
+        var secondAcct = lockAccount(tid, debitFirst ? creditAccNo : debitAccNo);
+        var debitAcct = debitFirst ? firstAcct : secondAcct;
+        var creditAcct = debitFirst ? secondAcct : firstAcct;
+
+        if (debitAcct.isClosed()) {
+            throw new BusinessException("ACCOUNT_CLOSED",
+                    "Cannot reverse transfer: source account closed: " + debitAccNo);
+        }
+        if (creditAcct.isClosed()) {
+            throw new BusinessException("ACCOUNT_CLOSED",
+                    "Cannot reverse transfer: target account closed: " + creditAccNo);
+        }
+
+        // Find the counterparty leg (to mark it reversed too)
+        DepositTransaction counterpartyTxn = null;
+        if (original.getJournalEntryId() != null) {
+            List<DepositTransaction> journalTxns = transactionRepository
+                    .findByTenantIdAndJournalEntryId(tid, original.getJournalEntryId());
+            for (DepositTransaction jt : journalTxns) {
+                if (!jt.getId().equals(original.getId()) && !jt.isReversed()) {
+                    counterpartyTxn = jt;
+                    break;
+                }
+            }
+        }
+        if (counterpartyTxn != null && counterpartyTxn.isReversed()) {
+            throw new BusinessException("ALREADY_REVERSED",
+                    "Counterparty leg " + counterpartyTxn.getTransactionRef() + " is already reversed");
+        }
+
+        // Post contra GL entries: reverse the original transfer journal
+        // Original: DR source_gl / CR target_gl → Reversal: DR target_gl / CR source_gl
+        String srcGl = glForAccount(debitAcct);
+        String tgtGl = glForAccount(creditAcct);
+        TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
+                .sourceModule("DEPOSIT")
+                .transactionType("REVERSAL")
+                .accountReference(debitAccNo)
+                .amount(amount)
+                .valueDate(businessDate)
+                .branchCode(debitAcct.getBranch().getBranchCode())
+                .narration("Transfer reversal: " + original.getTransactionRef() + " — " + reason)
+                .journalLines(List.of(
+                        new JournalLineRequest(tgtGl, DebitCredit.DEBIT, amount,
+                                "Reversal debit " + creditAccNo),
+                        new JournalLineRequest(srcGl, DebitCredit.CREDIT, amount,
+                                "Reversal credit " + debitAccNo)))
+                .systemGenerated(false)
+                .build());
+
+        // Restore both account balances
+        // Debit account: was debited in original → credit back (add)
+        debitAcct.setLedgerBalance(debitAcct.getLedgerBalance().add(amount));
+        recomputeAvailable(debitAcct);
+        debitAcct.setLastTransactionDate(businessDate);
+        debitAcct.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        accountRepository.save(debitAcct);
+
+        // Credit account: was credited in original → debit back (subtract)
+        creditAcct.setLedgerBalance(creditAcct.getLedgerBalance().subtract(amount));
+        recomputeAvailable(creditAcct);
+        creditAcct.setLastTransactionDate(businessDate);
+        creditAcct.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        accountRepository.save(creditAcct);
+
+        // Mark BOTH legs as reversed
+        original.setReversed(true);
+        original.setReversedByRef(r.getTransactionRef());
+        original.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        transactionRepository.save(original);
+
+        if (counterpartyTxn != null) {
+            counterpartyTxn.setReversed(true);
+            counterpartyTxn.setReversedByRef(r.getTransactionRef());
+            counterpartyTxn.setUpdatedBy(SecurityUtil.getCurrentUsername());
+            transactionRepository.save(counterpartyTxn);
+        }
+
+        auditService.logEvent(
+                "DepositTransaction",
+                original.getId(),
+                "TRANSFER_REVERSAL",
+                original.getTransactionRef(),
+                r.getTransactionRef(),
+                "DEPOSIT",
+                "Transfer reversed (both legs): " + original.getTransactionRef()
+                        + " | Reason: " + reason + " | Amount: INR " + amount
+                        + " | Source: " + debitAccNo + " | Target: " + creditAccNo
+                        + (counterpartyTxn != null ? " | Counterparty ref: " + counterpartyTxn.getTransactionRef() : ""));
+
+        log.info("Transfer reversed (both legs): ref={}, amount={}, src={}, tgt={}, reason={}",
+                original.getTransactionRef(), amount, debitAccNo, creditAccNo, reason);
+
+        // Create reversal subledger entries for BOTH accounts
+        String creditReversalRef = ReferenceGenerator.generateTransactionRef();
+        buildTxn(creditAcct, amount, "REVERSAL", "DEBIT", businessDate,
+                "Transfer reversal debit: " + original.getTransactionRef() + " — " + reason,
+                r, creditReversalRef, null, "INTERNAL", debitAccNo);
+
+        return buildTxn(debitAcct, amount, "REVERSAL", "CREDIT", businessDate,
+                "Transfer reversal credit: " + original.getTransactionRef() + " — " + reason,
+                r, r.getTransactionRef(), null, "INTERNAL", creditAccNo);
     }
 }

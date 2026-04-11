@@ -8,10 +8,10 @@ import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.CbsReferenceService;
 import com.finvanta.util.BranchAccessValidator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.PiiMaskingUtil;
-import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
@@ -37,6 +37,7 @@ public class CustomerController {
     private final AuditService auditService;
     private final BusinessDateService businessDateService;
     private final BranchAccessValidator branchAccessValidator;
+    private final CbsReferenceService cbsReferenceService;
 
     public CustomerController(
             CustomerRepository customerRepository,
@@ -45,7 +46,8 @@ public class CustomerController {
             LoanAccountRepository accountRepository,
             AuditService auditService,
             BusinessDateService businessDateService,
-            BranchAccessValidator branchAccessValidator) {
+            BranchAccessValidator branchAccessValidator,
+            CbsReferenceService cbsReferenceService) {
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.applicationRepository = applicationRepository;
@@ -53,6 +55,7 @@ public class CustomerController {
         this.auditService = auditService;
         this.businessDateService = businessDateService;
         this.branchAccessValidator = branchAccessValidator;
+        this.cbsReferenceService = cbsReferenceService;
     }
 
     /**
@@ -181,7 +184,10 @@ public class CustomerController {
                 }
             }
 
-            customer.setCustomerNumber(ReferenceGenerator.generateCustomerNumber(branch.getBranchCode()));
+            // CBS Tier-1: CIF generated via DB-backed sequence (SequenceGeneratorService).
+            // Produces sequential, deterministic CIF numbers that survive JVM restarts.
+            // Format: {SOL:3}{SERIAL:7}{CHECK:1} → 11 pure digits with Luhn check.
+            customer.setCustomerNumber(cbsReferenceService.generateCustomerNumber(branch.getId()));
             customer.setTenantId(tenantId);
             customer.setBranch(branch);
             customer.setCreatedBy(currentUser);

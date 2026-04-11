@@ -2,11 +2,15 @@ package com.finvanta.controller;
 
 import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.audit.AuditService;
+import com.finvanta.batch.InterBranchSettlementService;
 import com.finvanta.domain.entity.ProductMaster;
+import com.finvanta.repository.AppUserRepository;
 import com.finvanta.repository.ChargeConfigRepository;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.repository.TransactionLimitRepository;
+import com.finvanta.service.MfaService;
+import com.finvanta.service.QrCodeGenerator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
@@ -42,6 +46,10 @@ public class AdminController {
     private final GLMasterRepository glMasterRepository;
     private final ProductGLResolver glResolver;
     private final AuditService auditService;
+    private final MfaService mfaService;
+    private final QrCodeGenerator qrCodeGenerator;
+    private final AppUserRepository appUserRepository;
+    private final InterBranchSettlementService settlementService;
 
     public AdminController(
             ProductMasterRepository productRepository,
@@ -49,13 +57,21 @@ public class AdminController {
             ChargeConfigRepository chargeConfigRepository,
             GLMasterRepository glMasterRepository,
             ProductGLResolver glResolver,
-            AuditService auditService) {
+            AuditService auditService,
+            MfaService mfaService,
+            QrCodeGenerator qrCodeGenerator,
+            AppUserRepository appUserRepository,
+            InterBranchSettlementService settlementService) {
         this.productRepository = productRepository;
         this.limitRepository = limitRepository;
         this.chargeConfigRepository = chargeConfigRepository;
         this.glMasterRepository = glMasterRepository;
         this.glResolver = glResolver;
         this.auditService = auditService;
+        this.mfaService = mfaService;
+        this.qrCodeGenerator = qrCodeGenerator;
+        this.appUserRepository = appUserRepository;
+        this.settlementService = settlementService;
     }
 
     // ========================================================================
@@ -223,5 +239,152 @@ public class AdminController {
         ModelAndView mav = new ModelAndView("admin/charges");
         mav.addObject("charges", chargeConfigRepository.findByTenantIdAndIsActiveTrueOrderByEventTriggerAsc(tenantId));
         return mav;
+    }
+
+    // ========================================================================
+    // MFA Management (per RBI IT Governance Direction 2023 Section 8.4)
+    // ========================================================================
+
+    /** MFA management dashboard — lists all users with MFA status */
+    @GetMapping("/mfa")
+    public ModelAndView mfaDashboard() {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("admin/mfa");
+        mav.addObject("users", appUserRepository.findByTenantIdOrderByRoleAscUsernameAsc(tenantId));
+        return mav;
+    }
+
+    /**
+     * Enable MFA for a user. Per RBI IT Governance Direction 2023 Section 8.4:
+     * mandatory for ADMIN, optional for MAKER/CHECKER.
+     * After enabling, user must complete enrollment before login is allowed.
+     */
+    @PostMapping("/mfa/enable")
+    public String enableMfa(@RequestParam String username, RedirectAttributes redirectAttributes) {
+        try {
+            boolean enabled = mfaService.enableMfa(username);
+            if (enabled) {
+                redirectAttributes.addFlashAttribute("success",
+                        "MFA enabled for " + username + ". User must complete enrollment to log in.");
+            } else {
+                redirectAttributes.addFlashAttribute("info", "MFA already enabled for " + username);
+            }
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/mfa";
+    }
+
+    /**
+     * Enroll MFA — generates TOTP secret and returns QR code URI.
+     * Per Finacle MFA_ENROLL: secret generated server-side, displayed as QR code.
+     */
+    @PostMapping("/mfa/enroll")
+    public ModelAndView enrollMfa(@RequestParam String username, RedirectAttributes redirectAttributes) {
+        try {
+            String base32Secret = mfaService.enrollMfa(username);
+            String otpAuthUri = mfaService.buildOtpAuthUri(username, base32Secret);
+
+            // CBS: Generate QR code server-side as Base64 PNG data URI.
+            // Per Finacle/Temenos Tier-1 standards: bank networks are air-gapped,
+            // so QR rendering must be server-side (no CDN/JS library dependency).
+            // The QR image is embedded inline via data:image/png;base64,... — no
+            // external image hosting, no client-side processing of the TOTP secret.
+            String qrCodeDataUri = qrCodeGenerator.generateDataUri(otpAuthUri);
+
+            ModelAndView mav = new ModelAndView("admin/mfa-enroll");
+            mav.addObject("username", username);
+            mav.addObject("secret", base32Secret);
+            mav.addObject("otpAuthUri", otpAuthUri);
+            mav.addObject("qrCodeDataUri", qrCodeDataUri);
+            return mav;
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+            return new ModelAndView("redirect:/admin/mfa");
+        }
+    }
+
+    /**
+     * Verify TOTP code to complete MFA enrollment.
+     * Per Finacle MFA_ENROLL: enrollment is only complete after successful TOTP verification.
+     */
+    @PostMapping("/mfa/verify")
+    public String verifyMfa(
+            @RequestParam String username,
+            @RequestParam String totpCode,
+            RedirectAttributes redirectAttributes) {
+        try {
+            boolean verified = mfaService.verifyAndActivateMfa(username, totpCode);
+            if (verified) {
+                redirectAttributes.addFlashAttribute("success",
+                        "MFA enrollment verified for " + username + ". User can now log in with TOTP.");
+            } else {
+                redirectAttributes.addFlashAttribute("error",
+                        "Invalid TOTP code for " + username + ". Please try again with a fresh code.");
+            }
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/mfa";
+    }
+
+    /**
+     * Disable MFA for a user. Per RBI: ADMIN users cannot have MFA disabled.
+     * Requires mandatory reason for audit trail.
+     */
+    @PostMapping("/mfa/disable")
+    public String disableMfa(
+            @RequestParam String username,
+            @RequestParam String reason,
+            RedirectAttributes redirectAttributes) {
+        try {
+            mfaService.disableMfa(username, reason);
+            redirectAttributes.addFlashAttribute("success", "MFA disabled for " + username);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/mfa";
+    }
+
+    // ========================================================================
+    // Inter-Branch Settlement — HO Manual Settle (per Finacle IB_SETTLEMENT)
+    // ========================================================================
+
+    /**
+     * IB Settlement dashboard — shows stale PENDING transaction count.
+     * Per Finacle IB_SETTLEMENT: HO must review and authorize cross-date settlement.
+     */
+    @GetMapping("/ib-settlement")
+    public ModelAndView ibSettlementDashboard() {
+        ModelAndView mav = new ModelAndView("admin/ib-settlement");
+        mav.addObject("stalePendingCount", settlementService.countStalePending());
+        return mav;
+    }
+
+    /**
+     * HO Manual Settlement — settle stale PENDING IB transactions from prior dates.
+     *
+     * Per Finacle IB_SETTLEMENT / Temenos IB.NETTING:
+     * Cross-date PENDING transactions require explicit HO authorization because:
+     * 1. The original EOD failed — root cause must be investigated
+     * 2. Cross-date settlement affects prior-day GL balances (audit implications)
+     * 3. Regulatory reporting for the prior date may already have been submitted
+     *
+     * Mandatory: reason + HO authorization reference number for audit trail.
+     */
+    @PostMapping("/ib-settlement/manual-settle")
+    public String manualSettleStalePending(
+            @RequestParam String reason,
+            @RequestParam String hoAuthorizationRef,
+            RedirectAttributes redirectAttributes) {
+        try {
+            int[] result = settlementService.manualSettleStalePending(reason, hoAuthorizationRef);
+            redirectAttributes.addFlashAttribute("success",
+                    "HO manual settlement completed: settled=" + result[0] + ", failed=" + result[1]
+                            + ", hoAuth=" + hoAuthorizationRef);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/ib-settlement";
     }
 }

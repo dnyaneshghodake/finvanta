@@ -50,19 +50,28 @@ class ReferenceGeneratorTest {
     }
 
     @Test
-    @DisplayName("Customer number starts with CUST prefix")
-    void customerNumber_hasCustPrefix() {
-        String custNo = ReferenceGenerator.generateCustomerNumber("BLR001");
-        assertTrue(custNo.startsWith("CUST"), "Customer number must start with CUST");
+    @DisplayName("Customer CIF is 11 pure digits with valid Luhn check per Finacle")
+    void customerNumber_hasFinacleCifFormat() {
+        String cif = ReferenceGenerator.generateCustomerNumber(2L);
+        assertEquals(11, cif.length(), "CIF must be exactly 11 digits per Finacle/SBI");
+        assertTrue(cif.matches("\\d{11}"), "CIF must be pure numeric (no prefix/hyphen)");
+        assertTrue(cif.startsWith("002"), "CIF must start with 3-digit SOL prefix from branch ID");
+        // Verify Luhn check digit
+        String base = cif.substring(0, 10);
+        int expectedCheck = ReferenceGenerator.computeLuhn(base);
+        int actualCheck = cif.charAt(10) - '0';
+        assertEquals(expectedCheck, actualCheck, "Luhn check digit must be valid");
     }
 
     @Test
     @DisplayName("All references fit within VARCHAR(40) column width")
     void allReferences_fitWithinColumnWidth() {
         // CBS Column Width Standard: all reference fields are VARCHAR(40)
+        // NOTE: generateAccountNumber/ApplicationNumber/CustomerNumber are @Deprecated
+        // (use CbsReferenceService for production). Testing here for backward compatibility.
         String accNo = ReferenceGenerator.generateAccountNumber("HQ001");
         String appNo = ReferenceGenerator.generateApplicationNumber("HQ001");
-        String custNo = ReferenceGenerator.generateCustomerNumber("HQ001");
+        String custNo = ReferenceGenerator.generateCustomerNumber(1L);
         String txnRef = ReferenceGenerator.generateTransactionRef();
         String jrnRef = ReferenceGenerator.generateJournalRef();
 

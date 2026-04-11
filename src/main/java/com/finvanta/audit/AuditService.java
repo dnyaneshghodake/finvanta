@@ -74,7 +74,12 @@ public class AuditService {
         AuditLog auditLog = new AuditLog();
         auditLog.setTenantId(tenantId);
         // CBS Tier-1: Branch attribution on audit records per Finacle AUDIT_TRAIL.
-        // Every audit record carries the user's home branch for branch-level audit reports.
+        // Records the OPERATING branch (switched branch if ADMIN has switched, else home).
+        // Per Finacle SOL_SWITCH: the audit record must reflect WHICH BRANCH'S DATA was
+        // accessed/modified — not just who did it. This enables branch-level audit reports
+        // where the ADMIN's actions on Branch X appear in Branch X's audit trail.
+        // The user's HOME branch is recorded in the description field by callers that need
+        // forensic user-attribution (e.g., BranchSwitchController).
         // Null for system/tenant-level events where no branch context exists.
         Long userBranchId = SecurityUtil.getCurrentUserBranchId();
         if (userBranchId != null) {
@@ -82,7 +87,11 @@ public class AuditService {
             auditLog.setBranchCode(SecurityUtil.getCurrentUserBranchCode());
         }
         auditLog.setEntityType(entityType);
-        auditLog.setEntityId(entityId);
+        // CBS Tier-1: Per Finacle AUDIT_TRAIL — entity_id is NEVER null in the database.
+        // 0L = system-level event (calendar generation, holiday, HO settlement, branch switch).
+        // This is the SINGLE enforcement point — no caller in any module needs to worry
+        // about null entityId. The service layer normalizes it before persistence.
+        auditLog.setEntityId(entityId != null ? entityId : 0L);
         auditLog.setAction(action);
         auditLog.setBeforeSnapshot(beforeJson);
         auditLog.setAfterSnapshot(afterJson);
@@ -139,9 +148,14 @@ public class AuditService {
     private String computeHash(AuditLog auditLog, String previousHash) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            // CBS: Use "0" for null entityId in hash computation to maintain
+            // deterministic hash chain. Null entityId occurs for system-level events
+            // (calendar generation, holiday management) that don't reference a specific entity.
+            String entityIdStr = auditLog.getEntityId() != null
+                    ? auditLog.getEntityId().toString() : "0";
             String data = auditLog.getTenantId()
                     + auditLog.getEntityType()
-                    + auditLog.getEntityId()
+                    + entityIdStr
                     + auditLog.getAction()
                     + auditLog.getEventTimestamp()
                     + auditLog.getPerformedBy()

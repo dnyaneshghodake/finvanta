@@ -10,17 +10,23 @@ import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.BusinessException;
+import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.finvanta.audit.AuditService;
 
 /**
  * CBS Inter-Branch Settlement Service per Finacle IB_SETTLEMENT.
@@ -42,16 +48,22 @@ public class InterBranchSettlementService {
     private final BranchRepository branchRepository;
     private final LedgerEntryRepository ledgerRepository;
     private final TransactionEngine transactionEngine;
+    private final AuditService auditService;
+    private final BusinessDateService businessDateService;
 
     public InterBranchSettlementService(
             InterBranchSettlementRepository settlementRepository,
             BranchRepository branchRepository,
             LedgerEntryRepository ledgerRepository,
-            TransactionEngine transactionEngine) {
+            TransactionEngine transactionEngine,
+            AuditService auditService,
+            BusinessDateService businessDateService) {
         this.settlementRepository = settlementRepository;
         this.branchRepository = branchRepository;
         this.ledgerRepository = ledgerRepository;
         this.transactionEngine = transactionEngine;
+        this.auditService = auditService;
+        this.businessDateService = businessDateService;
     }
 
     /**
@@ -155,8 +167,19 @@ public class InterBranchSettlementService {
     }
 
     /**
-     * Settle inter-branch transactions (called during EOD).
-     * Validates that sum(receivables) = sum(payables) for all branches.
+     * Settle inter-branch transactions for a specific business date (called during EOD).
+     *
+     * Per Finacle IB_SETTLEMENT / Temenos IB.NETTING:
+     * 1. Fetch PENDING IB transactions for THIS business date only (date-scoped)
+     * 2. Validate all pending IB transactions have complete GL postings
+     * 3. Calculate net position per branch (receivables - payables)
+     * 4. Validate GL 1300 (IB Receivable) vs GL 2300 (IB Payable) conservation
+     * 5. Mark transactions as SETTLED with batch reference
+     * 6. Log net position summary for HO reconciliation
+     *
+     * CBS IMPORTANT: Settlement is DATE-SCOPED. Transactions from prior dates that
+     * remain PENDING indicate a failed prior-day EOD and require explicit HO
+     * authorization to settle. They are logged as warnings but NOT auto-settled.
      *
      * @param businessDate CBS business date
      */
@@ -164,40 +187,189 @@ public class InterBranchSettlementService {
     public void settleInterBranch(LocalDate businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
 
+        // CBS Tier-1: Date-scoped settlement with pessimistic lock per Finacle IB_SETTLEMENT.
+        // Only settle PENDING transactions for TODAY's business date.
+        // PESSIMISTIC_WRITE lock prevents concurrent settlement (defense-in-depth).
         List<InterBranchTransaction> pendingTransactions =
+                settlementRepository.findAndLockPendingByDate(tenantId, businessDate);
+
+        // CBS: Warn about stale PENDING transactions from prior dates (data integrity alert)
+        List<InterBranchTransaction> allPending =
                 settlementRepository.findByTenantIdAndSettlementStatusOrderByBusinessDateAsc(tenantId, "PENDING");
+        long stalePendingCount = allPending.stream()
+                .filter(txn -> txn.getBusinessDate().isBefore(businessDate))
+                .count();
+        if (stalePendingCount > 0) {
+            log.warn("IB SETTLEMENT: {} PENDING transactions from PRIOR dates detected. "
+                    + "These require manual HO review — not auto-settled.", stalePendingCount);
+        }
+
+        if (pendingTransactions.isEmpty()) {
+            log.info("No pending inter-branch transactions to settle for {}", businessDate);
+            return;
+        }
 
         String settlementBatchRef = "IB-SETTLEMENT-" + businessDate;
         boolean allBalanced = true;
 
-        // CBS: For each branch, verify receivables = payables
-        // (This is a simplified approach; production would track per-branch balances)
+        // CBS Tier-1: Calculate per-branch net position (receivables - payables)
+        Map<String, BigDecimal> branchNetPositions = new LinkedHashMap<>();
 
         for (InterBranchTransaction txn : pendingTransactions) {
             try {
-                // Assume balanced if both journals exist (full implementation would add balance checks)
                 if (txn.getSourceJournalId() != null && txn.getTargetJournalId() != null) {
                     txn.setSettlementStatus("SETTLED");
                     txn.setSettlementBatchRef(settlementBatchRef);
+
+                    // Track net position: source branch pays (negative), target branch receives (positive)
+                    String sourceCode = txn.getSourceBranch().getBranchCode();
+                    String targetCode = txn.getTargetBranch().getBranchCode();
+                    branchNetPositions.merge(sourceCode, txn.getAmount().negate(), BigDecimal::add);
+                    branchNetPositions.merge(targetCode, txn.getAmount(), BigDecimal::add);
                 } else {
                     txn.setSettlementStatus("FAILED");
-                    txn.setFailureReason("Incomplete GL posting");
+                    txn.setFailureReason("Incomplete GL posting — source or target journal missing");
                     allBalanced = false;
                 }
             } catch (Exception e) {
                 txn.setSettlementStatus("FAILED");
                 txn.setFailureReason(e.getMessage());
                 allBalanced = false;
-
                 log.error("Inter-branch settlement failed for transaction {}: {}", txn.getId(), e.getMessage());
             }
             settlementRepository.save(txn);
         }
 
-        if (!allBalanced) {
-            log.warn("Inter-branch settlement completed with errors. Manual review required.");
-        } else {
-            log.info("Inter-branch settlement completed successfully for date: {}", businessDate);
+        // CBS Tier-1: Conservation-of-funds validation.
+        // The in-memory net position sum is tautologically zero by construction (each txn
+        // adds +X to target and -X to source). The REAL conservation check is GL-based:
+        //   GL 1300 (IB Receivable) debit total == GL 2300 (IB Payable) credit total
+        // This is verified by ReconciliationService.reconcileLedgerVsGL() in EOD Step 7
+        // and SubledgerReconciliationService in Step 7.1. If GL posting failed for any
+        // transaction (sourceJournalId or targetJournalId is null), that transaction is
+        // already marked FAILED above and allBalanced is set to false.
+
+        // Log per-branch net positions for HO reconciliation
+        for (var entry : branchNetPositions.entrySet()) {
+            String direction = entry.getValue().signum() >= 0 ? "NET_RECEIVABLE" : "NET_PAYABLE";
+            log.info("IB Net Position: branch={}, amount={}, direction={}",
+                    entry.getKey(), entry.getValue().abs(), direction);
         }
+
+        if (!allBalanced) {
+            log.warn("Inter-branch settlement completed with errors for {}. Manual review required.", businessDate);
+        } else {
+            log.info("Inter-branch settlement completed: date={}, transactions={}, branches={}",
+                    businessDate, pendingTransactions.size(), branchNetPositions.size());
+        }
+    }
+
+    /**
+     * HO Manual Settlement — settle stale PENDING transactions from prior dates.
+     *
+     * Per Finacle IB_SETTLEMENT / Temenos IB.NETTING:
+     * Transactions from prior dates that remain PENDING indicate a failed prior-day EOD.
+     * These require explicit Head Office (HO) authorization to settle because:
+     * 1. The original EOD failed — root cause must be investigated before settlement
+     * 2. Cross-date settlement affects prior-day GL balances (audit implications)
+     * 3. Regulatory reporting for the prior date may already have been submitted
+     *
+     * Only ADMIN role can invoke this (enforced in SecurityConfig).
+     * Mandatory reason and authorization reference for audit trail.
+     *
+     * @param reason Mandatory reason for HO authorization (audit trail)
+     * @param hoAuthorizationRef HO authorization reference number
+     * @return int[2]: [0]=settled count, [1]=failed count
+     */
+    @Transactional
+    public int[] manualSettleStalePending(String reason, String hoAuthorizationRef) {
+        String tenantId = TenantContext.getCurrentTenant();
+
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException("REASON_REQUIRED",
+                    "Reason is mandatory for HO manual settlement per RBI audit norms");
+        }
+        if (hoAuthorizationRef == null || hoAuthorizationRef.isBlank()) {
+            throw new BusinessException("HO_AUTH_REQUIRED",
+                    "HO authorization reference is mandatory for cross-date IB settlement");
+        }
+
+        // CBS Tier-1: Get current business date to filter ONLY prior-date PENDING transactions.
+        // Today's PENDING transactions are legitimate — they will be settled by normal EOD
+        // via settleInterBranch() which uses date-scoped pessimistic locking.
+        // Only transactions from PRIOR dates are "stale" and require HO authorization.
+        LocalDate currentBusinessDate = businessDateService.getCurrentBusinessDate();
+
+        List<InterBranchTransaction> stalePending =
+                settlementRepository.findByTenantIdAndSettlementStatusOrderByBusinessDateAsc(tenantId, "PENDING")
+                        .stream()
+                        .filter(txn -> txn.getBusinessDate().isBefore(currentBusinessDate))
+                        .toList();
+
+        if (stalePending.isEmpty()) {
+            log.info("No stale PENDING inter-branch transactions to settle (prior to {})", currentBusinessDate);
+            return new int[] {0, 0};
+        }
+
+        String settlementBatchRef = "IB-HO-MANUAL-" + hoAuthorizationRef;
+        int settled = 0;
+        int failed = 0;
+
+        for (InterBranchTransaction txn : stalePending) {
+            try {
+                if (txn.getSourceJournalId() != null && txn.getTargetJournalId() != null) {
+                    txn.setSettlementStatus("SETTLED");
+                    txn.setSettlementBatchRef(settlementBatchRef);
+                    settled++;
+                } else {
+                    txn.setSettlementStatus("FAILED");
+                    txn.setFailureReason("HO manual settle: Incomplete GL posting — "
+                            + "source or target journal missing. Reason: " + reason);
+                    failed++;
+                }
+            } catch (Exception e) {
+                txn.setSettlementStatus("FAILED");
+                txn.setFailureReason("HO manual settle error: " + e.getMessage());
+                failed++;
+                log.error("HO manual settle failed for txn {}: {}", txn.getId(), e.getMessage());
+            }
+            settlementRepository.save(txn);
+        }
+
+        auditService.logEvent(
+                "InterBranchTransaction",
+                null,
+                "HO_MANUAL_SETTLEMENT",
+                "PENDING (" + stalePending.size() + " transactions)",
+                "settled=" + settled + ", failed=" + failed,
+                "INTER_BRANCH",
+                "HO manual settlement: reason=" + reason
+                        + " | hoAuth=" + hoAuthorizationRef
+                        + " | settled=" + settled
+                        + " | failed=" + failed
+                        + " | total=" + stalePending.size()
+                        + " | By: " + SecurityUtil.getCurrentUsername());
+
+        log.info("HO manual IB settlement: settled={}, failed={}, hoAuth={}, reason={}",
+                settled, failed, hoAuthorizationRef, reason);
+
+        return new int[] {settled, failed};
+    }
+
+    /**
+     * Get count of stale PENDING transactions from PRIOR dates (for admin dashboard display).
+     *
+     * Per Finacle IB_SETTLEMENT: only transactions from dates BEFORE the current business
+     * date are "stale". Today's PENDING transactions are expected — they will be settled
+     * by normal EOD. Showing today's transactions in the stale count would mislead the
+     * admin into triggering unnecessary HO manual settlement.
+     */
+    public long countStalePending() {
+        String tenantId = TenantContext.getCurrentTenant();
+        LocalDate currentBusinessDate = businessDateService.getCurrentBusinessDate();
+        return settlementRepository.findByTenantIdAndSettlementStatusOrderByBusinessDateAsc(tenantId, "PENDING")
+                .stream()
+                .filter(txn -> txn.getBusinessDate().isBefore(currentBusinessDate))
+                .count();
     }
 }

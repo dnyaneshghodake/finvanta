@@ -4,6 +4,9 @@ import com.finvanta.config.PiiEncryptionConverter;
 
 import jakarta.persistence.*;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 
 import lombok.Getter;
@@ -295,15 +298,14 @@ public class Customer extends BaseEntity {
     private static String computeSha256(String input) {
         if (input == null || input.isBlank()) return null;
         try {
-            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes =
-                    digest.digest(input.trim().toUpperCase().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashBytes = digest.digest(input.trim().toUpperCase().getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
             for (byte b : hashBytes) {
                 sb.append(String.format("%02x", b));
             }
             return sb.toString();
-        } catch (java.security.NoSuchAlgorithmException e) {
+        } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 not available", e);
         }
     }

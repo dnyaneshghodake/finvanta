@@ -49,6 +49,16 @@ public class AuditLog {
     @Column(name = "entity_type", nullable = false, length = 50)
     private String entityType;
 
+    /**
+     * Entity ID for the audited record. Per Finacle AUDIT_TRAIL / Temenos AUDIT.RECORD:
+     * this column is NEVER null. For system-level events (calendar generation, holiday
+     * management, HO settlement) that don't reference a specific entity row, the
+     * AuditService normalizes null to 0L before persistence.
+     *
+     * Per Tier-1 CBS: NOT NULL constraints are the database-level safety net.
+     * The service layer (AuditService.logEvent) guarantees a value is always provided.
+     * 0L = system-level event (no specific entity).
+     */
     @Column(name = "entity_id", nullable = false)
     private Long entityId;
 

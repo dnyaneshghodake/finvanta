@@ -77,6 +77,8 @@
         <li><a href="${pageContext.request.contextPath}/admin/products" class="nav-link"><i class="bi bi-box-seam"></i><span class="nav-text">Product Master</span></a></li>
         <li><a href="${pageContext.request.contextPath}/admin/charges" class="nav-link"><i class="bi bi-receipt"></i><span class="nav-text">Charge Config</span></a></li>
         <li><a href="${pageContext.request.contextPath}/admin/limits" class="nav-link"><i class="bi bi-sliders"></i><span class="nav-text">Transaction Limits</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/admin/mfa" class="nav-link"><i class="bi bi-shield-lock"></i><span class="nav-text">MFA Management</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/admin/ib-settlement" class="nav-link"><i class="bi bi-arrow-left-right"></i><span class="nav-text">IB Settlement</span></a></li>
         </c:if>
 
         <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
@@ -90,10 +92,29 @@
 <div class="fv-topbar">
     <h2 class="fv-page-title"><c:out value="${pageTitle}" default="Dashboard" /></h2>
     <div class="fv-topbar-right">
-        <span class="fv-branch-code" title="Home Branch"><i class="bi bi-building"></i> <c:out value="${userBranchCode}" default="--" /></span>
+        <!-- CBS Branch Context: Per Finacle SOL_SWITCH — ADMIN can switch branch -->
+        <c:choose>
+            <c:when test="${pageContext.request.isUserInRole('ROLE_ADMIN') && not empty allBranches}">
+                <form method="post" action="${pageContext.request.contextPath}/admin/switch-branch" class="d-inline" style="margin-right:8px;">
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <select name="branchId" onchange="this.form.submit()" class="form-select form-select-sm d-inline-block"
+                            style="width:auto;background:#1e293b;color:#90caf9;border:1px solid #334155;font-size:12px;padding:2px 24px 2px 8px;">
+                        <c:forEach var="br" items="${allBranches}">
+                            <option value="${br.id}" ${br.branchCode == userBranchCode ? 'selected' : ''}>
+                                <c:out value="${br.branchCode}" /> &mdash; <c:out value="${br.branchName}" />
+                            </option>
+                        </c:forEach>
+                    </select>
+                </form>
+            </c:when>
+            <c:otherwise>
+                <span class="fv-branch-code" title="Home Branch"><i class="bi bi-building"></i> <c:out value="${userBranchCode}" default="--" /></span>
+            </c:otherwise>
+        </c:choose>
         <span class="fv-biz-date"><c:out value="${businessDate}" default="--" /></span>
         <span class="fv-user-role"><c:out value="${userRole}" default="USER" /></span>
         <span><c:out value="${pageContext.request.userPrincipal.name}" default="" /></span>
+        <a href="${pageContext.request.contextPath}/password/change" style="color:#90caf9;font-size:12px;text-decoration:none;margin-right:8px;" title="Change Password"><i class="bi bi-key"></i></a>
         <form method="post" action="${pageContext.request.contextPath}/logout" class="d-inline">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
             <button type="submit" class="btn btn-sm" style="color:#90caf9;background:none;border:none;cursor:pointer;font-size:12px;padding:0;">Logout</button>

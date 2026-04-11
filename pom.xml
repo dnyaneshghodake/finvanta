@@ -90,6 +90,31 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- ZXing QR Code — Apache 2.0, industry-standard QR encoder/decoder.
+             Per CBS Tier-1 standards: QR encoding for MFA enrollment must use a
+             proven, audited library. Hand-rolled QR encoders invariably have subtle
+             ISO 18004 compliance bugs (Reed-Solomon, interleaving, format info).
+             ZXing is used by Google Authenticator itself and every major banking app. -->
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>core</artifactId>
+            <version>3.5.3</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>javase</artifactId>
+            <version>3.5.3</version>
+        </dependency>
+
+        <!-- Spring Boot Actuator — health checks for Tomcat/Docker/K8s deployment.
+             Per CBS Tier-1: production containers must expose health endpoints
+             for orchestration liveness/readiness probes. Only /health and /info
+             are exposed in prod (configured in application-prod.properties). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -173,6 +198,17 @@
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
+            </plugin>
+            <!-- CBS Credential Encryption CLI — runs CbsPropertyDecryptor without Spring Boot.
+                 Usage:
+                   mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="genkey"
+                   mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="encrypt KEY VALUE"
+                   mvn -q compile exec:java -Dexec.mainClass="com.finvanta.config.CbsPropertyDecryptor" -Dexec.args="decrypt KEY CIPHERTEXT"
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
