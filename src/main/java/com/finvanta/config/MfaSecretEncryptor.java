@@ -83,29 +83,39 @@ public class MfaSecretEncryptor implements AttributeConverter<String, String> {
     /**
      * CBS SECURITY: Startup validation per RBI IT Governance Direction 2023 Section 8.4.
      *
-     * In production, the default deterministic key is a CVE — any attacker who reads
-     * the source code can decrypt every MFA secret in the database. This check:
-     *   - DEV/TEST profile: logs a warning (acceptable for H2 seed data)
-     *   - PROD/any other profile: FAILS STARTUP to prevent deployment with insecure key
+     * The default deterministic key is a CVE on any persistent database — any attacker
+     * who reads the source code can decrypt every MFA secret. This check:
+     *   - DEV/TEST profile (H2 in-memory): logs a warning (H2 resets on restart, no persistent risk)
+     *   - SQLSERVER/PROD/any other profile: FAILS STARTUP to prevent deployment with insecure key
      *
      * Per Finacle/Temenos: encryption keys for authentication credentials must come
-     * from HSM/KMS/Vault in production — never from source code or properties files.
+     * from HSM/KMS/Vault on persistent databases — never from source code.
+     * Per RBI IT Governance §8.4: MFA secrets are authentication credentials equivalent
+     * to password hashes and require production-grade key management.
+     *
+     * To configure for sqlserver/prod:
+     *   1. Generate key: openssl rand -hex 32
+     *   2. Set env var: export MFA_ENCRYPTION_KEY=<64-hex-chars>
+     *   3. Or in properties: mfa.encryption.key=<64-hex-chars>
      */
     @PostConstruct
     void validateEncryptionKey() {
-        boolean isDevOrTest = environment.matchesProfiles("dev", "test", "sqlserver");
+        // CBS Tier-1: Only H2 in-memory profiles (dev, test) may use the default key.
+        // sqlserver uses a PERSISTENT database — default key = permanent CVE.
+        boolean isEphemeralDb = environment.matchesProfiles("dev", "test");
         if (DEV_DEFAULT_KEY.equals(hexKey)) {
-            if (isDevOrTest) {
+            if (isEphemeralDb) {
                 log.warn("CBS SECURITY: MFA encryption using DEFAULT DEV KEY. "
-                        + "This is acceptable for dev/test only. "
-                        + "PROD MUST override mfa.encryption.key via environment variable or secrets manager.");
+                        + "Acceptable for dev/test (H2 in-memory) only.");
             } else {
-                log.error("CBS SECURITY VIOLATION: MFA encryption key is the DEFAULT DEV KEY in non-dev profile. "
-                        + "This is a CVE — any attacker can decrypt all MFA secrets. "
-                        + "Set mfa.encryption.key via environment variable: export MFA_ENCRYPTION_KEY=$(openssl rand -hex 32)");
+                log.error("CBS SECURITY VIOLATION: MFA encryption key is the DEFAULT DEV KEY "
+                        + "on a persistent database profile. This is a CVE — any attacker who reads "
+                        + "the source code can decrypt all MFA secrets. "
+                        + "Set mfa.encryption.key: export MFA_ENCRYPTION_KEY=$(openssl rand -hex 32)");
                 throw new IllegalStateException(
-                        "FATAL: MFA encryption key must be overridden in production. "
-                                + "Set mfa.encryption.key via environment variable or secrets manager.");
+                        "FATAL: MFA encryption key must be overridden on persistent database profiles "
+                                + "(sqlserver, prod). Set mfa.encryption.key via environment variable. "
+                                + "Generate with: openssl rand -hex 32");
             }
         } else {
             log.info("CBS SECURITY: MFA encryption key configured (non-default).");
