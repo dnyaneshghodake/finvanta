@@ -1,10 +1,20 @@
 package com.finvanta.config;
 
 import com.finvanta.domain.entity.AppUser;
+import com.finvanta.domain.entity.Branch;
+import com.finvanta.domain.entity.GLMaster;
+import com.finvanta.domain.entity.Tenant;
+import com.finvanta.domain.enums.BranchType;
+import com.finvanta.domain.enums.GLAccountType;
 import com.finvanta.domain.enums.UserRole;
 import com.finvanta.repository.AppUserRepository;
+import com.finvanta.repository.BranchRepository;
+import com.finvanta.repository.GLMasterRepository;
+import com.finvanta.repository.TenantRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.TenantContext;
 
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 
@@ -18,56 +28,63 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
- * CBS Production Bootstrap Initializer per Finacle Day Zero / Temenos Installation.
+ * CBS Day Zero Installation Pipeline per Finacle INSTALL_BANK / Temenos INSTALL.COMPANY.
  *
- * Per Tier-1 CBS standards (Finacle/Temenos/BNP):
- * In production, seed data (data.sql) is NEVER loaded. The database starts empty
- * after DDL migration. The first ADMIN user must be created through a secure
- * bootstrap process — not via SQL scripts with plaintext passwords.
+ * Per Tier-1 CBS standards: the installation program creates a FULLY OPERATIONAL
+ * system in a single atomic pipeline. After bootstrap, the admin logs in and can
+ * transact immediately — no manual DBA SQL scripts required.
  *
- * This initializer runs ONCE on first startup when no users exist:
- * 1. Checks if any users exist in the database
- * 2. If empty → creates the initial SYSTEM_ADMIN user
- * 3. Password is either from environment variable or auto-generated
- * 4. Password is bcrypt-hashed (never plaintext in production)
- * 5. Password expiry is set to today (forces change on first login)
- * 6. Credentials are logged to console ONCE (never to file per RBI)
+ * Pipeline (runs ONCE when app_users table is empty):
+ *   Step 1: Tenant       — bank identity per RBI Banking Regulation Act 1949
+ *   Step 2: Head Office  — consolidation point per Finacle SOL hierarchy
+ *   Step 3: Op. Branch   — first operational branch for transactions per RBI §23
+ *   Step 4: GL Chart     — 27 Indian Banking Standard GL codes (1xxx–5xxx)
+ *   Step 5: ADMIN user   — with branch assigned, password expired (T-1)
+ *   Step 6: Calendar     — current month generated for all operational branches
+ *   Step 7: Day Open     — first business day opened, txn batches auto-created
  *
- * Per RBI IT Governance Direction 2023 Section 8.2:
- * - Initial credentials must be changed on first login
- * - Default/well-known passwords must never be deployed
- * - Bootstrap credentials must not persist in logs or config files
+ * Per RBI IT Governance Direction 2023 §8.2:
+ * - Credentials printed to console stdout ONLY (never to log files)
+ * - Password expired immediately — forces change on first login
  *
  * Environment variables:
- *   CBS_ADMIN_USERNAME  — Initial admin username (default: sysadmin)
- *   CBS_ADMIN_PASSWORD  — Initial admin password (auto-generated if not set)
- *   CBS_ADMIN_EMAIL     — Initial admin email (default: admin@localhost)
  *   CBS_ADMIN_TENANT    — Tenant code (default: DEFAULT)
- *
- * Per Finacle: the SYSTEM user is created by DBA during installation.
- * Per Temenos: SYSTEM.ADMIN is pre-configured with a one-time password.
- * This initializer provides the equivalent for Spring Boot deployments.
+ *   CBS_ADMIN_USERNAME  — Admin username (default: sysadmin)
+ *   CBS_ADMIN_PASSWORD  — Admin password (default: auto-generated)
+ *   CBS_ADMIN_EMAIL     — Admin email (default: admin@localhost)
  */
 @Component
-@Order(100) // Run after all other initializers (Hibernate DDL, data.sql, etc.)
+@Order(100)
 public class CbsBootstrapInitializer implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(CbsBootstrapInitializer.class);
 
-    /** Characters for auto-generated password: uppercase + lowercase + digits + special */
     private static final String PASSWORD_CHARS =
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%&*!";
     private static final int AUTO_PASSWORD_LENGTH = 16;
+    private static final String BOOTSTRAP_USER = "SYSTEM_BOOTSTRAP";
 
     private final AppUserRepository userRepository;
+    private final TenantRepository tenantRepository;
+    private final BranchRepository branchRepository;
+    private final GLMasterRepository glMasterRepository;
+    private final BusinessDateService businessDateService;
     private final PasswordEncoder passwordEncoder;
     private final Environment environment;
 
     public CbsBootstrapInitializer(
             AppUserRepository userRepository,
+            TenantRepository tenantRepository,
+            BranchRepository branchRepository,
+            GLMasterRepository glMasterRepository,
+            BusinessDateService businessDateService,
             PasswordEncoder passwordEncoder,
             Environment environment) {
         this.userRepository = userRepository;
+        this.tenantRepository = tenantRepository;
+        this.branchRepository = branchRepository;
+        this.glMasterRepository = glMasterRepository;
+        this.businessDateService = businessDateService;
         this.passwordEncoder = passwordEncoder;
         this.environment = environment;
     }
