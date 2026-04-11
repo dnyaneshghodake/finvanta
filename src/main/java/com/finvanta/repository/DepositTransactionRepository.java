@@ -78,8 +78,15 @@ public interface DepositTransactionRepository extends JpaRepository<DepositTrans
     /** Idempotency check */
     Optional<DepositTransaction> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
 
-    /** CBS Transaction 360: lookup by voucher number (VCH/...) */
-    Optional<DepositTransaction> findByTenantIdAndVoucherNumber(String tenantId, String voucherNumber);
+    /**
+     * CBS Transaction 360: lookup by voucher number (VCH/...).
+     * Returns List (not Optional) because fund transfers create TWO deposit transactions
+     * (TRANSFER_DEBIT + TRANSFER_CREDIT) sharing the same voucherNumber from the single
+     * TransactionEngine.execute() call. Using Optional would cause NonUniqueResultException.
+     * Per Finacle TRAN_DETAIL: a single voucher can cover multiple subledger entries.
+     * Callers should use getFirst() or stream().findFirst() for single-result contexts.
+     */
+    List<DepositTransaction> findByTenantIdAndVoucherNumber(String tenantId, String voucherNumber);
 
     /**
      * CBS Transaction 360: lookup by journal entry ID.

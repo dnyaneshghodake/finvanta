@@ -80,8 +80,13 @@ public class Txn360Controller {
         List<LedgerEntry> ledgerEntries = List.of();
 
         if (ref.startsWith("VCH")) {
-            depositTxn = depositTxnRepository
-                    .findByTenantIdAndVoucherNumber(tenantId, ref).orElse(null);
+            // CBS: Voucher lookup returns List because fund transfers create two subledger
+            // entries (TRANSFER_DEBIT + TRANSFER_CREDIT) sharing the same voucher number.
+            // Per Finacle TRAN_INQUIRY: show the first match; the full lifecycle is visible
+            // via the shared journal entry which links to both legs.
+            var depositVchResults = depositTxnRepository
+                    .findByTenantIdAndVoucherNumber(tenantId, ref);
+            depositTxn = depositVchResults.isEmpty() ? null : depositVchResults.get(0);
             if (depositTxn == null) {
                 loanTxn = loanTxnRepository
                         .findByTenantIdAndVoucherNumber(tenantId, ref).orElse(null);
@@ -105,8 +110,9 @@ public class Txn360Controller {
                         .findByTenantIdAndTransactionRef(tenantId, ref).orElse(null);
             }
             if (depositTxn == null && loanTxn == null) {
-                depositTxn = depositTxnRepository
-                        .findByTenantIdAndVoucherNumber(tenantId, ref).orElse(null);
+                var depVchFallback = depositTxnRepository
+                        .findByTenantIdAndVoucherNumber(tenantId, ref);
+                depositTxn = depVchFallback.isEmpty() ? null : depVchFallback.get(0);
             }
             if (depositTxn == null && loanTxn == null) {
                 loanTxn = loanTxnRepository

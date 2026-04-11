@@ -74,7 +74,12 @@ public class AuditService {
         AuditLog auditLog = new AuditLog();
         auditLog.setTenantId(tenantId);
         // CBS Tier-1: Branch attribution on audit records per Finacle AUDIT_TRAIL.
-        // Every audit record carries the user's home branch for branch-level audit reports.
+        // Records the OPERATING branch (switched branch if ADMIN has switched, else home).
+        // Per Finacle SOL_SWITCH: the audit record must reflect WHICH BRANCH'S DATA was
+        // accessed/modified — not just who did it. This enables branch-level audit reports
+        // where the ADMIN's actions on Branch X appear in Branch X's audit trail.
+        // The user's HOME branch is recorded in the description field by callers that need
+        // forensic user-attribution (e.g., BranchSwitchController).
         // Null for system/tenant-level events where no branch context exists.
         Long userBranchId = SecurityUtil.getCurrentUserBranchId();
         if (userBranchId != null) {

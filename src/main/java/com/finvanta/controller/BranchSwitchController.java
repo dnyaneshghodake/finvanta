@@ -28,7 +28,11 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
  * Per RBI IT Governance Direction 2023:
  * - Branch switch is ADMIN-only (MAKER/CHECKER are restricted to home branch)
  * - Every branch switch is audited with reason
- * - The user's HOME branch is always recorded in audit trail (not the switched branch)
+ * - Audit trail records BOTH the home branch (for user attribution) and the operating
+ *   branch (for data context). AuditService uses getCurrentUserBranchId() which returns
+ *   the SWITCHED branch — this is correct CBS behavior because the audit record should
+ *   reflect WHICH BRANCH'S DATA was accessed/modified, not just who did it.
+ *   The home branch is recorded separately in the description field for forensic tracing.
  *
  * ADMIN-only access enforced by SecurityConfig (/admin/** → ROLE_ADMIN).
  */
