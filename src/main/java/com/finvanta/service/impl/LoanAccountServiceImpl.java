@@ -24,6 +24,7 @@ import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CollateralService;
 import com.finvanta.service.DepositAccountService;
+import com.finvanta.service.CbsReferenceService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
 import com.finvanta.transaction.TransactionEngine;
@@ -90,6 +91,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final StandingInstructionServiceImpl standingInstructionService;
     private final BranchAccessValidator branchAccessValidator;
     private final CollateralService collateralService;
+    private final CbsReferenceService cbsReferenceService;
 
     public LoanAccountServiceImpl(
             LoanAccountRepository accountRepository,
@@ -111,7 +113,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             DepositAccountService depositAccountService,
             @Lazy StandingInstructionServiceImpl standingInstructionService,
             BranchAccessValidator branchAccessValidator,
-            CollateralService collateralService) {
+            CollateralService collateralService,
+            CbsReferenceService cbsReferenceService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
@@ -132,6 +135,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.standingInstructionService = standingInstructionService;
         this.branchAccessValidator = branchAccessValidator;
         this.collateralService = collateralService;
+        this.cbsReferenceService = cbsReferenceService;
     }
 
     @Override
@@ -166,7 +170,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         LoanAccount account = new LoanAccount();
         account.setTenantId(tenantId);
         account.setAccountNumber(
-                ReferenceGenerator.generateAccountNumber(application.getBranch().getBranchCode()));
+                cbsReferenceService.generateLoanAccountNumber(application.getBranch().getBranchCode()));
         account.setApplication(application);
         account.setCustomer(application.getCustomer());
         account.setBranch(application.getBranch());

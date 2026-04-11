@@ -8,7 +8,6 @@ import com.finvanta.repository.CollateralRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.util.BusinessException;
-import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
@@ -47,16 +46,19 @@ public class CollateralService {
     private final LoanApplicationRepository applicationRepository;
     private final CustomerRepository customerRepository;
     private final AuditService auditService;
+    private final CbsReferenceService cbsReferenceService;
 
     public CollateralService(
             CollateralRepository collateralRepository,
             LoanApplicationRepository applicationRepository,
             CustomerRepository customerRepository,
-            AuditService auditService) {
+            AuditService auditService,
+            CbsReferenceService cbsReferenceService) {
         this.collateralRepository = collateralRepository;
         this.applicationRepository = applicationRepository;
         this.customerRepository = customerRepository;
         this.auditService = auditService;
+        this.cbsReferenceService = cbsReferenceService;
     }
 
     /**
@@ -80,7 +82,7 @@ public class CollateralService {
         collateral.setTenantId(tenantId);
         collateral.setLoanApplication(app);
         collateral.setCustomer(app.getCustomer());
-        collateral.setCollateralRef(ReferenceGenerator.generateCollateralRef());
+        collateral.setCollateralRef(cbsReferenceService.generateCollateralRef());
         collateral.setStatus("ACTIVE");
         collateral.setLienStatus("PENDING");
         collateral.setCreatedBy(currentUser);
