@@ -82,7 +82,11 @@ public class AuditService {
             auditLog.setBranchCode(SecurityUtil.getCurrentUserBranchCode());
         }
         auditLog.setEntityType(entityType);
-        auditLog.setEntityId(entityId);
+        // CBS Tier-1: Per Finacle AUDIT_TRAIL — entity_id is NEVER null in the database.
+        // 0L = system-level event (calendar generation, holiday, HO settlement, branch switch).
+        // This is the SINGLE enforcement point — no caller in any module needs to worry
+        // about null entityId. The service layer normalizes it before persistence.
+        auditLog.setEntityId(entityId != null ? entityId : 0L);
         auditLog.setAction(action);
         auditLog.setBeforeSnapshot(beforeJson);
         auditLog.setAfterSnapshot(afterJson);
