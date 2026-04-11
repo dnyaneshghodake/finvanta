@@ -41,9 +41,15 @@ public final class ReferenceGenerator {
 
     private ReferenceGenerator() {}
 
-    /** Customer CIF: CUST-{6-digit} → CUST-000123 */
+    /**
+     * Customer CIF Number per Finacle CIF_MASTER (11 chars).
+     * Format: CIF{8-digit-seq} → CIF00012345 (11 chars)
+     * Per Finacle/SBI: CIF is 11-digit. We use 3-char prefix + 8-digit seq
+     * to match the standard length while keeping type-identifiability.
+     * Printed on passbooks, cheque books, CIBIL reports, KYC documents.
+     */
     public static String generateCustomerNumber(String branchCode) {
-        return "CUST-" + fmt(CUST_SEQ);
+        return "CIF" + String.format("%08d", CUST_SEQ.incrementAndGet());
     }
 
     /** Loan Account: LN-{BRANCH}-{6-digit} → LN-BR001-000045 */

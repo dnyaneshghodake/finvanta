@@ -50,10 +50,11 @@ class ReferenceGeneratorTest {
     }
 
     @Test
-    @DisplayName("Customer number starts with CUST prefix")
-    void customerNumber_hasCustPrefix() {
+    @DisplayName("Customer CIF is 11 chars starting with CIF per Finacle standard")
+    void customerNumber_hasCifFormat() {
         String custNo = ReferenceGenerator.generateCustomerNumber("BLR001");
-        assertTrue(custNo.startsWith("CUST"), "Customer number must start with CUST");
+        assertTrue(custNo.startsWith("CIF"), "Customer CIF must start with CIF");
+        assertEquals(11, custNo.length(), "Customer CIF must be exactly 11 chars per Finacle/SBI");
     }
 
     @Test
