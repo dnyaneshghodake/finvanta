@@ -38,7 +38,7 @@ import org.springframework.stereotype.Component;
  *   Step 1: Tenant       — bank identity per RBI Banking Regulation Act 1949
  *   Step 2: Head Office  — consolidation point per Finacle SOL hierarchy
  *   Step 3: Op. Branch   — first operational branch for transactions per RBI §23
- *   Step 4: GL Chart     — 27 Indian Banking Standard GL codes (1xxx–5xxx)
+ *   Step 4: GL Chart     — 28 Indian Banking Standard GL codes (1xxx–5xxx)
  *   Step 5: ADMIN user   — with branch assigned, password expired (T-1)
  *   Step 6: Calendar     — current month generated for all operational branches
  *   Step 7: Day Open     — first business day opened, txn batches auto-created

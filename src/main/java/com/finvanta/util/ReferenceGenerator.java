@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * they're printed on passbooks/cheques, and reported to CIBIL/CRILC.
  *
  * Formats:
- *   CUST-{6-digit}              → CUST-000123          (11 chars) — Customer CIF
+ *   {SOL:3}{SERIAL:7}{CHECK:1}  → 00200000017          (11 digits) — Customer CIF
  *   LN-{BRANCH}-{6-digit}      → LN-BR001-000045      (16 chars) — Loan Account
  *   APP-{BRANCH}-{6-digit}     → APP-BR001-000045     (17 chars) — Loan Application
  *   SB-{BRANCH}-{6-digit}      → SB-BR001-000001      (16 chars) — Savings Account
@@ -36,6 +36,8 @@ public final class ReferenceGenerator {
     private static final AtomicLong APP_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
     private static final AtomicLong CASA_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
     private static final AtomicLong TXN_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    private static final AtomicLong JRN_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    private static final AtomicLong COL_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -112,12 +114,12 @@ public final class ReferenceGenerator {
 
     /** Journal Ref: JRN-{YYYYMMDD}-{6-digit} → JRN-20260412-000789 */
     public static String generateJournalRef() {
-        return "JRN-" + today() + "-" + fmt(TXN_SEQ);
+        return "JRN-" + today() + "-" + fmt(JRN_SEQ);
     }
 
     /** Collateral Ref: COL-{6-digit} → COL-000056 */
     public static String generateCollateralRef() {
-        return "COL-" + fmt(TXN_SEQ);
+        return "COL-" + fmt(COL_SEQ);
     }
 
     /** CASA Account: {SB|CA}-{BRANCH}-{6-digit} → SB-BR001-000001 */
