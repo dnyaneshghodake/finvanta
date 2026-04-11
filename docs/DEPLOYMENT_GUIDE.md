@@ -10,13 +10,14 @@
 2. [SQL Server Database Setup](#2-sql-server-database-setup)
 3. [Build the Project](#3-build-the-project)
 4. [Profile Configuration](#4-profile-configuration)
-5. [Credential Encryption](#5-credential-encryption)
-6. [Running in IntelliJ IDEA](#6-running-in-intellij-idea)
-7. [Running on Tomcat 10 Server](#7-running-on-tomcat-10-server)
-8. [Running with Docker](#8-running-with-docker)
-9. [Verifying the Deployment](#9-verifying-the-deployment)
-10. [Troubleshooting](#10-troubleshooting)
-11. [Security Checklist](#11-security-checklist)
+5. [DB Credential Encryption](#5-credential-encryption)
+6. [MFA Encryption Key Setup](#6-mfa-encryption-key-setup)
+7. [Running in IntelliJ IDEA](#7-running-in-intellij-idea)
+8. [Running on Tomcat 10 Server](#8-running-on-tomcat-10-server)
+9. [Running with Docker](#9-running-with-docker)
+10. [Verifying the Deployment](#10-verifying-the-deployment)
+11. [Troubleshooting](#11-troubleshooting)
+12. [Security Checklist](#12-security-checklist)
 
 ---
 
@@ -254,83 +255,156 @@ Note: For decrypt, paste only the Base64 part — without `ENC(` and `)`.
 
 ---
 
-## 6. Running in IntelliJ IDEA
+## 6. MFA Encryption Key Setup
 
-### 6.1 Without Encryption (Quick Start)
+### 6.1 Overview
+
+MFA (TOTP) secrets are encrypted at rest using AES-256-GCM per RBI IT Governance §8.4.
+The encryption key **MUST** be set via environment variable for sqlserver and prod profiles.
+The application **WILL NOT START** without it on persistent database profiles.
+
+### 6.2 Generate MFA Key
+
+**PowerShell:**
+```powershell
+openssl rand -hex 32
+```
+
+**If openssl is not available, use the CBS key generator:**
+```powershell
+mvn -q compile exec:java "-Dexec.mainClass=com.finvanta.config.CbsPropertyDecryptor" "-Dexec.args=genkey"
+```
+
+Output: `a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1`
+
+**⚠️ This key is DIFFERENT from the DB encryption key.** Use a separate key for MFA.
+
+### 6.3 Set MFA Key
+
+**PowerShell:**
+```powershell
+$env:MFA_ENCRYPTION_KEY = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1"
+```
+
+**Command Prompt:**
+```cmd
+set MFA_ENCRYPTION_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
+```
+
+**Linux/Mac:**
+```bash
+export MFA_ENCRYPTION_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
+```
+
+### 6.4 Verify
+
+Start the application. You should see in the logs:
+
+```
+CBS SECURITY: MFA encryption key configured (non-default).
+```
+
+If you see this error, the key is not set:
+
+```
+FATAL: MFA encryption key must be overridden on persistent database profiles
+```
+
+### 6.5 Key Management Rules
+
+| Rule | Details |
+|------|---------|
+| **Never commit to source** | Key must come from env var or secrets manager |
+| **Different per environment** | Dev, UAT, Prod must each have unique keys |
+| **Different from DB key** | MFA key ≠ FINVANTA_DB_ENCRYPTION_KEY |
+| **Rotate annually** | Generate new key, re-encrypt all MFA secrets |
+| **Backup securely** | Loss = all MFA secrets unrecoverable |
+| **64 hex chars exactly** | 32 bytes = 256-bit AES key |
+
+---
+
+## 7. Running in IntelliJ IDEA
+
+### 7.1 Without Encryption (Quick Start)
 
 1. Set `spring.profiles.active=sqlserver` in `application.properties`
 2. Open `FinvantaApplication.java` → click Run
 3. Open `http://localhost:8080`
 
-### 6.2 With Encrypted Credentials
+### 7.2 With Encrypted Credentials
 
-1. Complete Section 5 first
+1. Complete Section 5 and Section 6 first
 2. **Run** → **Edit Configurations** → select `FinvantaApplication`
 3. **Environment variables** → click `...` → Add:
-   - Name: `FINVANTA_DB_ENCRYPTION_KEY`
-   - Value: your 64-char hex key
+   - Name: `FINVANTA_DB_ENCRYPTION_KEY` — Value: your DB key
+   - Name: `MFA_ENCRYPTION_KEY` — Value: your MFA key
 4. Click **OK** → **OK**
 5. Run the application
 6. Open `http://localhost:8080`
 
 ---
 
-## 7. Running on Tomcat 10 Server
+## 8. Running on Tomcat 10 Server
 
-### 7.1 Deploy WAR
+### 8.1 Deploy WAR
 
 ```cmd
 mvn clean package -DskipTests
 copy target\finvanta-0.0.1-SNAPSHOT.war C:\Tomcat10\webapps\ROOT.war
 ```
 
-### 7.2 Configure Environment
+### 8.2 Configure Environment
 
 Create `C:\Tomcat10\bin\setenv.bat`:
 
 ```bat
 @echo off
 set "SPRING_PROFILES_ACTIVE=sqlserver"
-set "FINVANTA_DB_ENCRYPTION_KEY=your-64-char-hex-key"
+set "FINVANTA_DB_ENCRYPTION_KEY=your-64-char-db-key"
+set "MFA_ENCRYPTION_KEY=your-64-char-mfa-key"
 set "JAVA_OPTS=%JAVA_OPTS% -Xms512m -Xmx1024m"
 ```
 
-### 7.3 Start / Stop
+### 8.3 Start / Stop
 
 ```cmd
 C:\Tomcat10\bin\startup.bat
 C:\Tomcat10\bin\shutdown.bat
 ```
 
-### 7.4 View Logs
+### 8.4 View Logs
 
 ```cmd
 type C:\Tomcat10\logs\catalina.out
 ```
 
-### 7.5 Access
+### 8.5 Access
 
 Open `http://localhost:8080`
 
 ---
 
-## 8. Running with Docker
+## 9. Running with Docker
 
-### 8.1 Build Image
+### 9.1 Build Image
 
 ```cmd
 docker build -t finvanta-cbs:latest .
 ```
 
-### 8.2 Run Container
+### 9.2 Run Container
 
 ```cmd
-docker run -p 8080:8080 -e SPRING_PROFILES_ACTIVE=sqlserver -e FINVANTA_DB_ENCRYPTION_KEY=your-key finvanta-cbs:latest
+docker run -p 8080:8080 \
+  -e SPRING_PROFILES_ACTIVE=sqlserver \
+  -e FINVANTA_DB_ENCRYPTION_KEY=your-db-key \
+  -e MFA_ENCRYPTION_KEY=your-mfa-key \
+  finvanta-cbs:latest
 ```
 
 ---
 
-## 9. Verifying the Deployment
+## 10. Verifying the Deployment
 
 | Check | URL / Command | Expected |
 |-------|---------------|----------|
@@ -341,7 +415,7 @@ docker run -p 8080:8080 -e SPRING_PROFILES_ACTIVE=sqlserver -e FINVANTA_DB_ENCRY
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 | Error | Fix |
 |-------|-----|
@@ -350,25 +424,30 @@ docker run -p 8080:8080 -e SPRING_PROFILES_ACTIVE=sqlserver -e FINVANTA_DB_ENCRY
 | `Cannot open database "finvanta"` | Create database (Section 2.1) |
 | `CBS property decryption failed` | Check FINVANTA_DB_ENCRYPTION_KEY matches |
 | `ENC(...) found but key not set` | Set FINVANTA_DB_ENCRYPTION_KEY env var |
+| `FATAL: MFA encryption key must be overridden` | Set MFA_ENCRYPTION_KEY env var (Section 6) |
+| `MFA encryption key contains invalid hex` | Key must be exactly 64 hex chars (0-9, a-f) |
 | `Tables not created` | Verify profile is `sqlserver` not `dev` |
 | `Port 8080 in use` | Stop other app or change port |
 
 ---
 
-## 11. Security Checklist
+## 12. Security Checklist
 
-### Development
+### Development (sqlserver profile)
 - [ ] SQL Server sa has strong password
 - [ ] DB credentials encrypted with ENC(...)
-- [ ] Encryption key in environment variable only
-- [ ] H2 console disabled in sqlserver/prod profiles
+- [ ] FINVANTA_DB_ENCRYPTION_KEY set as env var
+- [ ] MFA_ENCRYPTION_KEY set as env var (Section 6)
+- [ ] H2 console disabled (`spring.h2.console.enabled=false`)
+- [ ] SQL logging routed to file only (not console)
 
 ### Production
 - [ ] Dedicated DB user (not sa) with least privileges
 - [ ] All credentials encrypted with ENC(...)
-- [ ] Encryption key from secrets manager / vault
+- [ ] FINVANTA_DB_ENCRYPTION_KEY from secrets manager / vault
+- [ ] MFA_ENCRYPTION_KEY from secrets manager / vault (separate from DB key)
 - [ ] HTTPS/TLS enabled
-- [ ] Session cookie secure=true
-- [ ] MFA encryption key from environment variable
+- [ ] Session cookie secure=true, SameSite=Strict
 - [ ] Tomcat default webapps removed
 - [ ] SQL Server TLS encryption enabled
+- [ ] No default/dev credentials in any log file
