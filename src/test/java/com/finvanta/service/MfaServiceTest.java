@@ -194,11 +194,12 @@ class MfaServiceTest {
     }
 
     @Test
-    @DisplayName("disableMfa clears all MFA fields")
+    @DisplayName("disableMfa clears all MFA fields including lastTotpTimeStep")
     void disableMfa_clearsAllFields() {
         testUser.setMfaEnabled(true);
         testUser.setMfaSecret("SOME_SECRET");
         testUser.setMfaEnrolledDate(LocalDate.now());
+        testUser.setLastTotpTimeStep(123456789L); // Simulate prior TOTP verification
         when(userRepository.findByTenantIdAndUsername(anyString(), eq("testuser")))
                 .thenReturn(Optional.of(testUser));
 
@@ -207,6 +208,11 @@ class MfaServiceTest {
         assertFalse(testUser.isMfaEnabled());
         assertNull(testUser.getMfaSecret());
         assertNull(testUser.getMfaEnrolledDate());
+        // CBS: Per RFC 6238 §5.2 — replay-protection counter must be cleared when
+        // the TOTP secret is destroyed. A stale value would block re-enrollment
+        // after NTP clock backward adjustments.
+        assertNull(testUser.getLastTotpTimeStep(),
+                "lastTotpTimeStep must be cleared on MFA disable per RFC 6238 §5.2");
         verify(userRepository).save(testUser);
         verify(auditService).logEvent(eq("AppUser"), eq(1L), eq("MFA_DISABLED"),
                 any(), any(), any(), any());

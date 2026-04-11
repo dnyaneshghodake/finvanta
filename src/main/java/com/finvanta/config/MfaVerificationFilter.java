@@ -52,9 +52,14 @@ public class MfaVerificationFilter extends OncePerRequestFilter {
         // If MFA_VERIFIED is false → MFA pending, restrict access
         String path = request.getRequestURI().substring(request.getContextPath().length());
 
-        // Static resources and infrastructure paths — always allowed regardless of state
+        // Static resources and infrastructure paths — always allowed regardless of state.
+        // Per Finacle/Temenos Tier-1 deployment: health endpoints (/actuator/health,
+        // /actuator/info) are infrastructure paths for Docker/K8s liveness/readiness
+        // probes and MUST NOT be blocked by MFA or password-expiry gates.
+        // Per RBI IT Governance: operational monitoring must not be disrupted by auth gates.
         if (path.startsWith("/logout")
                 || path.startsWith("/login")
+                || path.startsWith("/actuator/")
                 || path.startsWith("/css/")
                 || path.startsWith("/js/")
                 || path.startsWith("/fonts/")

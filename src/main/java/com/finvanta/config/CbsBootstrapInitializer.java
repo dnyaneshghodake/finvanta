@@ -109,9 +109,13 @@ public class CbsBootstrapInitializer implements ApplicationRunner {
             admin.setFailedLoginAttempts(0);
             admin.setMfaEnabled(false);
             // CBS: Force password change on first login per RBI IT Governance §8.2.
-            // Setting passwordExpiryDate to today ensures MfaAuthenticationSuccessHandler
-            // detects isPasswordExpired()=true and redirects to /password/change.
-            admin.setPasswordExpiryDate(LocalDate.now());
+            // AppUser.isPasswordExpired() uses LocalDate.now().isAfter(passwordExpiryDate).
+            // Setting expiry to TODAY would return false (isAfter is exclusive — same day
+            // is NOT "after"). The admin could access the full CBS dashboard on bootstrap
+            // day without changing the password. Per Finacle Day Zero / Temenos SYSTEM.ADMIN:
+            // initial credentials expire IMMEDIATELY. Setting to yesterday (T-1) guarantees
+            // isPasswordExpired()=true on the very first login attempt.
+            admin.setPasswordExpiryDate(LocalDate.now().minusDays(1));
             admin.setCreatedBy("SYSTEM_BOOTSTRAP");
             admin.setUpdatedBy("SYSTEM_BOOTSTRAP");
             userRepository.save(admin);

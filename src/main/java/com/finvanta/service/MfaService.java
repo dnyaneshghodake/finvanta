@@ -231,6 +231,14 @@ public class MfaService {
         user.setMfaEnabled(false);
         user.setMfaSecret(null);
         user.setMfaEnrolledDate(null);
+        // CBS: Reset replay-protection counter per RFC 6238 §5.2.
+        // The lastTotpTimeStep is bound to the specific TOTP secret. When the secret
+        // is destroyed, the counter has no meaning and must be cleared. A stale value
+        // from a previous enrollment would reject valid TOTP codes if the user
+        // re-enrolls later — especially after NTP clock backward adjustments where
+        // the current time step could be less than the stale lastTotpTimeStep.
+        // Per Finacle USER_MASTER: LAST_OTP_STEP cleared on MFA deactivation.
+        user.setLastTotpTimeStep(null);
         user.setUpdatedBy(SecurityUtil.getCurrentUsername());
         userRepository.save(user);
 
