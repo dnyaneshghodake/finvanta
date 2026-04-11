@@ -69,12 +69,21 @@ public class CustomUserDetailsService implements UserDetailsService {
         // If MFA is enabled but the user has not yet enrolled (no TOTP secret),
         // reject login. This prevents a user with mfa_enabled=true from bypassing
         // MFA by simply never enrolling. The admin must either:
-        //   1. Provide an MFA enrollment flow before enabling mfa_enabled, OR
-        //   2. Disable mfa_enabled until enrollment endpoints are available.
-        // Without this gate, the mfa_enabled flag is purely decorative.
+        //   1. Complete MFA enrollment via Admin → MFA Management → Enroll, OR
+        //   2. Disable mfa_enabled until enrollment is complete.
+        //
+        // CBS IMPORTANT: We throw DisabledException (not UsernameNotFoundException)
+        // because Spring Security treats UsernameNotFoundException as a bad-credentials
+        // event → triggers CbsAuthenticationEventListener.onAuthenticationFailure()
+        // → increments failedLoginAttempts → locks account after 5 attempts.
+        // The user enters the CORRECT password but gets locked out because the
+        // enrollment gate keeps rejecting them. DisabledException is treated as an
+        // account-status issue (not bad credentials) and does NOT increment the
+        // failed login counter. Per Finacle USER_MASTER: enrollment-pending is an
+        // account state, not an authentication failure.
         if (appUser.isMfaEnrollmentRequired()) {
             log.warn("MFA enrollment required but not completed for user: {}", username);
-            throw new UsernameNotFoundException(
+            throw new org.springframework.security.authentication.DisabledException(
                     "MFA enrollment required for user: " + username
                             + ". Contact administrator to complete MFA setup.");
         }

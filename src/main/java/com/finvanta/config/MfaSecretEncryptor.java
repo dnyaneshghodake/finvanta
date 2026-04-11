@@ -191,8 +191,20 @@ public class MfaSecretEncryptor implements AttributeConverter<String, String> {
         int len = hex.length();
         byte[] data = new byte[len / 2];
         for (int i = 0; i < len; i += 2) {
-            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
-                    + Character.digit(hex.charAt(i + 1), 16));
+            int hi = Character.digit(hex.charAt(i), 16);
+            int lo = Character.digit(hex.charAt(i + 1), 16);
+            // CBS Security: Character.digit() returns -1 for non-hex characters.
+            // Without this check, invalid chars silently produce wrong key bytes
+            // (e.g., 'G' → -1, then (-1 << 4) + digit = corrupted byte).
+            // A corrupted key encrypts MFA secrets that can NEVER be decrypted —
+            // permanent data loss. Per RBI IT Governance: fail-fast on config errors.
+            if (hi == -1 || lo == -1) {
+                throw new IllegalStateException(
+                        "MFA encryption key contains invalid hex character at position "
+                                + i + ". Key must contain only 0-9, a-f, A-F. "
+                                + "Generate a valid key with: openssl rand -hex 32");
+            }
+            data[i / 2] = (byte) ((hi << 4) + lo);
         }
         return data;
     }
