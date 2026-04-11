@@ -49,8 +49,15 @@ public final class ReferenceGenerator {
      * with transactions/journals causes large unpredictable gaps (e.g., 000001 → 000015)
      * because other generators consume sequence values between account creations.
      * Per Finacle ACCTNUM: account number sequence is independent of transaction sequence.
+     *
+     * CBS IMPORTANT: Seeded from System.nanoTime() modulo (same as SEQUENCE) to avoid
+     * duplicate account numbers across JVM restarts. Without this, restarting the app
+     * resets the counter to 0, and SB-BR001-000001 would collide with an existing account.
+     * The DB unique constraint on (tenant_id, account_number) is the safety net, but
+     * the seed prevents the collision from occurring in the first place.
+     * Production MUST use DB-backed sequence (CREATE SEQUENCE) for cluster-safe uniqueness.
      */
-    private static final AtomicLong DEPOSIT_ACCT_SEQUENCE = new AtomicLong(0);
+    private static final AtomicLong DEPOSIT_ACCT_SEQUENCE = new AtomicLong(Math.abs(System.nanoTime() % 100000));
 
     /** Millisecond-precision timestamp: yyyyMMddHHmmssSS (SS = centiseconds) */
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");

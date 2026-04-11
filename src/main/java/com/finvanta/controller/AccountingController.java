@@ -66,10 +66,13 @@ public class AccountingController {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("accounting/journal-entries");
 
-        // CBS: Default to current business date (DAY_OPEN), not system date.
-        // Per Finacle JRNL_REGISTER: journal entries are viewed by business date.
+        // CBS: Default date range is current business date minus 30 days to current date.
+        // Per Finacle JRNL_REGISTER: journal entries default to a meaningful range,
+        // not a single day. A single-day default shows "no entries" for most dates
+        // because journal postings are sparse — the user must manually expand the range.
+        // 30 days matches the standard CBS monthly journal register view.
         LocalDate currentBizDate = resolveCurrentBusinessDate();
-        LocalDate from = fromDate != null ? LocalDate.parse(fromDate) : currentBizDate;
+        LocalDate from = fromDate != null ? LocalDate.parse(fromDate) : currentBizDate.minusDays(30);
         LocalDate to = toDate != null ? LocalDate.parse(toDate) : currentBizDate;
 
         mav.addObject("entries", journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to));

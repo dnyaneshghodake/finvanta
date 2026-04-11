@@ -106,8 +106,21 @@ public final class CbsPropertyDecryptor {
         }
         byte[] keyBytes = new byte[32];
         for (int i = 0; i < 32; i++) {
-            keyBytes[i] = (byte) ((Character.digit(hexKey.charAt(i * 2), 16) << 4)
-                    + Character.digit(hexKey.charAt(i * 2 + 1), 16));
+            int hi = Character.digit(hexKey.charAt(i * 2), 16);
+            int lo = Character.digit(hexKey.charAt(i * 2 + 1), 16);
+            // CBS Security: Character.digit() returns -1 for non-hex characters.
+            // Without this check, invalid chars silently produce wrong key bytes
+            // (e.g., 'G' → -1, then (-1 << 4) + digit = corrupted byte).
+            // A corrupted key encrypts data that can NEVER be decrypted — permanent
+            // data loss for every MFA secret and encrypted credential in the database.
+            // Per RBI IT Governance: fail-fast on configuration errors.
+            if (hi == -1 || lo == -1) {
+                throw new IllegalStateException(
+                        "FINVANTA_DB_ENCRYPTION_KEY contains invalid hex character at position "
+                                + (i * 2) + ". Key must contain only 0-9, a-f, A-F. "
+                                + "Generate a valid key with: openssl rand -hex 32");
+            }
+            keyBytes[i] = (byte) ((hi << 4) + lo);
         }
         return new SecretKeySpec(keyBytes, "AES");
     }
