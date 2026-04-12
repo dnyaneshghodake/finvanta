@@ -2,11 +2,14 @@ package com.finvanta.api;
 
 import com.finvanta.util.BusinessException;
 
+import java.util.stream.Collectors;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -46,6 +49,24 @@ public class ApiExceptionHandler {
                         "ACCESS_DENIED",
                         "Insufficient privileges for this "
                                 + "operation"));
+    }
+
+    /**
+     * Handles @Valid validation failures on @RequestBody DTOs.
+     * Per Finacle API: returns structured field-level error messages
+     * so API consumers can fix specific fields without guessing.
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiResponse<Void>> handleValidation(
+            MethodArgumentNotValidException ex) {
+        String errors = ex.getBindingResult()
+                .getFieldErrors().stream()
+                .map(fe -> fe.getField() + ": "
+                        + fe.getDefaultMessage())
+                .collect(Collectors.joining("; "));
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error(
+                        "VALIDATION_FAILED", errors));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
