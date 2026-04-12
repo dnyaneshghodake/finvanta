@@ -4,7 +4,6 @@ import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.entity.LoanTransaction;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
-import com.finvanta.service.LoanApplicationService;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -37,15 +36,12 @@ import org.springframework.web.bind.annotation.*;
 public class LoanAccountController {
 
     private final LoanAccountService loanService;
-    private final LoanApplicationService loanAppService;
     private final BusinessDateService businessDateService;
 
     public LoanAccountController(
             LoanAccountService loanService,
-            LoanApplicationService loanAppService,
             BusinessDateService businessDateService) {
         this.loanService = loanService;
-        this.loanAppService = loanAppService;
         this.businessDateService = businessDateService;
     }
 
@@ -201,29 +197,29 @@ public class LoanAccountController {
     // === Response DTOs ===
 
     public record LoanResponse(
-            Long id, String accountNumber, String accountStatus,
-            String productCode, String loanType,
+            Long id, String accountNumber, String status,
+            String productType, String currencyCode,
             BigDecimal sanctionedAmount, BigDecimal disbursedAmount,
-            BigDecimal principalOutstanding, BigDecimal interestOutstanding,
+            BigDecimal outstandingPrincipal, BigDecimal outstandingInterest,
             BigDecimal totalOutstanding, BigDecimal interestRate,
-            String npaClassification, String branchCode,
-            String disbursementDate, String maturityDate) {
+            int daysPastDue, String branchCode,
+            String disbursementDate, String maturityDate,
+            boolean fullyDisbursed) {
         static LoanResponse from(LoanAccount a) {
             return new LoanResponse(
                     a.getId(), a.getAccountNumber(),
-                    a.getAccountStatus() != null ? a.getAccountStatus().name() : null,
-                    a.getProductCode(),
-                    a.getLoanType() != null ? a.getLoanType().name() : null,
+                    a.getStatus() != null ? a.getStatus().name() : null,
+                    a.getProductType(), a.getCurrencyCode(),
                     a.getSanctionedAmount(), a.getDisbursedAmount(),
-                    a.getPrincipalOutstanding(), a.getInterestOutstanding(),
+                    a.getOutstandingPrincipal(), a.getOutstandingInterest(),
                     a.getTotalOutstanding(), a.getInterestRate(),
-                    a.getNpaClassification() != null
-                            ? a.getNpaClassification().name() : "STANDARD",
+                    a.getDaysPastDue(),
                     a.getBranch() != null ? a.getBranch().getBranchCode() : null,
                     a.getDisbursementDate() != null
                             ? a.getDisbursementDate().toString() : null,
                     a.getMaturityDate() != null
-                            ? a.getMaturityDate().toString() : null);
+                            ? a.getMaturityDate().toString() : null,
+                    a.isFullyDisbursed());
         }
     }
 
@@ -234,7 +230,8 @@ public class LoanAccountController {
         static LoanTxnResponse from(LoanTransaction t) {
             return new LoanTxnResponse(
                     t.getId(), t.getTransactionRef(),
-                    t.getTransactionType(),
+                    t.getTransactionType() != null
+                            ? t.getTransactionType().name() : null,
                     t.getAmount(),
                     t.getValueDate() != null ? t.getValueDate().toString() : null,
                     t.getNarration(), t.getVoucherNumber());

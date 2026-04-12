@@ -334,6 +334,14 @@ public class ClearingEngine {
         String tid = TenantContext.getCurrentTenant();
         LocalDate bd = bizDateSvc.getCurrentBusinessDate();
 
+        // CBS CRITICAL: Validate amount BEFORE idempotency check.
+        // A null amt would NPE in resumption paths (postInwardSuspense, creditAndComplete)
+        // and a negative amt would reverse the GL direction (debit instead of credit).
+        // Per Finacle CLG_ENGINE: fail-fast on invalid input before any DB lookup.
+        if (amt == null || amt.signum() <= 0)
+            throw new BusinessException(
+                    "INVALID_AMOUNT", "positive required");
+
         // === P1 Item 2: Idempotent Retry / Resumption ===
         // Per Finacle CLG_ENGINE: if a previous attempt failed mid-flow,
         // the same extRef retry should RESUME from the last committed state
@@ -398,9 +406,7 @@ public class ClearingEngine {
                             + " state");
         }
 
-        if (amt == null || amt.signum() <= 0)
-            throw new BusinessException(
-                    "INVALID_AMOUNT", "positive required");
+        // Amount already validated at method entry (before idempotency check)
         DepositAccount ben = depAcctRepo
                 .findByTenantIdAndAccountNumber(tid, benAcct)
                 .orElseThrow(() -> new BusinessException(
