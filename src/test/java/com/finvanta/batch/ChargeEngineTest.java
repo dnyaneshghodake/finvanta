@@ -25,9 +25,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for LoanChargeEngine per RBI Fair Lending Code 2023.
+ * Unit tests for ChargeEngine (Loan) per RBI Fair Lending Code 2023.
  */
-@DisplayName("LoanChargeEngine Tests")
+@DisplayName("ChargeEngine Tests")
 public class ChargeEngineTest {
 
     @Mock
@@ -45,7 +45,7 @@ public class ChargeEngineTest {
     @Mock
     private AuditService auditService;
 
-    private LoanChargeEngine chargeEngine;
+    private ChargeEngine chargeEngine;
 
     @BeforeEach
     void setUp() {
@@ -54,7 +54,7 @@ public class ChargeEngineTest {
         TenantContext.setCurrentTenant("DEFAULT");
         // Provide real ObjectMapper for slab JSON parsing — Jackson is a deterministic utility, not a service
         // dependency
-        chargeEngine = new LoanChargeEngine(
+        chargeEngine = new ChargeEngine(
                 configRepository, accountRepository, transactionEngine, glResolver, auditService, new ObjectMapper());
     }
 
@@ -81,7 +81,7 @@ public class ChargeEngineTest {
                 .thenReturn(Optional.of(config));
 
         // Act
-        LoanChargeEngine.ChargeResult result =
+        ChargeEngine.ChargeResult result =
                 chargeEngine.calculateCharge("LATE_PAYMENT_FEE", new BigDecimal("100000.00"), "TERM_LOAN");
 
         // Assert
@@ -110,7 +110,7 @@ public class ChargeEngineTest {
                 .thenReturn(Optional.of(config));
 
         // Act
-        LoanChargeEngine.ChargeResult result =
+        ChargeEngine.ChargeResult result =
                 chargeEngine.calculateCharge("PROCESSING_FEE", new BigDecimal("100000.00"), "TERM_LOAN");
 
         // Assert

@@ -49,12 +49,12 @@ import org.springframework.transaction.annotation.Transactional;
  * Per RBI Fair Lending Code 2023: All charges are transparent, justified, and reversible.
  * Per Finacle CHRG_MASTER: Charge application deferred until explicit applyCharge() call.
  *
- * For cross-cutting charges (Clearing/CASA), see {@link com.finvanta.charge.ChargeEngine}.
+ * For cross-cutting charges (Clearing/CASA), see {@link com.finvanta.charge.ServiceChargeEngine}.
  */
 @Service
-public class LoanChargeEngine {
+public class ChargeEngine {
 
-    private static final Logger log = LoggerFactory.getLogger(LoanChargeEngine.class);
+    private static final Logger log = LoggerFactory.getLogger(ChargeEngine.class);
 
     private final ChargeConfigRepository configRepository;
     private final LoanAccountRepository accountRepository;
@@ -63,7 +63,7 @@ public class LoanChargeEngine {
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
 
-    public LoanChargeEngine(
+    public ChargeEngine(
             ChargeConfigRepository configRepository,
             LoanAccountRepository accountRepository,
             TransactionEngine transactionEngine,
