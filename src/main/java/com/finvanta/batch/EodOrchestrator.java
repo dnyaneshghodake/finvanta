@@ -15,6 +15,7 @@ import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DailyBalanceSnapshotRepository;
 import com.finvanta.repository.DepositAccountRepository;
+import com.finvanta.repository.FixedDepositRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanBalanceSnapshotRepository;
 import com.finvanta.service.DepositAccountService;
@@ -122,7 +123,7 @@ public class EodOrchestrator {
     private final DailyBalanceSnapshotRepository balanceSnapshotRepository;
     private final LoanBalanceSnapshotRepository loanBalanceSnapshotRepository;
     private final FixedDepositService fixedDepositService;
-    private final com.finvanta.repository.FixedDepositRepository fixedDepositRepository;
+    private final FixedDepositRepository fixedDepositRepository;
 
     /** CBS: Snapshot step constants for audit logging */
     private static final String SNAPSHOT_STEP_NAME = "DAILY_BALANCE_SNAPSHOT";
@@ -152,7 +153,7 @@ public class EodOrchestrator {
             DailyBalanceSnapshotRepository balanceSnapshotRepository,
             LoanBalanceSnapshotRepository loanBalanceSnapshotRepository,
             FixedDepositService fixedDepositService,
-            com.finvanta.repository.FixedDepositRepository fixedDepositRepository,
+            FixedDepositRepository fixedDepositRepository,
             @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;

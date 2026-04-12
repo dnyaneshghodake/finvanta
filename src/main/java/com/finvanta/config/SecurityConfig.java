@@ -3,9 +3,11 @@ package com.finvanta.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -64,7 +66,7 @@ public class SecurityConfig {
      * All other /api/v1/** require valid JWT ACCESS token.
      */
     @Bean
-    @org.springframework.core.annotation.Order(1)
+    @Order(1)
     public SecurityFilterChain apiSecurityFilterChain(
             HttpSecurity http,
             JwtAuthenticationFilter jwtFilter)
@@ -77,9 +79,7 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(
-                                org.springframework.security
-                                        .config.http.SessionCreationPolicy
-                                        .STATELESS))
+                                SessionCreationPolicy.STATELESS))
                 .csrf(csrf -> csrf.disable())
                 .formLogin(form -> form.disable())
                 .logout(logout -> logout.disable())
@@ -99,10 +99,7 @@ public class SecurityConfig {
                                             + "Bearer token.\"}");
                                 }))
                 .addFilterBefore(jwtFilter,
-                        org.springframework.security.web
-                                .authentication
-                                .UsernamePasswordAuthenticationFilter
-                                .class);
+                        UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
@@ -114,7 +111,7 @@ public class SecurityConfig {
      * @Order(2) ensures this is the fallback chain after the API chain.
      */
     @Bean
-    @org.springframework.core.annotation.Order(2)
+    @Order(2)
     public SecurityFilterChain uiSecurityFilterChain(HttpSecurity http) throws Exception {
         http.authorizeHttpRequests(auth -> {
                     auth.requestMatchers(
