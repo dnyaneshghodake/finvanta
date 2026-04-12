@@ -641,6 +641,7 @@ public class ClearingEngine {
         transitionStatus(ct, ClearingStatus.REVERSED);
         ct.setReversalReason(reason);
         ct.setCompletedAt(LocalDateTime.now());
+        computeAuditHash(ct);
         clrRepo.save(ct);
         auditSvc.logEvent("ClearingTransaction", ct.getId(),
                 "CLEARING_REVERSED",
@@ -680,6 +681,7 @@ public class ClearingEngine {
         transitionStatus(ct,
                 ClearingStatus.SENT_TO_NETWORK);
         ct.setSentToNetworkAt(LocalDateTime.now());
+        computeAuditHash(ct);
         clrRepo.save(ct);
         auditSvc.logEvent("ClearingTransaction", ct.getId(),
                 "SENT_TO_NETWORK", "SUSPENSE_POSTED",
@@ -828,6 +830,66 @@ public class ClearingEngine {
                             + " are defined in ClearingStatus state machine.");
         }
         ct.setStatus(target);
+    }
+
+    /**
+     * Computes SHA-256 tamper-detection hash over immutable clearing fields.
+     *
+     * Per RBI IT Governance Direction 2023 §8.3:
+     * Financial records must have integrity checks to detect unauthorized
+     * modification. The hash covers all critical business fields that must
+     * NOT change after initial creation (amount, accounts, counterparty,
+     * rail, direction). Status and timestamps are excluded because they
+     * change legitimately during the lifecycle.
+     *
+     * The hash is recomputed at each state transition. If a previous hash
+     * exists and differs from the recomputed value, it indicates tampering
+     * of the immutable fields between transitions.
+     */
+    private void computeAuditHash(ClearingTransaction ct) {
+        try {
+            String payload = ct.getTenantId()
+                    + "|" + ct.getExternalRefNo()
+                    + "|" + ct.getPaymentRail()
+                    + "|" + ct.getDirection()
+                    + "|" + ct.getAmount().toPlainString()
+                    + "|" + ct.getCustomerAccountRef()
+                    + "|" + ct.getCounterpartyIfsc()
+                    + "|" + ct.getCounterpartyAccount()
+                    + "|" + ct.getValueDate()
+                    + "|" + ct.getBranchCode();
+            MessageDigest digest =
+                    MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(
+                    payload.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(64);
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            String newHash = hex.toString();
+            // CBS: Tamper detection — if hash was previously set
+            // and now differs, the immutable fields were modified.
+            if (ct.getAuditHash() != null
+                    && !ct.getAuditHash().equals(newHash)) {
+                log.error("TAMPER DETECTED: Clearing {} hash "
+                        + "mismatch. Previous={}, Computed={}. "
+                        + "Immutable fields may have been "
+                        + "modified outside the engine.",
+                        ct.getExternalRefNo(),
+                        ct.getAuditHash(), newHash);
+                auditSvc.logEvent("ClearingTransaction",
+                        ct.getId(), "TAMPER_DETECTED",
+                        ct.getAuditHash(), newHash,
+                        "SECURITY",
+                        "Audit hash mismatch on clearing "
+                                + ct.getExternalRefNo());
+            }
+            ct.setAuditHash(newHash);
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is mandatory in every JVM per Java spec
+            throw new IllegalStateException(
+                    "SHA-256 not available", e);
+        }
     }
 
     private void linkToCycle(ClearingTransaction ct,
