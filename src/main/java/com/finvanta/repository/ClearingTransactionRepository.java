@@ -9,6 +9,7 @@ import jakarta.persistence.LockModeType;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -126,6 +127,33 @@ public interface ClearingTransactionRepository extends JpaRepository<ClearingTra
             @Param("tenantId") String tenantId,
             @Param("rail") PaymentRail rail,
             @Param("activeStatuses") List<ClearingStatus> activeStatuses);
+
+    // === Network Timeout / Stuck Transaction Detection ===
+
+    /** Find outward transactions stuck in SENT_TO_NETWORK beyond timeout threshold */
+    @Query("SELECT ct FROM ClearingTransaction ct WHERE ct.tenantId = :tenantId "
+            + "AND ct.status = :status AND ct.sentToNetworkAt < :cutoff "
+            + "ORDER BY ct.sentToNetworkAt ASC")
+    List<ClearingTransaction> findStuckInNetworkBefore(
+            @Param("tenantId") String tenantId,
+            @Param("status") ClearingStatus status,
+            @Param("cutoff") LocalDateTime cutoff);
+
+    /** Sum daily outward amount per rail for a customer account (limit enforcement) */
+    @Query("SELECT COALESCE(SUM(ct.amount), 0) FROM ClearingTransaction ct "
+            + "WHERE ct.tenantId = :tenantId "
+            + "AND ct.customerAccountRef = :accountRef "
+            + "AND ct.paymentRail = :rail "
+            + "AND ct.direction = :direction "
+            + "AND ct.valueDate = :valueDate "
+            + "AND ct.status NOT IN :excludedStatuses")
+    BigDecimal sumDailyAmountByAccountAndRail(
+            @Param("tenantId") String tenantId,
+            @Param("accountRef") String accountRef,
+            @Param("rail") PaymentRail rail,
+            @Param("direction") ClearingDirection direction,
+            @Param("valueDate") LocalDate valueDate,
+            @Param("excludedStatuses") List<ClearingStatus> excludedStatuses);
 
     // === Branch-Scoped Queries ===
 

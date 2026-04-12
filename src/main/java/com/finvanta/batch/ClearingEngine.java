@@ -127,6 +127,8 @@ public class ClearingEngine {
                 && amt.compareTo(RTGS_MIN) < 0)
             throw new BusinessException(
                     "RTGS_MIN_AMOUNT", "min " + RTGS_MIN);
+        // CBS: Per-rail daily outward limit per RBI / Finacle ACCTLIMIT
+        validateDailyRailLimit(tid, custAcct, rail, amt, bd);
         Branch br = branchRepo.findById(branchId)
                 .filter(b -> b.getTenantId().equals(tid)
                         && b.isActive())
@@ -743,6 +745,267 @@ public class ClearingEngine {
                 cycle.getNetObligation());
         return cycle;
     }
+
+    // ========================================================================
+    // PHASE 2: NEFT Cycle Submission/Settlement, Inward Return,
+    //          Network Timeout Escalation, Per-Rail Daily Limits
+    // ========================================================================
+
+    /** Submit closed NEFT cycle to RBI. State: CLOSED → SUBMITTED */
+    @Transactional
+    public ClearingCycle submitCycleToRbi(Long cycleId) {
+        String tid = TenantContext.getCurrentTenant();
+        LocalDate bd = bizDateSvc.getCurrentBusinessDate();
+        ClearingCycle cycle = cycleRepo
+                .findAndLockById(cycleId)
+                .filter(c -> c.getTenantId().equals(tid))
+                .orElseThrow(() -> new BusinessException(
+                        "CYCLE_NOT_FOUND", "" + cycleId));
+        if (cycle.getStatus() != ClearingCycleStatus.CLOSED)
+            throw new BusinessException("CYCLE_NOT_CLOSED",
+                    "Expected CLOSED, got: "
+                            + cycle.getStatus());
+        BigDecimal netObligation = cycle.getNetObligation();
+        if (netObligation.signum() != 0) {
+            String sgl = ClearingGLResolver.getSuspenseGL(
+                    cycle.getRailType(),
+                    ClearingDirection.OUTWARD);
+            BigDecimal absNet = netObligation.abs();
+            JournalLineRequest dr;
+            JournalLineRequest cr;
+            if (netObligation.signum() > 0) {
+                dr = new JournalLineRequest(sgl,
+                        DebitCredit.DEBIT, absNet,
+                        "NEFT cycle net settlement");
+                cr = new JournalLineRequest(
+                        ClearingGLResolver.getRbiSettlementGL(),
+                        DebitCredit.CREDIT, absNet,
+                        "Net obligation to RBI");
+            } else {
+                dr = new JournalLineRequest(
+                        ClearingGLResolver.getRbiSettlementGL(),
+                        DebitCredit.DEBIT, absNet,
+                        "Net receivable from RBI");
+                cr = new JournalLineRequest(sgl,
+                        DebitCredit.CREDIT, absNet,
+                        "NEFT cycle net settlement");
+            }
+            txnEngine.execute(TransactionRequest.builder()
+                    .sourceModule("CLEARING")
+                    .transactionType("CLR_CYCLE_SUBMISSION")
+                    .accountReference("CYCLE-" + cycleId)
+                    .amount(absNet).valueDate(bd)
+                    .branchCode("HQ001")
+                    .narration(cycle.getRailType().getCode()
+                            + " cycle " + cycle.getCycleNumber()
+                            + " net settlement")
+                    .journalLines(List.of(dr, cr))
+                    .systemGenerated(true)
+                    .initiatedBy("SYSTEM").build());
+        }
+        cycle.setStatus(ClearingCycleStatus.SUBMITTED);
+        cycleRepo.save(cycle);
+        auditSvc.logEvent("ClearingCycle", cycle.getId(),
+                "CYCLE_SUBMITTED", "CLOSED", "SUBMITTED",
+                "CLEARING",
+                cycle.getRailType().getCode() + " cycle "
+                        + cycle.getCycleNumber()
+                        + " submitted: net=" + netObligation);
+        log.info("Cycle submitted: id={}, net={}",
+                cycleId, netObligation);
+        return cycle;
+    }
+
+    /** Confirm RBI settlement for NEFT cycle. State: SUBMITTED → SETTLED */
+    @Transactional
+    public ClearingCycle settleCycle(Long cycleId, String rbiRef) {
+        String tid = TenantContext.getCurrentTenant();
+        LocalDate bd = bizDateSvc.getCurrentBusinessDate();
+        ClearingCycle cycle = cycleRepo.findAndLockById(cycleId)
+                .filter(c -> c.getTenantId().equals(tid))
+                .orElseThrow(() -> new BusinessException(
+                        "CYCLE_NOT_FOUND", "" + cycleId));
+        if (cycle.getStatus() != ClearingCycleStatus.SUBMITTED)
+            throw new BusinessException("CYCLE_NOT_SUBMITTED",
+                    "Expected SUBMITTED, got: " + cycle.getStatus());
+        cycle.setStatus(ClearingCycleStatus.SETTLED);
+        cycle.setSettlementReference(rbiRef);
+        cycleRepo.save(cycle);
+        var cycleTxns = clrRepo
+                .findByTenantIdAndClearingCycleIdOrderByInitiatedAtAsc(tid, cycleId);
+        int completed = 0;
+        for (var ct : cycleTxns) {
+            if (ct.getDirection() == ClearingDirection.OUTWARD
+                    && ct.getStatus() == ClearingStatus.SENT_TO_NETWORK) {
+                transitionStatus(ct, ClearingStatus.SETTLED);
+                ct.setSettledAt(LocalDateTime.now());
+                transitionStatus(ct, ClearingStatus.COMPLETED);
+                ct.setCompletedAt(LocalDateTime.now());
+                ct.setUtrNumber(rbiRef);
+                SettlementBatch batch = new SettlementBatch();
+                batch.setTenantId(tid);
+                batch.setRailType(ct.getPaymentRail());
+                batch.setSettlementDate(bd);
+                batch.setTotalNetAmount(ct.getAmount());
+                batch.setTransactionCount(1);
+                batch.setRbiSettlementRef(rbiRef);
+                batch.setStatus(SettlementBatchStatus.CONFIRMED);
+                batch.setConfirmedAt(LocalDateTime.now());
+                batch.setCreatedBy("SYSTEM");
+                ct.setSettlementBatch(batchRepo.save(batch));
+                computeAuditHash(ct);
+                clrRepo.save(ct);
+                completed++;
+            }
+        }
+        auditSvc.logEvent("ClearingCycle", cycle.getId(),
+                "CYCLE_SETTLED", "SUBMITTED", "SETTLED", "CLEARING",
+                cycle.getRailType().getCode() + " cycle "
+                        + cycle.getCycleNumber() + " settled: rbiRef="
+                        + rbiRef + ", completed=" + completed);
+        log.info("Cycle settled: id={}, rbiRef={}, completed={}",
+                cycleId, rbiRef, completed);
+        return cycle;
+    }
+
+    /**
+     * Return an inward clearing transaction to originating bank.
+     * Per Finacle CLG_RETURN: reverses suspense GL, transitions to RETURNED.
+     * Only for pre-CREDITED transactions. If already CREDITED, use reverse.
+     */
+    @Transactional
+    public ClearingTransaction returnInward(String extRef, String reason) {
+        String tid = TenantContext.getCurrentTenant();
+        LocalDate bd = bizDateSvc.getCurrentBusinessDate();
+        if (reason == null || reason.isBlank())
+            throw new BusinessException("REASON_REQUIRED",
+                    "Return reason mandatory per RBI");
+        ClearingTransaction ct = clrRepo
+                .findByTenantIdAndExternalRefNo(tid, extRef)
+                .orElseThrow(() -> new BusinessException(
+                        "CLEARING_NOT_FOUND", extRef));
+        if (ct.getDirection() != ClearingDirection.INWARD)
+            throw new BusinessException("NOT_INWARD",
+                    "returnInward is for inward only");
+        if (ct.isTerminal())
+            throw new BusinessException("ALREADY_TERMINAL",
+                    ct.getStatus().name());
+        if (ct.getStatus() == ClearingStatus.CREDITED
+                || ct.getStatus() == ClearingStatus.COMPLETED)
+            throw new BusinessException("ALREADY_CREDITED",
+                    "Customer already credited. Use reverseClearingTransaction()");
+        if (ct.getSuspenseJournalId() != null) {
+            String sgl = ClearingGLResolver.getSuspenseGL(
+                    ct.getPaymentRail(), ClearingDirection.INWARD);
+            txnEngine.execute(TransactionRequest.builder()
+                    .sourceModule("CLEARING")
+                    .transactionType("CLR_RETURN")
+                    .accountReference(ct.getCustomerAccountRef())
+                    .amount(ct.getAmount()).valueDate(bd)
+                    .branchCode(ct.getBranchCode())
+                    .narration("Inward return: " + reason)
+                    .journalLines(List.of(
+                            new JournalLineRequest(sgl,
+                                    DebitCredit.DEBIT, ct.getAmount(),
+                                    "Return suspense"),
+                            new JournalLineRequest(
+                                    ClearingGLResolver.getRbiSettlementGL(),
+                                    DebitCredit.CREDIT, ct.getAmount(),
+                                    "Return to RBI")))
+                    .systemGenerated(true)
+                    .initiatedBy("SYSTEM").build());
+        }
+        if (ct.getStatus() == ClearingStatus.SUSPENSE_POSTED) {
+            transitionStatus(ct, ClearingStatus.CREDIT_FAILED);
+        } else if (ct.getStatus() == ClearingStatus.VALIDATED
+                || ct.getStatus() == ClearingStatus.RECEIVED) {
+            transitionStatus(ct, ClearingStatus.VALIDATION_FAILED);
+        }
+        transitionStatus(ct, ClearingStatus.RETURNED);
+        ct.setFailureReason(reason);
+        ct.setCompletedAt(LocalDateTime.now());
+        computeAuditHash(ct);
+        clrRepo.save(ct);
+        auditSvc.logEvent("ClearingTransaction", ct.getId(),
+                "INWARD_RETURNED", ct.getPaymentRail().getCode(),
+                extRef, "CLEARING",
+                "Returned: " + reason + " | INR " + ct.getAmount());
+        log.info("Inward returned: ref={}, reason={}", extRef, reason);
+        return ct;
+    }
+
+    /**
+     * Escalate outward transactions stuck in SENT_TO_NETWORK.
+     * Per Finacle CLG_MONITOR / RBI TAT:
+     * RTGS: 30 min, NEFT: 60 min, IMPS/UPI: 5 min.
+     * @return Number of transactions escalated
+     */
+    @Transactional
+    public int escalateStuckNetworkTransactions() {
+        String tid = TenantContext.getCurrentTenant();
+        int escalated = 0;
+        for (PaymentRail rail : PaymentRail.values()) {
+            int timeoutMinutes = switch (rail) {
+                case RTGS -> 30;
+                case IMPS, UPI -> 5;
+                case NEFT -> 60;
+            };
+            LocalDateTime cutoff = LocalDateTime.now()
+                    .minusMinutes(timeoutMinutes);
+            var stuck = clrRepo.findStuckInNetworkBefore(
+                    tid, ClearingStatus.SENT_TO_NETWORK, cutoff);
+            for (var ct : stuck) {
+                if (ct.getPaymentRail() != rail) continue;
+                auditSvc.logEvent("ClearingTransaction", ct.getId(),
+                        "NETWORK_TIMEOUT_ESCALATED",
+                        "SENT_TO_NETWORK",
+                        String.valueOf(timeoutMinutes), "CLEARING",
+                        rail.getCode() + " stuck > " + timeoutMinutes
+                                + "min: " + ct.getExternalRefNo()
+                                + " | INR " + ct.getAmount());
+                log.warn("NETWORK TIMEOUT: ref={}, rail={}, sent={}, timeout={}min",
+                        ct.getExternalRefNo(), rail,
+                        ct.getSentToNetworkAt(), timeoutMinutes);
+                escalated++;
+            }
+        }
+        if (escalated > 0)
+            log.warn("Network timeout: {} escalated", escalated);
+        return escalated;
+    }
+
+    /**
+     * Validates per-rail daily outward limit for a customer.
+     * Per RBI / Finacle ACCTLIMIT:
+     * IMPS: INR 5L/day, UPI: INR 1L/day per account.
+     * NEFT/RTGS: no daily cap (RTGS has minimum only).
+     */
+    void validateDailyRailLimit(String tid, String custAcct,
+            PaymentRail rail, BigDecimal amt, LocalDate bd) {
+        BigDecimal limit = DAILY_OUTWARD_LIMITS.get(rail);
+        if (limit == null) return;
+        BigDecimal dailyTotal = clrRepo.sumDailyAmountByAccountAndRail(
+                tid, custAcct, rail, ClearingDirection.OUTWARD,
+                bd, LIMIT_EXCLUDED_STATUSES);
+        if (dailyTotal.add(amt).compareTo(limit) > 0)
+            throw new BusinessException("DAILY_RAIL_LIMIT_EXCEEDED",
+                    rail.getCode() + " daily limit INR " + limit
+                            + " exceeded for " + custAcct
+                            + ". Today: INR " + dailyTotal
+                            + ", requested: INR " + amt);
+    }
+
+    /** Per-rail daily outward limits per RBI */
+    private static final java.util.Map<PaymentRail, BigDecimal>
+            DAILY_OUTWARD_LIMITS = java.util.Map.of(
+                    PaymentRail.IMPS, new BigDecimal("500000.00"),
+                    PaymentRail.UPI, new BigDecimal("100000.00"));
+
+    /** Statuses excluded from daily limit aggregation */
+    private static final List<ClearingStatus> LIMIT_EXCLUDED_STATUSES =
+            List.of(ClearingStatus.VALIDATION_FAILED,
+                    ClearingStatus.REVERSED,
+                    ClearingStatus.RETURNED);
 
     /** Suspense-active statuses — reusable constant for all EOD queries */
     private static final List<ClearingStatus> SUSPENSE_ACTIVE_STATUSES =
