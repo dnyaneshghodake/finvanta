@@ -110,7 +110,8 @@ public class ApiExceptionHandler {
                  "APPLICATION_NOT_FOUND",
                  "CUSTOMER_NOT_FOUND",
                  "TRANSACTION_NOT_FOUND",
-                 "FD_NOT_FOUND" ->
+                 "FD_NOT_FOUND",
+                 "GL_NOT_FOUND" ->
                     HttpStatus.NOT_FOUND;
             case "DUPLICATE_CLEARING_REF",
                  "ALREADY_TERMINAL",

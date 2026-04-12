@@ -3,6 +3,7 @@ package com.finvanta.api;
 import com.finvanta.domain.entity.FixedDeposit;
 import com.finvanta.domain.enums.FdStatus;
 import com.finvanta.repository.FixedDepositRepository;
+import com.finvanta.service.FixedDepositService;
 import com.finvanta.util.BranchAccessValidator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
@@ -36,22 +37,90 @@ import org.springframework.web.bind.annotation.*;
  *   CHECKER → close FD, lien operations
  *   ADMIN   → all operations
  *
- * NOTE: bookFd, prematureClose, maturityClose, markLien, releaseLien
- * will delegate to FixedDepositService once implemented. For now,
- * inquiry endpoints are fully functional.
+ * All financial operations delegate to FixedDepositService which handles
+ * GL posting, CASA debit/credit, and audit trail via TransactionEngine.
  */
 @RestController
 @RequestMapping("/api/v1/fixed-deposits")
 public class FixedDepositController {
 
     private final FixedDepositRepository fdRepo;
+    private final FixedDepositService fdService;
     private final BranchAccessValidator branchValidator;
 
     public FixedDepositController(
             FixedDepositRepository fdRepo,
+            FixedDepositService fdService,
             BranchAccessValidator branchValidator) {
         this.fdRepo = fdRepo;
+        this.fdService = fdService;
         this.branchValidator = branchValidator;
+    }
+
+    // === Financial Operations ===
+
+    /** Book a new FD. GL: DR CASA / CR FD Deposits. MAKER/ADMIN. */
+    @PostMapping("/book")
+    @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<FdResponse>>
+            bookFd(@Valid @RequestBody BookFdRequest req) {
+        FixedDeposit fd = fdService.bookFd(
+                req.customerId(), req.branchId(),
+                req.linkedAccountNumber(),
+                req.principalAmount(), req.interestRate(),
+                req.tenureDays(),
+                req.interestPayoutMode(),
+                req.autoRenewalMode(),
+                req.nomineeName(),
+                req.nomineeRelationship());
+        return ResponseEntity.ok(ApiResponse.success(
+                FdResponse.from(fd),
+                "FD booked: " + fd.getFdAccountNumber()));
+    }
+
+    /** Premature closure with penalty. CHECKER/ADMIN. */
+    @PostMapping("/{fdNumber}/premature-close")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<FdResponse>>
+            prematureClose(@PathVariable String fdNumber,
+                    @RequestBody CloseRequest req) {
+        FixedDeposit fd = fdService.prematureClose(
+                fdNumber, req.reason());
+        return ResponseEntity.ok(ApiResponse.success(
+                FdResponse.from(fd), "FD premature closed"));
+    }
+
+    /** Maturity closure. CHECKER/ADMIN. */
+    @PostMapping("/{fdNumber}/maturity-close")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<FdResponse>>
+            maturityClose(@PathVariable String fdNumber) {
+        FixedDeposit fd = fdService.maturityClose(fdNumber);
+        return ResponseEntity.ok(ApiResponse.success(
+                FdResponse.from(fd), "FD maturity closed"));
+    }
+
+    /** Mark lien for loan collateral. CHECKER/ADMIN. */
+    @PostMapping("/{fdNumber}/lien/mark")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<FdResponse>>
+            markLien(@PathVariable String fdNumber,
+                    @Valid @RequestBody LienRequest req) {
+        FixedDeposit fd = fdService.markLien(
+                fdNumber, req.lienAmount(),
+                req.loanAccountNumber());
+        return ResponseEntity.ok(ApiResponse.success(
+                FdResponse.from(fd), "Lien marked"));
+    }
+
+    /** Release lien. CHECKER/ADMIN. */
+    @PostMapping("/{fdNumber}/lien/release")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<FdResponse>>
+            releaseLien(@PathVariable String fdNumber) {
+        FixedDeposit fd = fdService.releaseLien(fdNumber);
+        return ResponseEntity.ok(ApiResponse.success(
+                FdResponse.from(fd), "Lien released"));
     }
 
     // === Inquiry ===
