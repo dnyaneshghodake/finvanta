@@ -487,6 +487,44 @@ public class ClearingEngine {
     }
 
     /**
+     * Mark outward clearing as sent to payment network.
+     *
+     * Per Finacle CLG_ENGINE / RBI Payment Systems:
+     * After suspense posting, the transaction is submitted to the RBI/NPCI
+     * payment network. This intermediate state is required for:
+     * - TAT tracking (time between posting and network submission)
+     * - Network timeout monitoring
+     * - Retry logic for failed submissions
+     *
+     * State: SUSPENSE_POSTED → SENT_TO_NETWORK
+     */
+    @Transactional
+    public ClearingTransaction sendToNetwork(
+            String extRef) {
+        String tid = TenantContext.getCurrentTenant();
+        ClearingTransaction ct = clrRepo
+                .findByTenantIdAndExternalRefNo(tid, extRef)
+                .orElseThrow(() -> new BusinessException(
+                        "CLEARING_NOT_FOUND", extRef));
+        if (ct.getDirection() != ClearingDirection.OUTWARD)
+            throw new BusinessException(
+                    "NOT_OUTWARD",
+                    "sendToNetwork is for outward only");
+        transitionStatus(ct,
+                ClearingStatus.SENT_TO_NETWORK);
+        ct.setSentToNetworkAt(LocalDateTime.now());
+        clrRepo.save(ct);
+        auditSvc.logEvent("ClearingTransaction", ct.getId(),
+                "SENT_TO_NETWORK", "SUSPENSE_POSTED",
+                "SENT_TO_NETWORK", "CLEARING",
+                ct.getPaymentRail().getCode()
+                        + " sent to network: " + extRef);
+        log.info("Clearing sent to network: ref={}, rail={}",
+                extRef, ct.getPaymentRail());
+        return ct;
+    }
+
+    /**
      * Close a NEFT clearing cycle — no more transactions accepted.
      *
      * Per Finacle CLG_CYCLE / RBI NEFT Settlement Windows:
@@ -628,7 +666,8 @@ public class ClearingEngine {
     private void linkToCycle(ClearingTransaction ct,
             String tid, PaymentRail rail, LocalDate bd) {
         ClearingCycle cycle = cycleRepo
-                .findOpenCycle(tid, rail, bd)
+                .findOpenCycle(tid, rail, bd,
+                        ClearingCycleStatus.OPEN)
                 .orElseGet(() -> {
                     ClearingCycle c = new ClearingCycle();
                     c.setTenantId(tid);

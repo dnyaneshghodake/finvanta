@@ -2,6 +2,7 @@ package com.finvanta.repository;
 
 import com.finvanta.domain.entity.SettlementBatch;
 import com.finvanta.domain.enums.PaymentRail;
+import com.finvanta.domain.enums.SettlementBatchStatus;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -27,11 +28,14 @@ public interface SettlementBatchRepository extends JpaRepository<SettlementBatch
 
     /** Find unreconciled batches for EOD check */
     @Query("SELECT sb FROM SettlementBatch sb WHERE sb.tenantId = :tenantId "
-            + "AND sb.settlementDate = :date AND sb.status NOT IN ('RECONCILED', 'FAILED') "
+            + "AND sb.settlementDate = :date AND sb.status NOT IN :terminalStatuses "
             + "ORDER BY sb.railType")
     List<SettlementBatch> findUnreconciledByDate(
-            @Param("tenantId") String tenantId, @Param("date") LocalDate date);
+            @Param("tenantId") String tenantId,
+            @Param("date") LocalDate date,
+            @Param("terminalStatuses") List<SettlementBatchStatus> terminalStatuses);
 
     /** Find pending batches (awaiting RBI confirmation) */
-    List<SettlementBatch> findByTenantIdAndStatusOrderByCreatedAtAsc(String tenantId, String status);
+    List<SettlementBatch> findByTenantIdAndStatusOrderByCreatedAtAsc(
+            String tenantId, SettlementBatchStatus status);
 }
