@@ -247,7 +247,8 @@ public class ApprovalWorkflowService {
     private static final java.util.Map<String, Integer> SLA_HOURS = java.util.Map.of(
             "VERIFY", 24,       // Verification must happen within 24 hours
             "APPROVE", 48,      // Approval within 48 hours
-            "ACCOUNT_OPENING", 4 // CASA account activation within 4 hours
+            "ACCOUNT_OPENING", 4, // CASA account activation within 4 hours
+            "CLR_OUTWARD_HIGH_VALUE", 2 // High-value clearing within 2 hours per RBI TAT
     );
 
     /**

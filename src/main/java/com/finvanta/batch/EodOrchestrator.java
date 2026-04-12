@@ -85,6 +85,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   Step 8.7: Loan Balance Snapshot (per Finacle ACCT_BAL_HIST — sectoral exposure / NPA audit)
  *   Step 9: CASA Dormancy Classification (per RBI Master Direction on KYC 2016 Sec 38)
  *   Step 10: KYC Expiry Flagging (per RBI Master Direction on KYC 2016 Sec 16)
+ *   Step 10.4: Clearing Network Timeout Escalation (per Finacle CLG_MONITOR)
  *
  * Day status: DAY_OPEN -> EOD_RUNNING -> (eodComplete=true)
  * Day close is a separate admin action after EOD completes.
@@ -611,6 +612,27 @@ public class EodOrchestrator {
                                     expiringSoon.size());
                         } else {
                             log.info("EOD Step 10: no KYC expiry issues detected");
+                        }
+                    },
+                    errors);
+
+            // Step 10.4: Clearing Network Timeout Escalation (per Finacle CLG_MONITOR)
+            // Detects outward transactions stuck in SENT_TO_NETWORK beyond rail-specific
+            // TAT: RTGS 30 min, NEFT 60 min (one cycle), IMPS/UPI 5 min.
+            // Non-blocking: flags for investigation but doesn't stop EOD.
+            failedCount += runStep(
+                    eodJob,
+                    "CLEARING_NETWORK_TIMEOUT",
+                    () -> {
+                        int escalated = clearingEngine
+                                .escalateStuckNetworkTransactions();
+                        if (escalated > 0) {
+                            log.warn("EOD Step 10.4: {} clearing "
+                                    + "transactions stuck in network",
+                                    escalated);
+                        } else {
+                            log.info("EOD Step 10.4: no clearing "
+                                    + "network timeouts detected");
                         }
                     },
                     errors);
