@@ -84,15 +84,30 @@ public class ApiExceptionHandler {
                  "BENEFICIARY_NOT_FOUND",
                  "BRANCH_NOT_FOUND",
                  "CHARGE_NOT_FOUND",
-                 "CYCLE_NOT_FOUND" ->
+                 "CYCLE_NOT_FOUND",
+                 "LOAN_NOT_FOUND",
+                 "APPLICATION_NOT_FOUND",
+                 "CUSTOMER_NOT_FOUND",
+                 "TRANSACTION_NOT_FOUND" ->
                     HttpStatus.NOT_FOUND;
             case "DUPLICATE_CLEARING_REF",
                  "ALREADY_TERMINAL",
                  "ALREADY_WAIVED",
                  "ALREADY_REVERSED",
-                 "CLEARING_IN_PROGRESS" ->
+                 "ALREADY_DISBURSED",
+                 "ALREADY_CLOSED",
+                 "CLEARING_IN_PROGRESS",
+                 "DUPLICATE_TRANSACTION" ->
                     HttpStatus.CONFLICT;
-            case "WORKFLOW_SELF_APPROVAL" ->
+            case "INSUFFICIENT_BALANCE",
+                 "ACCOUNT_FROZEN",
+                 "ACCOUNT_CLOSED",
+                 "ACCOUNT_DORMANT",
+                 "DEBIT_NOT_ALLOWED",
+                 "CREDIT_NOT_ALLOWED" ->
+                    HttpStatus.UNPROCESSABLE_ENTITY;
+            case "WORKFLOW_SELF_APPROVAL",
+                 "BRANCH_ACCESS_DENIED" ->
                     HttpStatus.FORBIDDEN;
             default -> HttpStatus.BAD_REQUEST;
         };
