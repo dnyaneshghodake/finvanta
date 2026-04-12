@@ -47,17 +47,20 @@ public interface ClearingTransactionRepository extends JpaRepository<ClearingTra
 
     /** Find all in-flight transactions for a business date (EOD check) */
     @Query("SELECT ct FROM ClearingTransaction ct WHERE ct.tenantId = :tenantId "
-            + "AND ct.valueDate = :valueDate AND ct.status NOT IN ('COMPLETED', 'REVERSED', "
-            + "'RETURNED', 'VALIDATION_FAILED', 'NETWORK_REJECTED') "
+            + "AND ct.valueDate = :valueDate AND ct.status NOT IN :terminalStatuses "
             + "ORDER BY ct.initiatedAt ASC")
     List<ClearingTransaction> findInFlightByDate(
-            @Param("tenantId") String tenantId, @Param("valueDate") LocalDate valueDate);
+            @Param("tenantId") String tenantId,
+            @Param("valueDate") LocalDate valueDate,
+            @Param("terminalStatuses") List<ClearingStatus> terminalStatuses);
 
     /** Find transactions with active suspense (needs clearing at EOD) */
     @Query("SELECT ct FROM ClearingTransaction ct WHERE ct.tenantId = :tenantId "
-            + "AND ct.status IN ('SUSPENSE_POSTED', 'SENT_TO_NETWORK', 'SETTLED') "
+            + "AND ct.status IN :activeStatuses "
             + "ORDER BY ct.initiatedAt ASC")
-    List<ClearingTransaction> findWithActiveSuspense(@Param("tenantId") String tenantId);
+    List<ClearingTransaction> findWithActiveSuspense(
+            @Param("tenantId") String tenantId,
+            @Param("activeStatuses") List<ClearingStatus> activeStatuses);
 
     /** Find and lock for settlement processing */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -99,9 +102,11 @@ public interface ClearingTransactionRepository extends JpaRepository<ClearingTra
 
     /** Count active suspense transactions per rail (EOD reconciliation) */
     @Query("SELECT COUNT(ct) FROM ClearingTransaction ct WHERE ct.tenantId = :tenantId "
-            + "AND ct.paymentRail = :rail AND ct.status IN ('SUSPENSE_POSTED', 'SENT_TO_NETWORK', 'SETTLED')")
+            + "AND ct.paymentRail = :rail AND ct.status IN :activeStatuses")
     long countActiveSuspenseByRail(
-            @Param("tenantId") String tenantId, @Param("rail") PaymentRail rail);
+            @Param("tenantId") String tenantId,
+            @Param("rail") PaymentRail rail,
+            @Param("activeStatuses") List<ClearingStatus> activeStatuses);
 
     // === Branch-Scoped Queries ===
 

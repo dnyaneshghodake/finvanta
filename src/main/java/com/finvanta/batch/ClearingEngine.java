@@ -522,6 +522,12 @@ public class ClearingEngine {
         return cycle;
     }
 
+    /** Suspense-active statuses — reusable constant for all EOD queries */
+    private static final List<ClearingStatus> SUSPENSE_ACTIVE_STATUSES =
+            List.of(ClearingStatus.SUSPENSE_POSTED,
+                    ClearingStatus.SENT_TO_NETWORK,
+                    ClearingStatus.SETTLED);
+
     /** EOD: per-rail active suspense check */
     @Transactional(readOnly = true)
     public boolean validateAllSuspenseBalances(
@@ -530,7 +536,7 @@ public class ClearingEngine {
         boolean ok = true;
         for (PaymentRail rail : PaymentRail.values()) {
             long active = clrRepo.countActiveSuspenseByRail(
-                    tid, rail);
+                    tid, rail, SUSPENSE_ACTIVE_STATUSES);
             if (active > 0) {
                 log.warn("Suspense active: rail={}, count={}",
                         rail, active);
@@ -561,20 +567,17 @@ public class ClearingEngine {
                     : ClearingDirection.values()) {
                 String glCode = ClearingGLResolver
                         .getSuspenseGL(rail, dir);
-                // Sum of ALL suspense-active clearing amounts
-                // Per ClearingStatus.isSuspenseActive():
-                // SUSPENSE_POSTED + SENT_TO_NETWORK + SETTLED
+                // CBS: Use aggregate query instead of loading all entities.
+                // Per Finacle CLG_RECON: reconciliation must be efficient —
+                // loading thousands of clearing records into memory for
+                // summation is an N+1 anti-pattern. The DB does the SUM.
                 BigDecimal clrSum = BigDecimal.ZERO;
                 for (ClearingStatus activeStatus
-                        : new ClearingStatus[] {
-                            ClearingStatus.SUSPENSE_POSTED,
-                            ClearingStatus.SENT_TO_NETWORK,
-                            ClearingStatus.SETTLED }) {
-                    var txns = clrRepo
-                            .findByTenantIdAndPaymentRailAndDirectionAndStatusOrderByInitiatedAtAsc(
-                                    tid, rail, dir, activeStatus);
-                    for (var txn : txns)
-                        clrSum = clrSum.add(txn.getAmount());
+                        : SUSPENSE_ACTIVE_STATUSES) {
+                    clrSum = clrSum.add(
+                            clrRepo.sumAmountByRailDirectionStatus(
+                                    tid, rail, dir,
+                                    activeStatus, bizDate));
                 }
                 // GL balance (credit - debit for liability)
                 var gl = glRepo
