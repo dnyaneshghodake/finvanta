@@ -38,7 +38,7 @@ import org.springframework.stereotype.Component;
  *   Step 1: Tenant       — bank identity per RBI Banking Regulation Act 1949
  *   Step 2: Head Office  — consolidation point per Finacle SOL hierarchy
  *   Step 3: Op. Branch   — first operational branch for transactions per RBI §23
- *   Step 4: GL Chart     — 37 Indian Banking Standard GL codes (1xxx–5xxx) incl. clearing suspense
+ *   Step 4: GL Chart     — 40 Indian Banking Standard GL codes (1xxx–5xxx) incl. clearing suspense + FD
  *   Step 5: ADMIN user   — with branch assigned, password expired (T-1)
  *   Step 6: Calendar     — current month generated for all operational branches
  *   Step 7: Day Open     — first business day opened, txn batches auto-created
@@ -185,6 +185,10 @@ public class CbsBootstrapInitializer implements ApplicationRunner {
             {"4003","Penal Interest",GLAccountType.INCOME,false},{"4010","Interest Inc Deposits",GLAccountType.INCOME,false},
             {"5000","Expenses",GLAccountType.EXPENSE,true},{"5001","Provision Expense",GLAccountType.EXPENSE,false},
             {"5002","Write-Off Expense",GLAccountType.EXPENSE,false},{"5010","Interest Exp Deposits",GLAccountType.EXPENSE,false},
+            // Fixed Deposit GL Codes (per Finacle TD_MASTER / RBI Banking Regulation Act)
+            {"2030","Deposits - Fixed",GLAccountType.LIABILITY,false},
+            {"2031","FD Interest Payable",GLAccountType.LIABILITY,false},
+            {"5011","Interest Exp FD",GLAccountType.EXPENSE,false},
         };
         int created = 0;
         for (Object[] r : chart) {

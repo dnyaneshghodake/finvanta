@@ -18,6 +18,7 @@ import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanBalanceSnapshotRepository;
 import com.finvanta.service.DepositAccountService;
+import com.finvanta.service.FixedDepositService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
 import com.finvanta.service.impl.StandingInstructionServiceImpl;
@@ -83,6 +84,8 @@ import org.springframework.transaction.annotation.Transactional;
  *   Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER — LOAN_EMI auto-debit)
  *   Step 8.6: CASA Balance Snapshot (per Finacle ACCT_BAL_HIST — must be AFTER all balance mutations)
  *   Step 8.7: Loan Balance Snapshot (per Finacle ACCT_BAL_HIST — sectoral exposure / NPA audit)
+ *   Step 8.8: FD Interest Accrual (per Finacle TD_ENGINE — daily P×r/36500)
+ *   Step 8.9: FD Maturity Processing (per Finacle TD_MATURITY — close/auto-renew)
  *   Step 9: CASA Dormancy Classification (per RBI Master Direction on KYC 2016 Sec 38)
  *   Step 10: KYC Expiry Flagging (per RBI Master Direction on KYC 2016 Sec 16)
  *   Step 10.4: Clearing Network Timeout Escalation (per Finacle CLG_MONITOR)
@@ -118,6 +121,8 @@ public class EodOrchestrator {
     private final ApprovalWorkflowService workflowService;
     private final DailyBalanceSnapshotRepository balanceSnapshotRepository;
     private final LoanBalanceSnapshotRepository loanBalanceSnapshotRepository;
+    private final FixedDepositService fixedDepositService;
+    private final com.finvanta.repository.FixedDepositRepository fixedDepositRepository;
 
     /** CBS: Snapshot step constants for audit logging */
     private static final String SNAPSHOT_STEP_NAME = "DAILY_BALANCE_SNAPSHOT";
@@ -146,6 +151,8 @@ public class EodOrchestrator {
             ApprovalWorkflowService workflowService,
             DailyBalanceSnapshotRepository balanceSnapshotRepository,
             LoanBalanceSnapshotRepository loanBalanceSnapshotRepository,
+            FixedDepositService fixedDepositService,
+            com.finvanta.repository.FixedDepositRepository fixedDepositRepository,
             @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;
@@ -166,6 +173,8 @@ public class EodOrchestrator {
         this.workflowService = workflowService;
         this.balanceSnapshotRepository = balanceSnapshotRepository;
         this.loanBalanceSnapshotRepository = loanBalanceSnapshotRepository;
+        this.fixedDepositService = fixedDepositService;
+        this.fixedDepositRepository = fixedDepositRepository;
         this.self = self;
     }
 
@@ -574,6 +583,48 @@ public class EodOrchestrator {
                                 + ", total=" + loanAccounts.size()
                                 + ", skippedIdempotent=" + loanSkipped);
             }
+
+            // Step 8.8: FD Interest Accrual (per Finacle TD_ENGINE / RBI Actual/365)
+            // Daily accrual for all active FDs: P × r / 36500
+            // For REINVEST mode: quarterly compounding (principal += accrued at quarter-end)
+            self.updateStepName(eodJob.getId(), "FD_INTEREST_ACCRUAL");
+            {
+                var activeFds = fixedDepositRepository.findActiveForAccrual(tenantId);
+                int fdAccrued = 0;
+                for (var fd : activeFds) {
+                    try {
+                        fixedDepositService.accrueInterest(
+                                fd.getFdAccountNumber(), businessDate);
+                        fdAccrued++;
+                    } catch (Exception e) {
+                        failedCount++;
+                        appendError(errors, "FD_ACCRUAL",
+                                fd.getFdAccountNumber(), e);
+                    }
+                }
+                processedCount += fdAccrued;
+                log.info("EOD Step 8.8: FD interest accrued for {} deposits",
+                        fdAccrued);
+            }
+
+            // Step 8.9: FD Maturity Processing (per Finacle TD_MATURITY / RBI)
+            // Processes FDs maturing on or before businessDate:
+            //   NO_RENEWAL → maturityClose (principal + interest to CASA)
+            //   PRINCIPAL_ONLY / PRINCIPAL_AND_INTEREST → auto-renewal (future)
+            failedCount += runStep(
+                    eodJob,
+                    "FD_MATURITY_PROCESSING",
+                    () -> {
+                        int matured = fixedDepositService
+                                .processMaturityBatch(businessDate);
+                        if (matured > 0) {
+                            log.info("EOD Step 8.9: {} FDs matured/processed",
+                                    matured);
+                        } else {
+                            log.info("EOD Step 8.9: no FD maturities today");
+                        }
+                    },
+                    errors);
 
             // Step 9: CASA Dormancy Classification (RBI Master Direction on KYC 2016 Sec 38)
             // Accounts with no customer-initiated txn for 24+ months -> DORMANT
