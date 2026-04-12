@@ -3,6 +3,7 @@ package com.finvanta.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
@@ -31,6 +32,7 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     private final MfaAuthenticationSuccessHandler mfaSuccessHandler;
@@ -70,7 +72,11 @@ public class SecurityConfig {
                     if (isDevProfile()) {
                         auth.requestMatchers("/h2-console/**").permitAll();
                     }
-                    auth.requestMatchers("/admin/**")
+                    // CBS API: REST endpoints require authentication.
+                    // Role-based access enforced via @PreAuthorize on each method.
+                    auth.requestMatchers("/api/v1/**")
+                            .authenticated()
+                            .requestMatchers("/admin/**")
                             .hasRole("ADMIN")
                             .requestMatchers("/batch/**")
                             .hasRole("ADMIN")
