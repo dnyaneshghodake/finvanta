@@ -43,7 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   CR CGST Payable (2200) — cgstAmount
  *   CR SGST Payable (2201) — sgstAmount
  */
-@Service
+@Service("clearingChargeEngine")
 public class ChargeEngine {
 
     private static final Logger log =
