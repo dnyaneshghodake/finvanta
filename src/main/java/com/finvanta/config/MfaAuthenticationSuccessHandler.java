@@ -76,6 +76,12 @@ public class MfaAuthenticationSuccessHandler extends SavedRequestAwareAuthentica
                         "/password/change?expired=true");
                 return;
             }
+
+            // Normal login: BranchAwareUserDetails, no MFA required, password not expired.
+            // Mark MFA as verified (not applicable) and proceed to dashboard.
+            request.getSession().setAttribute(MFA_VERIFIED_ATTR, true);
+            super.onAuthenticationSuccess(request, response, authentication);
+            return;
         }
 
         // CBS Defense-in-Depth: If principal is NOT BranchAwareUserDetails,

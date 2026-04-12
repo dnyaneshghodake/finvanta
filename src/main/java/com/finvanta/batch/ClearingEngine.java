@@ -128,19 +128,23 @@ public class ClearingEngine {
         ct.setCreatedBy(user);
         ClearingTransaction saved = clrRepo.save(ct);
         // CBS State Machine: INITIATED → VALIDATED
-        saved.setStatus(ClearingStatus.VALIDATED);
-        try {
-            depAcctSvc.withdraw(custAcct, amt, bd,
-                    rail.getCode() + " outward: " + cpName,
-                    "CLR-OUT-" + extRef, rail.getCode());
-        } catch (Exception e) {
-            saved.setStatus(ClearingStatus.VALIDATION_FAILED);
-            saved.setFailureReason(
-                    "Debit failed: " + e.getMessage());
-            clrRepo.save(saved);
-            throw new BusinessException(
-                    "OUTWARD_DEBIT_FAILED", e.getMessage());
-        }
+        transitionStatus(saved, ClearingStatus.VALIDATED);
+        // CBS: Debit customer account for outward clearing.
+        // Use "SYSTEM" channel to bypass branch access validation — clearing operations
+        // are centralized and may debit accounts at any branch.
+        // Per Finacle CLG_ENGINE: clearing debits are system-initiated, not user-initiated.
+        //
+        // NOTE: If withdraw() throws, the entire @Transactional rolls back — the INITIATED
+        // clearing record is NOT persisted. The caller receives the exception directly.
+        // Per Spring: RuntimeException from a REQUIRED participant marks the outer transaction
+        // rollback-only. The catch-set-save-rethrow pattern cannot persist VALIDATION_FAILED
+        // because the save is rolled back with the rethrown exception.
+        //
+        // CBS FUTURE: To persist VALIDATION_FAILED for audit trail, save the INITIATED record
+        // in a REQUIRES_NEW transaction before attempting the debit.
+        depAcctSvc.withdraw(custAcct, amt, bd,
+                rail.getCode() + " outward: " + cpName,
+                "CLR-OUT-" + extRef, "SYSTEM");
         String sgl = ClearingGLResolver.getSuspenseGL(
                 rail, ClearingDirection.OUTWARD);
         TransactionResult sr = txnEngine.execute(
@@ -164,7 +168,7 @@ public class ClearingEngine {
                         .initiatedBy(user).build());
         saved.setSuspenseJournalId(sr.getJournalEntryId());
         // CBS State Machine: VALIDATED → SUSPENSE_POSTED
-        saved.setStatus(ClearingStatus.SUSPENSE_POSTED);
+        transitionStatus(saved, ClearingStatus.SUSPENSE_POSTED);
         if (rail.requiresCycleNetting())
             linkToCycle(saved, tid, rail, bd);
         clrRepo.save(saved);
@@ -221,7 +225,7 @@ public class ClearingEngine {
         ct.setCreatedBy("SYSTEM");
         ClearingTransaction saved = clrRepo.save(ct);
         // CBS State Machine: RECEIVED → VALIDATED
-        saved.setStatus(ClearingStatus.VALIDATED);
+        transitionStatus(saved, ClearingStatus.VALIDATED);
         // Post to inward suspense GL
         String sgl = ClearingGLResolver.getSuspenseGL(
                 rail, ClearingDirection.INWARD);
@@ -250,40 +254,47 @@ public class ClearingEngine {
         // CBS State Machine: VALIDATED → SUSPENSE_POSTED
         saved.setStatus(ClearingStatus.SUSPENSE_POSTED);
         // Credit customer and clear suspense
-        try {
-            depAcctSvc.deposit(benAcct, amt, bd,
-                    rail.getCode() + " from " + remName
-                            + " UTR:" + utr,
-                    "CLR-IN-" + extRef, rail.getCode());
-            TransactionResult cr = txnEngine.execute(
-                    TransactionRequest.builder()
-                            .sourceModule("CLEARING")
-                            .transactionType("CLR_INWARD_CREDIT")
-                            .accountReference(benAcct)
-                            .amount(amt).valueDate(bd)
-                            .branchCode(br.getBranchCode())
-                            .narration(rail.getCode()
-                                    + " inward credit")
-                            .journalLines(List.of(
-                                    new JournalLineRequest(sgl,
-                                            DebitCredit.DEBIT, amt,
-                                            "Clear suspense"),
-                                    new JournalLineRequest(
-                                            GLConstants
-                                                    .BANK_OPERATIONS,
-                                            DebitCredit.CREDIT, amt,
-                                            "Settled")))
-                            .systemGenerated(true)
-                            .initiatedBy("SYSTEM").build());
-            saved.setCreditJournalId(cr.getJournalEntryId());
-            // CBS State Machine: SUSPENSE_POSTED → CREDITED → COMPLETED
-            saved.setStatus(ClearingStatus.COMPLETED);
-            saved.setCompletedAt(LocalDateTime.now());
-        } catch (Exception e) {
-            saved.setStatus(ClearingStatus.CREDIT_FAILED);
-            saved.setFailureReason(
-                    "Credit failed: " + e.getMessage());
-        }
+        // CBS: Credit customer and clear suspense GL.
+        // Per Finacle CLG_ENGINE: if the credit fails, the entire transaction rolls back
+        // (including the suspense posting) because deposit/txnEngine join this @Transactional.
+        // The clearing record in SUSPENSE_POSTED state will NOT be persisted — the caller
+        // receives a BusinessException and must retry the entire inward processing.
+        //
+        // CBS FUTURE: To persist CREDIT_FAILED state for investigation, the suspense posting
+        // should be committed in a REQUIRES_NEW transaction before attempting the credit.
+        // Per Finacle CLG_CYCLE: each state transition is its own committed step.
+        // CBS: Use "SYSTEM" channel to bypass branch access validation.
+        // Inward clearing is system-initiated (processing payments from RBI/NPCI)
+        // and credits customers at ANY branch. Per Finacle CLG_ENGINE: inward credits
+        // are not user-initiated — no branch context exists for the clearing system.
+        depAcctSvc.deposit(benAcct, amt, bd,
+                rail.getCode() + " from " + remName
+                        + " UTR:" + utr,
+                "CLR-IN-" + extRef, "SYSTEM");
+        TransactionResult cr = txnEngine.execute(
+                TransactionRequest.builder()
+                        .sourceModule("CLEARING")
+                        .transactionType("CLR_INWARD_CREDIT")
+                        .accountReference(benAcct)
+                        .amount(amt).valueDate(bd)
+                        .branchCode(br.getBranchCode())
+                        .narration(rail.getCode()
+                                + " inward credit")
+                        .journalLines(List.of(
+                                new JournalLineRequest(sgl,
+                                        DebitCredit.DEBIT, amt,
+                                        "Clear suspense"),
+                                new JournalLineRequest(
+                                        GLConstants
+                                                .BANK_OPERATIONS,
+                                        DebitCredit.CREDIT, amt,
+                                        "Settled")))
+                        .systemGenerated(true)
+                        .initiatedBy("SYSTEM").build());
+        saved.setCreditJournalId(cr.getJournalEntryId());
+        // CBS State Machine: SUSPENSE_POSTED → CREDITED → COMPLETED
+        saved.setStatus(ClearingStatus.COMPLETED);
+        saved.setCompletedAt(LocalDateTime.now());
         if (rail.requiresCycleNetting())
             linkToCycle(saved, tid, rail, bd);
         clrRepo.save(saved);
@@ -437,13 +448,15 @@ public class ClearingEngine {
                 && ct.getStatus() != ClearingStatus.INITIATED
                 && ct.getStatus()
                         != ClearingStatus.VALIDATION_FAILED) {
+            // CBS: Use "SYSTEM" channel — reversal refund is system-initiated,
+            // customer account may be at a different branch from the operator.
             depAcctSvc.deposit(
                     ct.getCustomerAccountRef(),
                     ct.getAmount(), bd,
                     ct.getPaymentRail().getCode()
                             + " reversal: " + reason,
                     "CLR-REV-" + extRef,
-                    ct.getPaymentRail().getCode());
+                    "SYSTEM");
             // If deposit() throws, the entire @Transactional rolls back
             // — both the GL reversal and this CASA credit are undone atomically.
         }
@@ -575,6 +588,27 @@ public class ClearingEngine {
             log.info("Clearing suspense reconciliation: "
                     + "all rails balanced");
         return issues;
+    }
+
+    /**
+     * CBS State Machine: Validate and apply a status transition.
+     * Per RBI Payment Systems: no state skipping. Every intermediate state must
+     * be recorded for audit trail and TAT tracking.
+     *
+     * @throws BusinessException if the transition is not allowed
+     */
+    private void transitionStatus(ClearingTransaction ct,
+            ClearingStatus target) {
+        ClearingStatus current = ct.getStatus();
+        if (!current.canTransitionTo(target)) {
+            throw new BusinessException(
+                    "INVALID_STATE_TRANSITION",
+                    "Cannot transition clearing " + ct.getExternalRefNo()
+                            + " from " + current + " to " + target
+                            + ". Allowed transitions from " + current
+                            + " are defined in ClearingStatus state machine.");
+        }
+        ct.setStatus(target);
     }
 
     private void linkToCycle(ClearingTransaction ct,
