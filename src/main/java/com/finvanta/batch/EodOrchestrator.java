@@ -541,6 +541,15 @@ public class EodOrchestrator {
                         snapshot.setProvisioningAmount(
                                 loan.getProvisioningAmount() != null ? loan.getProvisioningAmount()
                                         : BigDecimal.ZERO);
+                        // CBS CRILC: Capture regulatory reporting fields at snapshot time
+                        // Per RBI Master Direction on CRILC 2024: sectoral classification,
+                        // borrower group, and collateral are denormalized into the snapshot
+                        // for efficient historical reporting without joining back to loan_accounts.
+                        snapshot.setSectoralClassification(loan.getSectoralClassification());
+                        snapshot.setBorrowerGroupId(loan.getBorrowerGroupId());
+                        snapshot.setCrilcReportable(loan.isCrilcReportable());
+                        snapshot.setInterestRate(loan.getInterestRate());
+                        snapshot.setCollateralReference(loan.getCollateralReference());
                         snapshot.setCreatedBy("SYSTEM_EOD");
                         loanBalanceSnapshotRepository.save(snapshot);
                         loanCaptured++;

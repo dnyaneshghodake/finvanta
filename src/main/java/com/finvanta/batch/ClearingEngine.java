@@ -238,22 +238,22 @@ public class ClearingEngine {
     /**
      * Checker approves a high-value outward clearing transaction.
      *
-     * Per RBI Payment Systems / Finacle CLG_LIMIT:
-     * After maker-checker approval, this method resumes the outward flow:
-     * INITIATED → VALIDATED → debit customer → post suspense → SUSPENSE_POSTED.
+     * Per Finacle CLG_STATE_MGR: NOT @Transactional — orchestrates
+     * independently committed steps:
+     *   Step 1: Approve workflow (committed by ApprovalWorkflowService)
+     *   Step 2: Record checker + debit + suspense via ClearingStateManager (REQUIRES_NEW)
      *
-     * The checker's identity is recorded on the ClearingTransaction for audit.
-     * Self-approval is blocked by ApprovalWorkflowService.approve().
+     * If Step 2 fails (insufficient balance), the workflow approval survives
+     * (it was committed in its own transaction). The INITIATED record gets
+     * VALIDATION_FAILED state. The checker can investigate and retry.
      */
-    @Transactional
     public ClearingTransaction approveOutward(
             String extRef, Long workflowId,
             String checkerRemarks) {
         String tid = TenantContext.getCurrentTenant();
         String checker = SecurityUtil.getCurrentUsername();
-        LocalDate bd = bizDateSvc.getCurrentBusinessDate();
 
-        // CBS: Approve the workflow first — blocks self-approval
+        // Step 1: Approve the workflow — committed independently
         workflowSvc.approve(workflowId, checkerRemarks);
 
         ClearingTransaction ct = clrRepo
@@ -264,64 +264,52 @@ public class ClearingEngine {
             throw new BusinessException("INVALID_STATUS",
                     "Expected INITIATED for approval, got: "
                             + ct.getStatus());
-        ct.setCheckerId(checker);
-        ct.setCheckerApprovedAt(LocalDateTime.now());
 
-        // Resume outward flow: INITIATED → VALIDATED → debit → suspense
-        transitionStatus(ct, ClearingStatus.VALIDATED);
-        depAcctSvc.withdraw(
-                ct.getCustomerAccountRef(),
-                ct.getAmount(), bd,
-                ct.getPaymentRail().getCode()
-                        + " outward: "
-                        + ct.getCounterpartyName(),
-                "CLR-OUT-" + extRef, "SYSTEM");
-        String sgl = ClearingGLResolver.getSuspenseGL(
-                ct.getPaymentRail(),
-                ClearingDirection.OUTWARD);
-        TransactionResult sr = txnEngine.execute(
-                TransactionRequest.builder()
-                        .sourceModule("CLEARING")
-                        .transactionType(
-                                "CLR_OUTWARD_SUSPENSE")
-                        .accountReference(
-                                ct.getCustomerAccountRef())
-                        .amount(ct.getAmount())
-                        .valueDate(bd)
-                        .branchCode(ct.getBranchCode())
-                        .narration(ct.getPaymentRail()
-                                .getCode()
-                                + " outward suspense"
-                                + " (checker approved)")
-                        .journalLines(List.of(
-                                new JournalLineRequest(
-                                        GLConstants
-                                                .BANK_OPERATIONS,
-                                        DebitCredit.DEBIT,
-                                        ct.getAmount(),
-                                        "Outward"),
-                                new JournalLineRequest(sgl,
-                                        DebitCredit.CREDIT,
-                                        ct.getAmount(),
-                                        "Suspense")))
-                        .systemGenerated(true)
-                        .initiatedBy(checker).build());
-        ct.setSuspenseJournalId(sr.getJournalEntryId());
-        transitionStatus(ct, ClearingStatus.SUSPENSE_POSTED);
-        if (ct.getPaymentRail().requiresCycleNetting())
-            linkToCycle(ct, tid,
-                    ct.getPaymentRail(), bd);
-        computeAuditHash(ct);
-        clrRepo.save(ct);
-        auditSvc.logEvent("ClearingTransaction", ct.getId(),
-                "OUTWARD_APPROVED",
-                "INITIATED", extRef, "CLEARING",
-                ct.getPaymentRail().getCode()
-                        + " outward INR " + ct.getAmount()
-                        + " approved by " + checker);
-        log.info("High-value clearing approved: ref={}, "
-                + "checker={}", extRef, checker);
-        return ct;
+        // Step 2: Debit + suspense via ClearingStateManager (REQUIRES_NEW)
+        try {
+            ClearingTransaction saved =
+                    stateMgr.debitAndPostOutwardSuspense(
+                            ct.getId(),
+                            ct.getCustomerAccountRef(),
+                            ct.getAmount(),
+                            ct.getPaymentRail(),
+                            ct.getCounterpartyName(),
+                            extRef,
+                            ct.getBranchCode(),
+                            checker);
+            // Record checker identity in a separate save
+            saved.setCheckerId(checker);
+            saved.setCheckerApprovedAt(LocalDateTime.now());
+            clrRepo.save(saved);
+
+            if (saved.getPaymentRail().requiresCycleNetting())
+                linkToCycle(saved, tid,
+                        saved.getPaymentRail(),
+                        bizDateSvc.getCurrentBusinessDate());
+            auditSvc.logEvent("ClearingTransaction",
+                    saved.getId(), "OUTWARD_APPROVED",
+                    "INITIATED", extRef, "CLEARING",
+                    saved.getPaymentRail().getCode()
+                            + " outward INR "
+                            + saved.getAmount()
+                            + " approved by " + checker);
+            log.info("High-value clearing approved: "
+                    + "ref={}, checker={}",
+                    extRef, checker);
+            return saved;
+        } catch (Exception e) {
+            log.error("Outward debit failed after approval: "
+                    + "ref={}, err={}",
+                    extRef, e.getMessage());
+            stateMgr.markValidationFailed(ct.getId(),
+                    "Debit failed after checker approval: "
+                            + e.getMessage());
+            throw new BusinessException(
+                    "OUTWARD_DEBIT_FAILED",
+                    "Debit failed for " + extRef
+                            + " after approval: "
+                            + e.getMessage());
+        }
     }
 
     /**
