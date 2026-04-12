@@ -3,6 +3,7 @@ package com.finvanta.service;
 import com.finvanta.domain.entity.NotificationLog;
 import com.finvanta.domain.enums.NotificationChannel;
 import com.finvanta.domain.enums.NotificationEventType;
+import com.finvanta.domain.enums.NotificationStatus;
 import com.finvanta.repository.NotificationLogRepository;
 import com.finvanta.util.TenantContext;
 
@@ -150,10 +151,10 @@ public class NotificationService {
             // CBS DEV: Log to console. PROD: dispatch to SMS/email gateway.
             log.info("NOTIFICATION [{}] {} → {}: {}",
                     channel, eventType, recipient, message);
-            entry.setDeliveryStatus("SENT");
+            entry.setDeliveryStatus(NotificationStatus.SENT);
             entry.setDispatchedAt(LocalDateTime.now());
         } catch (Exception e) {
-            entry.setDeliveryStatus("FAILED");
+            entry.setDeliveryStatus(NotificationStatus.FAILED);
             entry.setFailureReason(e.getMessage());
             log.error("Notification failed: {} {} → {}: {}",
                     channel, eventType, recipient,
