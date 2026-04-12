@@ -421,3 +421,64 @@ VALUES ('DEFAULT', 'APP-DEL001-000001', 2, 2,
     120, '2026-04-01', 'SUBMITTED',
     'SB-DEL001-000001',
     0, CURRENT_TIMESTAMP, 'maker2', 'maker2');
+
+-- ============================================================
+-- NOTIFICATION TEMPLATES (Finacle ALERT_TEMPLATE / RBI Customer Protection 2024)
+-- ============================================================
+-- Per RBI Master Direction on Digital Payment Security Controls 2021 Section 8.2:
+-- Banks MUST send real-time alerts for every debit/credit on customer accounts.
+-- Templates include: amount, masked account, balance, date, reference per RBI mandate.
+-- Per TRAI DND Regulations 2018: SMS templates must be DLT-registered (dlt_template_id).
+-- Global templates (product_code=NULL) apply to all products unless overridden.
+
+-- CASA Credit Alert — SMS (mandatory per RBI)
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CASA_CREDIT', 'SMS', NULL, 'CASA Credit SMS', 'Dear {customerName}, INR {amount} credited to A/c {accountNumber} on {date}. Avl Bal: INR {balance}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001001', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- CASA Credit Alert — EMAIL
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CASA_CREDIT', 'EMAIL', NULL, 'CASA Credit Email', 'Dear {customerName},\n\nINR {amount} has been credited to your account {accountNumber} on {date}.\n\nAvailable Balance: INR {balance}\nTransaction Reference: {transactionRef}\nNarration: {narration}\n\nIf you did not authorize this transaction, please contact your branch immediately.\n\nRegards,\nFinvanta Bank', 'Credit Alert: INR {amount} credited to {accountNumber}', NULL, 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- CASA Debit Alert — SMS (mandatory per RBI)
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CASA_DEBIT', 'SMS', NULL, 'CASA Debit SMS', 'Dear {customerName}, INR {amount} debited from A/c {accountNumber} on {date}. Avl Bal: INR {balance}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001002', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- CASA Debit Alert — EMAIL
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CASA_DEBIT', 'EMAIL', NULL, 'CASA Debit Email', 'Dear {customerName},\n\nINR {amount} has been debited from your account {accountNumber} on {date}.\n\nAvailable Balance: INR {balance}\nTransaction Reference: {transactionRef}\nNarration: {narration}\n\nIf you did not authorize this transaction, please contact your branch immediately or call our 24x7 helpline.\n\nRegards,\nFinvanta Bank', 'Debit Alert: INR {amount} debited from {accountNumber}', NULL, 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- CASA Transfer Sent — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CASA_TRANSFER_SENT', 'SMS', NULL, 'Transfer Sent SMS', 'Dear {customerName}, INR {amount} transferred from A/c {accountNumber} on {date}. Avl Bal: INR {balance}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001003', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- CASA Transfer Received — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CASA_TRANSFER_RECEIVED', 'SMS', NULL, 'Transfer Received SMS', 'Dear {customerName}, INR {amount} received in A/c {accountNumber} on {date}. Avl Bal: INR {balance}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001004', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Loan Disbursement Alert — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'LOAN_DISBURSED', 'SMS', NULL, 'Loan Disbursed SMS', 'Dear {customerName}, your loan of INR {amount} has been disbursed to A/c {accountNumber} on {date}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001005', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Loan EMI Debit Alert — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'LOAN_EMI_DEBIT', 'SMS', NULL, 'Loan EMI SMS', 'Dear {customerName}, EMI of INR {amount} debited from A/c {accountNumber} on {date}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001006', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Loan Overdue Alert — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'LOAN_OVERDUE', 'SMS', NULL, 'Loan Overdue SMS', 'Dear {customerName}, your EMI of INR {amount} on A/c {accountNumber} is overdue. Please pay immediately to avoid penal charges. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001007', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Clearing Outward Initiated — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CLEARING_OUTWARD_INITIATED', 'SMS', NULL, 'Clearing Outward SMS', 'Dear {customerName}, INR {amount} transfer initiated from A/c {accountNumber} on {date}. Avl Bal: INR {balance}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001008', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Clearing Inward Credited — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CLEARING_INWARD_CREDITED', 'SMS', NULL, 'Clearing Inward SMS', 'Dear {customerName}, INR {amount} credited to A/c {accountNumber} via clearing on {date}. Avl Bal: INR {balance}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001009', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Password Changed — SMS (security alert per RBI Cyber Security Framework)
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'PASSWORD_CHANGED', 'SMS', NULL, 'Password Changed SMS', 'Dear Customer, your Finvanta Bank password was changed on {date}. If you did not make this change, call our 24x7 helpline immediately. -Finvanta Bank', NULL, 'DLT1001010', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Login Failed — SMS (security alert per RBI)
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'LOGIN_FAILED', 'SMS', NULL, 'Login Failed SMS', 'ALERT: Failed login attempt on your Finvanta Bank account on {date}. If this was not you, secure your account immediately. -Finvanta Bank', NULL, 'DLT1001011', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
