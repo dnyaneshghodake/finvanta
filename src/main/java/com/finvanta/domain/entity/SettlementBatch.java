@@ -1,6 +1,7 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.PaymentRail;
+import com.finvanta.domain.enums.SettlementBatchStatus;
 
 import jakarta.persistence.*;
 
@@ -65,9 +66,10 @@ public class SettlementBatch extends BaseEntity {
     @Column(name = "rbi_settlement_ref", length = 50)
     private String rbiSettlementRef;
 
-    /** Settlement status: PENDING, CONFIRMED, RECONCILED, FAILED */
+    /** Settlement status per SettlementBatchStatus state machine */
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20, nullable = false)
-    private String status = "PENDING";
+    private SettlementBatchStatus status = SettlementBatchStatus.PENDING;
 
     /** When RBI/NPCI confirmed the settlement */
     @Column(name = "confirmed_at")
@@ -87,7 +89,7 @@ public class SettlementBatch extends BaseEntity {
 
     // === Helpers ===
 
-    public boolean isPending() { return "PENDING".equals(status); }
-    public boolean isConfirmed() { return "CONFIRMED".equals(status); }
-    public boolean isReconciled() { return "RECONCILED".equals(status); }
+    public boolean isPending() { return status == SettlementBatchStatus.PENDING; }
+    public boolean isConfirmed() { return status == SettlementBatchStatus.CONFIRMED; }
+    public boolean isReconciled() { return status == SettlementBatchStatus.RECONCILED; }
 }

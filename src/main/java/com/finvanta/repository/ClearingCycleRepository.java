@@ -1,6 +1,7 @@
 package com.finvanta.repository;
 
 import com.finvanta.domain.entity.ClearingCycle;
+import com.finvanta.domain.enums.ClearingCycleStatus;
 import com.finvanta.domain.enums.PaymentRail;
 
 import jakarta.persistence.LockModeType;
@@ -23,12 +24,13 @@ public interface ClearingCycleRepository extends JpaRepository<ClearingCycle, Lo
 
     /** Find the current OPEN cycle for a rail on a date (for adding transactions) */
     @Query("SELECT cc FROM ClearingCycle cc WHERE cc.tenantId = :tenantId "
-            + "AND cc.railType = :rail AND cc.cycleDate = :cycleDate AND cc.status = 'OPEN' "
+            + "AND cc.railType = :rail AND cc.cycleDate = :cycleDate AND cc.status = :openStatus "
             + "ORDER BY cc.cycleNumber DESC LIMIT 1")
     Optional<ClearingCycle> findOpenCycle(
             @Param("tenantId") String tenantId,
             @Param("rail") PaymentRail rail,
-            @Param("cycleDate") LocalDate cycleDate);
+            @Param("cycleDate") LocalDate cycleDate,
+            @Param("openStatus") ClearingCycleStatus openStatus);
 
     /** Find and lock OPEN cycle for atomic transaction addition */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -41,10 +43,12 @@ public interface ClearingCycleRepository extends JpaRepository<ClearingCycle, Lo
 
     /** Find unsettled cycles for a date (EOD check) */
     @Query("SELECT cc FROM ClearingCycle cc WHERE cc.tenantId = :tenantId "
-            + "AND cc.cycleDate = :cycleDate AND cc.status NOT IN ('SETTLED') "
+            + "AND cc.cycleDate = :cycleDate AND cc.status != :settledStatus "
             + "ORDER BY cc.railType, cc.cycleNumber")
     List<ClearingCycle> findUnsettledByDate(
-            @Param("tenantId") String tenantId, @Param("cycleDate") LocalDate cycleDate);
+            @Param("tenantId") String tenantId,
+            @Param("cycleDate") LocalDate cycleDate,
+            @Param("settledStatus") ClearingCycleStatus settledStatus);
 
     /** Get next cycle number for a rail on a date */
     @Query("SELECT COALESCE(MAX(cc.cycleNumber), 0) + 1 FROM ClearingCycle cc "

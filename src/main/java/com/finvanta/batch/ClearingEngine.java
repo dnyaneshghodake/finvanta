@@ -8,6 +8,7 @@ import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.ClearingCycle;
 import com.finvanta.domain.entity.ClearingTransaction;
 import com.finvanta.domain.entity.DepositAccount;
+import com.finvanta.domain.enums.ClearingCycleStatus;
 import com.finvanta.domain.enums.ClearingDirection;
 import com.finvanta.domain.enums.ClearingStatus;
 import com.finvanta.domain.enums.DebitCredit;
@@ -505,7 +506,7 @@ public class ClearingEngine {
             throw new BusinessException("CYCLE_NOT_OPEN",
                     "Cycle " + cycleId + " is "
                             + cycle.getStatus());
-        cycle.setStatus("CLOSED");
+        cycle.setStatus(ClearingCycleStatus.CLOSED);
         cycle.setCycleEndTime(LocalDateTime.now());
         cycleRepo.save(cycle);
         auditSvc.logEvent("ClearingCycle", cycle.getId(),

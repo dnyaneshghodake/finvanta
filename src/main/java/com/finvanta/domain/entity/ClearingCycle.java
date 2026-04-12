@@ -1,5 +1,6 @@
 package com.finvanta.domain.entity;
 
+import com.finvanta.domain.enums.ClearingCycleStatus;
 import com.finvanta.domain.enums.PaymentRail;
 
 import jakarta.persistence.*;
@@ -79,9 +80,10 @@ public class ClearingCycle extends BaseEntity {
     @Column(name = "transaction_count", nullable = false)
     private int transactionCount = 0;
 
-    /** Cycle status: OPEN, CLOSED, SUBMITTED, SETTLED */
+    /** Cycle status per ClearingCycleStatus state machine */
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20, nullable = false)
-    private String status = "OPEN";
+    private ClearingCycleStatus status = ClearingCycleStatus.OPEN;
 
     /** RBI/NPCI settlement reference (assigned on settlement confirmation) */
     @Column(name = "settlement_reference", length = 50)
@@ -94,9 +96,9 @@ public class ClearingCycle extends BaseEntity {
         return netDebit.subtract(netCredit);
     }
 
-    public boolean isOpen() { return "OPEN".equals(status); }
-    public boolean isClosed() { return "CLOSED".equals(status); }
-    public boolean isSettled() { return "SETTLED".equals(status); }
+    public boolean isOpen() { return status == ClearingCycleStatus.OPEN; }
+    public boolean isClosed() { return status == ClearingCycleStatus.CLOSED; }
+    public boolean isSettled() { return status == ClearingCycleStatus.SETTLED; }
 
     /** Add an outward transaction amount to this cycle */
     public void addOutward(BigDecimal amount) {
