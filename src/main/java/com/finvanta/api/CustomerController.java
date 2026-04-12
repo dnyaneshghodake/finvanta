@@ -5,7 +5,6 @@ import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
-import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.CbsReferenceService;
 import com.finvanta.util.BranchAccessValidator;
@@ -46,7 +45,6 @@ public class CustomerController {
 
     private final CustomerRepository customerRepo;
     private final BranchRepository branchRepo;
-    private final DepositAccountRepository depositRepo;
     private final LoanAccountRepository loanRepo;
     private final AuditService auditSvc;
     private final BranchAccessValidator branchValidator;
@@ -55,14 +53,12 @@ public class CustomerController {
     public CustomerController(
             CustomerRepository customerRepo,
             BranchRepository branchRepo,
-            DepositAccountRepository depositRepo,
             LoanAccountRepository loanRepo,
             AuditService auditSvc,
             BranchAccessValidator branchValidator,
             CbsReferenceService refService) {
         this.customerRepo = customerRepo;
         this.branchRepo = branchRepo;
-        this.depositRepo = depositRepo;
         this.loanRepo = loanRepo;
         this.auditSvc = auditSvc;
         this.branchValidator = branchValidator;
