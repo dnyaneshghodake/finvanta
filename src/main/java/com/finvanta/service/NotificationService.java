@@ -34,8 +34,19 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * In production: integrate with SMS gateway (MSG91, Twilio) and email (SES, SendGrid).
  * For dev: logs to console (no actual dispatch).
+ *
+ * @deprecated Use {@link com.finvanta.notification.NotificationService} which provides:
+ * - Template-based message rendering (NotificationTemplate)
+ * - Product-scoped template resolution (product → global fallback)
+ * - REQUIRES_NEW via separate NotificationPersistenceManager bean (no self-invocation bug)
+ * - Retry with configurable max attempts per RBI mandate
+ * - REST API via NotificationController
+ *
+ * This legacy service is retained for backward compatibility with existing callers.
+ * It will be removed once all callers are migrated to the new notification package.
  */
-@Service
+@Deprecated(forRemoval = true)
+@Service("legacyNotificationService")
 public class NotificationService {
 
     private static final Logger log =
