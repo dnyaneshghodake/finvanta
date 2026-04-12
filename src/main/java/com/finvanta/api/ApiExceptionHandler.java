@@ -109,7 +109,8 @@ public class ApiExceptionHandler {
                  "LOAN_NOT_FOUND",
                  "APPLICATION_NOT_FOUND",
                  "CUSTOMER_NOT_FOUND",
-                 "TRANSACTION_NOT_FOUND" ->
+                 "TRANSACTION_NOT_FOUND",
+                 "FD_NOT_FOUND" ->
                     HttpStatus.NOT_FOUND;
             case "DUPLICATE_CLEARING_REF",
                  "ALREADY_TERMINAL",
@@ -125,7 +126,11 @@ public class ApiExceptionHandler {
                  "ACCOUNT_CLOSED",
                  "ACCOUNT_DORMANT",
                  "DEBIT_NOT_ALLOWED",
-                 "CREDIT_NOT_ALLOWED" ->
+                 "CREDIT_NOT_ALLOWED",
+                 "FD_NOT_ACTIVE",
+                 "PREMATURE_NOT_ALLOWED",
+                 "LIEN_BLOCKED",
+                 "KYC_NOT_VERIFIED" ->
                     HttpStatus.UNPROCESSABLE_ENTITY;
             case "WORKFLOW_SELF_APPROVAL",
                  "BRANCH_ACCESS_DENIED" ->
