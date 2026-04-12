@@ -252,7 +252,7 @@ public class ClearingEngine {
         saved.setSuspenseJournalId(
                 suspResult.getJournalEntryId());
         // CBS State Machine: VALIDATED → SUSPENSE_POSTED
-        saved.setStatus(ClearingStatus.SUSPENSE_POSTED);
+        transitionStatus(saved, ClearingStatus.SUSPENSE_POSTED);
         // Credit customer and clear suspense
         // CBS: Credit customer and clear suspense GL.
         // Per Finacle CLG_ENGINE: if the credit fails, the entire transaction rolls back
@@ -292,8 +292,12 @@ public class ClearingEngine {
                         .systemGenerated(true)
                         .initiatedBy("SYSTEM").build());
         saved.setCreditJournalId(cr.getJournalEntryId());
-        // CBS State Machine: SUSPENSE_POSTED → CREDITED → COMPLETED
-        saved.setStatus(ClearingStatus.COMPLETED);
+        // CBS State Machine: SUSPENSE_POSTED → COMPLETED
+        // Per ClearingStatus state machine: SUSPENSE_POSTED → COMPLETED is allowed
+        // for real-time rails. For NEFT (deferred net), the flow would go through
+        // SENT_TO_NETWORK → SETTLED → COMPLETED via confirmOutwardSettlement().
+        // Inward processing completes in one step since the credit is immediate.
+        transitionStatus(saved, ClearingStatus.COMPLETED);
         saved.setCompletedAt(LocalDateTime.now());
         if (rail.requiresCycleNetting())
             linkToCycle(saved, tid, rail, bd);
@@ -357,8 +361,14 @@ public class ClearingEngine {
                         .initiatedBy("SYSTEM").build());
         ct.setSettlementJournalId(sr.getJournalEntryId());
         ct.setUtrNumber(rbiRef);
-        ct.setStatus(ClearingStatus.COMPLETED);
-        ct.setSettledAt(LocalDateTime.now());
+        // CBS State Machine: transition through proper states.
+        // SUSPENSE_POSTED → COMPLETED (direct, for real-time rails)
+        // SENT_TO_NETWORK → SETTLED → COMPLETED (two-step, for deferred rails)
+        if (ct.getStatus() == ClearingStatus.SENT_TO_NETWORK) {
+            transitionStatus(ct, ClearingStatus.SETTLED);
+            ct.setSettledAt(LocalDateTime.now());
+        }
+        transitionStatus(ct, ClearingStatus.COMPLETED);
         ct.setCompletedAt(LocalDateTime.now());
         clrRepo.save(ct);
         auditSvc.logEvent("ClearingTransaction", ct.getId(),
@@ -460,7 +470,7 @@ public class ClearingEngine {
             // If deposit() throws, the entire @Transactional rolls back
             // — both the GL reversal and this CASA credit are undone atomically.
         }
-        ct.setStatus(ClearingStatus.REVERSED);
+        transitionStatus(ct, ClearingStatus.REVERSED);
         ct.setReversalReason(reason);
         ct.setCompletedAt(LocalDateTime.now());
         clrRepo.save(ct);
@@ -629,6 +639,16 @@ public class ClearingEngine {
         ClearingCycle locked = cycleRepo
                 .findAndLockById(cycle.getId())
                 .orElseThrow();
+        // CBS: Guard against TOCTOU race — between findOpenCycle (unlocked read)
+        // and findAndLockById (pessimistic lock), another thread may have closed
+        // the cycle. Re-validate after acquiring the lock.
+        if (!locked.isOpen()) {
+            throw new BusinessException(
+                    "CYCLE_CLOSED_RACE",
+                    "Clearing cycle " + locked.getId()
+                            + " was closed between lookup and lock. "
+                            + "Retry the clearing transaction.");
+        }
         if (ct.getDirection() == ClearingDirection.OUTWARD)
             locked.addOutward(ct.getAmount());
         else

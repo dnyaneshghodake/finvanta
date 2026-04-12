@@ -332,20 +332,35 @@ public class EodOrchestrator {
                     errors);
 
             // Step 7.6: Clearing Suspense Validation (per Finacle CLG_ENGINE)
-            // Uses ClearingEngine which validates per-rail suspense (NEFT/RTGS/IMPS/UPI)
-            // instead of the deprecated single GL 2400 check.
+            // Two-phase check:
+            //   Phase 1: Count active clearing transactions per rail (fast check)
+            //   Phase 2: Reconcile GL balances vs clearing transaction sums per rail+direction
+            // Phase 2 catches GL balance discrepancies even without corresponding clearing
+            // records (e.g., orphaned GL entries from failed transactions).
             failedCount += runStep(
                     eodJob,
                     "CLEARING_SUSPENSE",
                     () -> {
+                        // Phase 1: Active transaction count check
                         boolean suspenseClear = clearingEngine
                                 .validateAllSuspenseBalances(businessDate);
                         if (suspenseClear) {
-                            log.info("EOD Step 7.6: all clearing "
-                                    + "suspense GLs clear");
+                            log.info("EOD Step 7.6a: all clearing "
+                                    + "suspense transactions resolved");
                         } else {
-                            log.warn("EOD Step 7.6: active clearing "
+                            log.warn("EOD Step 7.6a: active clearing "
                                     + "suspense detected — investigate");
+                        }
+                        // Phase 2: GL balance vs clearing sum reconciliation
+                        var reconIssues = clearingEngine
+                                .reconcileSuspensePerRail(businessDate);
+                        if (!reconIssues.isEmpty()) {
+                            log.warn("EOD Step 7.6b: {} clearing GL "
+                                    + "discrepancies detected",
+                                    reconIssues.size());
+                        } else {
+                            log.info("EOD Step 7.6b: clearing GL "
+                                    + "reconciliation balanced");
                         }
                     },
                     errors);
