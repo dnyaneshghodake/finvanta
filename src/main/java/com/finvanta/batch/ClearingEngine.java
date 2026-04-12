@@ -82,6 +82,7 @@ public class ClearingEngine {
     private final AuditService auditSvc;
     private final ApprovalWorkflowService workflowSvc;
     private final ChargeEngine chargeEngine;
+    private final ClearingStateManager stateMgr;
 
     public ClearingEngine(
             ClearingTransactionRepository clrRepo,
@@ -95,7 +96,8 @@ public class ClearingEngine {
             BusinessDateService bizDateSvc,
             AuditService auditSvc,
             ApprovalWorkflowService workflowSvc,
-            ChargeEngine chargeEngine) {
+            ChargeEngine chargeEngine,
+            ClearingStateManager stateMgr) {
         this.clrRepo = clrRepo;
         this.cycleRepo = cycleRepo;
         this.depAcctRepo = depAcctRepo;
@@ -108,6 +110,7 @@ public class ClearingEngine {
         this.auditSvc = auditSvc;
         this.workflowSvc = workflowSvc;
         this.chargeEngine = chargeEngine;
+        this.stateMgr = stateMgr;
     }
 
     /** OUTWARD: Validate, Debit Customer, Post Suspense */
@@ -344,8 +347,19 @@ public class ClearingEngine {
         return ct;
     }
 
-    /** INWARD: Suspense → Credit Customer → Complete */
-    @Transactional
+    /**
+     * INWARD: Suspense → Credit Customer → Complete.
+     *
+     * Per Finacle CLG_STATE_MGR: NOT @Transactional — this method orchestrates
+     * three independently committed steps via ClearingStateManager:
+     *   Step 1: persistInitialState() — commits RECEIVED record (REQUIRES_NEW)
+     *   Step 2: postInwardSuspense() — commits SUSPENSE_POSTED + GL (REQUIRES_NEW)
+     *   Step 3: creditAndComplete() — commits CREDITED → COMPLETED (REQUIRES_NEW)
+     *
+     * If Step 3 fails, Step 2's SUSPENSE_POSTED state survives in the database.
+     * Operations can see the stuck transaction and investigate/retry/return.
+     * This eliminates the "invisible stuck transaction" problem.
+     */
     public ClearingTransaction processInward(
             String extRef, String utr,
             PaymentRail rail, BigDecimal amt,
@@ -357,14 +371,6 @@ public class ClearingEngine {
         if (clrRepo.existsByTenantIdAndExternalRefNo(tid, extRef))
             throw new BusinessException(
                     "DUPLICATE_CLEARING_REF", extRef);
-        // CBS: Defensive input validation — inward clearing is system-initiated
-        // from RBI/NPCI network adapter, but null/negative amounts must never
-        // reach CASA deposit(). A negative amount would subtract from the
-        // customer's ledger balance (BigDecimal.add(negative)), effectively
-        // debiting them instead of crediting. A null causes NPE downstream.
-        // RTGS minimum is NOT enforced on inward — the originating bank owns
-        // that check per RBI Payment Systems Act. Rejecting a valid sub-2L
-        // RTGS inward from RBI would strand funds in the network.
         if (amt == null || amt.signum() <= 0)
             throw new BusinessException(
                     "INVALID_AMOUNT", "positive required");
@@ -381,6 +387,8 @@ public class ClearingEngine {
                         && b.isActive())
                 .orElseThrow(() -> new BusinessException(
                         "BRANCH_NOT_FOUND", "" + branchId));
+
+        // === Step 1: Persist RECEIVED record (REQUIRES_NEW — committed) ===
         ClearingTransaction ct = new ClearingTransaction();
         ct.setTenantId(tid);
         ct.setExternalRefNo(extRef);
@@ -399,94 +407,41 @@ public class ClearingEngine {
         ct.setValueDate(bd);
         ct.setInitiatedAt(LocalDateTime.now());
         ct.setCreatedBy("SYSTEM");
-        ClearingTransaction saved = clrRepo.save(ct);
-        // CBS State Machine: RECEIVED → VALIDATED
-        transitionStatus(saved, ClearingStatus.VALIDATED);
-        // Post to inward suspense GL
-        String sgl = ClearingGLResolver.getSuspenseGL(
-                rail, ClearingDirection.INWARD);
-        TransactionResult suspResult = txnEngine.execute(
-                TransactionRequest.builder()
-                .sourceModule("CLEARING")
-                .transactionType("CLR_INWARD_SUSPENSE")
-                .accountReference(benAcct)
-                .amount(amt).valueDate(bd)
-                .branchCode(br.getBranchCode())
-                .narration(rail.getCode() + " inward suspense")
-                .journalLines(List.of(
-                        new JournalLineRequest(
-                                ClearingGLResolver
-                                        .getRbiSettlementGL(),
-                                DebitCredit.DEBIT, amt,
-                                "Inward"),
-                        new JournalLineRequest(sgl,
-                                DebitCredit.CREDIT, amt,
-                                "Suspense")))
-                .systemGenerated(true)
-                .initiatedBy("SYSTEM").build());
-        // CBS: Capture suspense journal ID for reconciliation traceability
-        saved.setSuspenseJournalId(
-                suspResult.getJournalEntryId());
-        // CBS State Machine: VALIDATED → SUSPENSE_POSTED
-        transitionStatus(saved, ClearingStatus.SUSPENSE_POSTED);
-        // Credit customer and clear suspense
-        // CBS: Credit customer and clear suspense GL.
-        // Per Finacle CLG_ENGINE: if the credit fails, the entire transaction rolls back
-        // (including the suspense posting) because deposit/txnEngine join this @Transactional.
-        // The clearing record in SUSPENSE_POSTED state will NOT be persisted — the caller
-        // receives a BusinessException and must retry the entire inward processing.
-        //
-        // CBS FUTURE: To persist CREDIT_FAILED state for investigation, the suspense posting
-        // should be committed in a REQUIRES_NEW transaction before attempting the credit.
-        // Per Finacle CLG_CYCLE: each state transition is its own committed step.
-        // CBS: Use "SYSTEM" channel to bypass branch access validation.
-        // Inward clearing is system-initiated (processing payments from RBI/NPCI)
-        // and credits customers at ANY branch. Per Finacle CLG_ENGINE: inward credits
-        // are not user-initiated — no branch context exists for the clearing system.
-        depAcctSvc.deposit(benAcct, amt, bd,
-                rail.getCode() + " from " + remName
-                        + " UTR:" + utr,
-                "CLR-IN-" + extRef, "SYSTEM");
-        TransactionResult cr = txnEngine.execute(
-                TransactionRequest.builder()
-                        .sourceModule("CLEARING")
-                        .transactionType("CLR_INWARD_CREDIT")
-                        .accountReference(benAcct)
-                        .amount(amt).valueDate(bd)
-                        .branchCode(br.getBranchCode())
-                        .narration(rail.getCode()
-                                + " inward credit")
-                        .journalLines(List.of(
-                                new JournalLineRequest(sgl,
-                                        DebitCredit.DEBIT, amt,
-                                        "Clear suspense"),
-                                new JournalLineRequest(
-                                        GLConstants
-                                                .BANK_OPERATIONS,
-                                        DebitCredit.CREDIT, amt,
-                                        "Settled")))
-                        .systemGenerated(true)
-                        .initiatedBy("SYSTEM").build());
-        saved.setCreditJournalId(cr.getJournalEntryId());
-        // CBS State Machine: SUSPENSE_POSTED → CREDITED → COMPLETED
-        // Per RBI TAT tracking: the CREDITED state captures the distinct moment
-        // the customer's CASA balance was updated — separate from the suspense GL
-        // clearing. This intermediate state enables:
-        // - TAT measurement: time from SUSPENSE_POSTED to CREDITED (credit latency)
-        // - Audit trail: when exactly the customer received funds
-        // - Dispute resolution: proof of credit timestamp independent of GL posting
-        transitionStatus(saved, ClearingStatus.CREDITED);
-        transitionStatus(saved, ClearingStatus.COMPLETED);
-        saved.setCompletedAt(LocalDateTime.now());
+        ClearingTransaction saved =
+                stateMgr.persistInitialState(ct);
+
+        // === Step 2: Post suspense GL (REQUIRES_NEW — committed) ===
+        // If this fails, RECEIVED record survives for investigation.
+        saved = stateMgr.postInwardSuspense(
+                saved.getId(), rail, benAcct, amt,
+                br.getBranchCode());
+
+        // === Step 3: Credit customer (REQUIRES_NEW — committed) ===
+        // If this fails, SUSPENSE_POSTED state survives — operations
+        // can see the stuck transaction and the suspense GL balance
+        // reflects the pending credit. markCreditFailed() persists
+        // the failure reason for investigation.
+        try {
+            saved = stateMgr.creditAndComplete(
+                    saved.getId(), remName, utr);
+        } catch (Exception e) {
+            // CBS: Credit failed — persist CREDIT_FAILED state.
+            // The SUSPENSE_POSTED GL is already committed.
+            // Operations can investigate and retry or return.
+            log.error("Inward credit failed: ref={}, err={}",
+                    extRef, e.getMessage());
+            stateMgr.markCreditFailed(saved.getId(),
+                    "Credit failed: " + e.getMessage());
+            throw new BusinessException(
+                    "INWARD_CREDIT_FAILED",
+                    "Credit failed for " + extRef
+                            + ": " + e.getMessage());
+        }
+
         if (rail.requiresCycleNetting())
             linkToCycle(saved, tid, rail, bd);
-        computeAuditHash(saved);
-        clrRepo.save(saved);
         auditSvc.logEvent("ClearingTransaction",
-                saved.getId(),
-                saved.getStatus() == ClearingStatus.COMPLETED
-                        ? "INWARD_COMPLETED"
-                        : "INWARD_FAILED",
+                saved.getId(), "INWARD_COMPLETED",
                 null, extRef, "CLEARING",
                 rail.getCode() + " inward INR " + amt);
         return saved;
