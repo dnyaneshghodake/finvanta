@@ -29,9 +29,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * CBS Centralized Charges Engine per Finacle CHRG_MASTER.
+ * CBS Loan Charges Engine per Finacle CHRG_MASTER / Temenos AA.CHARGE.
  *
- * Calculates and posts charges (fees) with GST support via the TransactionEngine.
+ * Loan-specific charge calculation and GL posting engine.
+ * Handles processing fees, stamp duty, documentation charges, and late payment fees
+ * with slab-based tiering and GST support via the TransactionEngine.
  *
  * Charge Types:
  * - FLAT: Fixed amount (e.g., INR 500)
@@ -46,11 +48,13 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * Per RBI Fair Lending Code 2023: All charges are transparent, justified, and reversible.
  * Per Finacle CHRG_MASTER: Charge application deferred until explicit applyCharge() call.
+ *
+ * For cross-cutting charges (Clearing/CASA), see {@link com.finvanta.charge.ChargeEngine}.
  */
 @Service
-public class ChargeEngine {
+public class LoanChargeEngine {
 
-    private static final Logger log = LoggerFactory.getLogger(ChargeEngine.class);
+    private static final Logger log = LoggerFactory.getLogger(LoanChargeEngine.class);
 
     private final ChargeConfigRepository configRepository;
     private final LoanAccountRepository accountRepository;
@@ -59,7 +63,7 @@ public class ChargeEngine {
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
 
-    public ChargeEngine(
+    public LoanChargeEngine(
             ChargeConfigRepository configRepository,
             LoanAccountRepository accountRepository,
             TransactionEngine transactionEngine,
