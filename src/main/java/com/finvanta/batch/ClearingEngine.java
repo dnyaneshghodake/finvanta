@@ -447,11 +447,14 @@ public class ClearingEngine {
                         .systemGenerated(true)
                         .initiatedBy("SYSTEM").build());
         saved.setCreditJournalId(cr.getJournalEntryId());
-        // CBS State Machine: SUSPENSE_POSTED → COMPLETED
-        // Per ClearingStatus state machine: SUSPENSE_POSTED → COMPLETED is allowed
-        // for real-time rails. For NEFT (deferred net), the flow would go through
-        // SENT_TO_NETWORK → SETTLED → COMPLETED via confirmOutwardSettlement().
-        // Inward processing completes in one step since the credit is immediate.
+        // CBS State Machine: SUSPENSE_POSTED → CREDITED → COMPLETED
+        // Per RBI TAT tracking: the CREDITED state captures the distinct moment
+        // the customer's CASA balance was updated — separate from the suspense GL
+        // clearing. This intermediate state enables:
+        // - TAT measurement: time from SUSPENSE_POSTED to CREDITED (credit latency)
+        // - Audit trail: when exactly the customer received funds
+        // - Dispute resolution: proof of credit timestamp independent of GL posting
+        transitionStatus(saved, ClearingStatus.CREDITED);
         transitionStatus(saved, ClearingStatus.COMPLETED);
         saved.setCompletedAt(LocalDateTime.now());
         if (rail.requiresCycleNetting())
