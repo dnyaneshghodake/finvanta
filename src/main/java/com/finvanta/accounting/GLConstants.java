@@ -115,4 +115,13 @@ public final class GLConstants {
     public static final String WRITE_OFF_EXPENSE = "5002";
     /** Interest Expense on Deposits — P&L charge for savings interest payouts */
     public static final String INTEREST_EXPENSE_DEPOSITS = "5010";
+
+    // --- FIXED DEPOSIT GL Codes (per Finacle TD_MASTER / RBI Banking Regulation Act) ---
+
+    /** Fixed Deposit Liability — customer FD principal held by bank */
+    public static final String FD_DEPOSITS = "2030";
+    /** FD Interest Payable — accrued FD interest not yet paid/credited */
+    public static final String FD_INTEREST_PAYABLE = "2031";
+    /** FD Interest Expense — P&L charge for FD interest payouts */
+    public static final String FD_INTEREST_EXPENSE = "5011";
 }
