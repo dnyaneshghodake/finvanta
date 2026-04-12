@@ -113,8 +113,17 @@ public class ClearingEngine {
         this.stateMgr = stateMgr;
     }
 
-    /** OUTWARD: Validate, Debit Customer, Post Suspense */
-    @Transactional
+    /**
+     * OUTWARD: Validate, Debit Customer, Post Suspense.
+     *
+     * Per Finacle CLG_STATE_MGR: NOT @Transactional — orchestrates
+     * independently committed steps:
+     *   Step 1: persistInitialState() — INITIATED committed (REQUIRES_NEW)
+     *   Step 2: debitAndPostOutwardSuspense() — SUSPENSE_POSTED committed (REQUIRES_NEW)
+     *
+     * If Step 2 fails (insufficient balance, account frozen), INITIATED record
+     * survives with VALIDATION_FAILED state for investigation.
+     */
     public ClearingTransaction initiateOutward(
             String extRef, PaymentRail rail, BigDecimal amt,
             String custAcct, String cpIfsc, String cpAcct,
@@ -142,6 +151,8 @@ public class ClearingEngine {
                         && b.isActive())
                 .orElseThrow(() -> new BusinessException(
                         "BRANCH_NOT_FOUND", "" + branchId));
+
+        // === Step 1: Persist INITIATED record (REQUIRES_NEW — committed) ===
         ClearingTransaction ct = new ClearingTransaction();
         ct.setTenantId(tid);
         ct.setExternalRefNo(extRef);
@@ -160,13 +171,10 @@ public class ClearingEngine {
         ct.setInitiatedAt(LocalDateTime.now());
         ct.setMakerId(user);
         ct.setCreatedBy(user);
-        ClearingTransaction saved = clrRepo.save(ct);
-        computeAuditHash(saved);
+        ClearingTransaction saved =
+                stateMgr.persistInitialState(ct);
 
         // CBS Maker-Checker: High-value outward payments require dual authorization.
-        // Per RBI Payment Systems / Finacle CLG_LIMIT: transactions above the
-        // threshold are parked in INITIATED state with a pending approval workflow.
-        // The checker calls approveOutward() which resumes processing.
         if (amt.compareTo(MAKER_CHECKER_THRESHOLD) >= 0) {
             String payload = rail.getCode() + "|" + amt
                     + "|" + custAcct + "|" + cpIfsc
@@ -187,59 +195,30 @@ public class ClearingEngine {
             log.info("High-value clearing parked: ref={}, "
                     + "amt={}, threshold={}",
                     extRef, amt, MAKER_CHECKER_THRESHOLD);
-            clrRepo.save(saved);
             return saved;
         }
 
-        // CBS State Machine: INITIATED → VALIDATED
-        transitionStatus(saved, ClearingStatus.VALIDATED);
-        // CBS: Debit customer account for outward clearing.
-        // Use "SYSTEM" channel to bypass branch access validation — clearing operations
-        // are centralized and may debit accounts at any branch.
-        // Per Finacle CLG_ENGINE: clearing debits are system-initiated, not user-initiated.
-        //
-        // NOTE: If withdraw() throws, the entire @Transactional rolls back — the INITIATED
-        // clearing record is NOT persisted. The caller receives the exception directly.
-        // Per Spring: RuntimeException from a REQUIRED participant marks the outer transaction
-        // rollback-only. The catch-set-save-rethrow pattern cannot persist VALIDATION_FAILED
-        // because the save is rolled back with the rethrown exception.
-        //
-        // CBS FUTURE: To persist VALIDATION_FAILED for audit trail, save the INITIATED record
-        // in a REQUIRES_NEW transaction before attempting the debit.
-        depAcctSvc.withdraw(custAcct, amt, bd,
-                rail.getCode() + " outward: " + cpName,
-                "CLR-OUT-" + extRef, "SYSTEM");
-        String sgl = ClearingGLResolver.getSuspenseGL(
-                rail, ClearingDirection.OUTWARD);
-        TransactionResult sr = txnEngine.execute(
-                TransactionRequest.builder()
-                        .sourceModule("CLEARING")
-                        .transactionType("CLR_OUTWARD_SUSPENSE")
-                        .accountReference(custAcct)
-                        .amount(amt).valueDate(bd)
-                        .branchCode(br.getBranchCode())
-                        .narration(rail.getCode()
-                                + " outward suspense")
-                        .journalLines(List.of(
-                                new JournalLineRequest(
-                                        GLConstants.BANK_OPERATIONS,
-                                        DebitCredit.DEBIT, amt,
-                                        "Outward"),
-                                new JournalLineRequest(sgl,
-                                        DebitCredit.CREDIT, amt,
-                                        "Suspense")))
-                        .systemGenerated(true)
-                        .initiatedBy(user).build());
-        saved.setSuspenseJournalId(sr.getJournalEntryId());
-        // CBS State Machine: VALIDATED → SUSPENSE_POSTED
-        transitionStatus(saved, ClearingStatus.SUSPENSE_POSTED);
+        // === Step 2: Debit + suspense GL (REQUIRES_NEW — committed) ===
+        // If debit fails (insufficient balance, frozen account),
+        // INITIATED record survives with VALIDATION_FAILED state.
+        try {
+            saved = stateMgr.debitAndPostOutwardSuspense(
+                    saved.getId(), custAcct, amt, rail,
+                    cpName, extRef, br.getBranchCode(), user);
+        } catch (Exception e) {
+            log.error("Outward debit failed: ref={}, err={}",
+                    extRef, e.getMessage());
+            stateMgr.markValidationFailed(saved.getId(),
+                    "Debit failed: " + e.getMessage());
+            throw new BusinessException(
+                    "OUTWARD_DEBIT_FAILED",
+                    "Debit failed for " + extRef
+                            + ": " + e.getMessage());
+        }
+
         if (rail.requiresCycleNetting())
             linkToCycle(saved, tid, rail, bd);
         // CBS: Levy outward clearing charge per Finacle CHG_ENGINE.
-        // Maps PaymentRail to ChargeEventType for charge definition lookup.
-        // Charge is a separate GL posting (DR Customer / CR Fee Income + GST).
-        // If no ChargeDefinition exists for this rail, no charge is levied.
-        // Per RBI Fair Practices: UPI is typically zero per NPCI directive.
         ChargeEventType chargeEvent = switch (rail) {
             case NEFT -> ChargeEventType.NEFT_OUTWARD;
             case RTGS -> ChargeEventType.RTGS_OUTWARD;
@@ -249,8 +228,6 @@ public class ClearingEngine {
         chargeEngine.levyCharge(chargeEvent, custAcct,
                 GLConstants.SB_DEPOSITS, amt, null,
                 "CLEARING", extRef, br.getBranchCode());
-        computeAuditHash(saved);
-        clrRepo.save(saved);
         auditSvc.logEvent("ClearingTransaction",
                 saved.getId(), "OUTWARD_INITIATED",
                 null, extRef, "CLEARING",
@@ -368,9 +345,71 @@ public class ClearingEngine {
             String narr, Long branchId) {
         String tid = TenantContext.getCurrentTenant();
         LocalDate bd = bizDateSvc.getCurrentBusinessDate();
-        if (clrRepo.existsByTenantIdAndExternalRefNo(tid, extRef))
+
+        // === P1 Item 2: Idempotent Retry / Resumption ===
+        // Per Finacle CLG_ENGINE: if a previous attempt failed mid-flow,
+        // the same extRef retry should RESUME from the last committed state
+        // instead of rejecting as duplicate. This handles:
+        // - DB timeout after suspense posted but before credit
+        // - Network adapter retry after transient failure
+        // - Manual re-submission after investigation
+        var existing = clrRepo
+                .findByTenantIdAndExternalRefNo(tid, extRef);
+        if (existing.isPresent()) {
+            ClearingTransaction ex = existing.get();
+            if (ex.isTerminal()) {
+                // Already completed/reversed/returned — true duplicate
+                throw new BusinessException(
+                        "DUPLICATE_CLEARING_REF",
+                        extRef + " already " + ex.getStatus());
+            }
+            // Resume from last committed checkpoint
+            if (ex.getStatus() == ClearingStatus.SUSPENSE_POSTED
+                    || ex.getStatus()
+                            == ClearingStatus.CREDIT_FAILED) {
+                // Suspense already posted — retry credit only
+                log.info("Resuming inward from {}: ref={}",
+                        ex.getStatus(), extRef);
+                try {
+                    return stateMgr.creditAndComplete(
+                            ex.getId(), remName, utr);
+                } catch (Exception e) {
+                    stateMgr.markCreditFailed(ex.getId(),
+                            "Retry credit failed: "
+                                    + e.getMessage());
+                    throw new BusinessException(
+                            "INWARD_CREDIT_FAILED",
+                            "Retry failed: " + e.getMessage());
+                }
+            }
+            if (ex.getStatus() == ClearingStatus.RECEIVED
+                    || ex.getStatus()
+                            == ClearingStatus.VALIDATED) {
+                // Record exists but suspense not posted — retry from Step 2
+                log.info("Resuming inward from {}: ref={}",
+                        ex.getStatus(), extRef);
+                var resumed = stateMgr.postInwardSuspense(
+                        ex.getId(), rail, benAcct, amt,
+                        ex.getBranchCode());
+                try {
+                    return stateMgr.creditAndComplete(
+                            resumed.getId(), remName, utr);
+                } catch (Exception e) {
+                    stateMgr.markCreditFailed(resumed.getId(),
+                            "Retry credit failed: "
+                                    + e.getMessage());
+                    throw new BusinessException(
+                            "INWARD_CREDIT_FAILED",
+                            "Retry failed: " + e.getMessage());
+                }
+            }
+            // Any other non-terminal state — reject as in-progress
             throw new BusinessException(
-                    "DUPLICATE_CLEARING_REF", extRef);
+                    "CLEARING_IN_PROGRESS",
+                    extRef + " is in " + ex.getStatus()
+                            + " state");
+        }
+
         if (amt == null || amt.signum() <= 0)
             throw new BusinessException(
                     "INVALID_AMOUNT", "positive required");
