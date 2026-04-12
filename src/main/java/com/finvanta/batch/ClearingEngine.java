@@ -336,6 +336,17 @@ public class ClearingEngine {
         if (clrRepo.existsByTenantIdAndExternalRefNo(tid, extRef))
             throw new BusinessException(
                     "DUPLICATE_CLEARING_REF", extRef);
+        // CBS: Defensive input validation — inward clearing is system-initiated
+        // from RBI/NPCI network adapter, but null/negative amounts must never
+        // reach CASA deposit(). A negative amount would subtract from the
+        // customer's ledger balance (BigDecimal.add(negative)), effectively
+        // debiting them instead of crediting. A null causes NPE downstream.
+        // RTGS minimum is NOT enforced on inward — the originating bank owns
+        // that check per RBI Payment Systems Act. Rejecting a valid sub-2L
+        // RTGS inward from RBI would strand funds in the network.
+        if (amt == null || amt.signum() <= 0)
+            throw new BusinessException(
+                    "INVALID_AMOUNT", "positive required");
         DepositAccount ben = depAcctRepo
                 .findByTenantIdAndAccountNumber(tid, benAcct)
                 .orElseThrow(() -> new BusinessException(
