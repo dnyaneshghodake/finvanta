@@ -5,6 +5,11 @@ import com.finvanta.domain.entity.LoanTransaction;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -72,7 +77,7 @@ public class LoanAccountController {
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<LoanResponse>>
             disburseTranche(@PathVariable String accountNumber,
-                    @RequestBody TrancheRequest req) {
+                    @Valid @RequestBody TrancheRequest req) {
         LoanAccount account = loanService.disburseTranche(
                 accountNumber, req.amount(), req.narration());
         return ResponseEntity.ok(ApiResponse.success(
@@ -86,7 +91,7 @@ public class LoanAccountController {
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<LoanTxnResponse>>
             processRepayment(@PathVariable String accountNumber,
-                    @RequestBody RepaymentRequest req) {
+                    @Valid @RequestBody RepaymentRequest req) {
         LocalDate bd = businessDateService.getCurrentBusinessDate();
         LoanTransaction txn = loanService.processRepayment(
                 accountNumber, req.amount(), bd, req.idempotencyKey());
@@ -101,7 +106,7 @@ public class LoanAccountController {
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<LoanTxnResponse>>
             processPrepayment(@PathVariable String accountNumber,
-                    @RequestBody RepaymentRequest req) {
+                    @Valid @RequestBody RepaymentRequest req) {
         LocalDate bd = businessDateService.getCurrentBusinessDate();
         LoanTransaction txn = loanService.processPrepayment(
                 accountNumber, req.amount(), bd);
@@ -114,7 +119,7 @@ public class LoanAccountController {
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<LoanTxnResponse>>
             chargeFee(@PathVariable String accountNumber,
-                    @RequestBody FeeRequest req) {
+                    @Valid @RequestBody FeeRequest req) {
         LocalDate bd = businessDateService.getCurrentBusinessDate();
         LoanTransaction txn = loanService.chargeFee(
                 accountNumber, req.amount(), req.feeType(), bd);

@@ -5,6 +5,11 @@ import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -43,7 +48,7 @@ public class DepositAccountController {
     @PostMapping("/open")
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<AccountResponse>>
-            openAccount(@RequestBody OpenAccountRequest req) {
+            openAccount(@Valid @RequestBody OpenAccountRequest req) {
         DepositAccount account = depositService.openAccount(
                 req.customerId(), req.branchId(), req.accountType(),
                 req.productCode() != null ? req.productCode() : req.accountType(),
@@ -97,7 +102,7 @@ public class DepositAccountController {
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<TxnResponse>>
             deposit(@PathVariable String accountNumber,
-                    @RequestBody FinancialRequest req) {
+                    @Valid @RequestBody FinancialRequest req) {
         LocalDate bd = businessDateService.getCurrentBusinessDate();
         DepositTransaction txn = depositService.deposit(accountNumber, req.amount(), bd,
                 req.narration(), req.idempotencyKey(),
@@ -109,7 +114,7 @@ public class DepositAccountController {
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<TxnResponse>>
             withdraw(@PathVariable String accountNumber,
-                    @RequestBody FinancialRequest req) {
+                    @Valid @RequestBody FinancialRequest req) {
         LocalDate bd = businessDateService.getCurrentBusinessDate();
         DepositTransaction txn = depositService.withdraw(accountNumber, req.amount(), bd,
                 req.narration(), req.idempotencyKey(),
@@ -120,7 +125,7 @@ public class DepositAccountController {
     @PostMapping("/transfer")
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<TxnResponse>>
-            transfer(@RequestBody TransferRequest req) {
+            transfer(@Valid @RequestBody TransferRequest req) {
         LocalDate bd = businessDateService.getCurrentBusinessDate();
         DepositTransaction txn = depositService.transfer(req.fromAccount(), req.toAccount(),
                 req.amount(), bd, req.narration(), req.idempotencyKey());
@@ -200,17 +205,26 @@ public class DepositAccountController {
     // === Request DTOs ===
 
     public record OpenAccountRequest(
-            Long customerId, Long branchId, String accountType,
-            String productCode, BigDecimal initialDeposit,
-            String nomineeName, String nomineeRelationship) {}
+            @NotNull Long customerId,
+            @NotNull Long branchId,
+            @NotBlank String accountType,
+            String productCode,
+            BigDecimal initialDeposit,
+            String nomineeName,
+            String nomineeRelationship) {}
 
     public record FinancialRequest(
-            BigDecimal amount, String narration,
-            String idempotencyKey, String channel) {}
+            @NotNull @Positive BigDecimal amount,
+            String narration,
+            String idempotencyKey,
+            String channel) {}
 
     public record TransferRequest(
-            String fromAccount, String toAccount, BigDecimal amount,
-            String narration, String idempotencyKey) {}
+            @NotBlank String fromAccount,
+            @NotBlank String toAccount,
+            @NotNull @Positive BigDecimal amount,
+            String narration,
+            String idempotencyKey) {}
 
     public record FreezeRequest(String freezeType, String reason) {}
 
