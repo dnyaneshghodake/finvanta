@@ -127,6 +127,8 @@ public class ClearingEngine {
         ct.setMakerId(user);
         ct.setCreatedBy(user);
         ClearingTransaction saved = clrRepo.save(ct);
+        // CBS State Machine: INITIATED → VALIDATED
+        saved.setStatus(ClearingStatus.VALIDATED);
         try {
             depAcctSvc.withdraw(custAcct, amt, bd,
                     rail.getCode() + " outward: " + cpName,
@@ -161,6 +163,7 @@ public class ClearingEngine {
                         .systemGenerated(true)
                         .initiatedBy(user).build());
         saved.setSuspenseJournalId(sr.getJournalEntryId());
+        // CBS State Machine: VALIDATED → SUSPENSE_POSTED
         saved.setStatus(ClearingStatus.SUSPENSE_POSTED);
         if (rail.requiresCycleNetting())
             linkToCycle(saved, tid, rail, bd);
@@ -217,10 +220,13 @@ public class ClearingEngine {
         ct.setInitiatedAt(LocalDateTime.now());
         ct.setCreatedBy("SYSTEM");
         ClearingTransaction saved = clrRepo.save(ct);
+        // CBS State Machine: RECEIVED → VALIDATED
+        saved.setStatus(ClearingStatus.VALIDATED);
         // Post to inward suspense GL
         String sgl = ClearingGLResolver.getSuspenseGL(
                 rail, ClearingDirection.INWARD);
-        txnEngine.execute(TransactionRequest.builder()
+        TransactionResult suspResult = txnEngine.execute(
+                TransactionRequest.builder()
                 .sourceModule("CLEARING")
                 .transactionType("CLR_INWARD_SUSPENSE")
                 .accountReference(benAcct)
@@ -238,6 +244,10 @@ public class ClearingEngine {
                                 "Suspense")))
                 .systemGenerated(true)
                 .initiatedBy("SYSTEM").build());
+        // CBS: Capture suspense journal ID for reconciliation traceability
+        saved.setSuspenseJournalId(
+                suspResult.getJournalEntryId());
+        // CBS State Machine: VALIDATED → SUSPENSE_POSTED
         saved.setStatus(ClearingStatus.SUSPENSE_POSTED);
         // Credit customer and clear suspense
         try {
@@ -266,6 +276,7 @@ public class ClearingEngine {
                             .systemGenerated(true)
                             .initiatedBy("SYSTEM").build());
             saved.setCreditJournalId(cr.getJournalEntryId());
+            // CBS State Machine: SUSPENSE_POSTED → CREDITED → COMPLETED
             saved.setStatus(ClearingStatus.COMPLETED);
             saved.setCompletedAt(LocalDateTime.now());
         } catch (Exception e) {
@@ -418,23 +429,23 @@ public class ClearingEngine {
             ct.setReversalJournalId(
                     rr.getJournalEntryId());
         }
-        // Restore customer balance if debited (OUTWARD)
+        // CBS CRITICAL: Restore customer balance if debited (OUTWARD).
+        // If the refund fails, the reversal MUST NOT proceed — otherwise
+        // the customer loses money AND the clearing is marked REVERSED.
+        // Per Finacle CLG_REVERSAL: reversal is atomic — GL + CASA or nothing.
         if (ct.getDirection() == ClearingDirection.OUTWARD
                 && ct.getStatus() != ClearingStatus.INITIATED
                 && ct.getStatus()
                         != ClearingStatus.VALIDATION_FAILED) {
-            try {
-                depAcctSvc.deposit(
-                        ct.getCustomerAccountRef(),
-                        ct.getAmount(), bd,
-                        ct.getPaymentRail().getCode()
-                                + " reversal: " + reason,
-                        "CLR-REV-" + extRef,
-                        ct.getPaymentRail().getCode());
-            } catch (Exception e) {
-                log.error("Customer refund failed: ref={}, "
-                        + "err={}", extRef, e.getMessage());
-            }
+            depAcctSvc.deposit(
+                    ct.getCustomerAccountRef(),
+                    ct.getAmount(), bd,
+                    ct.getPaymentRail().getCode()
+                            + " reversal: " + reason,
+                    "CLR-REV-" + extRef,
+                    ct.getPaymentRail().getCode());
+            // If deposit() throws, the entire @Transactional rolls back
+            // — both the GL reversal and this CASA credit are undone atomically.
         }
         ct.setStatus(ClearingStatus.REVERSED);
         ct.setReversalReason(reason);
@@ -527,14 +538,21 @@ public class ClearingEngine {
                     : ClearingDirection.values()) {
                 String glCode = ClearingGLResolver
                         .getSuspenseGL(rail, dir);
-                // Sum of active clearing amounts
+                // Sum of ALL suspense-active clearing amounts
+                // Per ClearingStatus.isSuspenseActive():
+                // SUSPENSE_POSTED + SENT_TO_NETWORK + SETTLED
                 BigDecimal clrSum = BigDecimal.ZERO;
-                var activeTxns = clrRepo
-                        .findByTenantIdAndPaymentRailAndDirectionAndStatusOrderByInitiatedAtAsc(
-                                tid, rail, dir,
-                                ClearingStatus.SUSPENSE_POSTED);
-                for (var txn : activeTxns)
-                    clrSum = clrSum.add(txn.getAmount());
+                for (ClearingStatus activeStatus
+                        : new ClearingStatus[] {
+                            ClearingStatus.SUSPENSE_POSTED,
+                            ClearingStatus.SENT_TO_NETWORK,
+                            ClearingStatus.SETTLED }) {
+                    var txns = clrRepo
+                            .findByTenantIdAndPaymentRailAndDirectionAndStatusOrderByInitiatedAtAsc(
+                                    tid, rail, dir, activeStatus);
+                    for (var txn : txns)
+                        clrSum = clrSum.add(txn.getAmount());
+                }
                 // GL balance (credit - debit for liability)
                 var gl = glRepo
                         .findByTenantIdAndGlCode(tid, glCode)
