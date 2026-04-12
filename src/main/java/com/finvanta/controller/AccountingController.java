@@ -1,6 +1,7 @@
 package com.finvanta.controller;
 
 import com.finvanta.accounting.AccountingService;
+import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.enums.GLAccountType;
 import com.finvanta.repository.DepositTransactionRepository;
@@ -8,6 +9,7 @@ import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.JournalEntryRepository;
 import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.repository.LoanTransactionRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
@@ -32,6 +34,7 @@ public class AccountingController {
     private final LedgerEntryRepository ledgerEntryRepository;
     private final LoanTransactionRepository loanTransactionRepository;
     private final DepositTransactionRepository depositTransactionRepository;
+    private final BusinessDateService businessDateService;
 
     public AccountingController(
             AccountingService accountingService,
@@ -39,13 +42,15 @@ public class AccountingController {
             GLMasterRepository glMasterRepository,
             LedgerEntryRepository ledgerEntryRepository,
             LoanTransactionRepository loanTransactionRepository,
-            DepositTransactionRepository depositTransactionRepository) {
+            DepositTransactionRepository depositTransactionRepository,
+            BusinessDateService businessDateService) {
         this.accountingService = accountingService;
         this.journalEntryRepository = journalEntryRepository;
         this.glMasterRepository = glMasterRepository;
         this.ledgerEntryRepository = ledgerEntryRepository;
         this.loanTransactionRepository = loanTransactionRepository;
         this.depositTransactionRepository = depositTransactionRepository;
+        this.businessDateService = businessDateService;
     }
 
     @GetMapping("/trial-balance")
@@ -61,9 +66,14 @@ public class AccountingController {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("accounting/journal-entries");
 
-        LocalDate from =
-                fromDate != null ? LocalDate.parse(fromDate) : LocalDate.now().minusMonths(1);
-        LocalDate to = toDate != null ? LocalDate.parse(toDate) : LocalDate.now();
+        // CBS: Default date range is current business date minus 30 days to current date.
+        // Per Finacle JRNL_REGISTER: journal entries default to a meaningful range,
+        // not a single day. A single-day default shows "no entries" for most dates
+        // because journal postings are sparse — the user must manually expand the range.
+        // 30 days matches the standard CBS monthly journal register view.
+        LocalDate currentBizDate = resolveCurrentBusinessDate();
+        LocalDate from = fromDate != null ? LocalDate.parse(fromDate) : currentBizDate.minusDays(30);
+        LocalDate to = toDate != null ? LocalDate.parse(toDate) : currentBizDate;
 
         mav.addObject("entries", journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to));
         mav.addObject("fromDate", from);
@@ -173,8 +183,11 @@ public class AccountingController {
         ModelAndView mav = new ModelAndView("accounting/voucher-register");
         mav.addObject("pageTitle", "Voucher Register");
 
-        LocalDate date =
-                (businessDate != null && !businessDate.isBlank()) ? LocalDate.parse(businessDate) : LocalDate.now();
+        // CBS: Default to current business date (DAY_OPEN), not system date.
+        // Per Finacle VCHREGISTER: voucher register is a daily report for the business date.
+        LocalDate date = (businessDate != null && !businessDate.isBlank())
+                ? LocalDate.parse(businessDate)
+                : resolveCurrentBusinessDate();
 
         // Ledger entries for the date (all vouchers)
         mav.addObject(
@@ -190,5 +203,15 @@ public class AccountingController {
 
         mav.addObject("reportDate", date);
         return mav;
+    }
+
+    /**
+     * Resolve current business date from the DAY_OPEN calendar entry.
+     * Per Finacle/Temenos: all accounting reports default to the current business date,
+     * NOT the system date. Falls back to system date only if no day is open.
+     */
+    private LocalDate resolveCurrentBusinessDate() {
+        BusinessCalendar openDay = businessDateService.getOpenDayOrNull();
+        return openDay != null ? openDay.getBusinessDate() : LocalDate.now();
     }
 }

@@ -18,7 +18,8 @@ import lombok.Setter;
             @Index(name = "idx_loacc_tenant_accno", columnList = "tenant_id, account_number", unique = true),
             @Index(name = "idx_loacc_status", columnList = "tenant_id, status"),
             @Index(name = "idx_loacc_customer", columnList = "tenant_id, customer_id"),
-            @Index(name = "idx_loacc_npa", columnList = "tenant_id, status, days_past_due")
+            @Index(name = "idx_loacc_npa", columnList = "tenant_id, status, days_past_due"),
+            @Index(name = "idx_loacc_tenant_branch", columnList = "tenant_id, branch_id")
         })
 @Getter
 @Setter

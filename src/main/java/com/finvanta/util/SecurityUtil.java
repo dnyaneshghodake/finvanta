@@ -9,6 +9,8 @@ import java.util.stream.Collectors;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * CBS Security Utility — extracts current user context from Spring Security.
@@ -80,14 +82,34 @@ public final class SecurityUtil {
                 .orElse(null);
     }
 
+    // === Branch Context Keys for Session-Based Branch Switch ===
+    // Per Finacle SOL_SWITCH / Temenos COMPANY.SWITCH: ADMIN users can switch
+    // their working branch context without re-logging in. The override is stored
+    // in the HTTP session and takes precedence over the home branch.
+
+    /** Session attribute key for switched branch ID (ADMIN only) */
+    public static final String SWITCHED_BRANCH_ID = "CBS_SWITCHED_BRANCH_ID";
+    /** Session attribute key for switched branch code (ADMIN only) */
+    public static final String SWITCHED_BRANCH_CODE = "CBS_SWITCHED_BRANCH_CODE";
+
     /**
-     * Returns the current user's home branch ID from the security context.
-     * Per Finacle BRANCH_CONTEXT: every user is assigned to a home branch at creation.
-     * This ID is used for branch-level data isolation in MAKER/CHECKER queries.
+     * Returns the current effective branch ID — switched branch if active, else home branch.
      *
-     * @return Branch ID, or null if not available (system user or no branch assigned)
+     * Per Finacle SOL_SWITCH: ADMIN users can switch their working branch context
+     * via session override. This method checks the session first, then falls back
+     * to the home branch from BranchAwareUserDetails.
+     *
+     * MAKER/CHECKER always get their home branch (cannot switch).
+     *
+     * @return Effective branch ID, or null if not available
      */
     public static Long getCurrentUserBranchId() {
+        // Check session override first (ADMIN branch switch)
+        Long switchedBranchId = getSessionAttribute(SWITCHED_BRANCH_ID, Long.class);
+        if (switchedBranchId != null) {
+            return switchedBranchId;
+        }
+        // Fall back to home branch from authentication principal
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof BranchAwareUserDetails) {
             return ((BranchAwareUserDetails) auth.getPrincipal()).getBranchId();
@@ -96,13 +118,54 @@ public final class SecurityUtil {
     }
 
     /**
-     * Returns the current user's home branch code.
-     * Used for display, voucher generation, and audit trail.
+     * Returns the current effective branch code — switched branch if active, else home branch.
      */
     public static String getCurrentUserBranchCode() {
+        String switchedCode = getSessionAttribute(SWITCHED_BRANCH_CODE, String.class);
+        if (switchedCode != null) {
+            return switchedCode;
+        }
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof BranchAwareUserDetails) {
             return ((BranchAwareUserDetails) auth.getPrincipal()).getBranchCode();
+        }
+        return null;
+    }
+
+    /**
+     * Returns the user's HOME branch ID (ignoring any session switch).
+     * Used for audit trail — always records the user's actual home branch.
+     */
+    public static Long getHomeBranchId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof BranchAwareUserDetails) {
+            return ((BranchAwareUserDetails) auth.getPrincipal()).getBranchId();
+        }
+        return null;
+    }
+
+    /**
+     * Returns true if the user is currently operating in a switched branch context.
+     */
+    public static boolean isBranchSwitched() {
+        return getSessionAttribute(SWITCHED_BRANCH_ID, Long.class) != null;
+    }
+
+    /** Helper to read a typed attribute from the current HTTP session. */
+    private static <T> T getSessionAttribute(String key, Class<T> type) {
+        try {
+            var attrs = RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof ServletRequestAttributes servletAttrs) {
+                var session = servletAttrs.getRequest().getSession(false);
+                if (session != null) {
+                    Object val = session.getAttribute(key);
+                    if (type.isInstance(val)) {
+                        return type.cast(val);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Outside HTTP request context (e.g., async thread) — return null
         }
         return null;
     }
@@ -113,5 +176,40 @@ public final class SecurityUtil {
      */
     public static boolean isAdminRole() {
         return "ADMIN".equals(getCurrentUserRole());
+    }
+
+    /**
+     * Returns true if the current user has the specified role authority.
+     * Checks directly against Spring Security authorities (not via getCurrentUserRole()).
+     *
+     * This is needed because getCurrentUserRole() intentionally excludes AUDITOR
+     * from its return values (to prevent transaction limit bypass). For access control
+     * decisions (not transaction limits), we need to check authorities directly.
+     *
+     * Per RBI IT Governance Direction 2023: AUDITOR has read-only access to all branches
+     * for compliance inspection. This method enables BranchAccessValidator to correctly
+     * identify AUDITOR users and exempt them from branch isolation.
+     *
+     * @param role The role to check (without ROLE_ prefix), e.g., "AUDITOR", "ADMIN"
+     * @return true if the user has the specified role
+     */
+    public static boolean hasRole(String role) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getAuthorities() == null) {
+            return false;
+        }
+        String authority = "ROLE_" + role;
+        return auth.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(authority::equals);
+    }
+
+    /**
+     * Returns true if the current user has AUDITOR role.
+     * AUDITOR has read-only access to all branches per RBI audit requirements.
+     * Uses hasRole() instead of getCurrentUserRole() because the latter excludes AUDITOR.
+     */
+    public static boolean isAuditorRole() {
+        return hasRole("AUDITOR");
     }
 }

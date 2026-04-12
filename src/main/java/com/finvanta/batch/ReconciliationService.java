@@ -1,6 +1,7 @@
 package com.finvanta.batch;
 
 import com.finvanta.domain.entity.GLMaster;
+import com.finvanta.repository.GLBranchBalanceRepository;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.util.TenantContext;
@@ -35,10 +36,15 @@ public class ReconciliationService {
     private static final Logger log = LoggerFactory.getLogger(ReconciliationService.class);
 
     private final GLMasterRepository glMasterRepository;
+    private final GLBranchBalanceRepository glBranchBalanceRepository;
     private final LedgerEntryRepository ledgerRepository;
 
-    public ReconciliationService(GLMasterRepository glMasterRepository, LedgerEntryRepository ledgerRepository) {
+    public ReconciliationService(
+            GLMasterRepository glMasterRepository,
+            GLBranchBalanceRepository glBranchBalanceRepository,
+            LedgerEntryRepository ledgerRepository) {
         this.glMasterRepository = glMasterRepository;
+        this.glBranchBalanceRepository = glBranchBalanceRepository;
         this.ledgerRepository = ledgerRepository;
     }
 
@@ -97,6 +103,70 @@ public class ReconciliationService {
     }
 
     /**
+     * CBS Tier-1 Branch Balance Reconciliation per Finacle GL_BRANCH architecture.
+     *
+     * Verifies the core invariant:
+     *   GLMaster.debitBalance == SUM(GLBranchBalance.debitBalance) across all branches
+     *   GLMaster.creditBalance == SUM(GLBranchBalance.creditBalance) across all branches
+     *
+     * This is called as EOD Step 7.2 to ensure branch-level balances are consistent
+     * with tenant-level aggregate balances. Any discrepancy indicates a bug in the
+     * dual-update logic in AccountingService.updateGLBalances().
+     *
+     * @return ReconciliationResult with balanced flag and list of discrepancies
+     */
+    public ReconciliationResult reconcileBranchBalancesVsGL() {
+        String tenantId = TenantContext.getCurrentTenant();
+        List<GLMaster> glAccounts = glMasterRepository.findAllPostableAccounts(tenantId);
+
+        List<Discrepancy> discrepancies = new ArrayList<>();
+        int checkedCount = 0;
+
+        for (GLMaster gl : glAccounts) {
+            BigDecimal branchSumDebit = glBranchBalanceRepository.sumDebitBalanceByGlCode(tenantId, gl.getGlCode());
+            BigDecimal branchSumCredit = glBranchBalanceRepository.sumCreditBalanceByGlCode(tenantId, gl.getGlCode());
+
+            BigDecimal glDebit = gl.getDebitBalance();
+            BigDecimal glCredit = gl.getCreditBalance();
+
+            boolean debitMatch = branchSumDebit.compareTo(glDebit) == 0;
+            boolean creditMatch = branchSumCredit.compareTo(glCredit) == 0;
+
+            if (!debitMatch || !creditMatch) {
+                Discrepancy d = new Discrepancy(
+                        gl.getGlCode(), gl.getGlName(),
+                        glDebit, branchSumDebit,
+                        glCredit, branchSumCredit);
+                discrepancies.add(d);
+
+                log.error(
+                        "BRANCH BALANCE RECONCILIATION MISMATCH: glCode={}, glName={}, "
+                                + "glMasterDebit={}, branchSumDebit={}, glMasterCredit={}, branchSumCredit={}",
+                        gl.getGlCode(),
+                        gl.getGlName(),
+                        glDebit,
+                        branchSumDebit,
+                        glCredit,
+                        branchSumCredit);
+            }
+
+            checkedCount++;
+        }
+
+        boolean balanced = discrepancies.isEmpty();
+        if (balanced) {
+            log.info("Branch balance reconciliation BALANCED: {} GL accounts verified", checkedCount);
+        } else {
+            log.error(
+                    "Branch balance reconciliation FAILED: {}/{} GL accounts have discrepancies",
+                    discrepancies.size(),
+                    checkedCount);
+        }
+
+        return new ReconciliationResult(balanced, checkedCount, discrepancies);
+    }
+
+    /**
      * Result of a GL reconciliation run.
      */
     public record ReconciliationResult(boolean isBalanced, int checkedCount, List<Discrepancy> discrepancies) {
@@ -106,7 +176,8 @@ public class ReconciliationService {
     }
 
     /**
-     * A single GL code discrepancy between ledger totals and GL master.
+     * A single GL code discrepancy between ledger totals and GL master,
+     * or between branch balance sum and GL master.
      */
     public record Discrepancy(
             String glCode,

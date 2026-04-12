@@ -65,6 +65,29 @@ public class CustomUserDetailsService implements UserDetailsService {
             log.info("User auto-unlocked after lockout duration: {}", username);
         }
 
+        // CBS MFA Gate: Per RBI IT Governance Direction 2023 Section 8.4:
+        // If MFA is enabled but the user has not yet enrolled (no TOTP secret),
+        // reject login. This prevents a user with mfa_enabled=true from bypassing
+        // MFA by simply never enrolling. The admin must either:
+        //   1. Complete MFA enrollment via Admin → MFA Management → Enroll, OR
+        //   2. Disable mfa_enabled until enrollment is complete.
+        //
+        // CBS IMPORTANT: We throw DisabledException (not UsernameNotFoundException)
+        // because Spring Security treats UsernameNotFoundException as a bad-credentials
+        // event → triggers CbsAuthenticationEventListener.onAuthenticationFailure()
+        // → increments failedLoginAttempts → locks account after 5 attempts.
+        // The user enters the CORRECT password but gets locked out because the
+        // enrollment gate keeps rejecting them. DisabledException is treated as an
+        // account-status issue (not bad credentials) and does NOT increment the
+        // failed login counter. Per Finacle USER_MASTER: enrollment-pending is an
+        // account state, not an authentication failure.
+        if (appUser.isMfaEnrollmentRequired()) {
+            log.warn("MFA enrollment required but not completed for user: {}", username);
+            throw new org.springframework.security.authentication.DisabledException(
+                    "MFA enrollment required for user: " + username
+                            + ". Contact administrator to complete MFA setup.");
+        }
+
         Long branchId = appUser.getBranch() != null ? appUser.getBranch().getId() : null;
         String branchCode = appUser.getBranch() != null ? appUser.getBranch().getBranchCode() : null;
 
@@ -73,14 +96,24 @@ public class CustomUserDetailsService implements UserDetailsService {
         //   - credentialsNonExpired=false → Spring rejects with CredentialsExpiredException
         // This is cleaner than throwing UsernameNotFoundException for locked/expired accounts
         // because it provides proper error codes to the login page.
+        //
+        // CBS MFA: mfaRequired flag is set when user has MFA enabled AND a valid secret.
+        // The authentication success handler should check isMfaRequired() and redirect
+        // to the TOTP verification page instead of the dashboard.
+        // Users with mfa_enabled=true but no secret are blocked above (enrollment gate).
+        boolean mfaRequired = appUser.isMfaEnabled()
+                && appUser.getMfaSecret() != null
+                && !appUser.getMfaSecret().isBlank();
+
         return new BranchAwareUserDetails(
                 appUser.getUsername(),
                 appUser.getPasswordHash(),
                 !appUser.isLocked(), // accountNonLocked
-                !appUser.isPasswordExpired(), // credentialsNonExpired
+                appUser.isPasswordExpired(), // passwordExpired (true = expired, handled by success handler)
                 Collections.singletonList(
                         new SimpleGrantedAuthority("ROLE_" + appUser.getRole().name())),
                 branchId,
-                branchCode);
+                branchCode,
+                mfaRequired);
     }
 }

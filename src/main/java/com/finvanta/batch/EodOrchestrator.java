@@ -3,17 +3,27 @@ package com.finvanta.batch;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BatchJob;
 import com.finvanta.domain.entity.BusinessCalendar;
+import com.finvanta.domain.entity.DailyBalanceSnapshot;
 import com.finvanta.domain.entity.LoanAccount;
+import com.finvanta.domain.entity.LoanBalanceSnapshot;
 import com.finvanta.domain.entity.LoanSchedule;
 import com.finvanta.domain.enums.BatchStatus;
 import com.finvanta.domain.enums.DayStatus;
 import com.finvanta.repository.BatchJobRepository;
+import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
+import com.finvanta.repository.CustomerRepository;
+import com.finvanta.repository.DailyBalanceSnapshotRepository;
+import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
+import com.finvanta.repository.LoanBalanceSnapshotRepository;
+import com.finvanta.service.DepositAccountService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
+import com.finvanta.service.impl.StandingInstructionServiceImpl;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
+import com.finvanta.workflow.ApprovalWorkflowService;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -24,6 +34,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,6 +81,8 @@ import org.springframework.transaction.annotation.Transactional;
  *   Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)
  *   Step 8: CASA Savings Interest Accrual + Quarterly Credit (per RBI directive)
  *   Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER — LOAN_EMI auto-debit)
+ *   Step 8.6: CASA Balance Snapshot (per Finacle ACCT_BAL_HIST — must be AFTER all balance mutations)
+ *   Step 8.7: Loan Balance Snapshot (per Finacle ACCT_BAL_HIST — sectoral exposure / NPA audit)
  *   Step 9: CASA Dormancy Classification (per RBI Master Direction on KYC 2016 Sec 38)
  *   Step 10: KYC Expiry Flagging (per RBI Master Direction on KYC 2016 Sec 16)
  *
@@ -94,12 +107,20 @@ public class EodOrchestrator {
     private final InterBranchSettlementService settlementService;
     private final ClearingService clearingService;
     private final BusinessCalendarRepository calendarRepository;
+    private final BranchRepository branchRepository;
     private final BatchJobRepository batchJobRepository;
     private final AuditService auditService;
-    private final com.finvanta.service.DepositAccountService depositAccountService;
-    private final com.finvanta.repository.DepositAccountRepository depositAccountRepository;
-    private final com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService;
-    private final com.finvanta.repository.CustomerRepository customerRepository;
+    private final DepositAccountService depositAccountService;
+    private final DepositAccountRepository depositAccountRepository;
+    private final StandingInstructionServiceImpl standingInstructionService;
+    private final CustomerRepository customerRepository;
+    private final ApprovalWorkflowService workflowService;
+    private final DailyBalanceSnapshotRepository balanceSnapshotRepository;
+    private final LoanBalanceSnapshotRepository loanBalanceSnapshotRepository;
+
+    /** CBS: Snapshot step constants for audit logging */
+    private static final String SNAPSHOT_STEP_NAME = "DAILY_BALANCE_SNAPSHOT";
+    private static final String LOAN_SNAPSHOT_STEP_NAME = "LOAN_BALANCE_SNAPSHOT";
 
     /** Self-proxy for per-account transaction isolation via Spring AOP. */
     private final EodOrchestrator self;
@@ -114,12 +135,16 @@ public class EodOrchestrator {
             InterBranchSettlementService settlementService,
             ClearingService clearingService,
             BusinessCalendarRepository calendarRepository,
+            BranchRepository branchRepository,
             BatchJobRepository batchJobRepository,
             AuditService auditService,
-            com.finvanta.service.DepositAccountService depositAccountService,
-            com.finvanta.repository.DepositAccountRepository depositAccountRepository,
-            com.finvanta.service.impl.StandingInstructionServiceImpl standingInstructionService,
-            com.finvanta.repository.CustomerRepository customerRepository,
+            DepositAccountService depositAccountService,
+            DepositAccountRepository depositAccountRepository,
+            StandingInstructionServiceImpl standingInstructionService,
+            CustomerRepository customerRepository,
+            ApprovalWorkflowService workflowService,
+            DailyBalanceSnapshotRepository balanceSnapshotRepository,
+            LoanBalanceSnapshotRepository loanBalanceSnapshotRepository,
             @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;
@@ -130,12 +155,16 @@ public class EodOrchestrator {
         this.settlementService = settlementService;
         this.clearingService = clearingService;
         this.calendarRepository = calendarRepository;
+        this.branchRepository = branchRepository;
         this.batchJobRepository = batchJobRepository;
         this.auditService = auditService;
         this.depositAccountService = depositAccountService;
         this.depositAccountRepository = depositAccountRepository;
         this.standingInstructionService = standingInstructionService;
         this.customerRepository = customerRepository;
+        this.workflowService = workflowService;
+        this.balanceSnapshotRepository = balanceSnapshotRepository;
+        this.loanBalanceSnapshotRepository = loanBalanceSnapshotRepository;
         this.self = self;
     }
 
@@ -275,6 +304,23 @@ public class EodOrchestrator {
                     },
                     errors);
 
+            // Step 7.2: Branch Balance Reconciliation (Tier-1 CBS invariant)
+            // Verifies: SUM(GLBranchBalance) == GLMaster for every GL code.
+            // This is the core architectural invariant of branch-level accounting.
+            failedCount += runStep(
+                    eodJob,
+                    "BRANCH_BALANCE_RECONCILIATION",
+                    () -> {
+                        ReconciliationService.ReconciliationResult branchResult =
+                                reconciliationService.reconcileBranchBalancesVsGL();
+                        if (!branchResult.isBalanced()) {
+                            log.warn("EOD Step 7.2: {} branch balance discrepancies", branchResult.discrepancyCount());
+                        } else {
+                            log.info("EOD Step 7.2: branch balance reconciliation balanced");
+                        }
+                    },
+                    errors);
+
             // Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)
             failedCount += runStep(
                     eodJob,
@@ -357,6 +403,144 @@ public class EodOrchestrator {
                 appendError(errors, "SI_EXECUTION", "ALL", e);
             }
 
+            // Step 8.6: Daily Balance Snapshot (per Finacle ACCT_BAL_HIST / RBI directive)
+            // Captures closing balance of every CASA account for minimum daily balance
+            // interest calculation and regulatory reporting (CRR/SLR average balance).
+            // Must run AFTER interest accrual AND SI execution (so all balance-affecting
+            // operations are reflected). This is the TRUE end-of-day closing balance.
+            // CBS: Per-account fault isolation — one bad account must NOT kill all snapshots.
+            // Phase 1: CASA accounts only. Phase 2: extend to loan accounts for sectoral exposure.
+            self.updateStepName(eodJob.getId(), SNAPSHOT_STEP_NAME);
+            {
+                var allCasaAccounts = depositAccountRepository.findAllNonClosedAccounts(tenantId);
+                int captured = 0;
+                int skippedIdempotent = 0;
+                for (var acct : allCasaAccounts) {
+                    try {
+                        if (balanceSnapshotRepository.existsByTenantIdAndAccountIdAndBusinessDate(
+                                tenantId, acct.getId(), businessDate)) {
+                            skippedIdempotent++;
+                            continue; // Idempotent — skip if already captured
+                        }
+                        // CBS: Every operational account MUST have a branch. Null branch
+                        // indicates a data integrity issue that must be logged, not papered
+                        // over with a magic number. Per Finacle ACCT_BAL_HIST: branch_id
+                        // is a mandatory field for branch-level regulatory reporting.
+                        if (acct.getBranch() == null) {
+                            log.error("DATA INTEGRITY: Account {} has null branch — skipping snapshot",
+                                    acct.getAccountNumber());
+                            failedCount++;
+                            appendError(errors, SNAPSHOT_STEP_NAME, acct.getAccountNumber(),
+                                    new IllegalStateException("Account has no branch assigned"));
+                            continue;
+                        }
+                        DailyBalanceSnapshot snapshot = new DailyBalanceSnapshot();
+                        snapshot.setTenantId(tenantId);
+                        snapshot.setAccountId(acct.getId());
+                        snapshot.setAccountNumber(acct.getAccountNumber());
+                        snapshot.setBranchId(acct.getBranch().getId());
+                        snapshot.setBusinessDate(businessDate);
+                        snapshot.setClosingBalance(acct.getLedgerBalance());
+                        snapshot.setAvailableBalance(acct.getAvailableBalance());
+                        snapshot.setHoldAmount(acct.getHoldAmount());
+                        snapshot.setAccountType(acct.getAccountType());
+                        snapshot.setCreatedBy("SYSTEM_EOD");
+                        balanceSnapshotRepository.save(snapshot);
+                        captured++;
+                    } catch (Exception e) {
+                        failedCount++;
+                        appendError(errors, SNAPSHOT_STEP_NAME, acct.getAccountNumber(), e);
+                    }
+                }
+                processedCount += captured;
+                log.info("EOD Step 8.6: {} daily balance snapshots captured (skipped={} idempotent)",
+                        captured, skippedIdempotent);
+
+                // CBS: Audit trail for balance snapshot batch per RBI IT Governance Direction 2023
+                auditService.logEvent(
+                        "BatchJob",
+                        eodJob.getId(),
+                        "DAILY_BALANCE_SNAPSHOT",
+                        null,
+                        String.valueOf(captured),
+                        "EOD",
+                        "Daily balance snapshots captured: date=" + businessDate
+                                + ", captured=" + captured
+                                + ", total=" + allCasaAccounts.size()
+                                + ", skippedIdempotent=" + skippedIdempotent);
+            }
+
+            // Step 8.7: Loan Balance Snapshot (per Finacle ACCT_BAL_HIST / RBI CRILC)
+            // Captures closing balance of every active loan account at EOD for:
+            // - Sectoral exposure reporting (RBI CRILC)
+            // - NPA provisioning audit trail (outstanding at classification date)
+            // - Customer dispute resolution (balance on a specific date)
+            // Must run AFTER loan interest accrual (Steps 3-4), NPA classification (Step 5),
+            // provisioning (Step 6), and SI execution (Step 8.5 — EMI repayments).
+            // CBS: Per-account fault isolation — same pattern as CASA snapshot.
+            self.updateStepName(eodJob.getId(), LOAN_SNAPSHOT_STEP_NAME);
+            {
+                // Re-fetch active loan accounts to get post-accrual/post-SI balances
+                var loanAccounts = accountRepository.findAllActiveAccounts(tenantId);
+                int loanCaptured = 0;
+                int loanSkipped = 0;
+                for (var loan : loanAccounts) {
+                    try {
+                        if (loanBalanceSnapshotRepository.existsByTenantIdAndAccountIdAndBusinessDate(
+                                tenantId, loan.getId(), businessDate)) {
+                            loanSkipped++;
+                            continue;
+                        }
+                        if (loan.getBranch() == null) {
+                            log.error("DATA INTEGRITY: Loan {} has null branch — skipping snapshot",
+                                    loan.getAccountNumber());
+                            failedCount++;
+                            appendError(errors, LOAN_SNAPSHOT_STEP_NAME, loan.getAccountNumber(),
+                                    new IllegalStateException("Loan account has no branch assigned"));
+                            continue;
+                        }
+                        LoanBalanceSnapshot snapshot = new LoanBalanceSnapshot();
+                        snapshot.setTenantId(tenantId);
+                        snapshot.setAccountId(loan.getId());
+                        snapshot.setAccountNumber(loan.getAccountNumber());
+                        snapshot.setBranchId(loan.getBranch().getId());
+                        snapshot.setBusinessDate(businessDate);
+                        snapshot.setOutstandingPrincipal(loan.getOutstandingPrincipal());
+                        snapshot.setOutstandingInterest(loan.getOutstandingInterest());
+                        snapshot.setAccruedInterest(loan.getAccruedInterest());
+                        snapshot.setPenalInterestAccrued(loan.getPenalInterestAccrued());
+                        snapshot.setTotalOutstanding(loan.getTotalOutstanding());
+                        snapshot.setDaysPastDue(loan.getDaysPastDue());
+                        snapshot.setLoanStatus(loan.getStatus().name());
+                        snapshot.setProductType(loan.getProductType());
+                        snapshot.setProvisioningAmount(
+                                loan.getProvisioningAmount() != null ? loan.getProvisioningAmount()
+                                        : BigDecimal.ZERO);
+                        snapshot.setCreatedBy("SYSTEM_EOD");
+                        loanBalanceSnapshotRepository.save(snapshot);
+                        loanCaptured++;
+                    } catch (Exception e) {
+                        failedCount++;
+                        appendError(errors, LOAN_SNAPSHOT_STEP_NAME, loan.getAccountNumber(), e);
+                    }
+                }
+                processedCount += loanCaptured;
+                log.info("EOD Step 8.7: {} loan balance snapshots captured (skipped={} idempotent)",
+                        loanCaptured, loanSkipped);
+
+                auditService.logEvent(
+                        "BatchJob",
+                        eodJob.getId(),
+                        LOAN_SNAPSHOT_STEP_NAME,
+                        null,
+                        String.valueOf(loanCaptured),
+                        "EOD",
+                        "Loan balance snapshots captured: date=" + businessDate
+                                + ", captured=" + loanCaptured
+                                + ", total=" + loanAccounts.size()
+                                + ", skippedIdempotent=" + loanSkipped);
+            }
+
             // Step 9: CASA Dormancy Classification (RBI Master Direction on KYC 2016 Sec 38)
             // Accounts with no customer-initiated txn for 24+ months -> DORMANT
             // NOTE: Must run AFTER SI execution — SI debits update lastTransactionDate
@@ -407,6 +591,56 @@ public class EodOrchestrator {
                     },
                     errors);
 
+            // Step 10.5: SLA Escalation (per Finacle WORKFLOW_SLA / RBI Fair Practices Code)
+            // Identifies pending approvals that have breached their SLA deadline and
+            // auto-escalates them to ADMIN for immediate attention.
+            failedCount += runStep(
+                    eodJob,
+                    "SLA_ESCALATION",
+                    () -> {
+                        int escalated = workflowService.escalateBreachedWorkflows();
+                        if (escalated > 0) {
+                            log.info("EOD Step 10.5: {} workflows escalated due to SLA breach", escalated);
+                        } else {
+                            log.info("EOD Step 10.5: no SLA breaches detected");
+                        }
+                    },
+                    errors);
+
+            // Step 10.6: Floating Rate Reset (per RBI EBLR/MCLR Framework)
+            // Resets interest rates on floating-rate loans where nextRateResetDate <= businessDate.
+            // Per RBI: EBLR-linked loans must reset at least once every 3 months.
+            failedCount += runStep(
+                    eodJob,
+                    "FLOATING_RATE_RESET",
+                    () -> {
+                        List<LoanAccount> floatingAccounts = accountRepository.findAllActiveAccounts(
+                                TenantContext.getCurrentTenant()).stream()
+                                .filter(LoanAccount::isFloatingRate)
+                                .filter(a -> a.getNextRateResetDate() != null
+                                        && !businessDate.isBefore(a.getNextRateResetDate()))
+                                .toList();
+                        int reset = 0;
+                        for (LoanAccount fa : floatingAccounts) {
+                            try {
+                                // Use current benchmark rate (in production, fetch from rate table)
+                                if (fa.getBenchmarkRate() != null) {
+                                    loanAccountService.resetFloatingRate(
+                                            fa.getAccountNumber(), fa.getBenchmarkRate(), businessDate);
+                                    reset++;
+                                }
+                            } catch (Exception e) {
+                                appendError(errors, "RATE_RESET", fa.getAccountNumber(), e);
+                            }
+                        }
+                        if (reset > 0) {
+                            log.info("EOD Step 10.6: {} floating rate accounts reset", reset);
+                        } else {
+                            log.info("EOD Step 10.6: no floating rate resets due today");
+                        }
+                    },
+                    errors);
+
         } catch (Exception e) {
             // CBS: Top-level error handler — prevents calendar stuck in EOD_RUNNING.
             // Per Finacle DAYCTRL / Temenos COB: EOD failure must be recorded and
@@ -419,16 +653,14 @@ public class EodOrchestrator {
         return self.finalizeEod(eodJob.getId(), tenantId, businessDate, processedCount, failedCount, errors);
     }
 
-    /** Initialize EOD: validate day, set EOD_RUNNING, create batch job. */
+    /**
+     * Initialize EOD: validate day across all branches, set EOD_RUNNING, create batch job.
+     * Per Finacle DAYCTRL: validateAndLockDay now transitions ALL branches to EOD_RUNNING.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public BatchJob initializeEod(String tenantId, LocalDate businessDate) {
-        BusinessCalendar calendar = validateAndLockDay(tenantId, businessDate);
-
-        calendar.setDayStatus(DayStatus.EOD_RUNNING);
-        calendar.setLocked(true);
-        calendar.setUpdatedBy("SYSTEM");
-        calendarRepository.save(calendar);
-
+        // validateAndLockDay validates all branches and transitions them to EOD_RUNNING
+        validateAndLockDay(tenantId, businessDate);
         return createEodJob(tenantId, businessDate);
     }
 
@@ -448,11 +680,45 @@ public class EodOrchestrator {
         batchJobRepository.save(job);
     }
 
+    /**
+     * Validates and locks the business day for EOD processing.
+     *
+     * Per Finacle DAYCTRL / Tier-1 Branch-Level Day Control:
+     * With branch-scoped calendars, we validate the FIRST operational branch's calendar
+     * entry for this date. All branches must be in DAY_OPEN to start EOD.
+     * Future enhancement: per-branch EOD with independent lifecycle.
+     */
     private BusinessCalendar validateAndLockDay(String tenantId, LocalDate businessDate) {
+        // Find the first operational branch to use as the calendar reference
+        var operationalBranches = branchRepository.findAllOperationalBranches(tenantId);
+        if (operationalBranches.isEmpty()) {
+            throw new BusinessException(
+                    "NO_OPERATIONAL_BRANCHES",
+                    "No operational branches found for tenant " + tenantId);
+        }
+
+        // Validate ALL branches have their day open for this date
+        for (var branch : operationalBranches) {
+            var branchCal = calendarRepository
+                    .findByTenantIdAndBranchIdAndBusinessDate(tenantId, branch.getId(), businessDate)
+                    .orElse(null);
+            if (branchCal != null && !branchCal.getDayStatus().canStartEod() && !branchCal.isEodComplete()) {
+                throw new BusinessException(
+                        "EOD_NOT_ALLOWED",
+                        "Cannot start EOD for " + businessDate + ". Branch " + branch.getBranchCode()
+                                + " day status is " + branchCal.getDayStatus()
+                                + ". All branches must be DAY_OPEN.");
+            }
+        }
+
+        // Lock the first branch's calendar entry as the primary reference
+        Long primaryBranchId = operationalBranches.get(0).getId();
         BusinessCalendar calendar = calendarRepository
-                .findAndLockByTenantIdAndDate(tenantId, businessDate)
+                .findAndLockByTenantIdAndBranchIdAndDate(tenantId, primaryBranchId, businessDate)
                 .orElseThrow(() -> new BusinessException(
-                        "DATE_NOT_IN_CALENDAR", "Business date " + businessDate + " not found in calendar."));
+                        "DATE_NOT_IN_CALENDAR",
+                        "Business date " + businessDate + " not found in calendar for branch "
+                                + operationalBranches.get(0).getBranchCode() + "."));
 
         if (!calendar.getDayStatus().canStartEod()) {
             throw new BusinessException(
@@ -474,6 +740,21 @@ public class EodOrchestrator {
                                 "EOD_ALREADY_COMPLETE", "EOD already completed for " + businessDate);
                     }
                 });
+
+        // Transition ALL branches to EOD_RUNNING
+        for (var branch : operationalBranches) {
+            calendarRepository
+                    .findAndLockByTenantIdAndBranchIdAndDate(tenantId, branch.getId(), businessDate)
+                    .ifPresent(branchCal -> {
+                        if (branchCal.getDayStatus().canStartEod()) {
+                            branchCal.setDayStatus(DayStatus.EOD_RUNNING);
+                            branchCal.setLocked(true);
+                            branchCal.setUpdatedBy("SYSTEM");
+                            calendarRepository.save(branchCal);
+                        }
+                    });
+        }
+
         return calendar;
     }
 
@@ -575,32 +856,35 @@ public class EodOrchestrator {
         }
         batchJobRepository.save(eodJob);
 
-        BusinessCalendar calendar = calendarRepository
-                .findAndLockByTenantIdAndDate(tenantId, businessDate)
-                .orElseThrow();
-
-        // CBS Day Control: Only COMPLETED EOD marks eodComplete=true and allows Day Close.
-        // FAILED and PARTIALLY_COMPLETED both restore DAY_OPEN for retry.
-        // Per Finacle DAYCTRL / Temenos COB: partial EOD must be retryable — the failed
-        // accounts need reprocessing. Marking eodComplete=true on partial completion
-        // would permanently lock the calendar and prevent retry.
-        if (eodJob.getStatus() == BatchStatus.COMPLETED) {
-            calendar.setEodComplete(true);
-        } else {
-            calendar.setDayStatus(DayStatus.DAY_OPEN);
-            calendar.setLocked(false);
-            calendar.setEodComplete(false);
-            if (eodJob.getStatus() == BatchStatus.FAILED) {
-                log.warn("EOD FAILED for {} — calendar restored to DAY_OPEN for retry", businessDate);
-            } else {
-                log.warn(
-                        "EOD PARTIALLY_COMPLETED for {} — {} failures. Calendar restored to DAY_OPEN for retry",
-                        businessDate,
-                        failedCount);
-            }
+        // CBS Tier-1: Update ALL branches' calendar entries for this business date.
+        // Per Finacle DAYCTRL: EOD completion/failure affects all branches simultaneously.
+        var operationalBranches = branchRepository.findAllOperationalBranches(tenantId);
+        for (var branch : operationalBranches) {
+            calendarRepository
+                    .findAndLockByTenantIdAndBranchIdAndDate(tenantId, branch.getId(), businessDate)
+                    .ifPresent(calendar -> {
+                        // CBS Day Control: Only COMPLETED EOD marks eodComplete=true.
+                        // FAILED/PARTIALLY_COMPLETED restore DAY_OPEN for retry.
+                        if (eodJob.getStatus() == BatchStatus.COMPLETED) {
+                            calendar.setEodComplete(true);
+                        } else {
+                            calendar.setDayStatus(DayStatus.DAY_OPEN);
+                            calendar.setLocked(false);
+                            calendar.setEodComplete(false);
+                        }
+                        calendar.setUpdatedBy("SYSTEM");
+                        calendarRepository.save(calendar);
+                    });
         }
-        calendar.setUpdatedBy("SYSTEM");
-        calendarRepository.save(calendar);
+
+        if (eodJob.getStatus() == BatchStatus.FAILED) {
+            log.warn("EOD FAILED for {} — all branch calendars restored to DAY_OPEN for retry", businessDate);
+        } else if (eodJob.getStatus() == BatchStatus.PARTIALLY_COMPLETED) {
+            log.warn(
+                    "EOD PARTIALLY_COMPLETED for {} — {} failures. All branch calendars restored to DAY_OPEN for retry",
+                    businessDate,
+                    failedCount);
+        }
 
         auditService.logEvent(
                 "BatchJob",
@@ -645,7 +929,7 @@ public class EodOrchestrator {
             ExecutorService executor,
             String tenantId,
             String stepName,
-            java.util.function.Consumer<LoanAccount> action,
+            Consumer<LoanAccount> action,
             StringBuilder errors) {
         AtomicInteger processed = new AtomicInteger(0);
         AtomicInteger failed = new AtomicInteger(0);

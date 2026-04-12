@@ -50,10 +50,12 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
      * Per PMLA / RBI Freeze Guidelines: FROZEN accounts continue to accrue interest —
      * freeze ≠ forfeiture. The freeze only restricts debit/credit operations.
      * Current accounts have 0% rate so are excluded by the interestRate > 0 filter.
+     * Per Finacle PDDEF: uses enum-based type filter instead of LIKE 'SAVINGS%' string match.
      */
     @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
             + "AND da.accountStatus IN ('ACTIVE', 'DORMANT', 'FROZEN') "
-            + "AND da.accountType LIKE 'SAVINGS%' AND da.interestRate > 0")
+            + "AND da.accountType IN ('SAVINGS', 'SAVINGS_NRI', 'SAVINGS_MINOR', 'SAVINGS_JOINT', 'SAVINGS_PMJDY') "
+            + "AND da.interestRate > 0")
     List<DepositAccount> findActiveSavingsAccounts(@Param("tenantId") String tenantId);
 
     /** Accounts by customer */

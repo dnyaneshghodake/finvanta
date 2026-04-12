@@ -128,6 +128,52 @@
         </div>
     </div>
     </c:if>
+
+    <%-- CBS Tier-1: Branch Balance vs GL Master Reconciliation --%>
+    <c:if test="${not empty branchBalanceResult}">
+    <div class="fv-card">
+        <div class="card-header ${branchBalanceResult.balanced ? '' : 'text-danger'}">
+            <i class="bi bi-building"></i> Branch Balance vs GL Master Reconciliation (Tier-1)
+            <c:choose>
+                <c:when test="${branchBalanceResult.balanced}"><span class="fv-badge fv-badge-active float-end">BALANCED</span></c:when>
+                <c:otherwise><span class="fv-badge fv-badge-npa float-end">IMBALANCED (${branchBalanceResult.discrepancyCount()} issues)</span></c:otherwise>
+            </c:choose>
+        </div>
+        <div class="card-body">
+            <c:if test="${branchBalanceResult.balanced}">
+                <p class="text-center text-muted"><i class="bi bi-check-circle text-success"></i> SUM(GLBranchBalance) == GLMaster for all ${branchBalanceResult.checkedCount()} GL codes. Branch-level accounting is consistent.</p>
+            </c:if>
+            <c:if test="${not empty branchBalanceResult.discrepancies()}">
+                <div class="table-responsive">
+                <table class="table fv-table">
+                    <thead>
+                        <tr>
+                            <th>GL Code</th>
+                            <th>GL Name</th>
+                            <th class="text-end">GL Master Debit</th>
+                            <th class="text-end">Branch Sum Debit</th>
+                            <th class="text-end">GL Master Credit</th>
+                            <th class="text-end">Branch Sum Credit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <c:forEach var="d" items="${branchBalanceResult.discrepancies()}">
+                            <tr>
+                                <td class="fw-bold"><c:out value="${d.glCode()}" /></td>
+                                <td><c:out value="${d.glName()}" /></td>
+                                <td class="amount"><fmt:formatNumber value="${d.glMasterDebit()}" type="number" maxFractionDigits="2" /></td>
+                                <td class="amount text-danger"><fmt:formatNumber value="${d.ledgerDebit()}" type="number" maxFractionDigits="2" /></td>
+                                <td class="amount"><fmt:formatNumber value="${d.glMasterCredit()}" type="number" maxFractionDigits="2" /></td>
+                                <td class="amount text-danger"><fmt:formatNumber value="${d.ledgerCredit()}" type="number" maxFractionDigits="2" /></td>
+                            </tr>
+                        </c:forEach>
+                    </tbody>
+                </table>
+                </div>
+            </c:if>
+        </div>
+    </div>
+    </c:if>
 </div>
 
 <%@ include file="../layout/footer.jsp" %>

@@ -22,12 +22,15 @@ import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.CollateralService;
 import com.finvanta.service.DepositAccountService;
+import com.finvanta.service.CbsReferenceService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
+import com.finvanta.util.BranchAccessValidator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
@@ -86,6 +89,9 @@ public class LoanAccountServiceImpl implements LoanAccountService {
     private final DepositAccountRepository depositAccountRepository;
     private final DepositAccountService depositAccountService;
     private final StandingInstructionServiceImpl standingInstructionService;
+    private final BranchAccessValidator branchAccessValidator;
+    private final CollateralService collateralService;
+    private final CbsReferenceService cbsReferenceService;
 
     public LoanAccountServiceImpl(
             LoanAccountRepository accountRepository,
@@ -105,7 +111,10 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             ChargeEngine chargeEngine,
             DepositAccountRepository depositAccountRepository,
             DepositAccountService depositAccountService,
-            @Lazy StandingInstructionServiceImpl standingInstructionService) {
+            @Lazy StandingInstructionServiceImpl standingInstructionService,
+            BranchAccessValidator branchAccessValidator,
+            CollateralService collateralService,
+            CbsReferenceService cbsReferenceService) {
         this.accountRepository = accountRepository;
         this.applicationRepository = applicationRepository;
         this.transactionRepository = transactionRepository;
@@ -124,6 +133,9 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         this.depositAccountRepository = depositAccountRepository;
         this.depositAccountService = depositAccountService;
         this.standingInstructionService = standingInstructionService;
+        this.branchAccessValidator = branchAccessValidator;
+        this.collateralService = collateralService;
+        this.cbsReferenceService = cbsReferenceService;
     }
 
     @Override
@@ -158,7 +170,7 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         LoanAccount account = new LoanAccount();
         account.setTenantId(tenantId);
         account.setAccountNumber(
-                ReferenceGenerator.generateAccountNumber(application.getBranch().getBranchCode()));
+                cbsReferenceService.generateLoanAccountNumber(application.getBranch().getBranchCode()));
         account.setApplication(application);
         account.setCustomer(application.getCustomer());
         account.setBranch(application.getBranch());
@@ -417,6 +429,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.DISBURSEMENT);
         txn.setAmount(disbursementAmount);
         txn.setPrincipalComponent(disbursementAmount);
@@ -606,6 +620,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.INTEREST_ACCRUAL);
         txn.setAmount(accruedAmount);
         txn.setInterestComponent(accruedAmount);
@@ -719,6 +735,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.PENALTY_CHARGE);
         txn.setAmount(penalAmount);
         txn.setPenaltyComponent(penalAmount);
@@ -910,6 +928,13 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         // CBS: Loan closure only when all components are zero (principal + interest + penal)
         if (account.getTotalOutstanding().compareTo(BigDecimal.ZERO) == 0) {
             account.setStatus(LoanStatus.CLOSED);
+            // CBS Tier-1: Auto-release collateral liens per RBI Fair Practices Code 2023.
+            // Bank must release pledge/mortgage within 30 days of loan closure.
+            try {
+                collateralService.releaseCollateralsForLoan(account.getId(), valueDate);
+            } catch (Exception e) {
+                log.warn("Collateral release failed for {}: {}", accountNumber, e.getMessage());
+            }
             log.info("Loan account closed: accNo={}", accountNumber);
         }
 
@@ -917,6 +942,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.REPAYMENT_PRINCIPAL);
         txn.setAmount(amount);
         txn.setPrincipalComponent(principalPaid);
@@ -1166,6 +1193,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.WRITE_OFF);
         txn.setAmount(writeOffAmount.add(interestReceivable));
         txn.setPrincipalComponent(writeOffAmount);
@@ -1191,6 +1220,14 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setProvisioningAmount(BigDecimal.ZERO);
         account.setUpdatedBy(currentUser);
         accountRepository.save(account);
+
+        // CBS Tier-1: Auto-release collateral liens on write-off per RBI IRAC.
+        // Written-off accounts have no further recovery expectation from collateral.
+        try {
+            collateralService.releaseCollateralsForLoan(account.getId(), businessDate);
+        } catch (Exception e) {
+            log.warn("Collateral release failed for write-off {}: {}", accountNumber, e.getMessage());
+        }
 
         auditService.logEvent(
                 "LoanAccount",
@@ -1300,6 +1337,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(txnResult.getTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.PREPAYMENT);
         txn.setAmount(totalOutstanding);
         txn.setPrincipalComponent(principalDue);
@@ -1328,6 +1367,13 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         account.setRemainingTenure(0);
         account.setUpdatedBy(currentUser);
         accountRepository.save(account);
+
+        // CBS Tier-1: Auto-release collateral liens per RBI Fair Practices Code 2023.
+        try {
+            collateralService.releaseCollateralsForLoan(account.getId(), businessDate);
+        } catch (Exception e) {
+            log.warn("Collateral release failed for {}: {}", accountNumber, e.getMessage());
+        }
 
         auditService.logEvent(
                 "LoanAccount",
@@ -1555,6 +1601,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         reversal.setTenantId(tenantId);
         reversal.setTransactionRef(txnResult.getTransactionRef());
         reversal.setLoanAccount(account);
+        reversal.setBranch(account.getBranch());
+        reversal.setBranchCode(account.getBranch().getBranchCode());
         reversal.setTransactionType(TransactionType.REVERSAL);
         reversal.setAmount(amount);
         reversal.setPrincipalComponent(original.getPrincipalComponent());
@@ -1646,6 +1694,8 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         txn.setTenantId(tenantId);
         txn.setTransactionRef(ReferenceGenerator.generateTransactionRef());
         txn.setLoanAccount(account);
+        txn.setBranch(account.getBranch());
+        txn.setBranchCode(account.getBranch().getBranchCode());
         txn.setTransactionType(TransactionType.FEE_CHARGE);
         txn.setAmount(actualChargeTotal);
         txn.setValueDate(businessDate);
@@ -1678,13 +1728,113 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         return savedTxn;
     }
 
+    /**
+     * CBS Floating Rate Reset per RBI EBLR/MCLR Framework.
+     *
+     * Per RBI circular (Oct 2019): all new floating rate retail loans must be linked
+     * to an external benchmark (repo rate, T-bill, etc.). The effective rate is:
+     *   effectiveRate = benchmarkRate + spread
+     *
+     * Rate reset rules:
+     * - Spread is fixed at sanction (does not change on reset)
+     * - Only benchmarkRate changes on reset
+     * - EMI is recalculated on the new rate
+     * - Remaining schedule is regenerated
+     * - Rate reset is logged in audit trail for transparency per RBI Fair Practices Code
+     *
+     * @param accountNumber    Loan account number
+     * @param newBenchmarkRate New benchmark rate (% p.a.)
+     * @param businessDate     CBS business date
+     * @return Updated loan account
+     */
+    @Override
+    @Transactional
+    public LoanAccount resetFloatingRate(String accountNumber, BigDecimal newBenchmarkRate, LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+
+        LoanAccount account = accountRepository
+                .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
+                .orElseThrow(
+                        () -> new BusinessException("ACCOUNT_NOT_FOUND", "Loan account not found: " + accountNumber));
+
+        if (account.getStatus().isTerminal()) {
+            return account; // No reset on closed/written-off accounts
+        }
+
+        if (!account.isFloatingRate()) {
+            throw new BusinessException(
+                    "NOT_FLOATING_RATE",
+                    "Account " + accountNumber + " is not a floating rate loan. Rate reset not applicable.");
+        }
+
+        BigDecimal oldRate = account.getInterestRate();
+        BigDecimal spread = account.getSpread() != null ? account.getSpread() : BigDecimal.ZERO;
+        BigDecimal newEffectiveRate = newBenchmarkRate.add(spread);
+
+        // Floor at 0% — negative rates not supported per RBI
+        if (newEffectiveRate.compareTo(BigDecimal.ZERO) < 0) {
+            newEffectiveRate = BigDecimal.ZERO;
+        }
+
+        account.setBenchmarkRate(newBenchmarkRate);
+        account.setInterestRate(newEffectiveRate);
+        account.setLastRateResetDate(businessDate);
+
+        // Compute next reset date based on frequency
+        if ("QUARTERLY".equals(account.getRateResetFrequency())) {
+            account.setNextRateResetDate(businessDate.plusMonths(3));
+        } else if ("HALF_YEARLY".equals(account.getRateResetFrequency())) {
+            account.setNextRateResetDate(businessDate.plusMonths(6));
+        } else if ("YEARLY".equals(account.getRateResetFrequency())) {
+            account.setNextRateResetDate(businessDate.plusYears(1));
+        }
+
+        // Recalculate EMI on new rate with remaining tenure
+        if (account.getRemainingTenure() != null && account.getRemainingTenure() > 0) {
+            BigDecimal newEmi = interestRule.calculateEmi(
+                    account.getOutstandingPrincipal(), newEffectiveRate, account.getRemainingTenure());
+            account.setEmiAmount(newEmi);
+        }
+
+        account.setUpdatedBy("SYSTEM");
+        LoanAccount saved = accountRepository.save(account);
+
+        // Regenerate remaining schedule with new EMI
+        try {
+            scheduleService.generateSchedule(saved, businessDate);
+        } catch (Exception e) {
+            log.warn("Schedule regeneration failed after rate reset for {}: {}", accountNumber, e.getMessage());
+        }
+
+        auditService.logEvent(
+                "LoanAccount",
+                saved.getId(),
+                "RATE_RESET",
+                oldRate.toPlainString(),
+                newEffectiveRate.toPlainString(),
+                "LOAN_ACCOUNTS",
+                "Floating rate reset: " + accountNumber
+                        + " | Old rate: " + oldRate + "% → New rate: " + newEffectiveRate + "%"
+                        + " | Benchmark: " + newBenchmarkRate + "% + Spread: " + spread + "%"
+                        + " | New EMI: " + saved.getEmiAmount());
+
+        log.info("Rate reset: accNo={}, oldRate={}%, newRate={}%, benchmark={}%, spread={}%",
+                accountNumber, oldRate, newEffectiveRate, newBenchmarkRate, spread);
+
+        return saved;
+    }
+
     @Override
     public LoanAccount getAccount(String accountNumber) {
         String tenantId = TenantContext.getCurrentTenant();
-        return accountRepository
+        LoanAccount account = accountRepository
                 .findByTenantIdAndAccountNumber(tenantId, accountNumber)
                 .orElseThrow(
                         () -> new BusinessException("ACCOUNT_NOT_FOUND", "Loan account not found: " + accountNumber));
+        // CBS Tier-1: Branch access enforcement on read.
+        // MAKER/CHECKER can only view loan accounts at their home branch.
+        branchAccessValidator.validateAccess(account.getBranch());
+        return account;
     }
 
     @Override

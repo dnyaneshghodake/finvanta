@@ -1,6 +1,7 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.DepositAccountStatus;
+import com.finvanta.domain.enums.DepositAccountType;
 
 import jakarta.persistence.*;
 
@@ -68,9 +69,14 @@ public class DepositAccount extends BaseEntity {
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
 
-    /** SAVINGS, SAVINGS_NRI, SAVINGS_MINOR, SAVINGS_JOINT, SAVINGS_PMJDY, CURRENT, CURRENT_OD */
+    /**
+     * CBS CASA Account Type per Finacle PDDEF ACCT_TYPE / Temenos ACCOUNT CATEGORY.
+     * Enum-backed to prevent data corruption from typos that would silently break
+     * interest calculation, dormancy classification, and RBI regulatory reporting.
+     */
+    @Enumerated(EnumType.STRING)
     @Column(name = "account_type", nullable = false, length = 30)
-    private String accountType;
+    private DepositAccountType accountType;
 
     /** Product code from deposit_product_master for GL/interest config */
     @Column(name = "product_code", nullable = false, length = 50)
@@ -216,11 +222,11 @@ public class DepositAccount extends BaseEntity {
     }
 
     public boolean isSavings() {
-        return accountType != null && accountType.startsWith("SAVINGS");
+        return accountType != null && accountType.isSavings();
     }
 
     public boolean isCurrent() {
-        return accountType != null && accountType.startsWith("CURRENT");
+        return accountType != null && accountType.isCurrent();
     }
 
     /**

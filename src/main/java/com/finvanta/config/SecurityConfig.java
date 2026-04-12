@@ -1,11 +1,15 @@
 package com.finvanta.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 
 /**
  * CBS Security Configuration — Role-Based Access Control per Finacle/Temenos standards.
@@ -29,7 +33,13 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    @org.springframework.beans.factory.annotation.Value("${spring.profiles.active:prod}")
+    private final MfaAuthenticationSuccessHandler mfaSuccessHandler;
+
+    public SecurityConfig(MfaAuthenticationSuccessHandler mfaSuccessHandler) {
+        this.mfaSuccessHandler = mfaSuccessHandler;
+    }
+
+    @Value("${spring.profiles.active:prod}")
     private String activeProfile;
 
     private boolean isDevProfile() {
@@ -48,7 +58,9 @@ public class SecurityConfig {
                                     "/css/**",
                                     "/js/**",
                                     "/fonts/**",
-                                    "/img/**")
+                                    "/img/**",
+                                    "/actuator/health",
+                                    "/actuator/info")
                             .permitAll();
                     // CBS SECURITY: H2 console ONLY accessible in dev profile.
                     // In production, this matcher is not registered — /h2-console/**
@@ -166,24 +178,51 @@ public class SecurityConfig {
                             .hasAnyRole("MAKER", "ADMIN")
                             .requestMatchers("/audit/**")
                             .hasAnyRole("AUDITOR", "ADMIN")
+                            .requestMatchers("/admin/mfa/**")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/mfa/verify")
+                            .authenticated()
+                            .requestMatchers("/password/change")
+                            .authenticated()
                             .anyRequest()
                             .authenticated();
                 })
+                // CBS MFA: Register MfaVerificationFilter INSIDE the Spring Security filter chain.
+                // Must run AFTER UsernamePasswordAuthenticationFilter so that the session
+                // and authentication context are available when the filter checks MFA_VERIFIED.
+                // This filter blocks access to all pages except /mfa/verify and /logout
+                // while MFA verification is pending (MFA_VERIFIED=false in session).
+                .addFilterAfter(new MfaVerificationFilter(), UsernamePasswordAuthenticationFilter.class)
                 .formLogin(form -> form.loginPage("/login")
                         .loginProcessingUrl("/login")
-                        .defaultSuccessUrl("/dashboard", true)
+                        .successHandler(mfaSuccessHandler)
                         .failureUrl("/login?error")
                         .permitAll())
                 .logout(logout -> logout.logoutUrl("/logout")
                         .logoutSuccessUrl("/login?logout")
                         .invalidateHttpSession(true)
-                        .deleteCookies("JSESSIONID")
+                        .deleteCookies("FINVANTA_SESSION")
                         .permitAll())
                 .exceptionHandling(ex -> ex.accessDeniedHandler((request, response, accessDeniedException) -> {
                     response.sendRedirect(request.getContextPath() + "/error/403");
                 }))
-                .sessionManagement(
-                        session -> session.sessionFixation().migrateSession().maximumSessions(1))
+                .sessionManagement(session -> session
+                        // CBS: Migrate session on login to prevent session fixation attacks (OWASP A2)
+                        .sessionFixation().migrateSession()
+                        // CBS: invalidSessionUrl is intentionally NOT set.
+                        // Per Finacle/Temenos: invalidSessionUrl intercepts ALL requests with stale
+                        // session cookies — including intentional redirects after session.invalidate()
+                        // in PasswordController (/login?password_changed) and MfaLoginController
+                        // (/login?mfa_locked). With invalidSessionUrl set, these redirects get
+                        // overridden to /login?timeout — showing the wrong message to the user.
+                        // Without it, Spring Security redirects to /login (the configured loginPage)
+                        // which is the correct behavior for both timeout and explicit invalidation.
+                        // CBS: Only one active session per user per RBI IT Governance Direction 2023 §8.3.
+                        // Per Finacle USER_MASTER: concurrent login from a second browser/device
+                        // terminates the first session (last-login-wins policy).
+                        // expiredUrl: shown when the FIRST session is invalidated by the second login.
+                        .maximumSessions(1)
+                        .expiredUrl("/login?expired"))
                 .csrf(csrf -> {
                     // CBS SECURITY: Only disable CSRF for H2 console in dev profile.
                     // In production, CSRF is enforced on ALL endpoints without exception.
@@ -209,8 +248,7 @@ public class SecurityConfig {
                     headers.contentTypeOptions(cto -> {}); // X-Content-Type-Options: nosniff
                     headers.xssProtection(xss -> {}); // X-XSS-Protection: 1; mode=block
                     headers.referrerPolicy(ref -> ref.policy(
-                            org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy
-                                    .STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
+                            ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN));
                     headers.permissionsPolicy(pp -> pp.policy("camera=(), microphone=(), geolocation=()"));
                     if (!isDevProfile()) {
                         headers.httpStrictTransportSecurity(
@@ -228,6 +266,6 @@ public class SecurityConfig {
      */
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return org.springframework.security.crypto.factory.PasswordEncoderFactories.createDelegatingPasswordEncoder();
+        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 }

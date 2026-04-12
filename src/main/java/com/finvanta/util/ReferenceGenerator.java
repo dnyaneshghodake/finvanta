@@ -1,100 +1,171 @@
 package com.finvanta.util;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * CBS Reference Number Generator per Finacle/Temenos numbering conventions.
+ * CBS Reference Number Generator per Finacle/Temenos Tier-1 numbering conventions.
  *
- * Reference format: PREFIX + BRANCH_CODE + TIMESTAMP(17) + SEQUENCE(6)
+ * Per Finacle CIF / Temenos CUSTOMER / SBI / HDFC / ICICI standards:
+ * All reference numbers must be SHORT, SEQUENTIAL, and HUMAN-READABLE.
+ * Tellers type them at counters, customers quote them over phone,
+ * they're printed on passbooks/cheques, and reported to CIBIL/CRILC.
  *
- * Generated lengths (with 5-char branch code like HQ001):
- *   CUST  = Customer CIF Number     → 4 + 5 + 17 + 6 = 32 chars (column: VARCHAR 40)
- *   APP   = Loan Application Number → 3 + 5 + 17 + 6 = 31 chars (column: VARCHAR 40)
- *   LN    = Loan Account Number     → 2 + 5 + 17 + 6 = 30 chars (column: VARCHAR 40)
- *   TXN   = Transaction Reference   → 3 + 0 + 17 + 6 = 26 chars (column: VARCHAR 40)
- *   JRN   = Journal Entry Reference → 3 + 0 + 17 + 6 = 26 chars (column: VARCHAR 40)
+ * Formats:
+ *   {SOL:3}{SERIAL:7}{CHECK:1}  → 00200000017          (11 digits) — Customer CIF
+ *   LN-{BRANCH}-{6-digit}      → LN-BR001-000045      (16 chars) — Loan Account
+ *   APP-{BRANCH}-{6-digit}     → APP-BR001-000045     (17 chars) — Loan Application
+ *   SB-{BRANCH}-{6-digit}      → SB-BR001-000001      (16 chars) — Savings Account
+ *   CA-{BRANCH}-{6-digit}      → CA-BR001-000001      (16 chars) — Current Account
+ *   TXN-{YYYYMMDD}-{6-digit}   → TXN-20260412-000789  (20 chars) — Transaction Ref
+ *   JRN-{YYYYMMDD}-{6-digit}   → JRN-20260412-000789  (20 chars) — Journal Ref
+ *   COL-{6-digit}              → COL-000056            (10 chars) — Collateral Ref
  *
- * CBS Column Width Standard (all reference fields: VARCHAR 40):
- *   Max generated = 32 chars (CUST with 5-char branch) → 8 chars headroom
+ * CBS ARCHITECTURE — Two-tier sequence strategy:
  *
- * Uniqueness guarantees (single-JVM):
- * - Millisecond-precision timestamp (yyyyMMddHHmmssSSS) — ms granularity
- * - Monotonically increasing 6-digit sequence (never wraps, never resets)
- * - Combined: unique up to 999,999 refs per millisecond per JVM
+ * PERSISTENT references (CIF, Account Numbers, Loan Numbers, Collateral Refs):
+ *   These are printed on passbooks, reported to CIBIL/CRILC, and must be globally
+ *   unique across JVM restarts and cluster nodes. They MUST use DB-backed sequences
+ *   via {@link com.finvanta.service.SequenceGeneratorService}. The static methods
+ *   in this class for CIF/Account generation are DEPRECATED — callers must use
+ *   {@link com.finvanta.service.CbsReferenceService} instead.
  *
- * Production CBS deployment (clustered / HA):
- * Replace with database-backed sequence:
- *   - SQL Server: CREATE SEQUENCE finvanta_ref_seq START WITH 1 INCREMENT BY 1
- *   - Oracle: CREATE SEQUENCE finvanta_ref_seq MINVALUE 1 CACHE 1000
- *   - Or use a distributed ID generator (Snowflake / ULID)
- * The unique constraint on (tenant_id, customer_number) / (tenant_id, account_number) etc.
- * in the DDL provides a safety net — duplicate inserts fail at DB level.
+ * EPHEMERAL references (TXN refs, JRN refs):
+ *   These are generated within a single @Transactional boundary and are immediately
+ *   persisted with a DB unique constraint as safety net. In-memory AtomicLong is
+ *   acceptable here because duplicates are caught by the constraint and the entire
+ *   transaction retries. These do NOT need to be sequential across restarts.
  */
 public final class ReferenceGenerator {
 
-    /**
-     * Monotonically increasing sequence — never wraps, never resets within JVM lifecycle.
-     * Initialized from System.nanoTime() modulo to avoid restart collisions.
-     * For 1M+ daily transactions, 6-digit sequence supports ~11.5 days before
-     * reaching Long.MAX_VALUE (effectively infinite).
-     */
-    private static final AtomicLong SEQUENCE = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    // CBS: In-memory sequences for EPHEMERAL references only (TXN, JRN).
+    // These are generated within a @Transactional and protected by DB unique constraints.
+    // Seeded from System.nanoTime() to reduce (not eliminate) restart collision probability.
+    // For persistent references (CIF, Account), use CbsReferenceService (DB-backed).
+    private static final AtomicLong TXN_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    private static final AtomicLong JRN_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
 
-    /** Millisecond-precision timestamp: yyyyMMddHHmmssSS (SS = centiseconds) */
-    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
+    // DEPRECATED: In-memory sequences for persistent references.
+    // These produce non-sequential, non-deterministic numbers that start at random
+    // offsets on each JVM restart. NOT suitable for CIF/Account numbers that are
+    // printed on passbooks, reported to CIBIL, and must be sequential.
+    // Retained ONLY for backward compatibility — callers should migrate to
+    // CbsReferenceService which uses DB-backed SequenceGeneratorService.
+    @Deprecated(forRemoval = true)
+    private static final AtomicLong CUST_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    @Deprecated(forRemoval = true)
+    private static final AtomicLong LOAN_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    @Deprecated(forRemoval = true)
+    private static final AtomicLong APP_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    @Deprecated(forRemoval = true)
+    private static final AtomicLong CASA_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+    @Deprecated(forRemoval = true)
+    private static final AtomicLong COL_SEQ = new AtomicLong(Math.abs(System.nanoTime() % 100000));
+
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private ReferenceGenerator() {}
 
-    /** Generates loan application number: APP + branchCode + timestamp + seq */
-    public static String generateApplicationNumber(String branchCode) {
-        return "APP" + branchCode + timestamp() + nextSequence();
-    }
-
-    /** Generates loan account number: LN + branchCode + timestamp + seq */
-    public static String generateAccountNumber(String branchCode) {
-        return "LN" + branchCode + timestamp() + nextSequence();
-    }
-
-    /** Generates transaction reference: TXN + timestamp + seq */
-    public static String generateTransactionRef() {
-        return "TXN" + timestamp() + nextSequence();
-    }
-
-    /** Generates journal entry reference: JRN + timestamp + seq */
-    public static String generateJournalRef() {
-        return "JRN" + timestamp() + nextSequence();
-    }
-
-    /** Generates customer number per CBS CIF convention: CUST + branchCode + timestamp + seq */
-    public static String generateCustomerNumber(String branchCode) {
-        return "CUST" + branchCode + timestamp() + nextSequence();
-    }
-
-    /** Generates collateral reference: COL + timestamp + seq */
-    public static String generateCollateralRef() {
-        return "COL" + timestamp() + nextSequence();
-    }
-
-    /** Generates deposit account number per CBS CASA convention: SB/CA + branchCode + timestamp + seq */
-    public static String generateDepositAccountNumber(String branchCode) {
-        return "DEP" + branchCode + timestamp() + nextSequence();
-    }
-
-    private static String timestamp() {
-        return LocalDateTime.now().format(FORMATTER);
+    /**
+     * Customer CIF Number per Finacle CIF_MASTER — 11 pure digits.
+     *
+     * Structure: {SOL_ID:3}{SERIAL:7}{CHECK:1} = 11 digits
+     *   SOL_ID  = 3-digit branch identifier (from DB branch ID, mod 1000)
+     *   SERIAL  = 7-digit sequential within the branch
+     *   CHECK   = 1-digit Luhn check digit (catches typos + transpositions)
+     *
+     * Example: Branch ID=2 → SOL=002, serial=0000001, check=7 → "00200000017"
+     *
+     * Per Finacle/SBI: CIF is 11-digit pure numeric.
+     * Per Temenos: CUSTOMER ID is 6-10 digit numeric.
+     * The SOL prefix enables branch identification without DB lookup.
+     * The Luhn check digit catches ~98% of single-digit and transposition errors.
+     * Printed on passbooks, cheque books, CIBIL reports, KYC documents.
+     *
+     * @param branchId Database branch ID (used as SOL prefix, mod 1000)
+     */
+    public static String generateCustomerNumber(Long branchId) {
+        String sol = String.format("%03d", branchId != null ? branchId % 1000 : 0);
+        String serial = String.format("%07d", CUST_SEQ.incrementAndGet() % 10000000);
+        String base = sol + serial; // 10 digits
+        int checkDigit = computeLuhn(base);
+        return base + checkDigit; // 11 digits
     }
 
     /**
-     * Returns a monotonically increasing sequence formatted to 6+ digits.
-     * Never wraps — guarantees uniqueness within JVM lifecycle.
-     * Seeded from System.nanoTime() to avoid collisions across JVM restarts.
-     * Values above 999999 produce longer strings (7+ digits), which is safe
-     * because all reference columns are VARCHAR(40) with ample headroom.
+     * @deprecated Use {@link #generateCustomerNumber(Long)} with branch ID.
      */
-    private static String nextSequence() {
-        long val = SEQUENCE.incrementAndGet();
-        return String.format("%06d", val);
+    @Deprecated(forRemoval = true)
+    public static String generateCustomerNumber(String branchCode) {
+        return generateCustomerNumber(0L);
+    }
+
+    /**
+     * Luhn algorithm (Modulus 10) check digit per ISO/IEC 7812-1.
+     * Used by Finacle CIF, credit card numbers, IMEI, and ISIN.
+     * Catches: 100% of single-digit errors, ~98% of transposition errors.
+     *
+     * Per ISO/IEC 7812-1: starting from the rightmost digit and moving left,
+     * double every SECOND digit (i.e., the rightmost digit is NOT doubled,
+     * the second-from-right IS doubled, third is not, fourth is doubled, etc.).
+     */
+    public static int computeLuhn(String digits) {
+        int sum = 0;
+        boolean doubleNext = false; // Rightmost digit is NOT doubled
+        for (int i = digits.length() - 1; i >= 0; i--) {
+            int n = digits.charAt(i) - '0';
+            if (doubleNext) {
+                n *= 2;
+                if (n > 9) n -= 9;
+            }
+            sum += n;
+            doubleNext = !doubleNext;
+        }
+        return (10 - (sum % 10)) % 10;
+    }
+
+    /** Loan Account: LN-{BRANCH}-{6-digit} → LN-BR001-000045 */
+    public static String generateAccountNumber(String branchCode) {
+        return "LN-" + branchCode + "-" + fmt(LOAN_SEQ);
+    }
+
+    /** Loan Application: APP-{BRANCH}-{6-digit} → APP-BR001-000045 */
+    public static String generateApplicationNumber(String branchCode) {
+        return "APP-" + branchCode + "-" + fmt(APP_SEQ);
+    }
+
+    /** Transaction Ref: TXN-{YYYYMMDD}-{6-digit} → TXN-20260412-000789 */
+    public static String generateTransactionRef() {
+        return "TXN-" + today() + "-" + fmt(TXN_SEQ);
+    }
+
+    /** Journal Ref: JRN-{YYYYMMDD}-{6-digit} → JRN-20260412-000789 */
+    public static String generateJournalRef() {
+        return "JRN-" + today() + "-" + fmt(JRN_SEQ);
+    }
+
+    /** Collateral Ref: COL-{6-digit} → COL-000056 */
+    public static String generateCollateralRef() {
+        return "COL-" + fmt(COL_SEQ);
+    }
+
+    /** CASA Account: {SB|CA}-{BRANCH}-{6-digit} → SB-BR001-000001 */
+    public static String generateDepositAccountNumber(String branchCode, boolean isSavings) {
+        return (isSavings ? "SB" : "CA") + "-" + branchCode + "-" + fmt(CASA_SEQ);
+    }
+
+    /** @deprecated Use {@link #generateDepositAccountNumber(String, boolean)} */
+    @Deprecated(forRemoval = true)
+    public static String generateDepositAccountNumber(String branchCode) {
+        return generateDepositAccountNumber(branchCode, true);
+    }
+
+    private static String today() {
+        return LocalDate.now().format(DATE_FMT);
+    }
+
+    private static String fmt(AtomicLong seq) {
+        return String.format("%06d", seq.incrementAndGet());
     }
 }

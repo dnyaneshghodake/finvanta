@@ -14,6 +14,15 @@ public final class TenantContext {
         return tenant;
     }
 
+    /**
+     * Check if tenant context is initialized for the current thread without throwing.
+     * Per Finacle/Temenos: used by authentication event listeners that may fire
+     * before or after TenantFilter depending on filter registration order.
+     */
+    public static boolean isSet() {
+        return CURRENT_TENANT.get() != null;
+    }
+
     public static void setCurrentTenant(String tenantId) {
         CURRENT_TENANT.set(tenantId);
     }

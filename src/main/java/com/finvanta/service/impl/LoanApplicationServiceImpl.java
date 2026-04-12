@@ -13,9 +13,9 @@ import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CollateralService;
+import com.finvanta.service.CbsReferenceService;
 import com.finvanta.service.LoanApplicationService;
 import com.finvanta.util.BusinessException;
-import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 import com.finvanta.workflow.ApprovalWorkflowService;
@@ -41,6 +41,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
     private final ApprovalWorkflowService workflowService;
     private final AuditService auditService;
     private final BusinessDateService businessDateService;
+    private final CbsReferenceService cbsReferenceService;
 
     public LoanApplicationServiceImpl(
             LoanApplicationRepository applicationRepository,
@@ -51,7 +52,8 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
             CollateralService collateralService,
             ApprovalWorkflowService workflowService,
             AuditService auditService,
-            BusinessDateService businessDateService) {
+            BusinessDateService businessDateService,
+            CbsReferenceService cbsReferenceService) {
         this.applicationRepository = applicationRepository;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
@@ -61,6 +63,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         this.workflowService = workflowService;
         this.auditService = auditService;
         this.businessDateService = businessDateService;
+        this.cbsReferenceService = cbsReferenceService;
     }
 
     @Override
@@ -91,7 +94,7 @@ public class LoanApplicationServiceImpl implements LoanApplicationService {
         application.setTenantId(tenantId);
         application.setCustomer(customer);
         application.setBranch(branch);
-        application.setApplicationNumber(ReferenceGenerator.generateApplicationNumber(branch.getBranchCode()));
+        application.setApplicationNumber(cbsReferenceService.generateApplicationNumber(branch.getBranchCode()));
         application.setStatus(ApplicationStatus.SUBMITTED);
         application.setApplicationDate(businessDateService.getCurrentBusinessDate());
         application.setCreatedBy(currentUser);

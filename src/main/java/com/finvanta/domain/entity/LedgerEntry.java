@@ -45,7 +45,9 @@ import lombok.Setter;
         indexes = {
             @Index(name = "idx_ledger_tenant_gl", columnList = "tenant_id, gl_code, business_date"),
             @Index(name = "idx_ledger_tenant_date", columnList = "tenant_id, business_date"),
-            @Index(name = "idx_ledger_journal", columnList = "tenant_id, journal_entry_id")
+            @Index(name = "idx_ledger_journal", columnList = "tenant_id, journal_entry_id"),
+            @Index(name = "idx_ledger_branch_date", columnList = "tenant_id, branch_id, business_date"),
+            @Index(name = "idx_ledger_branch_gl", columnList = "tenant_id, branch_id, gl_code, business_date")
         },
         uniqueConstraints = {
             @UniqueConstraint(
@@ -63,6 +65,28 @@ public class LedgerEntry {
 
     @Column(name = "tenant_id", nullable = false, length = 20)
     private String tenantId;
+
+    /**
+     * Branch that originated this ledger entry.
+     * Per Finacle GL_BRANCH: every immutable ledger record carries the branch (SOL)
+     * for branch-level Day Book, audit trail, and reconciliation.
+     * This enables: branch-level ledger queries, branch auditor access control,
+     * and branch-level hash chain verification (future enhancement).
+     *
+     * Uses @ManyToOne (consistent with JournalEntry, DepositTransaction, etc.)
+     * for referential integrity. FetchType.LAZY avoids loading Branch unless accessed.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "branch_id", nullable = false)
+    private Branch branch;
+
+    /**
+     * Branch code denormalized for reporting without joins.
+     * Per Finacle: ledger queries for Day Book and branch reconciliation
+     * must be fast — avoiding joins to the branches table.
+     */
+    @Column(name = "branch_code", nullable = false, length = 20)
+    private String branchCode;
 
     /** Monotonically increasing sequence — global ordering within tenant */
     @Column(name = "ledger_sequence", nullable = false)

@@ -56,4 +56,44 @@ public class ApprovalWorkflow extends BaseEntity {
 
     @Column(name = "payload_snapshot", columnDefinition = "TEXT")
     private String payloadSnapshot;
+
+    // === SLA / Escalation (per Finacle WORKFLOW_SLA / Temenos LIMIT.CHECK) ===
+
+    /**
+     * SLA deadline for this approval. If not actioned before this time,
+     * the workflow is eligible for escalation to a higher authority.
+     * Per RBI Fair Practices Code: loan applications must be processed within
+     * defined TAT (Turn Around Time). Configurable per action type.
+     * Null = no SLA (backward compatible with existing data).
+     */
+    @Column(name = "sla_deadline")
+    private LocalDateTime slaDeadline;
+
+    /**
+     * Number of times this workflow has been escalated.
+     * Per Finacle WORKFLOW_SLA: after SLA breach, workflow is auto-escalated
+     * to ADMIN. Multiple escalation levels are tracked.
+     */
+    @Column(name = "escalation_count", nullable = false)
+    private int escalationCount = 0;
+
+    /**
+     * User to whom the workflow was escalated (null if not escalated).
+     * Per Finacle: escalation target is typically the branch ADMIN.
+     */
+    @Column(name = "escalated_to", length = 100)
+    private String escalatedTo;
+
+    /**
+     * Timestamp when the workflow was last escalated.
+     */
+    @Column(name = "escalated_at")
+    private LocalDateTime escalatedAt;
+
+    /** Returns true if the SLA deadline has passed and the workflow is still pending */
+    public boolean isSlaBreached() {
+        return slaDeadline != null
+                && status == ApprovalStatus.PENDING_APPROVAL
+                && LocalDateTime.now().isAfter(slaDeadline);
+    }
 }

@@ -1,0 +1,4 @@
+# CBS Encrypted Property Processor — decrypts ENC(...) values at startup.
+# Per RBI IT Governance Direction 2023: DB credentials must be encrypted at rest.
+org.springframework.boot.env.EnvironmentPostProcessor=\
+  com.finvanta.config.CbsEncryptedPropertyProcessor

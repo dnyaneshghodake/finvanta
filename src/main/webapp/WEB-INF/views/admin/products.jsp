@@ -6,7 +6,16 @@
 
 <div class="fv-main">
     <div class="fv-card">
-        <div class="card-header">Product Master (Finacle PDDEF)</div>
+        <div class="card-header">
+            Product Master (Finacle PDDEF)
+            <div class="float-end">
+                <a href="${pageContext.request.contextPath}/admin/products/create" class="btn btn-sm btn-primary"><i class="bi bi-plus-circle"></i> Create Product</a>
+                <form method="post" action="${pageContext.request.contextPath}/admin/products/evict-cache" class="d-inline ms-2">
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                    <button type="submit" class="btn btn-sm btn-outline-warning" title="Evict GL cache after modifying product GL codes"><i class="bi bi-arrow-clockwise"></i> Evict GL Cache</button>
+                </form>
+            </div>
+        </div>
         <div class="card-body">
             <p class="text-muted">Product configuration drives GL codes, interest methods, limits, and fee schedules for all loan operations.</p>
             <div class="table-responsive">

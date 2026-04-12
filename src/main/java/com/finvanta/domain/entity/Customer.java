@@ -4,6 +4,9 @@ import com.finvanta.config.PiiEncryptionConverter;
 
 import jakarta.persistence.*;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 
 import lombok.Getter;
@@ -49,7 +52,8 @@ import lombok.Setter;
             @Index(name = "idx_cust_aadhaar", columnList = "tenant_id, aadhaar_number"),
             @Index(name = "idx_cust_pan_hash", columnList = "tenant_id, pan_hash"),
             @Index(name = "idx_cust_aadhaar_hash", columnList = "tenant_id, aadhaar_hash"),
-            @Index(name = "idx_cust_kyc_expiry", columnList = "tenant_id, kyc_expiry_date")
+            @Index(name = "idx_cust_kyc_expiry", columnList = "tenant_id, kyc_expiry_date"),
+            @Index(name = "idx_cust_tenant_branch", columnList = "tenant_id, branch_id")
         })
 @Getter
 @Setter
@@ -294,15 +298,14 @@ public class Customer extends BaseEntity {
     private static String computeSha256(String input) {
         if (input == null || input.isBlank()) return null;
         try {
-            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes =
-                    digest.digest(input.trim().toUpperCase().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashBytes = digest.digest(input.trim().toUpperCase().getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
             for (byte b : hashBytes) {
                 sb.append(String.format("%02x", b));
             }
             return sb.toString();
-        } catch (java.security.NoSuchAlgorithmException e) {
+        } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 not available", e);
         }
     }

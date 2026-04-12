@@ -157,6 +157,64 @@ public class AppUser extends BaseEntity {
         resetLoginAttempts();
     }
 
+    // === MFA / Two-Factor Authentication (RBI IT Governance Direction 2023) ===
+
+    /**
+     * TOTP (Time-based One-Time Password) secret for MFA.
+     * Per RBI IT Governance Direction 2023 Section 8.4: privileged users (ADMIN)
+     * must use multi-factor authentication. TOTP is the most widely supported
+     * MFA method (Google Authenticator, Microsoft Authenticator, Authy).
+     *
+     * The secret is Base32-encoded and used to generate 6-digit OTPs that change
+     * every 30 seconds. Null = MFA not enrolled for this user.
+     *
+     * Encrypted at rest using AES-256-GCM via {@link com.finvanta.config.MfaSecretEncryptor}.
+     * A compromised database dump with plaintext secrets would allow an attacker
+     * to generate valid MFA codes for every enrolled user, completely defeating MFA.
+     * Per RBI IT Governance Direction 2023: MFA secrets are authentication credentials
+     * equivalent to password hashes and require PII-level encryption.
+     *
+     * Key management:
+     *   DEV: Default key in mfa.encryption.key property (deterministic for H2)
+     *   PROD: Override via environment variable or secrets manager (AWS KMS / Vault)
+     *
+     * Column length 200 accommodates Base64(IV[12] + ciphertext + tag[16]) overhead.
+     */
+    @Convert(converter = com.finvanta.config.MfaSecretEncryptor.class)
+    @Column(name = "mfa_secret", length = 200)
+    private String mfaSecret;
+
+    /**
+     * Whether MFA is enabled for this user.
+     * Per RBI: mandatory for ADMIN, optional for MAKER/CHECKER.
+     * When enabled, login requires both password AND TOTP code.
+     */
+    @Column(name = "mfa_enabled", nullable = false)
+    private boolean mfaEnabled = false;
+
+    /**
+     * MFA enrollment date — when the user first set up their authenticator.
+     */
+    @Column(name = "mfa_enrolled_date")
+    private LocalDate mfaEnrolledDate;
+
+    /**
+     * Last successfully verified TOTP time step.
+     * Per RFC 6238 §5.2: implementations SHOULD track the last successful time step
+     * and reject any code for a step <= the last verified step. This prevents replay
+     * attacks where an intercepted TOTP code is reused within the ±1 tolerance window.
+     *
+     * Stored as the raw time step value (System.currentTimeMillis() / 1000 / 30).
+     * Null = no prior verification (first login after enrollment).
+     */
+    @Column(name = "last_totp_time_step")
+    private Long lastTotpTimeStep;
+
+    /** Returns true if MFA is required but not yet enrolled */
+    public boolean isMfaEnrollmentRequired() {
+        return mfaEnabled && (mfaSecret == null || mfaSecret.isBlank());
+    }
+
     /** Sets password with expiry and history tracking */
     public void changePassword(String newPasswordHash) {
         // Add current password to history (keep last 3)

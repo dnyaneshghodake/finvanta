@@ -80,6 +80,10 @@ public class UserController {
                 throw new BusinessException(
                         "WEAK_PASSWORD", "Password must be at least 8 characters per RBI IT Governance");
             }
+            if (!password.matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&#^()\\-_=+]).{8,}$")) {
+                throw new BusinessException("WEAK_PASSWORD",
+                        "Password must contain uppercase, lowercase, digit, and special character per RBI policy");
+            }
 
             Branch branch = branchRepository
                     .findById(branchId)
@@ -189,6 +193,10 @@ public class UserController {
             if (newPassword == null || newPassword.length() < 8) {
                 throw new BusinessException(
                         "WEAK_PASSWORD", "Password must be at least 8 characters per RBI IT Governance");
+            }
+            if (!newPassword.matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&#^()\\-_=+]).{8,}$")) {
+                throw new BusinessException("WEAK_PASSWORD",
+                        "Password must contain uppercase, lowercase, digit, and special character per RBI policy");
             }
             AppUser user = userRepository
                     .findById(id)

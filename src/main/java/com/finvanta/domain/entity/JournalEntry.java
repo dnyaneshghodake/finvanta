@@ -12,13 +12,31 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+/**
+ * CBS Journal Entry per Finacle TRAN_DETAIL / Temenos STMT.ENTRY.
+ *
+ * Every financial posting creates a journal entry with balanced DR/CR lines.
+ * Per Tier-1 CBS (Finacle/Temenos/BNP): every journal entry is tagged to the
+ * originating branch for branch-level accounting and audit trail.
+ *
+ * Branch attribution rules:
+ * - Single-branch transaction: journal tagged to the account's branch
+ * - Inter-branch transaction: TWO journal entries created — one per branch
+ *   (linked by source_ref), with Inter-Branch Payable/Receivable GLs
+ * - System/EOD transactions: tagged to the account's branch (not HO)
+ *
+ * Per RBI audit requirements: journal entries are immutable once posted.
+ * Corrections are made via reversal entries (new journal with contra lines).
+ */
 @Entity
 @Table(
         name = "journal_entries",
         indexes = {
             @Index(name = "idx_je_tenant_ref", columnList = "tenant_id, journal_ref", unique = true),
             @Index(name = "idx_je_value_date", columnList = "tenant_id, value_date"),
-            @Index(name = "idx_je_posting_date", columnList = "tenant_id, posting_date")
+            @Index(name = "idx_je_posting_date", columnList = "tenant_id, posting_date"),
+            @Index(name = "idx_je_tenant_branch", columnList = "tenant_id, branch_id, value_date"),
+            @Index(name = "idx_je_branch_module", columnList = "tenant_id, branch_id, source_module")
         })
 @Getter
 @Setter
@@ -27,6 +45,26 @@ public class JournalEntry extends BaseEntity {
 
     @Column(name = "journal_ref", nullable = false, length = 40)
     private String journalRef;
+
+    /**
+     * Originating branch for this journal entry.
+     * Per Finacle TRAN_DETAIL: every GL posting is attributed to a branch (SOL).
+     * This enables branch-level Day Book, trial balance, and P&L generation.
+     *
+     * For inter-branch transactions, each branch gets its own journal entry.
+     * The two entries are linked via source_ref (account number) and can be
+     * queried together for inter-branch settlement reconciliation.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "branch_id", nullable = false)
+    private Branch branch;
+
+    /**
+     * Branch code denormalized for efficient reporting and display.
+     * Avoids joining to branches table for every journal listing query.
+     */
+    @Column(name = "branch_code", nullable = false, length = 20)
+    private String branchCode;
 
     @Column(name = "value_date", nullable = false)
     private LocalDate valueDate;

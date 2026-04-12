@@ -8,7 +8,6 @@ import com.finvanta.repository.CollateralRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.util.BusinessException;
-import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
@@ -47,16 +46,19 @@ public class CollateralService {
     private final LoanApplicationRepository applicationRepository;
     private final CustomerRepository customerRepository;
     private final AuditService auditService;
+    private final CbsReferenceService cbsReferenceService;
 
     public CollateralService(
             CollateralRepository collateralRepository,
             LoanApplicationRepository applicationRepository,
             CustomerRepository customerRepository,
-            AuditService auditService) {
+            AuditService auditService,
+            CbsReferenceService cbsReferenceService) {
         this.collateralRepository = collateralRepository;
         this.applicationRepository = applicationRepository;
         this.customerRepository = customerRepository;
         this.auditService = auditService;
+        this.cbsReferenceService = cbsReferenceService;
     }
 
     /**
@@ -80,7 +82,7 @@ public class CollateralService {
         collateral.setTenantId(tenantId);
         collateral.setLoanApplication(app);
         collateral.setCustomer(app.getCustomer());
-        collateral.setCollateralRef(ReferenceGenerator.generateCollateralRef());
+        collateral.setCollateralRef(cbsReferenceService.generateCollateralRef());
         collateral.setStatus("ACTIVE");
         collateral.setLienStatus("PENDING");
         collateral.setCreatedBy(currentUser);
@@ -190,6 +192,53 @@ public class CollateralService {
      */
     public List<Collateral> getCollaterals(Long applicationId) {
         return collateralRepository.findByTenantIdAndLoanApplicationId(TenantContext.getCurrentTenant(), applicationId);
+    }
+
+    /**
+     * Releases all collateral liens for a loan account on closure/write-off.
+     *
+     * Per Finacle COLMAS / RBI Secured Lending Guidelines:
+     * When a loan reaches terminal state (CLOSED, WRITTEN_OFF), all collateral liens
+     * must be released. The customer has no further obligation and the bank must
+     * release the pledge/mortgage within 30 days per RBI Fair Practices Code 2023.
+     *
+     * Called by LoanAccountServiceImpl when account transitions to terminal state.
+     *
+     * @param loanAccountId The loan account ID whose collaterals should be released
+     * @param businessDate  CBS business date for audit trail
+     */
+    @Transactional
+    public void releaseCollateralsForLoan(Long loanAccountId, java.time.LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String currentUser = SecurityUtil.getCurrentUsername();
+
+        List<Collateral> collaterals = collateralRepository.findByTenantIdAndLoanAccountId(tenantId, loanAccountId);
+        for (Collateral c : collaterals) {
+            if ("RELEASED".equals(c.getLienStatus()) || "RELEASED".equals(c.getStatus())) {
+                continue; // Already released
+            }
+
+            String previousLienStatus = c.getLienStatus();
+            c.setLienStatus("RELEASED");
+            c.setStatus("RELEASED");
+            c.setUpdatedBy(currentUser);
+            collateralRepository.save(c);
+
+            auditService.logEvent(
+                    "Collateral",
+                    c.getId(),
+                    "LIEN_RELEASED",
+                    previousLienStatus,
+                    "RELEASED",
+                    "COLLATERAL",
+                    "Collateral lien released on loan closure: " + c.getCollateralRef()
+                            + " | Type: " + c.getCollateralType()
+                            + " | Date: " + businessDate
+                            + " | By: " + currentUser);
+
+            log.info("Collateral lien released: ref={}, type={}, loanAccount={}",
+                    c.getCollateralRef(), c.getCollateralType(), loanAccountId);
+        }
     }
 
     /**

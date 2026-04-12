@@ -1,0 +1,131 @@
+package com.finvanta.service;
+
+import com.finvanta.util.ReferenceGenerator;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+/**
+ * CBS Persistent Reference Number Service per Finacle SEQ_MASTER / Temenos EB.SEQUENCE.
+ *
+ * Generates globally unique, sequential, deterministic reference numbers for all
+ * persistent CBS entities: Customer CIF, CASA Account, Loan Account, Loan Application,
+ * and Collateral. These numbers are:
+ *   - Printed on passbooks, cheque books, and demand drafts
+ *   - Reported to CIBIL, CRILC, RBI OSMOS, and NEFT/RTGS payment networks
+ *   - Quoted by customers over phone and at branch counters
+ *   - Used in inter-bank communication (IFSC + account number)
+ *
+ * Per Finacle/SBI/HDFC/ICICI standards: these numbers MUST be:
+ *   1. SEQUENTIAL — no random gaps (RBI/CIBIL expects gap analysis)
+ *   2. DETERMINISTIC — same starting point after restart (DB-backed)
+ *   3. CLUSTER-SAFE — unique across multiple JVM instances (pessimistic lock)
+ *   4. HUMAN-READABLE — short, typed at counters, spoken over phone
+ *
+ * Architecture:
+ *   This service delegates to {@link SequenceGeneratorService} which uses DB-backed
+ *   sequences with PESSIMISTIC_WRITE locking and REQUIRES_NEW propagation.
+ *   Each entity type has a named sequence (e.g., "CIF_SEQ", "CASA_SEQ_BR001").
+ *   Sequences start at 1 and increment monotonically — no random offsets.
+ *
+ * Replaces the deprecated static methods in {@link ReferenceGenerator} which used
+ * in-memory AtomicLong seeded from System.nanoTime() — producing random starting
+ * offsets on each JVM restart.
+ *
+ * Formats:
+ *   CIF:     {SOL:3}{SERIAL:7}{CHECK:1} → 00200000017  (11 pure digits, Luhn check)
+ *   CASA:    {SB|CA}-{BRANCH}-{6-digit} → SB-BR001-000001
+ *   Loan:    LN-{BRANCH}-{6-digit}      → LN-BR001-000045
+ *   LoanApp: APP-{BRANCH}-{6-digit}     → APP-BR001-000045
+ *   Collateral: COL-{6-digit}           → COL-000056
+ */
+@Service
+public class CbsReferenceService {
+
+    private static final Logger log = LoggerFactory.getLogger(CbsReferenceService.class);
+
+    private final SequenceGeneratorService sequenceGenerator;
+
+    public CbsReferenceService(SequenceGeneratorService sequenceGenerator) {
+        this.sequenceGenerator = sequenceGenerator;
+    }
+
+    /**
+     * Customer CIF Number — 11 pure digits with Luhn check digit.
+     *
+     * Structure: {SOL_ID:3}{SERIAL:7}{CHECK:1}
+     *   SOL_ID = 3-digit branch identifier (from DB branch ID, mod 1000)
+     *   SERIAL = 7-digit sequential from DB sequence "CIF_SEQ" (starts at 1)
+     *   CHECK  = 1-digit Luhn check digit
+     *
+     * Per Finacle/SBI: CIF is 11-digit pure numeric, sequential within the bank.
+     * The DB-backed sequence ensures CIF 00200000017 is always followed by 00200000028
+     * (next serial + new check digit) — no random gaps, survives JVM restarts.
+     *
+     * @param branchId Database branch ID (used as SOL prefix, mod 1000)
+     * @return 11-digit CIF number with Luhn check digit
+     */
+    public String generateCustomerNumber(Long branchId) {
+        String sol = String.format("%03d", branchId != null ? branchId % 1000 : 0);
+        long serial = sequenceGenerator.nextValue("CIF_SEQ");
+        String serialStr = String.format("%07d", serial % 10000000);
+        String base = sol + serialStr; // 10 digits
+        int checkDigit = ReferenceGenerator.computeLuhn(base);
+        String cif = base + checkDigit; // 11 digits
+        log.debug("CIF generated: {} (branch={}, serial={})", cif, branchId, serial);
+        return cif;
+    }
+
+    /**
+     * CASA Deposit Account Number — {SB|CA}-{BRANCH}-{6-digit}.
+     *
+     * Uses branch-scoped DB sequence "CASA_SEQ_{branchCode}" so each branch
+     * has its own sequential numbering starting from 1.
+     * Per Finacle CUSTACCT: account numbers are branch-scoped.
+     *
+     * @param branchCode Branch code (e.g., "BR001")
+     * @param isSavings  true for SB prefix, false for CA prefix
+     * @return Account number like "SB-BR001-000001"
+     */
+    public String generateDepositAccountNumber(String branchCode, boolean isSavings) {
+        String prefix = isSavings ? "SB" : "CA";
+        String seqName = "CASA_SEQ_" + branchCode;
+        String serial = sequenceGenerator.nextFormattedValue(seqName, 6);
+        String accNo = prefix + "-" + branchCode + "-" + serial;
+        log.debug("CASA account generated: {} (branch={}, seq={})", accNo, branchCode, serial);
+        return accNo;
+    }
+
+    /**
+     * Loan Account Number — LN-{BRANCH}-{6-digit}.
+     *
+     * @param branchCode Branch code (e.g., "BR001")
+     * @return Loan account number like "LN-BR001-000045"
+     */
+    public String generateLoanAccountNumber(String branchCode) {
+        String serial = sequenceGenerator.nextFormattedValue("LOAN_SEQ_" + branchCode, 6);
+        return "LN-" + branchCode + "-" + serial;
+    }
+
+    /**
+     * Loan Application Number — APP-{BRANCH}-{6-digit}.
+     *
+     * @param branchCode Branch code (e.g., "BR001")
+     * @return Application number like "APP-BR001-000045"
+     */
+    public String generateApplicationNumber(String branchCode) {
+        String serial = sequenceGenerator.nextFormattedValue("APP_SEQ_" + branchCode, 6);
+        return "APP-" + branchCode + "-" + serial;
+    }
+
+    /**
+     * Collateral Reference — COL-{6-digit}.
+     *
+     * @return Collateral reference like "COL-000056"
+     */
+    public String generateCollateralRef() {
+        String serial = sequenceGenerator.nextFormattedValue("COL_SEQ", 6);
+        return "COL-" + serial;
+    }
+}

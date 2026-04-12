@@ -1,5 +1,6 @@
 package com.finvanta.integration;
 
+import com.finvanta.config.BranchAwareUserDetails;
 import com.finvanta.domain.entity.*;
 import com.finvanta.domain.enums.*;
 import com.finvanta.repository.*;
@@ -67,12 +68,25 @@ class LoanLifecycleIntegrationTest {
     private static final String TENANT = "TEST_TENANT";
     private static final LocalDate BIZ_DATE = LocalDate.of(2026, 4, 1);
 
+    /** Branch ID assigned during setupReferenceData — used for security context. */
+    private Long testBranchId;
+
     @BeforeEach
     void setUp() {
         TenantContext.setCurrentTenant(TENANT);
-        var auth = new UsernamePasswordAuthenticationToken(
-                "admin", "password", List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
-        SecurityContextHolder.getContext().setAuthentication(auth);
+        // CBS Tier-1: Use BranchAwareUserDetails so SecurityUtil.getCurrentUserBranchId() works.
+        // Initial branchId=0L (placeholder) — updated to real ID after setupReferenceData() creates the branch.
+        // ADMIN role bypasses BranchAccessValidator, but BusinessDateService needs branchId for calendar lookup.
+        setSecurityContext(0L, "HQ");
+    }
+
+    /** Sets up security context with BranchAwareUserDetails for the given branch. */
+    private void setSecurityContext(Long branchId, String branchCode) {
+        BranchAwareUserDetails userDetails = new BranchAwareUserDetails(
+                "admin", "password", List.of(new SimpleGrantedAuthority("ROLE_ADMIN")), branchId, branchCode);
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        userDetails, "password", userDetails.getAuthorities()));
     }
 
     @AfterEach
@@ -90,6 +104,10 @@ class LoanLifecycleIntegrationTest {
         branch.setActive(true);
         branch.setCreatedBy("SYSTEM");
         branch = branchRepository.save(branch);
+        testBranchId = branch.getId();
+
+        // CBS Tier-1: Update security context with real branch ID after branch is persisted.
+        setSecurityContext(testBranchId, "TST01");
 
         // Customer (KYC verified, good CIBIL)
         Customer customer = new Customer();
@@ -106,23 +124,22 @@ class LoanLifecycleIntegrationTest {
         customer.setCreatedBy("SYSTEM");
         customerRepository.save(customer);
 
-        // Business Calendar — day opened
+        // Business Calendar — day opened (branch-scoped per Tier-1)
         BusinessCalendar calendar = new BusinessCalendar();
         calendar.setTenantId(TENANT);
+        calendar.setBranch(branch);
+        calendar.setBranchCode(branch.getBranchCode());
         calendar.setBusinessDate(BIZ_DATE);
         calendar.setDayStatus(DayStatus.DAY_OPEN);
         calendar.setDayOpenedBy("admin");
         calendar.setCreatedBy("SYSTEM");
         calendarRepository.save(calendar);
 
-        // Also create next day for accrual tests.
-        // Per CBS Day Control: only ONE day can be DAY_OPEN at a time per tenant.
-        // The next day starts as NOT_OPENED — the accrual test uses it via
-        // TransactionEngine with systemGenerated(true) which allows EOD_RUNNING,
-        // but the calendar entry must exist for business date validation (Step 2).
-        // We set it to DAY_OPEN only after closing the current day's operations.
+        // Also create next day for accrual tests (branch-scoped).
         BusinessCalendar nextDay = new BusinessCalendar();
         nextDay.setTenantId(TENANT);
+        nextDay.setBranch(branch);
+        nextDay.setBranchCode(branch.getBranchCode());
         nextDay.setBusinessDate(BIZ_DATE.plusDays(1));
         nextDay.setDayStatus(DayStatus.NOT_OPENED);
         nextDay.setCreatedBy("SYSTEM");
@@ -247,17 +264,17 @@ class LoanLifecycleIntegrationTest {
         assertEquals(0, new BigDecimal("1000000.00").compareTo(bankOpsGL.getCreditBalance()));
 
         // --- CBS Day Control: Close day 1, open day 2 for accrual ---
-        // Per Finacle/Temenos lifecycle: NOT_OPENED → DAY_OPEN → EOD_RUNNING → DAY_CLOSED
-        // Only ONE day can be DAY_OPEN at a time per tenant.
+        // Per Finacle DAYCTRL / Tier-1: branch-scoped day transition.
+        // Only ONE day can be DAY_OPEN at a time PER BRANCH.
         BusinessCalendar day1 = calendarRepository
-                .findByTenantIdAndBusinessDate(TENANT, BIZ_DATE)
+                .findByTenantIdAndBranchIdAndBusinessDate(TENANT, testBranchId, BIZ_DATE)
                 .orElseThrow();
         day1.setDayStatus(DayStatus.DAY_CLOSED);
         day1.setEodComplete(true);
         calendarRepository.save(day1);
 
         BusinessCalendar day2 = calendarRepository
-                .findByTenantIdAndBusinessDate(TENANT, BIZ_DATE.plusDays(1))
+                .findByTenantIdAndBranchIdAndBusinessDate(TENANT, testBranchId, BIZ_DATE.plusDays(1))
                 .orElseThrow();
         day2.setDayStatus(DayStatus.DAY_OPEN);
         day2.setDayOpenedBy("admin");

@@ -49,8 +49,53 @@ public interface DepositTransactionRepository extends JpaRepository<DepositTrans
     BigDecimal sumDailyDebits(
             @Param("tenantId") String tenantId, @Param("accountId") Long accountId, @Param("date") LocalDate date);
 
+    /**
+     * Daily transfer debit sum for daily transfer limit check.
+     * Per Finacle ACCTLIMIT: transfer limits are independent of withdrawal limits.
+     * Only counts TRANSFER_DEBIT transactions (not CASH_WITHDRAWAL, CHARGE_DEBIT, etc.).
+     * Reversed transfers are excluded to prevent limit inflation from reversal cycles.
+     */
+    @Query("SELECT COALESCE(SUM(dt.amount), 0) FROM DepositTransaction dt "
+            + "WHERE dt.tenantId = :tenantId AND dt.depositAccount.id = :accountId "
+            + "AND dt.valueDate = :date AND dt.transactionType = 'TRANSFER_DEBIT' AND dt.reversed = false")
+    BigDecimal sumDailyTransferDebits(
+            @Param("tenantId") String tenantId, @Param("accountId") Long accountId, @Param("date") LocalDate date);
+
+    /**
+     * CBS Daily Aggregate: sum of all non-reversed deposit transactions by a user on a date.
+     * Used by TransactionLimitService for cross-module daily aggregate limit validation.
+     * Per Finacle TRAN_AUTH / RBI Internal Controls: daily aggregate limits must span
+     * ALL financial modules (Loan + Deposit) to prevent limit bypass via module splitting.
+     */
+    @Query("SELECT COALESCE(SUM(dt.amount), 0) FROM DepositTransaction dt "
+            + "WHERE dt.tenantId = :tenantId AND dt.createdBy = :username "
+            + "AND dt.valueDate = :valueDate AND dt.reversed = false")
+    BigDecimal sumDailyAmountByUser(
+            @Param("tenantId") String tenantId,
+            @Param("username") String username,
+            @Param("valueDate") LocalDate valueDate);
+
     /** Idempotency check */
     Optional<DepositTransaction> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
+
+    /**
+     * CBS Transaction 360: lookup by voucher number (VCH/...).
+     * Returns List (not Optional) because fund transfers create TWO deposit transactions
+     * (TRANSFER_DEBIT + TRANSFER_CREDIT) sharing the same voucherNumber from the single
+     * TransactionEngine.execute() call. Using Optional would cause NonUniqueResultException.
+     * Per Finacle TRAN_DETAIL: a single voucher can cover multiple subledger entries.
+     * Callers should use getFirst() or stream().findFirst() for single-result contexts.
+     */
+    List<DepositTransaction> findByTenantIdAndVoucherNumber(String tenantId, String voucherNumber);
+
+    /**
+     * CBS Transaction 360: lookup by journal entry ID.
+     * Returns List (not Optional) because fund transfers create TWO deposit transactions
+     * (TRANSFER_DEBIT + TRANSFER_CREDIT) sharing the same journalEntryId.
+     * Using Optional would cause NonUniqueResultException at runtime.
+     * Per Finacle TRAN_DETAIL: a single journal entry can have multiple subledger entries.
+     */
+    List<DepositTransaction> findByTenantIdAndJournalEntryId(String tenantId, Long journalEntryId);
 
     /** All deposit transactions for a business date (for voucher register / daily report) */
     @Query("SELECT dt FROM DepositTransaction dt WHERE dt.tenantId = :tenantId "
