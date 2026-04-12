@@ -5,6 +5,11 @@ import com.finvanta.domain.entity.ClearingCycle;
 import com.finvanta.domain.entity.ClearingTransaction;
 import com.finvanta.domain.enums.PaymentRail;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+
 import java.math.BigDecimal;
 
 import org.springframework.http.ResponseEntity;
@@ -42,7 +47,7 @@ public class ClearingController {
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<ClearingTxnResponse>>
             initiateOutward(
-                    @RequestBody OutwardRequest req) {
+                    @Valid @RequestBody OutwardRequest req) {
         ClearingTransaction ct =
                 clearingEngine.initiateOutward(
                         req.extRef(),
@@ -78,7 +83,7 @@ public class ClearingController {
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<ClearingTxnResponse>>
             processInward(
-                    @RequestBody InwardRequest req) {
+                    @Valid @RequestBody InwardRequest req) {
         ClearingTransaction ct =
                 clearingEngine.processInward(
                         req.extRef(), req.utr(),
@@ -181,32 +186,40 @@ public class ClearingController {
     // === Request DTOs (records — immutable, no setters) ===
 
     public record OutwardRequest(
-            String extRef, String rail,
-            BigDecimal amount,
-            String customerAccount,
-            String counterpartyIfsc,
-            String counterpartyAccount,
-            String counterpartyName,
-            String narration, Long branchId) {}
+            @NotBlank String extRef,
+            @NotBlank String rail,
+            @NotNull @Positive BigDecimal amount,
+            @NotBlank String customerAccount,
+            @NotBlank String counterpartyIfsc,
+            @NotBlank String counterpartyAccount,
+            @NotBlank String counterpartyName,
+            String narration,
+            @NotNull Long branchId) {}
 
     public record InwardRequest(
-            String extRef, String utr, String rail,
-            BigDecimal amount,
-            String beneficiaryAccount,
+            @NotBlank String extRef,
+            String utr,
+            @NotBlank String rail,
+            @NotNull @Positive BigDecimal amount,
+            @NotBlank String beneficiaryAccount,
             String remitterIfsc,
             String remitterAccount,
             String remitterName,
-            String narration, Long branchId) {}
+            String narration,
+            @NotNull Long branchId) {}
 
     public record ApproveRequest(
-            String extRef, Long workflowId,
+            @NotBlank String extRef,
+            @NotNull Long workflowId,
             String remarks) {}
 
     public record SettlementRequest(
-            String extRef, String rbiRef) {}
+            @NotBlank String extRef,
+            @NotBlank String rbiRef) {}
 
     public record ReversalRequest(
-            String extRef, String reason) {}
+            @NotBlank String extRef,
+            @NotBlank String reason) {}
 
     // === Response DTOs (no entity exposure) ===
 

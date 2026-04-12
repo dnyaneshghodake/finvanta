@@ -131,7 +131,7 @@ public class LoanAccountController {
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<LoanTxnResponse>>
             reverseTransaction(@PathVariable String transactionRef,
-                    @RequestBody ReversalRequest req) {
+                    @Valid @RequestBody ReversalRequest req) {
         LocalDate bd = businessDateService.getCurrentBusinessDate();
         LoanTransaction txn = loanService.reverseTransaction(
                 transactionRef, req.reason(), bd);
@@ -146,7 +146,7 @@ public class LoanAccountController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<LoanResponse>>
             resetFloatingRate(@PathVariable String accountNumber,
-                    @RequestBody RateResetRequest req) {
+                    @Valid @RequestBody RateResetRequest req) {
         LocalDate bd = businessDateService.getCurrentBusinessDate();
         LoanAccount account = loanService.resetFloatingRate(
                 accountNumber, req.newBenchmarkRate(), bd);
@@ -188,16 +188,23 @@ public class LoanAccountController {
 
     // === Request DTOs ===
 
-    public record TrancheRequest(BigDecimal amount, String narration) {}
+    public record TrancheRequest(
+            @NotNull @Positive BigDecimal amount,
+            String narration) {}
 
     public record RepaymentRequest(
-            BigDecimal amount, String idempotencyKey) {}
+            @NotNull @Positive BigDecimal amount,
+            String idempotencyKey) {}
 
-    public record FeeRequest(BigDecimal amount, String feeType) {}
+    public record FeeRequest(
+            @NotNull @Positive BigDecimal amount,
+            @NotBlank String feeType) {}
 
-    public record ReversalRequest(String reason) {}
+    public record ReversalRequest(
+            @NotBlank String reason) {}
 
-    public record RateResetRequest(BigDecimal newBenchmarkRate) {}
+    public record RateResetRequest(
+            @NotNull @Positive BigDecimal newBenchmarkRate) {}
 
     // === Response DTOs ===
 

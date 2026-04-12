@@ -7,6 +7,11 @@ import com.finvanta.domain.enums.ChargeEventType;
 import com.finvanta.repository.ChargeTransactionRepository;
 import com.finvanta.util.TenantContext;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -44,7 +49,7 @@ public class ChargeController {
     @PostMapping("/levy")
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<ChargeResponse>>
-            levyCharge(@RequestBody LevyRequest req) {
+            levyCharge(@Valid @RequestBody LevyRequest req) {
         ChargeResult result = chargeEngine.levyCharge(
                 ChargeEventType.valueOf(req.eventType()),
                 req.accountNumber(),
@@ -66,7 +71,7 @@ public class ChargeController {
     @PostMapping("/waive")
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<WaiverResponse>>
-            waiveCharge(@RequestBody WaiverRequest req) {
+            waiveCharge(@Valid @RequestBody WaiverRequest req) {
         ChargeTransaction ct = chargeEngine.waiveCharge(
                 req.chargeTransactionId(), req.reason());
         return ResponseEntity.ok(ApiResponse.success(
@@ -111,18 +116,18 @@ public class ChargeController {
     // === Request DTOs ===
 
     public record LevyRequest(
-            String eventType,
-            String accountNumber,
-            String customerGlCode,
-            BigDecimal transactionAmount,
+            @NotBlank String eventType,
+            @NotBlank String accountNumber,
+            @NotBlank String customerGlCode,
+            @NotNull @Positive BigDecimal transactionAmount,
             String productCode,
-            String sourceModule,
-            String sourceRef,
-            String branchCode) {}
+            @NotBlank String sourceModule,
+            @NotBlank String sourceRef,
+            @NotBlank String branchCode) {}
 
     public record WaiverRequest(
-            Long chargeTransactionId,
-            String reason) {}
+            @NotNull Long chargeTransactionId,
+            @NotBlank String reason) {}
 
     // === Response DTOs ===
 
