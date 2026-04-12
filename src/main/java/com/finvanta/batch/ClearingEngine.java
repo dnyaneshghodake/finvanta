@@ -26,6 +26,8 @@ import com.finvanta.service.DepositAccountService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
+import com.finvanta.charge.ChargeEngine;
+import com.finvanta.domain.enums.ChargeEventType;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
@@ -79,6 +81,7 @@ public class ClearingEngine {
     private final BusinessDateService bizDateSvc;
     private final AuditService auditSvc;
     private final ApprovalWorkflowService workflowSvc;
+    private final ChargeEngine chargeEngine;
 
     public ClearingEngine(
             ClearingTransactionRepository clrRepo,
@@ -91,7 +94,8 @@ public class ClearingEngine {
             TransactionEngine txnEngine,
             BusinessDateService bizDateSvc,
             AuditService auditSvc,
-            ApprovalWorkflowService workflowSvc) {
+            ApprovalWorkflowService workflowSvc,
+            ChargeEngine chargeEngine) {
         this.clrRepo = clrRepo;
         this.cycleRepo = cycleRepo;
         this.depAcctRepo = depAcctRepo;
@@ -103,6 +107,7 @@ public class ClearingEngine {
         this.bizDateSvc = bizDateSvc;
         this.auditSvc = auditSvc;
         this.workflowSvc = workflowSvc;
+        this.chargeEngine = chargeEngine;
     }
 
     /** OUTWARD: Validate, Debit Customer, Post Suspense */
@@ -227,6 +232,20 @@ public class ClearingEngine {
         transitionStatus(saved, ClearingStatus.SUSPENSE_POSTED);
         if (rail.requiresCycleNetting())
             linkToCycle(saved, tid, rail, bd);
+        // CBS: Levy outward clearing charge per Finacle CHG_ENGINE.
+        // Maps PaymentRail to ChargeEventType for charge definition lookup.
+        // Charge is a separate GL posting (DR Customer / CR Fee Income + GST).
+        // If no ChargeDefinition exists for this rail, no charge is levied.
+        // Per RBI Fair Practices: UPI is typically zero per NPCI directive.
+        ChargeEventType chargeEvent = switch (rail) {
+            case NEFT -> ChargeEventType.NEFT_OUTWARD;
+            case RTGS -> ChargeEventType.RTGS_OUTWARD;
+            case IMPS -> ChargeEventType.IMPS_OUTWARD;
+            case UPI -> ChargeEventType.UPI_OUTWARD;
+        };
+        chargeEngine.levyCharge(chargeEvent, custAcct,
+                GLConstants.SB_DEPOSITS, amt, null,
+                "CLEARING", extRef, br.getBranchCode());
         computeAuditHash(saved);
         clrRepo.save(saved);
         auditSvc.logEvent("ClearingTransaction",
