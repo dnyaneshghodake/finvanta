@@ -169,6 +169,20 @@ public class AccountingService {
             }
         }
 
+        // CBS CRITICAL: Branch is mandatory on every journal entry per Finacle TRAN_DETAIL.
+        // JournalEntry.branch has @JoinColumn(nullable=false) — saving without a branch
+        // would cause an opaque DataIntegrityViolationException (SQL constraint violation).
+        // Fail-fast with a clear business error instead.
+        // This can happen when: (1) branchCode param is null/invalid AND (2) no user
+        // security context exists (e.g., system-generated EOD with SYSTEM user).
+        if (entry.getBranch() == null) {
+            throw new BusinessException(
+                    "JOURNAL_BRANCH_REQUIRED",
+                    "Cannot post journal entry without branch attribution. "
+                            + "Module=" + sourceModule + ", sourceRef=" + sourceRef
+                            + ". Ensure branchCode is passed or user has a branch assigned.");
+        }
+
         JournalEntry savedEntry = journalEntryRepository.save(entry);
         updateGLBalances(tenantId, lines, savedEntry.getBranch());
         ledgerService.postToLedger(savedEntry);
