@@ -1,5 +1,6 @@
 package com.finvanta.config;
 
+import com.finvanta.repository.BranchRepository;
 import com.finvanta.util.TenantContext;
 
 import io.jsonwebtoken.Claims;
@@ -51,10 +52,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtTokenService jwtTokenService;
+    private final BranchRepository branchRepository;
 
     public JwtAuthenticationFilter(
-            JwtTokenService jwtTokenService) {
+            JwtTokenService jwtTokenService,
+            BranchRepository branchRepository) {
         this.jwtTokenService = jwtTokenService;
+        this.branchRepository = branchRepository;
     }
 
     @Override
@@ -120,9 +124,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 new SimpleGrantedAuthority(
                         "ROLE_" + role));
 
-        // Use BranchAwareUserDetails as principal so
-        // SecurityUtil.getCurrentUserBranchId() works
-        // for branch isolation in service layer
+        // CBS CRITICAL: Resolve branchId from branchCode.
+        // BranchAccessValidator uses branchId (Long) for
+        // branch isolation. Without it, MAKER/CHECKER JWT
+        // users get BRANCH_NOT_ASSIGNED on every financial
+        // operation. ADMIN users bypass branch checks so
+        // null branchId is safe for them.
+        Long branchId = null;
+        if (branchCode != null) {
+            branchId = branchRepository
+                    .findByTenantIdAndBranchCode(
+                            tenantId, branchCode)
+                    .map(b -> b.getId())
+                    .orElse(null);
+        }
+
         BranchAwareUserDetails principal =
                 new BranchAwareUserDetails(
                         username,
@@ -130,7 +146,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         true, // accountNonLocked
                         false, // passwordExpired=false
                         authorities,
-                        null, // branchId resolved by code
+                        branchId,
                         branchCode,
                         false); // mfaRequired=false
 
