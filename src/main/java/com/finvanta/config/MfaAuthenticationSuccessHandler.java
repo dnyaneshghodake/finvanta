@@ -6,6 +6,8 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
@@ -26,6 +28,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class MfaAuthenticationSuccessHandler extends SavedRequestAwareAuthenticationSuccessHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(MfaAuthenticationSuccessHandler.class);
 
     /** Session attribute key for MFA verification state */
     public static final String MFA_VERIFIED_ATTR = "MFA_VERIFIED";
@@ -74,7 +78,17 @@ public class MfaAuthenticationSuccessHandler extends SavedRequestAwareAuthentica
             }
         }
 
-        // No MFA required, password not expired: proceed to dashboard
+        // CBS Defense-in-Depth: If principal is NOT BranchAwareUserDetails,
+        // we cannot determine MFA or password expiry state. Per RBI IT Governance
+        // §8.2: fail-safe — assume password is NOT expired and MFA is NOT required,
+        // but log a warning. This path should never execute in normal operation
+        // because CustomUserDetailsService always returns BranchAwareUserDetails.
+        // If an alternative auth mechanism is added (API token, OAuth2), it must
+        // either produce BranchAwareUserDetails or implement its own success handler.
+        log.warn("CBS SECURITY: Authentication principal is not BranchAwareUserDetails: {}. "
+                + "MFA and password expiry checks skipped. Principal type: {}",
+                authentication.getName(),
+                authentication.getPrincipal().getClass().getSimpleName());
         request.getSession().setAttribute(MFA_VERIFIED_ATTR, true);
         request.getSession().setAttribute(PASSWORD_EXPIRED_ATTR, false);
         super.onAuthenticationSuccess(request, response, authentication);
