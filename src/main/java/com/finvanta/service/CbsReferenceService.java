@@ -39,6 +39,26 @@ import org.springframework.stereotype.Service;
  *   Loan:    LN-{BRANCH}-{6-digit}      → LN-BR001-000045
  *   LoanApp: APP-{BRANCH}-{6-digit}     → APP-BR001-000045
  *   Collateral: COL-{6-digit}           → COL-000056
+ *
+ * KNOWN LIMITATION — Sequence Overflow at 1M:
+ *   The {6-digit} format uses String.format("%06d", val) which is a MINIMUM width,
+ *   not a maximum. After 999,999 allocations per sequence, the serial overflows to
+ *   7+ digits (e.g., SB-BR001-1000000). This does NOT cause data loss — all reference
+ *   columns are VARCHAR(40) with ample headroom. However, the documented 6-digit
+ *   format contract is broken, which may affect:
+ *     - External system parsing expecting fixed-width fields (NPCI, CIBIL, CRILC)
+ *     - Regulatory reports with fixed-width column formats
+ *     - Passbook printing with fixed character widths
+ *
+ *   Mitigation for 1M+ daily transaction banks:
+ *     1. Replace SequenceGeneratorService with native DB sequences:
+ *        CREATE SEQUENCE finvanta_casa_seq START WITH 1 INCREMENT BY 1 CACHE 1000;
+ *     2. Use modular arithmetic with collision detection:
+ *        serial = seq.nextValue() % 1000000 (wraps at 999999, DB unique constraint catches collisions)
+ *     3. Increase format width to 8 digits (%08d) — requires column width review on external interfaces
+ *
+ *   Per Finacle SEQ_MASTER: production Finacle uses 10-digit account numbers with
+ *   native Oracle SEQUENCE objects that never overflow within operational lifetime.
  */
 @Service
 public class CbsReferenceService {
