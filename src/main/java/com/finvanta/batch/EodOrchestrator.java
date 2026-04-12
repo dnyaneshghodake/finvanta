@@ -706,12 +706,23 @@ public class EodOrchestrator {
                     "No operational branches found for tenant " + tenantId);
         }
 
-        // Validate ALL branches have their day open for this date
+        // CBS CRITICAL: Validate ALL branches have a calendar entry AND are DAY_OPEN.
+        // Per Finacle DAYCTRL: a missing calendar entry is NOT acceptable — it means
+        // the branch was never set up for this business date. EOD would silently skip
+        // that branch's accounts (no interest accrual, no NPA classification, no
+        // balance snapshots) — causing silent data corruption.
         for (var branch : operationalBranches) {
             var branchCal = calendarRepository
                     .findByTenantIdAndBranchIdAndBusinessDate(tenantId, branch.getId(), businessDate)
                     .orElse(null);
-            if (branchCal != null && !branchCal.getDayStatus().canStartEod() && !branchCal.isEodComplete()) {
+            if (branchCal == null) {
+                throw new BusinessException(
+                        "CALENDAR_ENTRY_MISSING",
+                        "Cannot start EOD for " + businessDate + ". Branch " + branch.getBranchCode()
+                                + " has NO calendar entry for this date. "
+                                + "Generate the calendar via Calendar > Generate before running EOD.");
+            }
+            if (!branchCal.getDayStatus().canStartEod() && !branchCal.isEodComplete()) {
                 throw new BusinessException(
                         "EOD_NOT_ALLOWED",
                         "Cannot start EOD for " + businessDate + ". Branch " + branch.getBranchCode()
