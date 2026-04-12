@@ -230,8 +230,14 @@ public class SecurityConfig {
                         .maximumSessions(1)
                         .expiredUrl("/login?expired"))
                 .csrf(csrf -> {
-                    // CBS SECURITY: Only disable CSRF for H2 console in dev profile.
-                    // In production, CSRF is enforced on ALL endpoints without exception.
+                    // CBS SECURITY: Disable CSRF for REST API endpoints.
+                    // Per Finacle API / Temenos IRIS: REST APIs are consumed by
+                    // network adapters (NPCI, RBI) and programmatic clients that
+                    // cannot include CSRF tokens. Authentication is via session
+                    // (internal) or API key (future). CSRF remains enforced on
+                    // all Thymeleaf UI endpoints (/loan/*, /deposit/*, /batch/*).
+                    csrf.ignoringRequestMatchers("/api/v1/**");
+                    // H2 console CSRF bypass only in dev profile.
                     if (isDevProfile()) {
                         csrf.ignoringRequestMatchers("/h2-console/**");
                     }
