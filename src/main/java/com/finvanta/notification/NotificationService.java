@@ -1,6 +1,5 @@
 package com.finvanta.notification;
 
-import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.domain.entity.NotificationLog;
 import com.finvanta.domain.entity.NotificationTemplate;
@@ -22,7 +21,6 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -53,17 +51,17 @@ public class NotificationService {
     private final NotificationLogRepository logRepo;
     private final NotificationTemplateRepository templateRepo;
     private final CustomerRepository customerRepo;
-    private final AuditService auditSvc;
+    private final NotificationPersistenceManager persistenceMgr;
 
     public NotificationService(
             NotificationLogRepository logRepo,
             NotificationTemplateRepository templateRepo,
             CustomerRepository customerRepo,
-            AuditService auditSvc) {
+            NotificationPersistenceManager persistenceMgr) {
         this.logRepo = logRepo;
         this.templateRepo = templateRepo;
         this.customerRepo = customerRepo;
-        this.auditSvc = auditSvc;
+        this.persistenceMgr = persistenceMgr;
     }
 
     /**
