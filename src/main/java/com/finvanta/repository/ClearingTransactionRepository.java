@@ -80,7 +80,7 @@ public interface ClearingTransactionRepository extends JpaRepository<ClearingTra
 
     // === Aggregation Queries ===
 
-    /** Sum amount by rail, direction, and status for a date (reconciliation) */
+    /** Sum amount by rail, direction, and status for a specific date (date-scoped reporting) */
     @Query("SELECT COALESCE(SUM(ct.amount), 0) FROM ClearingTransaction ct "
             + "WHERE ct.tenantId = :tenantId AND ct.paymentRail = :rail "
             + "AND ct.direction = :direction AND ct.status = :status "
@@ -91,6 +91,25 @@ public interface ClearingTransactionRepository extends JpaRepository<ClearingTra
             @Param("direction") ClearingDirection direction,
             @Param("status") ClearingStatus status,
             @Param("valueDate") LocalDate valueDate);
+
+    /**
+     * Sum amount by rail, direction, and status across ALL dates (GL reconciliation).
+     *
+     * Per Finacle CLG_RECON: this query matches the scope of GLMaster running totals
+     * which are cumulative across all dates. The date-filtered variant above would
+     * miss active suspense from prior business dates (e.g., NEFT submitted at 5:30 PM
+     * yesterday, settled this morning) causing false reconciliation mismatches.
+     *
+     * Consistent with countActiveSuspenseByRail which also has no date filter.
+     */
+    @Query("SELECT COALESCE(SUM(ct.amount), 0) FROM ClearingTransaction ct "
+            + "WHERE ct.tenantId = :tenantId AND ct.paymentRail = :rail "
+            + "AND ct.direction = :direction AND ct.status = :status")
+    BigDecimal sumActiveSuspenseByRailAndDirection(
+            @Param("tenantId") String tenantId,
+            @Param("rail") PaymentRail rail,
+            @Param("direction") ClearingDirection direction,
+            @Param("status") ClearingStatus status);
 
     /** Count transactions by status for a date (dashboard/monitoring) */
     @Query("SELECT COUNT(ct) FROM ClearingTransaction ct WHERE ct.tenantId = :tenantId "

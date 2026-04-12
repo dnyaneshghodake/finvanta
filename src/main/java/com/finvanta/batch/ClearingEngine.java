@@ -762,6 +762,14 @@ public class ClearingEngine {
      * sum of active clearing transactions for that rail+direction.
      * Any mismatch indicates a data integrity issue.
      *
+     * CBS CRITICAL: Uses date-UNFILTERED aggregate (sumActiveSuspenseByRailAndDirection)
+     * because GLMaster running totals are cumulative across all dates. The date-filtered
+     * variant (sumAmountByRailDirectionStatus) would miss active suspense from prior
+     * business dates — e.g., NEFT submitted at 5:30 PM yesterday, settled this morning —
+     * causing false reconciliation mismatches. This is consistent with
+     * validateAllSuspenseBalances which also uses a date-unfiltered count.
+     *
+     * @param bizDate Business date (retained for audit logging, not used in query)
      * @return List of discrepancy descriptions (empty = balanced)
      */
     @Transactional(readOnly = true)
@@ -783,9 +791,9 @@ public class ClearingEngine {
                 for (ClearingStatus activeStatus
                         : SUSPENSE_ACTIVE_STATUSES) {
                     clrSum = clrSum.add(
-                            clrRepo.sumAmountByRailDirectionStatus(
+                            clrRepo.sumActiveSuspenseByRailAndDirection(
                                     tid, rail, dir,
-                                    activeStatus, bizDate));
+                                    activeStatus));
                 }
                 // GL balance (credit - debit for liability)
                 var gl = glRepo
