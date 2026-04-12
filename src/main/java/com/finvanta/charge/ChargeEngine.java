@@ -32,10 +32,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * CBS Charge/Fee Engine per Finacle CHG_ENGINE / Temenos FT.COMMISSION.
+ * CBS Service Charge/Fee Engine per Finacle CHG_ENGINE / Temenos FT.COMMISSION.
  *
- * Cross-cutting module for ALL CBS modules (Clearing, CASA, Loan).
+ * Cross-cutting charge module for ALL CBS modules (Clearing, CASA, Loan).
  * Per RBI Fair Practices Code 2023 / GST Act 2017.
+ *
+ * Distinct from {@link com.finvanta.batch.ChargeEngine} which is loan-specific
+ * (ChargeConfig-based, slab calculation). This engine uses ChargeDefinition
+ * with ChargeEventType enum for event-driven charge resolution across all modules.
  *
  * GL Flow:
  *   DR Customer Account GL (2010/2020) — totalDebit
@@ -43,7 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   CR CGST Payable (2200) — cgstAmount
  *   CR SGST Payable (2201) — sgstAmount
  */
-@Service
+@Service("serviceChargeEngine")
 public class ChargeEngine {
 
     private static final Logger log =
