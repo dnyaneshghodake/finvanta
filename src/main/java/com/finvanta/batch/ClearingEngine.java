@@ -8,16 +8,19 @@ import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.ClearingCycle;
 import com.finvanta.domain.entity.ClearingTransaction;
 import com.finvanta.domain.entity.DepositAccount;
+import com.finvanta.domain.entity.SettlementBatch;
 import com.finvanta.domain.enums.ClearingCycleStatus;
 import com.finvanta.domain.enums.ClearingDirection;
 import com.finvanta.domain.enums.ClearingStatus;
 import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.domain.enums.PaymentRail;
+import com.finvanta.domain.enums.SettlementBatchStatus;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.ClearingCycleRepository;
 import com.finvanta.repository.ClearingTransactionRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.GLMasterRepository;
+import com.finvanta.repository.SettlementBatchRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
 import com.finvanta.transaction.TransactionEngine;
@@ -26,8 +29,12 @@ import com.finvanta.transaction.TransactionResult;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
+import com.finvanta.workflow.ApprovalWorkflowService;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -51,15 +58,27 @@ public class ClearingEngine {
     private static final BigDecimal RTGS_MIN =
             new BigDecimal("200000.00");
 
+    /**
+     * Per RBI Payment Systems / Finacle CLG_LIMIT:
+     * Outward clearing above this threshold requires maker-checker
+     * dual authorization before suspense posting.
+     * RTGS minimum is 2L, but maker-checker threshold is 5L
+     * (configurable — in production loaded from limit_config table).
+     */
+    private static final BigDecimal MAKER_CHECKER_THRESHOLD =
+            new BigDecimal("500000.00");
+
     private final ClearingTransactionRepository clrRepo;
     private final ClearingCycleRepository cycleRepo;
     private final DepositAccountRepository depAcctRepo;
     private final DepositAccountService depAcctSvc;
     private final BranchRepository branchRepo;
     private final GLMasterRepository glRepo;
+    private final SettlementBatchRepository batchRepo;
     private final TransactionEngine txnEngine;
     private final BusinessDateService bizDateSvc;
     private final AuditService auditSvc;
+    private final ApprovalWorkflowService workflowSvc;
 
     public ClearingEngine(
             ClearingTransactionRepository clrRepo,
@@ -68,18 +87,22 @@ public class ClearingEngine {
             DepositAccountService depAcctSvc,
             BranchRepository branchRepo,
             GLMasterRepository glRepo,
+            SettlementBatchRepository batchRepo,
             TransactionEngine txnEngine,
             BusinessDateService bizDateSvc,
-            AuditService auditSvc) {
+            AuditService auditSvc,
+            ApprovalWorkflowService workflowSvc) {
         this.clrRepo = clrRepo;
         this.cycleRepo = cycleRepo;
         this.depAcctRepo = depAcctRepo;
         this.depAcctSvc = depAcctSvc;
         this.branchRepo = branchRepo;
         this.glRepo = glRepo;
+        this.batchRepo = batchRepo;
         this.txnEngine = txnEngine;
         this.bizDateSvc = bizDateSvc;
         this.auditSvc = auditSvc;
+        this.workflowSvc = workflowSvc;
     }
 
     /** OUTWARD: Validate, Debit Customer, Post Suspense */
@@ -128,6 +151,36 @@ public class ClearingEngine {
         ct.setMakerId(user);
         ct.setCreatedBy(user);
         ClearingTransaction saved = clrRepo.save(ct);
+        computeAuditHash(saved);
+
+        // CBS Maker-Checker: High-value outward payments require dual authorization.
+        // Per RBI Payment Systems / Finacle CLG_LIMIT: transactions above the
+        // threshold are parked in INITIATED state with a pending approval workflow.
+        // The checker calls approveOutward() which resumes processing.
+        if (amt.compareTo(MAKER_CHECKER_THRESHOLD) >= 0) {
+            String payload = rail.getCode() + "|" + amt
+                    + "|" + custAcct + "|" + cpIfsc
+                    + "|" + cpAcct + "|" + cpName;
+            workflowSvc.initiateApproval(
+                    "ClearingTransaction", saved.getId(),
+                    "CLR_OUTWARD_HIGH_VALUE",
+                    "High-value " + rail.getCode()
+                            + " outward INR " + amt
+                            + " to " + cpName,
+                    payload);
+            auditSvc.logEvent("ClearingTransaction",
+                    saved.getId(),
+                    "MAKER_CHECKER_PENDING",
+                    null, extRef, "CLEARING",
+                    rail.getCode() + " INR " + amt
+                            + " — pending checker approval");
+            log.info("High-value clearing parked: ref={}, "
+                    + "amt={}, threshold={}",
+                    extRef, amt, MAKER_CHECKER_THRESHOLD);
+            clrRepo.save(saved);
+            return saved;
+        }
+
         // CBS State Machine: INITIATED → VALIDATED
         transitionStatus(saved, ClearingStatus.VALIDATED);
         // CBS: Debit customer account for outward clearing.
@@ -172,12 +225,102 @@ public class ClearingEngine {
         transitionStatus(saved, ClearingStatus.SUSPENSE_POSTED);
         if (rail.requiresCycleNetting())
             linkToCycle(saved, tid, rail, bd);
+        computeAuditHash(saved);
         clrRepo.save(saved);
         auditSvc.logEvent("ClearingTransaction",
                 saved.getId(), "OUTWARD_INITIATED",
                 null, extRef, "CLEARING",
                 rail.getCode() + " outward INR " + amt);
         return saved;
+    }
+
+    /**
+     * Checker approves a high-value outward clearing transaction.
+     *
+     * Per RBI Payment Systems / Finacle CLG_LIMIT:
+     * After maker-checker approval, this method resumes the outward flow:
+     * INITIATED → VALIDATED → debit customer → post suspense → SUSPENSE_POSTED.
+     *
+     * The checker's identity is recorded on the ClearingTransaction for audit.
+     * Self-approval is blocked by ApprovalWorkflowService.approve().
+     */
+    @Transactional
+    public ClearingTransaction approveOutward(
+            String extRef, Long workflowId,
+            String checkerRemarks) {
+        String tid = TenantContext.getCurrentTenant();
+        String checker = SecurityUtil.getCurrentUsername();
+        LocalDate bd = bizDateSvc.getCurrentBusinessDate();
+
+        // CBS: Approve the workflow first — blocks self-approval
+        workflowSvc.approve(workflowId, checkerRemarks);
+
+        ClearingTransaction ct = clrRepo
+                .findByTenantIdAndExternalRefNo(tid, extRef)
+                .orElseThrow(() -> new BusinessException(
+                        "CLEARING_NOT_FOUND", extRef));
+        if (ct.getStatus() != ClearingStatus.INITIATED)
+            throw new BusinessException("INVALID_STATUS",
+                    "Expected INITIATED for approval, got: "
+                            + ct.getStatus());
+        ct.setCheckerId(checker);
+        ct.setCheckerApprovedAt(LocalDateTime.now());
+
+        // Resume outward flow: INITIATED → VALIDATED → debit → suspense
+        transitionStatus(ct, ClearingStatus.VALIDATED);
+        depAcctSvc.withdraw(
+                ct.getCustomerAccountRef(),
+                ct.getAmount(), bd,
+                ct.getPaymentRail().getCode()
+                        + " outward: "
+                        + ct.getCounterpartyName(),
+                "CLR-OUT-" + extRef, "SYSTEM");
+        String sgl = ClearingGLResolver.getSuspenseGL(
+                ct.getPaymentRail(),
+                ClearingDirection.OUTWARD);
+        TransactionResult sr = txnEngine.execute(
+                TransactionRequest.builder()
+                        .sourceModule("CLEARING")
+                        .transactionType(
+                                "CLR_OUTWARD_SUSPENSE")
+                        .accountReference(
+                                ct.getCustomerAccountRef())
+                        .amount(ct.getAmount())
+                        .valueDate(bd)
+                        .branchCode(ct.getBranchCode())
+                        .narration(ct.getPaymentRail()
+                                .getCode()
+                                + " outward suspense"
+                                + " (checker approved)")
+                        .journalLines(List.of(
+                                new JournalLineRequest(
+                                        GLConstants
+                                                .BANK_OPERATIONS,
+                                        DebitCredit.DEBIT,
+                                        ct.getAmount(),
+                                        "Outward"),
+                                new JournalLineRequest(sgl,
+                                        DebitCredit.CREDIT,
+                                        ct.getAmount(),
+                                        "Suspense")))
+                        .systemGenerated(true)
+                        .initiatedBy(checker).build());
+        ct.setSuspenseJournalId(sr.getJournalEntryId());
+        transitionStatus(ct, ClearingStatus.SUSPENSE_POSTED);
+        if (ct.getPaymentRail().requiresCycleNetting())
+            linkToCycle(ct, tid,
+                    ct.getPaymentRail(), bd);
+        computeAuditHash(ct);
+        clrRepo.save(ct);
+        auditSvc.logEvent("ClearingTransaction", ct.getId(),
+                "OUTWARD_APPROVED",
+                "INITIATED", extRef, "CLEARING",
+                ct.getPaymentRail().getCode()
+                        + " outward INR " + ct.getAmount()
+                        + " approved by " + checker);
+        log.info("High-value clearing approved: ref={}, "
+                + "checker={}", extRef, checker);
+        return ct;
     }
 
     /** INWARD: Suspense → Credit Customer → Complete */
@@ -302,6 +445,7 @@ public class ClearingEngine {
         saved.setCompletedAt(LocalDateTime.now());
         if (rail.requiresCycleNetting())
             linkToCycle(saved, tid, rail, bd);
+        computeAuditHash(saved);
         clrRepo.save(saved);
         auditSvc.logEvent("ClearingTransaction",
                 saved.getId(),
@@ -371,11 +515,34 @@ public class ClearingEngine {
         }
         transitionStatus(ct, ClearingStatus.COMPLETED);
         ct.setCompletedAt(LocalDateTime.now());
+
+        // CBS: Create SettlementBatch — RBI legal proof of inter-bank settlement.
+        // Per Finacle SETTLEMENT_MASTER: every confirmed settlement gets a batch
+        // record linking the RBI reference to the clearing transaction(s).
+        // For RTGS/IMPS/UPI: one batch per transaction (gross settlement).
+        // For NEFT: one batch per clearing cycle (net settlement) — future.
+        SettlementBatch batch = new SettlementBatch();
+        batch.setTenantId(tid);
+        batch.setRailType(ct.getPaymentRail());
+        batch.setSettlementDate(bd);
+        batch.setTotalNetAmount(ct.getAmount());
+        batch.setTransactionCount(1);
+        batch.setRbiSettlementRef(rbiRef);
+        batch.setStatus(SettlementBatchStatus.CONFIRMED);
+        batch.setConfirmedAt(LocalDateTime.now());
+        batch.setSettlementJournalId(
+                sr.getJournalEntryId());
+        batch.setCreatedBy("SYSTEM");
+        SettlementBatch savedBatch = batchRepo.save(batch);
+        ct.setSettlementBatch(savedBatch);
+
+        computeAuditHash(ct);
         clrRepo.save(ct);
         auditSvc.logEvent("ClearingTransaction", ct.getId(),
                 "SETTLEMENT_CONFIRMED", null, rbiRef,
                 "CLEARING", ct.getPaymentRail().getCode()
-                        + " settled: " + extRef);
+                        + " settled: " + extRef
+                        + " | batchId=" + savedBatch.getId());
         return ct;
     }
 
