@@ -2,7 +2,6 @@ package com.finvanta.repository;
 
 import com.finvanta.domain.entity.NotificationLog;
 import com.finvanta.domain.enums.NotificationChannel;
-import com.finvanta.domain.enums.NotificationEventType;
 import com.finvanta.domain.enums.NotificationStatus;
 
 import java.time.LocalDateTime;

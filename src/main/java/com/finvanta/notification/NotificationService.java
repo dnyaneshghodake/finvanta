@@ -140,8 +140,8 @@ public class NotificationService {
             String messageOverride) {
         try {
             String tid = TenantContext.getCurrentTenant();
-            persistNotificationLog(tid, eventType, channel,
-                    customerId, null, null, null,
+            persistenceMgr.persistNotificationLog(tid, eventType,
+                    channel, customerId, null, null, null,
                     null, null, recipient,
                     messageOverride, sourceModule, null);
         } catch (Exception e) {
@@ -251,13 +251,15 @@ public class NotificationService {
                     eventType, channel, productCode);
         }
 
-        persistNotificationLog(tid, eventType, channel,
-                customer.getId(), customer.getFullName(),
-                accountNumber, transactionRef, amount,
-                balanceAfter, recipient, messageContent,
+        persistenceMgr.persistNotificationLog(tid, eventType,
+                channel, customer.getId(),
+                customer.getFullName(), accountNumber,
+                transactionRef, amount, balanceAfter,
+                recipient, messageContent,
                 sourceModule, template);
     }
 
+    /** Resolve best matching notification template. */
     NotificationTemplate resolveTemplate(
             String tenantId,
             NotificationEventType eventType,
@@ -270,6 +272,7 @@ public class NotificationService {
         return templates.isEmpty() ? null : templates.get(0);
     }
 
+    /** Render message by replacing {placeholders} with actual values. */
     String renderMessage(String templateBody,
             Map<String, String> variables) {
         String rendered = templateBody;
@@ -283,61 +286,7 @@ public class NotificationService {
         return rendered;
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void persistNotificationLog(
-            String tenantId,
-            NotificationEventType eventType,
-            NotificationChannel channel,
-            Long customerId,
-            String customerName,
-            String accountReference,
-            String transactionReference,
-            BigDecimal amount,
-            BigDecimal balanceAfter,
-            String recipient,
-            String messageContent,
-            String sourceModule,
-            NotificationTemplate template) {
-        NotificationLog notifLog = new NotificationLog();
-        notifLog.setTenantId(tenantId);
-        notifLog.setEventType(eventType);
-        notifLog.setChannel(channel);
-        notifLog.setCustomerId(customerId);
-        notifLog.setCustomerName(customerName);
-        notifLog.setAccountReference(accountReference);
-        notifLog.setTransactionReference(transactionReference);
-        notifLog.setAmount(amount);
-        notifLog.setBalanceAfter(balanceAfter);
-        notifLog.setRecipient(recipient);
-        notifLog.setMessageContent(messageContent);
-        notifLog.setSourceModule(sourceModule);
-        notifLog.setTemplate(template);
-        notifLog.setCreatedBy("SYSTEM");
-
-        // CBS: In production, dispatch to SMS gateway / email server.
-        // Production: SMS via Kaleyra/MSG91, EMAIL via AWS SES/SendGrid.
-        // For this implementation, simulate successful dispatch.
-        try {
-            notifLog.setDeliveryStatus(NotificationStatus.SENT);
-            notifLog.setDispatchedAt(LocalDateTime.now());
-            notifLog.setGatewayReference(
-                    "SIM-" + System.currentTimeMillis());
-        } catch (Exception e) {
-            notifLog.setDeliveryStatus(NotificationStatus.FAILED);
-            notifLog.setFailureReason(e.getMessage());
-            log.error("Notification dispatch failed: channel={}, "
-                    + "recipient={}, err={}",
-                    channel, recipient, e.getMessage());
-        }
-
-        logRepo.save(notifLog);
-        log.info("Notification logged: event={}, channel={}, "
-                + "recipient={}, status={}",
-                eventType, channel,
-                maskRecipient(recipient, channel),
-                notifLog.getDeliveryStatus());
-    }
-
+    /** Generate fallback message when no template exists. */
     private String generateFallbackMessage(
             NotificationEventType eventType,
             Map<String, String> variables) {
@@ -354,6 +303,10 @@ public class NotificationService {
                 + ". Ref: " + ref + ". -Finvanta Bank";
     }
 
+    /**
+     * Mask account number per RBI: show only last 4 digits.
+     * Example: SB-HQ001-000001 becomes ****0001
+     */
     static String maskAccountNumber(String accountNumber) {
         if (accountNumber == null || accountNumber.length() <= 4) {
             return accountNumber;
@@ -362,26 +315,10 @@ public class NotificationService {
                 accountNumber.length() - 4);
     }
 
+    /** Format amount with 2 decimal places. */
     static String formatAmount(BigDecimal amount) {
         if (amount == null) return "0.00";
         return amount.setScale(2, RoundingMode.HALF_UP)
                 .toPlainString();
-    }
-
-    private String maskRecipient(String recipient,
-            NotificationChannel channel) {
-        if (recipient == null || recipient.length() <= 4) {
-            return "****";
-        }
-        if (channel == NotificationChannel.SMS) {
-            return "****" + recipient.substring(
-                    recipient.length() - 4);
-        }
-        int atIdx = recipient.indexOf('@');
-        if (atIdx > 2) {
-            return recipient.substring(0, 2) + "****"
-                    + recipient.substring(atIdx);
-        }
-        return "****";
     }
 }
