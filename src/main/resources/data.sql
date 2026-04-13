@@ -8,13 +8,20 @@
 -- Per Finacle BANK_MASTER / Temenos COMPANY: tenant carries RBI regulatory identity.
 -- tenant_code 'DEFAULT' is the partition key used across all tables (maps to Finacle BANK_ID).
 -- RBI fields populated per Banking Regulation Act 1949 and RBI IT Governance Direction 2023.
+-- P1-H3: Fiscal year, CRR/SLR, capital base, business day policy per RBI / Finacle BANK_PARAM.
 INSERT INTO tenants (tenant_code, tenant_name, license_type, is_active, db_schema,
     rbi_bank_code, ifsc_prefix, license_number, regulatory_category,
     country_code, base_currency, timezone,
+    fiscal_year_start_month, crr_percentage, slr_percentage,
+    tier1_capital_base, business_day_policy,
+    value_date_back_days, value_date_forward_days,
     created_at, created_by)
 VALUES ('DEFAULT', 'Finvanta Demo Bank', 'ENTERPRISE', 1, 'dbo',
     '9999', 'FNVT', 'RBI/SCB/2026/DEMO-001', 'SCB',
     'IN', 'INR', 'Asia/Kolkata',
+    4, 4.5000, 18.0000,
+    0.00, 'MON_TO_SAT',
+    2, 0,
     CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Branches (with Tier-1 branch hierarchy per Finacle SOL architecture)
