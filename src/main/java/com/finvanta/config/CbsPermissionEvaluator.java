@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
  *
  * Per RBI IT Governance Direction 2023 §8.3 / SWIFT CSCF:
  * - Access control is data-driven (database permission matrix, not hardcoded)
- * - Permission changes take effect immediately (no redeployment)
+ * - Permission changes take effect on next application restart (cached in-memory)
  * - DENY takes precedence over ALLOW (per BNP RBAC)
  * - Every permission check is tenant-scoped
  *
