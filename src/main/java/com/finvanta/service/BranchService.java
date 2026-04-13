@@ -55,17 +55,29 @@ public class BranchService {
 
     /**
      * Fetches a branch by ID with tenant isolation validation.
+     * Uses @Transactional(readOnly=true) to keep the Hibernate session open
+     * for lazy-loaded associations (parentBranch) accessed in the view layer.
+     * Production runs with spring.jpa.open-in-view=false — without this
+     * annotation, accessing branch.parentBranch.branchCode in the JSP
+     * throws LazyInitializationException.
      *
      * @param branchId Branch ID
-     * @return Branch entity
+     * @return Branch entity with parentBranch initialized
      * @throws BusinessException if not found or belongs to different tenant
      */
+    @Transactional(readOnly = true)
     public Branch getBranch(Long branchId) {
         String tenantId = TenantContext.getCurrentTenant();
-        return branchRepository
+        Branch branch = branchRepository
                 .findById(branchId)
                 .filter(b -> b.getTenantId().equals(tenantId))
                 .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "Branch not found: " + branchId));
+        // Force-initialize lazy association to avoid LazyInitializationException
+        // when accessed in the view (production has open-in-view=false)
+        if (branch.getParentBranch() != null) {
+            branch.getParentBranch().getBranchCode(); // trigger initialization
+        }
+        return branch;
     }
 
     /**

@@ -231,9 +231,6 @@ public class BusinessDateService {
 
         BusinessCalendar saved = calendarRepository.save(calendar);
 
-        // CBS Tier-1 Performance: populate business date cache on day open.
-        businessDateCache.put(tenantId + ":" + branchId, businessDate);
-
         // CBS SOD: Auto-create a default INTRA_DAY transaction batch for the business date.
         // Per Finacle BATCH_MASTER: each branch gets its own default batch.
         // Check uses branch-specific batch name to prevent second branch skipping batch creation.

@@ -41,9 +41,12 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
 public class SecurityConfig {
 
     private final MfaAuthenticationSuccessHandler mfaSuccessHandler;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
-    public SecurityConfig(MfaAuthenticationSuccessHandler mfaSuccessHandler) {
+    public SecurityConfig(MfaAuthenticationSuccessHandler mfaSuccessHandler,
+            org.springframework.context.ApplicationEventPublisher eventPublisher) {
         this.mfaSuccessHandler = mfaSuccessHandler;
+        this.eventPublisher = eventPublisher;
     }
 
     @Value("${spring.profiles.active:prod}")
