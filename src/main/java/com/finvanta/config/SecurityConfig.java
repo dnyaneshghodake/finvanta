@@ -14,6 +14,7 @@ import org.springframework.security.crypto.password.NoOpPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.authentication.logout.LogoutSuccessEventPublishingLogoutHandler;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 
 /**
@@ -262,6 +263,13 @@ public class SecurityConfig {
                         .permitAll())
                 .logout(logout -> logout.logoutUrl("/logout")
                         .logoutSuccessUrl("/login?logout")
+                        // CBS Audit: Register LogoutSuccessEventPublishingLogoutHandler to publish
+                        // LogoutSuccessEvent via ApplicationEventPublisher. Without this handler,
+                        // Spring Security 6.2.x does NOT publish LogoutSuccessEvent by default —
+                        // the CbsAuthenticationEventListener.onLogoutSuccess() would be dead code.
+                        // Per RBI IT Governance Direction 2023 §8.3: all session lifecycle events
+                        // (login, logout, session expiry) must be audited.
+                        .addLogoutHandler(new LogoutSuccessEventPublishingLogoutHandler())
                         .invalidateHttpSession(true)
                         .deleteCookies("FINVANTA_SESSION")
                         .permitAll())
