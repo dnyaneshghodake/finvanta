@@ -90,6 +90,10 @@ public class NotificationService {
                 return;
             }
 
+            // CBS: {date} in notification message is the DISPATCH date (wall-clock),
+            // not the CBS business date. This is correct per RBI Customer Protection 2024:
+            // "Alert must show the date and time the alert was generated."
+            // The business date is for financial posting; the alert date is for the customer.
             Map<String, String> variables = Map.of(
                     "customerName", customer.getFullName(),
                     "accountNumber", maskAccountNumber(accountNumber),
