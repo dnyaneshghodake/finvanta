@@ -250,8 +250,77 @@ public class UserService {
     }
 
     /**
+     * Self-service password change with full CBS validation.
+     *
+     * Per RBI IT Governance Direction 2023 §8.2 / Finacle USER_MASTER:
+     * 1. Current password must be verified (prevents unauthorized change)
+     * 2. New password must meet complexity requirements
+     * 3. New password and confirmation must match
+     * 4. New password cannot match any of the last 3 passwords (history check)
+     * 5. Password expiry date is reset to +90 days
+     * 6. Change is audited
+     *
+     * NOTE: Session invalidation after password change is handled by the
+     * controller (HTTP-layer concern). This method only handles the business
+     * logic and persistence.
+     *
+     * @param username        The authenticated user's username
+     * @param currentPassword The user's current password (plaintext for verification)
+     * @param newPassword     The new password (plaintext, will be encoded)
+     * @param confirmPassword Confirmation of the new password
+     * @return Updated user
+     * @throws BusinessException on validation failure
+     */
+    @Transactional
+    public AppUser changeSelfServicePassword(String username, String currentPassword,
+            String newPassword, String confirmPassword) {
+        String tenantId = TenantContext.getCurrentTenant();
+
+        // CBS Validation: Input completeness
+        if (newPassword == null || newPassword.isBlank()) {
+            throw new BusinessException("EMPTY_PASSWORD", "New password cannot be empty.");
+        }
+        if (!newPassword.equals(confirmPassword)) {
+            throw new BusinessException("PASSWORD_MISMATCH",
+                    "New password and confirmation do not match.");
+        }
+
+        // CBS Validation: Password complexity per RBI IT Governance
+        validatePasswordComplexity(newPassword);
+
+        AppUser user = userRepository.findByTenantIdAndUsername(tenantId, username)
+                .orElseThrow(() -> new BusinessException("USER_NOT_FOUND",
+                        "User not found: " + username));
+
+        // CBS Validation: Verify current password (prevents unauthorized change)
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new BusinessException("WRONG_PASSWORD", "Current password is incorrect.");
+        }
+
+        // CBS Validation: Password reuse check per RBI IT Governance Direction 2023 §8.2.
+        if (user.isPasswordInHistory(newPassword, passwordEncoder)) {
+            throw new BusinessException("PASSWORD_REUSE",
+                    "Cannot reuse any of your last 3 passwords per RBI IT Governance policy.");
+        }
+
+        // All validations passed — change password
+        user.changePassword(passwordEncoder.encode(newPassword));
+        user.setUpdatedBy(username);
+        userRepository.save(user);
+
+        auditService.logEvent(
+                "AppUser", user.getId(), "PASSWORD_CHANGED", null, null,
+                "USER_MANAGEMENT",
+                "Password changed by user: " + username + " (self-service)");
+
+        log.info("Password changed: user={} (self-service)", username);
+
+        return user;
+    }
+
+    /**
      * Validates password complexity per RBI IT Governance Direction 2023 §8.2.
-     * Centralized validation used by both createUser and resetPassword.
+     * Centralized validation used by createUser, resetPassword, and changeSelfServicePassword.
      *
      * @throws BusinessException if password does not meet requirements
      */

@@ -1,20 +1,13 @@
 package com.finvanta.controller;
 
-import com.finvanta.audit.AuditService;
-import com.finvanta.domain.entity.AppUser;
-import com.finvanta.repository.AppUserRepository;
+import com.finvanta.service.UserService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
-import com.finvanta.util.TenantContext;
 
 import jakarta.servlet.http.HttpServletRequest;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,11 +22,10 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
  * 1. Self-service password change (any authenticated user)
  * 2. Forced password change on expiry (redirected from login)
  *
- * Per Finacle USER_MASTER / Temenos USER password policy:
- * - Minimum 8 characters with complexity (upper + lower + digit + special)
- * - Cannot reuse last 3 passwords (history check)
- * - Password expires every 90 days (forced change on next login)
- * - All password changes audited via AuditService
+ * CBS Code Quality: No @Transactional on controller methods.
+ * All business logic (validation, encoding, history check, audit) is managed
+ * by UserService.changeSelfServicePassword(). Controller only handles
+ * HTTP-layer concerns: session invalidation and redirect.
  *
  * Accessible by ALL authenticated users (not restricted to ADMIN).
  */
@@ -41,29 +33,10 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 @RequestMapping("/password")
 public class PasswordController {
 
-    private static final Logger log = LoggerFactory.getLogger(PasswordController.class);
+    private final UserService userService;
 
-    /** Minimum password length per RBI IT Governance */
-    private static final int MIN_PASSWORD_LENGTH = 8;
-
-    /**
-     * Password complexity regex per RBI IT Governance Direction 2023 Section 8.2.
-     * Requires at least: 1 uppercase, 1 lowercase, 1 digit, 1 special character.
-     */
-    private static final String PASSWORD_COMPLEXITY_REGEX =
-            "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&#^()\\-_=+])[A-Za-z\\d@$!%*?&#^()\\-_=+]{8,}$";
-
-    private final AppUserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final AuditService auditService;
-
-    public PasswordController(
-            AppUserRepository userRepository,
-            PasswordEncoder passwordEncoder,
-            AuditService auditService) {
-        this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.auditService = auditService;
+    public PasswordController(UserService userService) {
+        this.userService = userService;
     }
 
     /**
@@ -81,72 +54,24 @@ public class PasswordController {
     }
 
     /**
-     * Process password change with full CBS validation.
+     * Process password change — delegates to UserService for all business logic.
      *
      * Per RBI IT Governance Direction 2023 Section 8.2:
-     * 1. Current password must be verified (prevents unauthorized change)
-     * 2. New password must meet complexity requirements
-     * 3. New password cannot match any of the last 3 passwords (history check)
-     * 4. Password expiry date is reset to +90 days
-     * 5. Change is audited via AuditService
+     * All validation, encoding, history check, and audit are in UserService.
+     * Controller only handles session invalidation (HTTP-layer concern).
      */
     @PostMapping("/change")
-    @Transactional
     public String changePassword(
             @RequestParam String currentPassword,
             @RequestParam String newPassword,
             @RequestParam String confirmPassword,
             HttpServletRequest request,
             RedirectAttributes redirectAttributes) {
-        String username = SecurityUtil.getCurrentUsername();
-        String tenantId = TenantContext.getCurrentTenant();
-
         try {
-            // Validate inputs
-            if (newPassword == null || newPassword.isBlank()) {
-                throw new BusinessException("EMPTY_PASSWORD", "New password cannot be empty.");
-            }
-            if (!newPassword.equals(confirmPassword)) {
-                throw new BusinessException("PASSWORD_MISMATCH", "New password and confirmation do not match.");
-            }
-            if (newPassword.length() < MIN_PASSWORD_LENGTH) {
-                throw new BusinessException("WEAK_PASSWORD",
-                        "Password must be at least " + MIN_PASSWORD_LENGTH + " characters.");
-            }
-            if (!newPassword.matches(PASSWORD_COMPLEXITY_REGEX)) {
-                throw new BusinessException("WEAK_PASSWORD",
-                        "Password must contain at least 1 uppercase letter, 1 lowercase letter, "
-                                + "1 digit, and 1 special character (@$!%*?&#^()-_=+).");
-            }
+            String username = SecurityUtil.getCurrentUsername();
 
-            AppUser user = userRepository.findByTenantIdAndUsername(tenantId, username)
-                    .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", "User not found: " + username));
-
-            // Verify current password
-            if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
-                throw new BusinessException("WRONG_PASSWORD", "Current password is incorrect.");
-            }
-
-            // CBS: Check password reuse via centralized isPasswordInHistory() method.
-            // Per RBI IT Governance Direction 2023 §8.2: users cannot reuse last 3 passwords.
-            // Uses PasswordEncoder.matches() internally to handle BCrypt's random salt.
-            // Checks current password + last 3 history entries in a single call.
-            if (user.isPasswordInHistory(newPassword, passwordEncoder)) {
-                throw new BusinessException("PASSWORD_REUSE",
-                        "Cannot reuse any of your last 3 passwords per RBI IT Governance policy.");
-            }
-
-            // All validations passed — change password
-            user.changePassword(passwordEncoder.encode(newPassword));
-            user.setUpdatedBy(username);
-            userRepository.save(user);
-
-            auditService.logEvent(
-                    "AppUser", user.getId(), "PASSWORD_CHANGED", null, null,
-                    "USER_MANAGEMENT",
-                    "Password changed by user: " + username + " (self-service)");
-
-            log.info("Password changed: user={} (self-service)", username);
+            // CBS: All business logic delegated to UserService.
+            userService.changeSelfServicePassword(username, currentPassword, newPassword, confirmPassword);
 
             // CBS Tier-1: Invalidate session after password change per Finacle/Temenos standards.
             // Per RBI IT Governance Direction 2023 §8.2:
@@ -161,7 +86,6 @@ public class PasswordController {
             // CBS: Use query parameter instead of flash attribute because session.invalidate()
             // destroys the session — flash attributes are stored in the session via FlashMap
             // and would be lost. The login page checks for ?password_changed parameter.
-            // This matches the pattern used by MfaLoginController for ?mfa_locked.
             return "redirect:/login?password_changed";
 
         } catch (BusinessException e) {
