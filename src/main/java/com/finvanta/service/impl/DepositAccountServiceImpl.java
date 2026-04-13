@@ -223,7 +223,6 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // Format: [{"min":0,"max":100000,"rate":3.0},...]
         // In production, use Jackson ObjectMapper for robustness.
         BigDecimal totalDaily = BigDecimal.ZERO;
-        BigDecimal remaining = balance;
         String cleaned = tieringJson.trim();
         if (!cleaned.startsWith("[")) return BigDecimal.ZERO;
         cleaned = cleaned.substring(1,

@@ -134,6 +134,76 @@ public class Tenant {
     @Column(name = "incorporation_date")
     private LocalDate incorporationDate;
 
+    // === Fiscal Year & Regulatory Configuration (per RBI / Finacle BANK_PARAM) ===
+
+    /**
+     * Fiscal year start month (1-12). Per RBI: Indian banks follow April-March FY.
+     * Default: 4 (April). Used for:
+     * - YTD interest/TDS reset (DepositAccountServiceImpl)
+     * - Annual P&L GL zeroing (year-end close)
+     * - Regulatory return periods (CRILC quarterly, SLR fortnightly)
+     */
+    @Column(name = "fiscal_year_start_month", nullable = false)
+    private int fiscalYearStartMonth = 4;
+
+    /**
+     * Cash Reserve Ratio (CRR) percentage per RBI Monetary Policy.
+     * Per RBI Act 1934 §42: scheduled banks must maintain CRR with RBI.
+     * Current (2024): 4.50%. Updated via RBI monetary policy announcements.
+     * Used for daily CRR compliance reporting and NDTL calculation.
+     */
+    @Column(name = "crr_percentage", precision = 8, scale = 4)
+    private java.math.BigDecimal crrPercentage = new java.math.BigDecimal("4.5000");
+
+    /**
+     * Statutory Liquidity Ratio (SLR) percentage per RBI.
+     * Per RBI Act 1934 §24: banks must maintain SLR in approved securities.
+     * Current (2024): 18.00%. Used for SLR compliance monitoring.
+     */
+    @Column(name = "slr_percentage", precision = 8, scale = 4)
+    private java.math.BigDecimal slrPercentage = new java.math.BigDecimal("18.0000");
+
+    /**
+     * Tier-1 capital base amount (INR) for large exposure limit calculation.
+     * Per RBI Large Exposure Framework 2019: single borrower limit = 20% of Tier-1.
+     * Group borrower limit = 25% of Tier-1. Updated quarterly from capital adequacy returns.
+     */
+    @Column(name = "tier1_capital_base", precision = 18, scale = 2)
+    private java.math.BigDecimal tier1CapitalBase = java.math.BigDecimal.ZERO;
+
+    /**
+     * Business day policy: which days are default working days.
+     * Per RBI NI Act: Indian banks typically follow MON-FRI or MON-SAT.
+     * Values: MON_TO_FRI, MON_TO_SAT
+     * Used by calendar generation to auto-mark weekends.
+     */
+    @Column(name = "business_day_policy", length = 20, nullable = false)
+    private String businessDayPolicy = "MON_TO_SAT";
+
+    /**
+     * Regulatory reporting template version for XBRL/OSMOS returns.
+     * Per RBI: template versions change with regulatory updates.
+     * Example: "OSMOS_V4.2", "CRILC_V3.0"
+     */
+    @Column(name = "regulatory_template_version", length = 30)
+    private String regulatoryTemplateVersion;
+
+    /**
+     * Maximum value date back-days allowed for transactions.
+     * Per Finacle BANK_PARAM / Temenos COMPANY: configurable per tenant.
+     * Default: 2 (T-2). Overrides the application.properties default.
+     */
+    @Column(name = "value_date_back_days", nullable = false)
+    private int valueDateBackDays = 2;
+
+    /**
+     * Maximum value date forward-days allowed for transactions.
+     * Default: 0 (no future dating). Per RBI: future-dated postings
+     * require explicit authorization.
+     */
+    @Column(name = "value_date_forward_days", nullable = false)
+    private int valueDateForwardDays = 0;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

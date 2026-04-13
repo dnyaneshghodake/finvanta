@@ -124,6 +124,14 @@ public class CbsBootstrapInitializer implements ApplicationRunner {
         t.setLicenseType("ENTERPRISE"); t.setActive(true); t.setDbSchema("dbo");
         t.setRbiBankCode("9999"); t.setIfscPrefix("FNVT"); t.setRegulatoryCategory("SCB");
         t.setCountryCode("IN"); t.setBaseCurrency("INR"); t.setTimezone("Asia/Kolkata");
+        // P1-H3: Fiscal year & regulatory configuration per RBI / Finacle BANK_PARAM
+        t.setFiscalYearStartMonth(4); // April per Indian FY
+        t.setCrrPercentage(new BigDecimal("4.5000")); // CRR per RBI monetary policy
+        t.setSlrPercentage(new BigDecimal("18.0000")); // SLR per RBI
+        t.setTier1CapitalBase(BigDecimal.ZERO); // Set by ADMIN after bootstrap
+        t.setBusinessDayPolicy("MON_TO_SAT"); // Indian banks: Mon-Sat working
+        t.setValueDateBackDays(2); // T-2 backdating allowed
+        t.setValueDateForwardDays(0); // No future dating
         t.setCreatedBy(BOOTSTRAP_USER); tenantRepository.save(t);
         log.info("Step 1: Tenant '{}' created.", tenantId);
     }

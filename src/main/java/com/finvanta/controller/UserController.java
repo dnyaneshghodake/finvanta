@@ -95,6 +95,7 @@ public class UserController {
             user.setUsername(username);
             // CBS: Use changePassword() to set password with expiry and history tracking.
             // Per RBI IT Governance Direction 2023: password rotation every 90 days.
+            // Note: New user creation — no history check needed (first password).
             user.changePassword(passwordEncoder.encode(password));
             user.setFullName(fullName);
             user.setEmail(email);
@@ -202,8 +203,15 @@ public class UserController {
                     .findById(id)
                     .filter(u -> u.getTenantId().equals(tenantId))
                     .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", "User not found"));
+            // CBS: Check password reuse per RBI IT Governance Direction 2023 §8.2.
+            // Users cannot reuse their last 3 passwords. Uses PasswordEncoder.matches()
+            // to handle BCrypt's random salt correctly (same plaintext → different hashes).
+            if (user.isPasswordInHistory(newPassword, passwordEncoder)) {
+                throw new BusinessException("PASSWORD_REUSED",
+                        "Cannot reuse any of the last 3 passwords per RBI IT Governance policy. "
+                                + "Please choose a different password.");
+            }
             // CBS: Use changePassword() to track password history and set expiry.
-            // Per RBI IT Governance: users cannot reuse last 3 passwords.
             user.changePassword(passwordEncoder.encode(newPassword));
             user.setUpdatedBy(SecurityUtil.getCurrentUsername());
             userRepository.save(user);

@@ -8,7 +8,9 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
+import org.springframework.security.crypto.password.NoOpPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -321,12 +323,28 @@ public class SecurityConfig {
     }
 
     /**
-     * Uses DelegatingPasswordEncoder (Spring Security standard).
-     * Supports {bcrypt}, {noop}, {scrypt}, {argon2} prefixes.
-     * Dev seed data uses {noop} prefix (plaintext). Production passwords must always be {bcrypt}.
+     * CBS Password Encoder — BCrypt with 12 rounds per RBI IT Governance Direction 2023.
+     *
+     * Per RBI IT Governance §8.2 and NIST SP 800-63B:
+     * - BCrypt minimum 12 rounds for banking-grade password hashing
+     * - Spring Security default is 10 rounds — insufficient for Tier-1 CBS
+     * - 12 rounds provides ~4x the computational cost of 10 rounds
+     *
+     * Uses DelegatingPasswordEncoder to support multiple formats:
+     * - {bcrypt} → BCryptPasswordEncoder(12) — production standard
+     * - {noop}   → NoOpPasswordEncoder — dev seed data only (NEVER in production)
+     *
+     * Per Finacle USER_MASTER / Temenos USER: password hashing strength must
+     * exceed the minimum recommended by the national banking regulator.
      */
     @Bean
+    @SuppressWarnings("deprecation")
     public PasswordEncoder passwordEncoder() {
-        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+        java.util.Map<String, PasswordEncoder> encoders = new java.util.HashMap<>();
+        encoders.put("bcrypt", new BCryptPasswordEncoder(12));
+        encoders.put("noop", NoOpPasswordEncoder.getInstance());
+        DelegatingPasswordEncoder delegating = new DelegatingPasswordEncoder("bcrypt", encoders);
+        delegating.setDefaultPasswordEncoderForMatches(new BCryptPasswordEncoder(12));
+        return delegating;
     }
 }

@@ -33,13 +33,15 @@ import lombok.Setter;
  * - Holidays are pre-configured — no transactions allowed on holidays
  * - System date may differ from business date (e.g., EOD runs after midnight)
  *
- * Holiday Types (per RBI Negotiable Instruments Act 1881):
+ * Holiday Types (per RBI Negotiable Instruments Act 1881 / RBI Payment Systems):
  *   WEEKEND   - Saturday/Sunday (auto-detected during calendar generation)
  *   NATIONAL  - Republic Day, Independence Day, Gandhi Jayanti (all branches)
  *   STATE     - Regional holidays (applicable to specific state/region branches)
  *   BANK      - Bank-specific holidays (declared by bank management)
  *   OPTIONAL  - Optional holidays (staff can choose, bank remains operational)
  *   GAZETTED  - Government gazetted holidays (per state gazette notification)
+ *   CLEARING  - RBI/NPCI clearing holiday (NEFT/RTGS/IMPS settlement closed,
+ *               but branch may be open for non-clearing operations)
  *
  * Previous Day Validation:
  *   Before opening a new day at a branch, the system validates that the
@@ -99,8 +101,13 @@ public class BusinessCalendar extends BaseEntity {
 
     /**
      * Holiday type classification per RBI Negotiable Instruments Act 1881.
-     * Values: WEEKEND, NATIONAL, STATE, BANK, OPTIONAL, GAZETTED
+     * Values: WEEKEND, NATIONAL, STATE, BANK, OPTIONAL, GAZETTED, CLEARING
      * Null for non-holiday dates.
+     *
+     * CLEARING: RBI/NPCI-declared clearing holiday — NEFT/RTGS/IMPS settlement
+     * systems are closed but the bank branch may be open for non-clearing operations.
+     * Per RBI Payment Systems: clearing holidays are independent of bank holidays.
+     * Example: RBI may declare a clearing holiday on a day when banks are open.
      */
     @Column(name = "holiday_type", length = 20)
     private String holidayType;
@@ -158,5 +165,18 @@ public class BusinessCalendar extends BaseEntity {
 
     public boolean isEodRunning() {
         return dayStatus == DayStatus.EOD_RUNNING;
+    }
+
+    /**
+     * Returns true if this is a clearing-specific holiday.
+     * Per RBI Payment Systems: clearing holidays (NEFT/RTGS/IMPS settlement closed)
+     * are independent of bank holidays. A branch may be open for non-clearing
+     * operations (CASA deposits, withdrawals, loan repayments) on a clearing holiday.
+     *
+     * Used by ClearingEngine to block outward clearing initiation on clearing holidays
+     * while allowing other financial operations to proceed normally.
+     */
+    public boolean isClearingHoliday() {
+        return holiday && "CLEARING".equals(holidayType);
     }
 }

@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.security.authentication.event.AuthenticationFailureBadCredentialsEvent;
 import org.springframework.security.authentication.event.AuthenticationSuccessEvent;
+import org.springframework.security.authentication.event.LogoutSuccessEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -164,6 +165,54 @@ public class CbsAuthenticationEventListener {
         } catch (Exception e) {
             // Auth event handlers must NEVER block login flow — log and continue
             log.error("Failed to record login failure for {}: {}", username, e.getMessage());
+        }
+    }
+
+    /**
+     * CBS: Logout handler — records session termination in immutable audit trail.
+     * Per RBI IT Governance Direction 2023 §8.3: all session lifecycle events
+     * (login, logout, session expiry) must be audited for security investigation.
+     *
+     * Per Finacle USER_MASTER / Temenos USER: logout events are critical for:
+     * - Detecting unauthorized session hijacking (logout without user action)
+     * - Compliance reporting (user session duration tracking)
+     * - Forensic analysis (correlating logout time with last transaction)
+     */
+    @EventListener
+    @Transactional
+    public void onLogoutSuccess(LogoutSuccessEvent event) {
+        String username = event.getAuthentication() != null
+                ? event.getAuthentication().getName() : "UNKNOWN";
+        String ipAddress = resolveClientIp();
+        String tenantId = resolveTenantId();
+
+        try {
+            boolean tenantWasNull = !TenantContext.isSet();
+            if (tenantWasNull) {
+                TenantContext.setCurrentTenant(tenantId);
+            }
+            try {
+                userRepository.findByTenantIdAndUsername(tenantId, username).ifPresent(user -> {
+                    auditService.logEvent(
+                            "AppUser", user.getId(), "LOGOUT", null,
+                            "ip=" + ipAddress,
+                            "SECURITY",
+                            "Logout: user=" + username
+                                    + " | IP=" + ipAddress
+                                    + " | Role=" + user.getRole()
+                                    + " | Branch="
+                                    + (user.getBranch() != null ? user.getBranch().getBranchCode() : "N/A"));
+
+                    log.info("LOGOUT: user={}, ip={}, role={}", username, ipAddress, user.getRole());
+                });
+            } finally {
+                if (tenantWasNull) {
+                    TenantContext.clear();
+                }
+            }
+        } catch (Exception e) {
+            // Logout event handlers must NEVER block logout — log and continue
+            log.error("Failed to record logout for {}: {}", username, e.getMessage());
         }
     }
 

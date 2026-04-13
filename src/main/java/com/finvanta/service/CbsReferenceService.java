@@ -140,6 +140,26 @@ public class CbsReferenceService {
     }
 
     /**
+     * Fixed Deposit Account Number — FD-{BRANCH}-{6-digit}.
+     *
+     * Uses branch-scoped DB sequence "FD_SEQ_{branchCode}" so each branch
+     * has its own sequential numbering starting from 1.
+     * Per Finacle TD_MASTER: FD numbers are branch-scoped and sequential.
+     *
+     * Replaces the previous System.currentTimeMillis() % 1000000 approach
+     * which had collision risk under concurrent FD bookings.
+     *
+     * @param branchCode Branch code (e.g., "BR001")
+     * @return FD account number like "FD-BR001-000001"
+     */
+    public String generateFdAccountNumber(String branchCode) {
+        String serial = sequenceGenerator.nextFormattedValue("FD_SEQ_" + branchCode, 6);
+        String fdNo = "FD-" + branchCode + "-" + serial;
+        log.debug("FD account generated: {} (branch={}, seq={})", fdNo, branchCode, serial);
+        return fdNo;
+    }
+
+    /**
      * Collateral Reference — COL-{6-digit}.
      *
      * @return Collateral reference like "COL-000056"

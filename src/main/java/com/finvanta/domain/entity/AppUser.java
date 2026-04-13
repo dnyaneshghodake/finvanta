@@ -112,6 +112,29 @@ public class AppUser extends BaseEntity {
     @Column(name = "last_login_ip", length = 45)
     private String lastLoginIp;
 
+    /**
+     * Last activity date — tracks the most recent user-initiated action.
+     * Per RBI IT Governance Direction 2023 §8.3: user accounts with no activity
+     * for 90+ days must be automatically locked (dormant user lockout).
+     *
+     * Updated on: successful login, any financial transaction initiation,
+     * password change, MFA verification. NOT updated on system-generated
+     * operations (EOD batch running under SYSTEM user).
+     *
+     * Distinct from lastLoginAt: a user who logs in but performs no transactions
+     * still has lastLoginAt updated. lastActivityDate tracks actual CBS operations.
+     * For dormancy purposes, lastLoginAt is the primary indicator — if the user
+     * hasn't even logged in for 90 days, the account is clearly dormant.
+     *
+     * Null = never active (newly created account, or pre-existing account
+     * before this field was added). Treated as dormant if account is > 90 days old.
+     */
+    @Column(name = "last_activity_date")
+    private LocalDate lastActivityDate;
+
+    /** Dormant user lockout period in days per RBI IT Governance */
+    public static final int USER_DORMANCY_DAYS = 90;
+
     // === Helpers ===
 
     /** Returns true if password has expired (past expiry date) */
@@ -150,11 +173,37 @@ public class AppUser extends BaseEntity {
         this.lockoutTime = null;
     }
 
-    /** Records successful login metadata */
+    /** Records successful login metadata and updates activity tracking */
     public void recordSuccessfulLogin(String ipAddress) {
         this.lastLoginAt = LocalDateTime.now();
         this.lastLoginIp = ipAddress;
+        this.lastActivityDate = LocalDate.now();
         resetLoginAttempts();
+    }
+
+    /**
+     * Returns true if this user account is dormant (no activity for 90+ days).
+     * Per RBI IT Governance Direction 2023 §8.3: dormant user accounts must be
+     * automatically locked during EOD batch processing.
+     *
+     * Uses lastActivityDate as primary indicator. Falls back to lastLoginAt
+     * for accounts created before lastActivityDate was added. Falls back to
+     * createdAt for accounts that have never logged in.
+     *
+     * @param businessDate CBS business date (not system date) for comparison
+     * @return true if account has been inactive for >= USER_DORMANCY_DAYS
+     */
+    public boolean isDormantUser(LocalDate businessDate) {
+        if (!active || locked) return false; // Already inactive/locked
+        LocalDate lastActive = lastActivityDate;
+        if (lastActive == null && lastLoginAt != null) {
+            lastActive = lastLoginAt.toLocalDate();
+        }
+        if (lastActive == null && getCreatedAt() != null) {
+            lastActive = getCreatedAt().toLocalDate();
+        }
+        if (lastActive == null) return false; // Cannot determine — skip
+        return lastActive.plusDays(USER_DORMANCY_DAYS).isBefore(businessDate);
     }
 
     // === MFA / Two-Factor Authentication (RBI IT Governance Direction 2023) ===
@@ -215,7 +264,53 @@ public class AppUser extends BaseEntity {
         return mfaEnabled && (mfaSecret == null || mfaSecret.isBlank());
     }
 
-    /** Sets password with expiry and history tracking */
+    /**
+     * Checks if a password hash matches any of the last 3 passwords in history.
+     * Per RBI IT Governance Direction 2023 §8.2: users cannot reuse recent passwords.
+     *
+     * IMPORTANT: This checks raw hash equality. The caller must pass the ENCODED hash
+     * of the new password (not the plaintext). Since BCrypt produces different hashes
+     * for the same plaintext, the caller should use PasswordEncoder.matches() against
+     * each history entry instead. This method is for delegating-encoder formats where
+     * the same input produces the same hash (e.g., {noop} in dev).
+     *
+     * For production BCrypt usage, use {@link #isPasswordInHistory(String, org.springframework.security.crypto.password.PasswordEncoder)}
+     * which properly handles BCrypt's random salt.
+     *
+     * @param rawPassword The plaintext password to check
+     * @param encoder     The password encoder to use for matching
+     * @return true if the password matches any of the last 3 passwords
+     */
+    public boolean isPasswordInHistory(String rawPassword,
+            org.springframework.security.crypto.password.PasswordEncoder encoder) {
+        // Check against current password
+        if (this.passwordHash != null && encoder.matches(rawPassword, this.passwordHash)) {
+            return true;
+        }
+        // Check against password history
+        if (this.passwordHistory != null && !this.passwordHistory.isBlank()) {
+            String[] historyHashes = this.passwordHistory.split("\\|");
+            for (String historyHash : historyHashes) {
+                if (historyHash != null && !historyHash.isBlank()
+                        && encoder.matches(rawPassword, historyHash)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Sets password with expiry and history tracking.
+     * Per RBI IT Governance Direction 2023 §8.2:
+     * - Password rotation every 90 days
+     * - Last 3 passwords cannot be reused (history stored)
+     *
+     * IMPORTANT: Callers MUST check password reuse via {@link #isPasswordInHistory}
+     * BEFORE calling this method. This method only manages the history storage
+     * and expiry tracking — it does not validate reuse because it receives an
+     * already-encoded hash (cannot reverse BCrypt to check against history).
+     */
     public void changePassword(String newPasswordHash) {
         // Add current password to history (keep last 3)
         if (this.passwordHash != null) {

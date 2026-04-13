@@ -201,12 +201,15 @@ public class ClearingStateManager {
         if (ct.getStatus() != ClearingStatus.INITIATED
                 && ct.getStatus() != ClearingStatus.VALIDATED)
             return;
+        // CBS: Capture old status BEFORE transition for accurate audit trail.
+        // Per RBI IT Governance §8.3: audit logs must record the true before/after state.
+        String oldStatus = ct.getStatus().name();
         transitionStatus(ct, ClearingStatus.VALIDATION_FAILED);
         ct.setFailureReason(reason);
         computeAuditHash(ct);
         clrRepo.save(ct);
         auditSvc.logEvent("ClearingTransaction", ct.getId(),
-                "VALIDATION_FAILED", ct.getStatus().name(),
+                "VALIDATION_FAILED", oldStatus,
                 "VALIDATION_FAILED", "CLEARING",
                 "Validation failed: " + reason + " | " + ct.getExternalRefNo());
     }
