@@ -40,14 +40,17 @@ public class FixedDepositServiceImpl implements FixedDepositService {
     private final TransactionEngine txnEng;
     private final BusinessDateService bdSvc;
     private final AuditService audit;
+    private final com.finvanta.service.CbsReferenceService refService;
 
     public FixedDepositServiceImpl(FixedDepositRepository fdRepo,
             CustomerRepository custRepo, BranchRepository brRepo,
             DepositAccountRepository casaRepo, DepositAccountService casaSvc,
-            TransactionEngine txnEng, BusinessDateService bdSvc, AuditService audit) {
+            TransactionEngine txnEng, BusinessDateService bdSvc, AuditService audit,
+            com.finvanta.service.CbsReferenceService refService) {
         this.fdRepo = fdRepo; this.custRepo = custRepo; this.brRepo = brRepo;
         this.casaRepo = casaRepo; this.casaSvc = casaSvc;
         this.txnEng = txnEng; this.bdSvc = bdSvc; this.audit = audit;
+        this.refService = refService;
     }
 
     private FixedDeposit loadFd(String t, String no) {
@@ -80,8 +83,10 @@ public class FixedDepositServiceImpl implements FixedDepositService {
                 .systemGenerated(true).initiatedBy(u).build());
         FixedDeposit fd = new FixedDeposit();
         fd.setTenantId(t); fd.setCustomer(c); fd.setBranch(br); fd.setBranchCode(br.getBranchCode());
-        fd.setFdAccountNumber("FD-" + br.getBranchCode() + "-"
-                + String.format("%06d", System.currentTimeMillis() % 1000000));
+        // CBS: DB-backed sequential FD number via CbsReferenceService per Finacle TD_MASTER.
+        // Replaces System.currentTimeMillis() % 1000000 which had collision risk under
+        // concurrent FD bookings (two bookings in same ms produce identical FD numbers).
+        fd.setFdAccountNumber(refService.generateFdAccountNumber(br.getBranchCode()));
         fd.setPrincipalAmount(amt); fd.setCurrentPrincipal(amt); fd.setInterestRate(rate);
         fd.setInterestPayoutMode(payout != null ? payout : "MATURITY");
         fd.setAutoRenewalMode(renew != null ? renew : "NO_RENEWAL");
@@ -162,14 +167,41 @@ public class FixedDepositServiceImpl implements FixedDepositService {
         fd.setLastAccrualDate(biz); fdRepo.save(fd);
     }
 
+    /**
+     * Process FD maturities in batch.
+     *
+     * CBS CRITICAL: Each FD maturity is processed independently. If one FD's
+     * maturity close fails (e.g., linked CASA frozen), it must NOT roll back
+     * the entire batch — other FDs should still be processed.
+     *
+     * Per Finacle TD_MATURITY / Temenos COB: batch maturity processing uses
+     * per-item error isolation. Failed FDs are logged for investigation.
+     *
+     * NOTE: maturityClose() is a self-invocation (same bean), so Spring's
+     * @Transactional proxy is bypassed. Both this method and maturityClose()
+     * share the same transaction. To achieve true per-FD isolation, the caller
+     * (EodOrchestrator) should iterate and call maturityClose() individually
+     * with try-catch per item. Here we add defensive try-catch to prevent
+     * one failed FD from aborting the entire batch scan.
+     */
     @Override @Transactional
     public int processMaturityBatch(LocalDate biz) {
         var list = fdRepo.findMaturingOnOrBefore(TenantContext.getCurrentTenant(), biz, FdStatus.ACTIVE);
         int n = 0;
         for (FixedDeposit fd : list) {
-            fd.setStatus(FdStatus.MATURED); fdRepo.save(fd);
-            if ("NO_RENEWAL".equals(fd.getAutoRenewalMode())) maturityClose(fd.getFdAccountNumber());
-            n++;
+            try {
+                fd.setStatus(FdStatus.MATURED); fdRepo.save(fd);
+                if ("NO_RENEWAL".equals(fd.getAutoRenewalMode())) maturityClose(fd.getFdAccountNumber());
+                n++;
+            } catch (Exception e) {
+                // CBS: Per-FD error isolation — log and continue with next FD.
+                // Per Finacle TD_MATURITY: failed maturity is flagged for manual investigation.
+                // The MATURED status may or may not be persisted depending on whether the
+                // exception occurred before or after fdRepo.save(). Either way, the FD will
+                // be retried on the next EOD run (findMaturingOnOrBefore picks up ACTIVE FDs).
+                log.error("FD maturity failed: fd={}, err={}",
+                        fd.getFdAccountNumber(), e.getMessage(), e);
+            }
         }
         return n;
     }

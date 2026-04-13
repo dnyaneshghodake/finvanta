@@ -216,18 +216,44 @@ public class ClearingEngine {
                             + ": " + e.getMessage());
         }
 
-        if (rail.requiresCycleNetting())
-            linkToCycle(saved, tid, rail, bd);
+        // CBS: Post-debit ancillary operations (cycle linking, charge levy) are
+        // non-critical — the customer debit and suspense GL are already committed
+        // via ClearingStateManager (REQUIRES_NEW). If cycle linking or charge levy
+        // fails, the clearing transaction is still valid and will proceed to network.
+        // Per Finacle CLG_ENGINE: ancillary failures are logged, not propagated.
+        if (rail.requiresCycleNetting()) {
+            try {
+                linkToCycle(saved, tid, rail, bd);
+            } catch (Exception e) {
+                log.warn("Cycle linking failed for {}: {} — "
+                        + "clearing proceeds without cycle",
+                        extRef, e.getMessage());
+                auditSvc.logEvent("ClearingTransaction",
+                        saved.getId(), "CYCLE_LINK_FAILED",
+                        null, extRef, "CLEARING",
+                        "Cycle link failed: " + e.getMessage());
+            }
+        }
         // CBS: Levy outward clearing charge per Finacle CHG_ENGINE.
-        ChargeEventType chargeEvent = switch (rail) {
-            case NEFT -> ChargeEventType.NEFT_OUTWARD;
-            case RTGS -> ChargeEventType.RTGS_OUTWARD;
-            case IMPS -> ChargeEventType.IMPS_OUTWARD;
-            case UPI -> ChargeEventType.UPI_OUTWARD;
-        };
-        chargeEngine.levyCharge(chargeEvent, custAcct,
-                GLConstants.SB_DEPOSITS, amt, null,
-                "CLEARING", extRef, br.getBranchCode());
+        try {
+            ChargeEventType chargeEvent = switch (rail) {
+                case NEFT -> ChargeEventType.NEFT_OUTWARD;
+                case RTGS -> ChargeEventType.RTGS_OUTWARD;
+                case IMPS -> ChargeEventType.IMPS_OUTWARD;
+                case UPI -> ChargeEventType.UPI_OUTWARD;
+            };
+            chargeEngine.levyCharge(chargeEvent, custAcct,
+                    GLConstants.SB_DEPOSITS, amt, null,
+                    "CLEARING", extRef, br.getBranchCode());
+        } catch (Exception e) {
+            log.warn("Charge levy failed for {}: {} — "
+                    + "clearing proceeds without charge",
+                    extRef, e.getMessage());
+            auditSvc.logEvent("ClearingTransaction",
+                    saved.getId(), "CHARGE_LEVY_FAILED",
+                    null, extRef, "CLEARING",
+                    "Charge levy failed: " + e.getMessage());
+        }
         auditSvc.logEvent("ClearingTransaction",
                 saved.getId(), "OUTWARD_INITIATED",
                 null, extRef, "CLEARING",
