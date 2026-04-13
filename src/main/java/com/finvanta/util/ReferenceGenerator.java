@@ -36,6 +36,15 @@ import java.util.concurrent.atomic.AtomicLong;
  *   persisted with a DB unique constraint as safety net. In-memory AtomicLong is
  *   acceptable here because duplicates are caught by the constraint and the entire
  *   transaction retries. These do NOT need to be sequential across restarts.
+ *
+ * KNOWN LIMITATION — fmt() 6-digit overflow:
+ *   String.format("%06d") is minimum width, not maximum. The AtomicLong seed starts
+ *   at System.nanoTime() % 100000 (~5 digits). After ~900K increments within a single
+ *   JVM lifecycle, the value exceeds 999999 and produces 7+ digit serials. This changes
+ *   reference length (e.g., TXN-20260412-1000000 = 21 chars instead of 20). All reference
+ *   columns are VARCHAR(40) so no data truncation occurs, but the fixed-width format
+ *   contract is broken. For ephemeral refs (TXN/JRN) this is cosmetic — they are not
+ *   parsed by external systems. For persistent refs, use CbsReferenceService (DB-backed).
  */
 public final class ReferenceGenerator {
 

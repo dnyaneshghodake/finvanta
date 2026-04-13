@@ -112,6 +112,29 @@ public class AppUser extends BaseEntity {
     @Column(name = "last_login_ip", length = 45)
     private String lastLoginIp;
 
+    /**
+     * Last activity date — tracks the most recent user-initiated action.
+     * Per RBI IT Governance Direction 2023 §8.3: user accounts with no activity
+     * for 90+ days must be automatically locked (dormant user lockout).
+     *
+     * Updated on: successful login, any financial transaction initiation,
+     * password change, MFA verification. NOT updated on system-generated
+     * operations (EOD batch running under SYSTEM user).
+     *
+     * Distinct from lastLoginAt: a user who logs in but performs no transactions
+     * still has lastLoginAt updated. lastActivityDate tracks actual CBS operations.
+     * For dormancy purposes, lastLoginAt is the primary indicator — if the user
+     * hasn't even logged in for 90 days, the account is clearly dormant.
+     *
+     * Null = never active (newly created account, or pre-existing account
+     * before this field was added). Treated as dormant if account is > 90 days old.
+     */
+    @Column(name = "last_activity_date")
+    private LocalDate lastActivityDate;
+
+    /** Dormant user lockout period in days per RBI IT Governance */
+    public static final int USER_DORMANCY_DAYS = 90;
+
     // === Helpers ===
 
     /** Returns true if password has expired (past expiry date) */
@@ -150,11 +173,37 @@ public class AppUser extends BaseEntity {
         this.lockoutTime = null;
     }
 
-    /** Records successful login metadata */
+    /** Records successful login metadata and updates activity tracking */
     public void recordSuccessfulLogin(String ipAddress) {
         this.lastLoginAt = LocalDateTime.now();
         this.lastLoginIp = ipAddress;
+        this.lastActivityDate = LocalDate.now();
         resetLoginAttempts();
+    }
+
+    /**
+     * Returns true if this user account is dormant (no activity for 90+ days).
+     * Per RBI IT Governance Direction 2023 §8.3: dormant user accounts must be
+     * automatically locked during EOD batch processing.
+     *
+     * Uses lastActivityDate as primary indicator. Falls back to lastLoginAt
+     * for accounts created before lastActivityDate was added. Falls back to
+     * createdAt for accounts that have never logged in.
+     *
+     * @param businessDate CBS business date (not system date) for comparison
+     * @return true if account has been inactive for >= USER_DORMANCY_DAYS
+     */
+    public boolean isDormantUser(LocalDate businessDate) {
+        if (!active || locked) return false; // Already inactive/locked
+        LocalDate lastActive = lastActivityDate;
+        if (lastActive == null && lastLoginAt != null) {
+            lastActive = lastLoginAt.toLocalDate();
+        }
+        if (lastActive == null && getCreatedAt() != null) {
+            lastActive = getCreatedAt().toLocalDate();
+        }
+        if (lastActive == null) return false; // Cannot determine — skip
+        return lastActive.plusDays(USER_DORMANCY_DAYS).isBefore(businessDate);
     }
 
     // === MFA / Two-Factor Authentication (RBI IT Governance Direction 2023) ===

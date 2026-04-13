@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for ChargeEngine per RBI Fair Lending Code 2023.
+ * Unit tests for ChargeEngine (Loan) per RBI Fair Lending Code 2023.
  */
 @DisplayName("ChargeEngine Tests")
 public class ChargeEngineTest {

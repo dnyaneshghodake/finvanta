@@ -1,0 +1,244 @@
+package com.finvanta.service.impl;
+
+import com.finvanta.audit.AuditService;
+import com.finvanta.domain.entity.Branch;
+import com.finvanta.domain.entity.Customer;
+import com.finvanta.repository.BranchRepository;
+import com.finvanta.repository.CustomerRepository;
+import com.finvanta.repository.LoanAccountRepository;
+import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.CbsReferenceService;
+import com.finvanta.service.CustomerCifService;
+import com.finvanta.util.BranchAccessValidator;
+import com.finvanta.util.BusinessException;
+import com.finvanta.util.SecurityUtil;
+import com.finvanta.util.TenantContext;
+
+import java.time.LocalDate;
+import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * CBS Customer CIF Service Implementation per Finacle CIF_MASTER / Temenos CUSTOMER.
+ *
+ * All business validations reside here — NOT in controllers.
+ * Per Finacle/Temenos/BNP Tier-1 layering:
+ *   Controller → Service → Repository
+ *   Controller has NO @Transactional, NO direct repository calls, NO business logic.
+ *
+ * Per RBI KYC Master Direction 2016:
+ * - One PAN = One CIF (duplicate PAN check)
+ * - KYC verification date uses CBS business date (not LocalDate.now())
+ * - KYC expiry computed per risk category
+ * - Branch access enforced on all operations
+ * - Every state change audited
+ */
+@Service
+public class CustomerCifServiceImpl implements CustomerCifService {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(CustomerCifServiceImpl.class);
+
+    private final CustomerRepository customerRepo;
+    private final BranchRepository branchRepo;
+    private final LoanAccountRepository loanRepo;
+    private final AuditService auditSvc;
+    private final BranchAccessValidator branchValidator;
+    private final CbsReferenceService refService;
+    private final BusinessDateService businessDateService;
+
+    public CustomerCifServiceImpl(
+            CustomerRepository customerRepo,
+            BranchRepository branchRepo,
+            LoanAccountRepository loanRepo,
+            AuditService auditSvc,
+            BranchAccessValidator branchValidator,
+            CbsReferenceService refService,
+            BusinessDateService businessDateService) {
+        this.customerRepo = customerRepo;
+        this.branchRepo = branchRepo;
+        this.loanRepo = loanRepo;
+        this.auditSvc = auditSvc;
+        this.branchValidator = branchValidator;
+        this.refService = refService;
+        this.businessDateService = businessDateService;
+    }
+
+    @Override
+    @Transactional
+    public Customer createCustomer(
+            String firstName, String lastName,
+            LocalDate dateOfBirth,
+            String panNumber, String aadhaarNumber,
+            String mobileNumber, String email,
+            String address, String city, String state,
+            String pinCode, String customerType,
+            Long branchId) {
+        String tid = TenantContext.getCurrentTenant();
+        String user = SecurityUtil.getCurrentUsername();
+
+        // CBS: Duplicate PAN check per RBI KYC (one PAN = one CIF)
+        if (panNumber != null && !panNumber.isBlank()) {
+            if (customerRepo.existsByTenantIdAndPanNumber(
+                    tid, panNumber))
+                throw new BusinessException("DUPLICATE_PAN",
+                        "Customer with this PAN already exists");
+        }
+
+        Branch branch = branchRepo.findById(branchId)
+                .filter(b -> b.getTenantId().equals(tid)
+                        && b.isActive())
+                .orElseThrow(() -> new BusinessException(
+                        "BRANCH_NOT_FOUND",
+                        "" + branchId));
+
+        Customer c = new Customer();
+        c.setTenantId(tid);
+        c.setCustomerNumber(
+                refService.generateCustomerNumber(
+                        branch.getId()));
+        c.setFirstName(firstName);
+        c.setLastName(lastName);
+        c.setDateOfBirth(dateOfBirth);
+        c.setPanNumber(panNumber);
+        c.setAadhaarNumber(aadhaarNumber);
+        c.setMobileNumber(mobileNumber);
+        c.setEmail(email);
+        c.setAddress(address);
+        c.setCity(city);
+        c.setState(state);
+        c.setPinCode(pinCode);
+        c.setCustomerType(customerType != null
+                ? customerType : "INDIVIDUAL");
+        c.setBranch(branch);
+        c.setCreatedBy(user);
+        c.computePanHash();
+        c.computeAadhaarHash();
+
+        Customer saved = customerRepo.save(c);
+
+        auditSvc.logEvent("Customer", saved.getId(),
+                "CREATE", null,
+                saved.getCustomerNumber(), "CIF",
+                "Customer created by " + user
+                        + " at branch " + branch.getBranchCode());
+
+        log.info("Customer created: cif={}, branch={}, user={}",
+                saved.getCustomerNumber(),
+                branch.getBranchCode(), user);
+
+        return saved;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Customer getCustomer(Long customerId) {
+        String tid = TenantContext.getCurrentTenant();
+        Customer c = customerRepo.findById(customerId)
+                .filter(x -> x.getTenantId().equals(tid))
+                .orElseThrow(() -> new BusinessException(
+                        "CUSTOMER_NOT_FOUND", "" + customerId));
+        branchValidator.validateAccess(c.getBranch());
+        return c;
+    }
+
+    @Override
+    @Transactional
+    public Customer verifyKyc(Long customerId) {
+        String tid = TenantContext.getCurrentTenant();
+        String user = SecurityUtil.getCurrentUsername();
+
+        Customer c = customerRepo.findById(customerId)
+                .filter(x -> x.getTenantId().equals(tid))
+                .orElseThrow(() -> new BusinessException(
+                        "CUSTOMER_NOT_FOUND", "" + customerId));
+        branchValidator.validateAccess(c.getBranch());
+
+        // CBS CRITICAL: Use business date for KYC verification date.
+        // Per Finacle CIF_MASTER / RBI KYC Master Direction 2016:
+        // KYC verified date must reflect the CBS business date, not the
+        // wall-clock date. If EOD runs after midnight, the KYC date
+        // should be the current business day, not tomorrow.
+        LocalDate businessDate =
+                businessDateService.getCurrentBusinessDate();
+
+        c.setKycVerified(true);
+        c.setKycVerifiedBy(user);
+        c.setKycVerifiedDate(businessDate);
+        c.computeKycExpiry();
+        c.setRekycDue(false);
+        c.setUpdatedBy(user);
+        customerRepo.save(c);
+
+        auditSvc.logEvent("Customer", c.getId(),
+                "KYC_VERIFY", "PENDING", "VERIFIED",
+                "CIF", "KYC verified by " + user
+                        + " on business date " + businessDate);
+
+        log.info("KYC verified: cif={}, user={}, bizDate={}",
+                c.getCustomerNumber(), user, businessDate);
+
+        return c;
+    }
+
+    @Override
+    @Transactional
+    public Customer deactivateCustomer(Long customerId) {
+        String tid = TenantContext.getCurrentTenant();
+        String user = SecurityUtil.getCurrentUsername();
+
+        Customer c = customerRepo.findById(customerId)
+                .filter(x -> x.getTenantId().equals(tid))
+                .orElseThrow(() -> new BusinessException(
+                        "CUSTOMER_NOT_FOUND", "" + customerId));
+
+        // CBS: Cannot deactivate customer with active loan accounts
+        long active = loanRepo
+                .findByTenantIdAndCustomerId(tid, customerId)
+                .stream()
+                .filter(a -> !a.getStatus().isTerminal())
+                .count();
+        if (active > 0)
+            throw new BusinessException(
+                    "CUSTOMER_HAS_ACTIVE_ACCOUNTS",
+                    active + " active loan account(s)");
+
+        c.setActive(false);
+        c.setUpdatedBy(user);
+        customerRepo.save(c);
+
+        auditSvc.logEvent("Customer", c.getId(),
+                "DEACTIVATE", "ACTIVE", "INACTIVE",
+                "CIF", "Deactivated by " + user);
+
+        log.info("Customer deactivated: cif={}, user={}",
+                c.getCustomerNumber(), user);
+
+        return c;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Customer> searchCustomers(String query) {
+        String tid = TenantContext.getCurrentTenant();
+        if (query == null || query.length() < 2)
+            throw new BusinessException("INVALID_SEARCH",
+                    "Search query must be at least 2 chars");
+
+        if (SecurityUtil.isAdminRole()) {
+            return customerRepo.searchCustomers(
+                    tid, query.trim());
+        } else {
+            Long branchId =
+                    SecurityUtil.getCurrentUserBranchId();
+            if (branchId == null)
+                return List.of();
+            return customerRepo.searchCustomersByBranch(
+                    tid, branchId, query.trim());
+        }
+    }
+}

@@ -152,6 +152,131 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         return a.isSavings() ? GLConstants.SB_DEPOSITS : GLConstants.CA_DEPOSITS;
     }
 
+    /**
+     * Computes daily interest with balance-slab tiering support.
+     *
+     * Per Finacle INTDEF / RBI Savings Interest Directive:
+     * When ProductMaster.interestTieringEnabled = true, interest is calculated
+     * using different rates for different balance slabs. The tiering JSON defines
+     * slabs: [{"min":0,"max":100000,"rate":3.0},{"min":100001,"max":500000,"rate":3.5}]
+     *
+     * For each slab, interest = min(balance, slab.max) - slab.min) * rate / 36500.
+     * The total daily interest is the sum across all applicable slabs.
+     *
+     * Falls back to flat rate (account.interestRate) when:
+     * - Product not found
+     * - interestTieringEnabled = false
+     * - interestTieringJson is null/empty/unparseable
+     */
+    private BigDecimal computeDailyInterest(
+            DepositAccount acct, LocalDate bd) {
+        BigDecimal balance = acct.getLedgerBalance();
+        if (balance.signum() <= 0) return BigDecimal.ZERO;
+
+        // Check if product has tiering enabled
+        String tid = acct.getTenantId();
+        var productOpt = productMasterRepository
+                .findByTenantIdAndProductCode(tid,
+                        acct.getProductCode());
+        if (productOpt.isPresent()
+                && productOpt.get().isInterestTieringEnabled()
+                && productOpt.get().getInterestTieringJson() != null
+                && !productOpt.get().getInterestTieringJson()
+                        .isBlank()) {
+            try {
+                return computeTieredDailyInterest(
+                        balance,
+                        productOpt.get()
+                                .getInterestTieringJson());
+            } catch (Exception e) {
+                // CBS Safety: if tiering JSON is malformed,
+                // fall back to flat rate — never skip accrual.
+                log.warn("Tiered interest parse failed for "
+                        + "{}, falling back to flat rate: {}",
+                        acct.getAccountNumber(),
+                        e.getMessage());
+            }
+        }
+
+        // Flat rate fallback
+        return balance
+                .multiply(acct.getInterestRate())
+                .divide(new BigDecimal("36500"), 2,
+                        RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Computes daily interest using balance-slab tiering.
+     *
+     * Per RBI: interest on savings accounts is calculated on the
+     * daily closing balance. With tiering, different portions of
+     * the balance earn different rates.
+     *
+     * Example: Balance = ₹3,00,000
+     *   Slab 1: ₹0 - ₹1,00,000 at 3.0% → ₹1,00,000 * 3.0 / 36500
+     *   Slab 2: ₹1,00,001 - ₹5,00,000 at 3.5% → ₹2,00,000 * 3.5 / 36500
+     *   Total daily = sum of slab contributions
+     */
+    private BigDecimal computeTieredDailyInterest(
+            BigDecimal balance, String tieringJson) {
+        // CBS: Simple JSON array parsing without external library.
+        // Format: [{"min":0,"max":100000,"rate":3.0},...]
+        // In production, use Jackson ObjectMapper for robustness.
+        BigDecimal totalDaily = BigDecimal.ZERO;
+        String cleaned = tieringJson.trim();
+        if (!cleaned.startsWith("[")) return BigDecimal.ZERO;
+        cleaned = cleaned.substring(1,
+                cleaned.length() - 1); // Remove [ ]
+        String[] slabs = cleaned.split("\\},\\s*\\{");
+        for (String slab : slabs) {
+            slab = slab.replace("{", "").replace("}", "");
+            BigDecimal slabMin = extractJsonNumber(slab, "min");
+            BigDecimal slabMax = extractJsonNumber(slab, "max");
+            BigDecimal slabRate = extractJsonNumber(slab, "rate");
+            if (slabMin == null || slabMax == null
+                    || slabRate == null)
+                continue;
+            if (balance.compareTo(slabMin) <= 0) break;
+            BigDecimal applicable = balance.min(slabMax)
+                    .subtract(slabMin).max(BigDecimal.ZERO);
+            BigDecimal slabInterest = applicable
+                    .multiply(slabRate)
+                    .divide(new BigDecimal("36500"), 2,
+                            RoundingMode.HALF_UP);
+            totalDaily = totalDaily.add(slabInterest);
+        }
+        return totalDaily;
+    }
+
+    /** Extract a numeric value from a simple JSON key-value string */
+    private BigDecimal extractJsonNumber(
+            String json, String key) {
+        String search = "\"" + key + "\":";
+        int idx = json.indexOf(search);
+        if (idx < 0) {
+            search = "\"" + key + "\" :";
+            idx = json.indexOf(search);
+        }
+        if (idx < 0) return null;
+        int start = idx + search.length();
+        while (start < json.length()
+                && json.charAt(start) == ' ')
+            start++;
+        int end = start;
+        while (end < json.length()
+                && (Character.isDigit(json.charAt(end))
+                        || json.charAt(end) == '.'
+                        || json.charAt(end) == '-'))
+            end++;
+        if (end <= start) return null;
+        try {
+            return new BigDecimal(
+                    json.substring(start, end));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     private DepositAccount lockAccount(String tenantId, String accountNumber) {
         return accountRepository
                 .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
@@ -675,9 +800,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 log.info("FY reset: YTD counters reset for {} on {}", acn, bd);
             }
         }
-        BigDecimal daily = acct.getLedgerBalance()
-                .multiply(acct.getInterestRate())
-                .divide(new BigDecimal("36500"), 2, RoundingMode.HALF_UP);
+        // CBS Tier-1: Interest tiering per Finacle INTDEF / RBI Savings Interest Directive.
+        // If the product has balance-based tiering enabled, apply different rates per
+        // balance slab. Otherwise, use the flat rate from the account.
+        // Tiering JSON format: [{"min":0,"max":100000,"rate":3.0},{"min":100001,"max":500000,"rate":3.5}]
+        BigDecimal daily = computeDailyInterest(acct, bd);
         if (daily.signum() <= 0) return;
         acct.setAccruedInterest(acct.getAccruedInterest().add(daily));
         acct.setLastInterestAccrualDate(bd);

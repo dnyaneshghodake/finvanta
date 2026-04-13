@@ -1045,8 +1045,20 @@ public class LoanAccountServiceImpl implements LoanAccountService {
 
         if (previousStatus != newStatus) {
             account.setStatus(newStatus);
+
+            // CBS CRILC: Track SMA/NPA entry dates for regulatory reporting.
+            // Per RBI Master Direction on CRILC 2024: SMA entry date must be
+            // reported for early warning. firstNpaDate is distinct from npaDate
+            // (which resets on upgrade) — it tracks the FIRST time the account
+            // entered NPA for provisioning vintage calculation.
+            if (newStatus.isSma() && account.getSmaEntryDate() == null) {
+                account.setSmaEntryDate(businessDate);
+            }
             if (newStatus.isNpa() && account.getNpaDate() == null) {
                 account.setNpaDate(businessDate);
+            }
+            if (newStatus.isNpa() && account.getFirstNpaDate() == null) {
+                account.setFirstNpaDate(businessDate);
             }
             account.setNpaClassificationDate(businessDate);
             account.setUpdatedBy("SYSTEM");
