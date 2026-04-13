@@ -1,6 +1,7 @@
 package com.finvanta.controller;
 
 import com.finvanta.domain.entity.Branch;
+import com.finvanta.domain.enums.BranchType;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.BranchService;
@@ -48,6 +49,8 @@ public class BranchController {
     public ModelAndView showAddForm() {
         ModelAndView mav = new ModelAndView("branch/add");
         mav.addObject("branch", new Branch());
+        mav.addObject("branchTypes", BranchType.values());
+        mav.addObject("parentBranches", branchService.listActiveBranches());
         return mav;
     }
 

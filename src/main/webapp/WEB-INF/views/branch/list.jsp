@@ -16,9 +16,10 @@
                     <tr>
                         <th>Branch Code</th>
                         <th>Branch Name</th>
+                        <th>Type</th>
                         <th>IFSC</th>
                         <th>City</th>
-                        <th>State</th>
+                        <th>Zone</th>
                         <th>Region</th>
                         <th>Status</th>
                         <th>Actions</th>
@@ -27,12 +28,20 @@
                 <tbody>
                     <c:forEach var="branch" items="${branches}">
                         <tr>
-                            <td><a href="${pageContext.request.contextPath}/branch/view/${branch.id}"><c:out value="${branch.branchCode}" /></a></td>
+                            <td><a href="${pageContext.request.contextPath}/branch/view/${branch.id}" class="fw-bold"><c:out value="${branch.branchCode}" /></a></td>
                             <td><c:out value="${branch.branchName}" /></td>
-                            <td><c:out value="${branch.ifscCode}" /></td>
-                            <td><c:out value="${branch.city}" /></td>
-                            <td><c:out value="${branch.state}" /></td>
-                            <td><c:out value="${branch.region}" /></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${branch.branchType == 'HEAD_OFFICE'}"><span class="fv-badge fv-badge-npa">HO</span></c:when>
+                                    <c:when test="${branch.branchType == 'ZONAL_OFFICE'}"><span class="fv-badge fv-badge-pending">ZO</span></c:when>
+                                    <c:when test="${branch.branchType == 'REGIONAL_OFFICE'}"><span class="fv-badge fv-badge-closed">RO</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-approved">BRANCH</span></c:otherwise>
+                                </c:choose>
+                            </td>
+                            <td><c:out value="${branch.ifscCode}" default="--" /></td>
+                            <td><c:out value="${branch.city}" default="--" /></td>
+                            <td><c:out value="${branch.zoneCode}" default="--" /></td>
+                            <td><c:out value="${branch.regionCode}" default="--" /></td>
                             <td><span class="fv-badge fv-badge-active">Active</span></td>
                             <td><a href="${pageContext.request.contextPath}/branch/view/${branch.id}" class="btn btn-sm btn-fv-primary"><i class="bi bi-eye"></i> View</a></td>
                         </tr>
