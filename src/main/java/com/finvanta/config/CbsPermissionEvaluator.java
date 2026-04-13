@@ -5,6 +5,7 @@ import com.finvanta.repository.RolePermissionRepository;
 import com.finvanta.util.TenantContext;
 
 import java.io.Serializable;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +50,18 @@ public class CbsPermissionEvaluator implements PermissionEvaluator {
 
     private static final Logger log =
             LoggerFactory.getLogger(CbsPermissionEvaluator.class);
+
+    /**
+     * CBS Tier-1 Performance: In-memory permission cache.
+     * Per Finacle AUTH_ENGINE / Temenos EB.PERMISSION.CHECK:
+     * Permission matrix is cached to avoid DB queries on every request.
+     * Cache key: "tenantId:role:permissionCode" → Boolean.
+     *
+     * Separate maps for ALLOW and DENY to maintain BNP RBAC precedence rules.
+     * DENY is checked first — if cached as true, ALLOW is never checked.
+     */
+    private final ConcurrentHashMap<String, Boolean> allowCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Boolean> denyCache = new ConcurrentHashMap<>();
 
     private final RolePermissionRepository rolePermissionRepo;
 
@@ -97,16 +110,36 @@ public class CbsPermissionEvaluator implements PermissionEvaluator {
             return false;
         }
 
+        // CBS Tier-1 Performance: Permission lookups are cached in-memory per
+        // tenant+role+permission to avoid 2 DB queries per request at 1M+ TPS.
+        // Per Finacle AUTH_ENGINE: permission matrix is cached per session.
+        // Per Temenos EB.PERMISSION.CHECK: cached with TTL-based invalidation.
+        //
+        // Cache key: "tenantId:role:permissionCode" → Boolean result.
+        // Invalidation: cache is cleared on application restart. For runtime
+        // permission matrix changes, restart the application or add explicit
+        // cache eviction to the role-permission admin endpoints.
+        String cacheKey = tenantId + ":" + userRole + ":" + permissionCode;
+
         // CBS: DENY takes precedence over ALLOW per BNP RBAC
-        if (rolePermissionRepo.isDenied(tenantId, userRole, permissionCode)) {
+        Boolean denied = denyCache.get(cacheKey);
+        if (denied == null) {
+            denied = rolePermissionRepo.isDenied(tenantId, userRole, permissionCode);
+            denyCache.put(cacheKey, denied);
+        }
+        if (denied) {
             log.debug("Permission DENIED: user={}, role={}, perm={}",
                     authentication.getName(), userRole, permissionCode);
             return false;
         }
 
         // Check ALLOW grant
-        boolean allowed = rolePermissionRepo.hasPermission(
-                tenantId, userRole, permissionCode);
+        Boolean allowed = allowCache.get(cacheKey);
+        if (allowed == null) {
+            allowed = rolePermissionRepo.hasPermission(
+                    tenantId, userRole, permissionCode);
+            allowCache.put(cacheKey, allowed);
+        }
 
         if (!allowed) {
             log.debug("Permission not granted: user={}, role={}, perm={}",

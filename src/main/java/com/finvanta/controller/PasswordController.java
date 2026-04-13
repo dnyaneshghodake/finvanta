@@ -127,21 +127,13 @@ public class PasswordController {
                 throw new BusinessException("WRONG_PASSWORD", "Current password is incorrect.");
             }
 
-            // Check new password is not same as current
-            if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            // CBS: Check password reuse via centralized isPasswordInHistory() method.
+            // Per RBI IT Governance Direction 2023 §8.2: users cannot reuse last 3 passwords.
+            // Uses PasswordEncoder.matches() internally to handle BCrypt's random salt.
+            // Checks current password + last 3 history entries in a single call.
+            if (user.isPasswordInHistory(newPassword, passwordEncoder)) {
                 throw new BusinessException("PASSWORD_REUSE",
-                        "New password cannot be the same as your current password.");
-            }
-
-            // Check password history (last 3 passwords per RBI)
-            if (user.getPasswordHistory() != null && !user.getPasswordHistory().isBlank()) {
-                String[] history = user.getPasswordHistory().split("\\|");
-                for (String oldHash : history) {
-                    if (oldHash != null && !oldHash.isBlank() && passwordEncoder.matches(newPassword, oldHash)) {
-                        throw new BusinessException("PASSWORD_REUSE",
-                                "Cannot reuse any of your last 3 passwords per RBI IT Governance policy.");
-                    }
-                }
+                        "Cannot reuse any of your last 3 passwords per RBI IT Governance policy.");
             }
 
             // All validations passed — change password
