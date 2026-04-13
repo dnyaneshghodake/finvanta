@@ -3,10 +3,12 @@ package com.finvanta.service;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.BusinessCalendar;
+import com.finvanta.domain.entity.Tenant;
 import com.finvanta.domain.entity.TransactionBatch;
 import com.finvanta.domain.enums.DayStatus;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
+import com.finvanta.repository.TenantRepository;
 import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
@@ -54,16 +56,19 @@ public class BusinessDateService {
     private final BusinessCalendarRepository calendarRepository;
     private final TransactionBatchRepository batchRepository;
     private final BranchRepository branchRepository;
+    private final TenantRepository tenantRepository;
     private final AuditService auditService;
 
     public BusinessDateService(
             BusinessCalendarRepository calendarRepository,
             TransactionBatchRepository batchRepository,
             BranchRepository branchRepository,
+            TenantRepository tenantRepository,
             AuditService auditService) {
         this.calendarRepository = calendarRepository;
         this.batchRepository = batchRepository;
         this.branchRepository = branchRepository;
+        this.tenantRepository = tenantRepository;
         this.auditService = auditService;
     }
 
@@ -350,6 +355,19 @@ public class BusinessDateService {
                             + ". Create at least one BRANCH-type branch first.");
         }
 
+        // CBS Tier-1: Resolve tenant's business day policy for weekend detection.
+        // Per Finacle BANK_PARAM.WORKING_DAYS / Temenos COMPANY.WORKING.DAYS:
+        //   MON_TO_SAT → Only Sunday is weekend (most Indian banks)
+        //   MON_TO_FRI → Saturday and Sunday are weekends
+        // Default: MON_TO_SAT per RBI NI Act (Indian banking standard)
+        String businessDayPolicy = "MON_TO_SAT";
+        Tenant tenant = tenantRepository.findByTenantCode(tenantId).orElse(null);
+        if (tenant != null && tenant.getBusinessDayPolicy() != null
+                && !tenant.getBusinessDayPolicy().isBlank()) {
+            businessDayPolicy = tenant.getBusinessDayPolicy();
+        }
+        boolean saturdayIsWeekend = "MON_TO_FRI".equals(businessDayPolicy);
+
         for (Branch branch : operationalBranches) {
             for (int day = 1; day <= daysInMonth; day++) {
                 LocalDate date = LocalDate.of(year, month, day);
@@ -371,15 +389,15 @@ public class BusinessDateService {
                 cal.setLocked(false);
                 cal.setCreatedBy(currentUser);
 
-                // Auto-detect weekends per RBI NI Act
+                // Auto-detect weekends per RBI NI Act + tenant business day policy
                 DayOfWeek dow = date.getDayOfWeek();
-                if (dow == DayOfWeek.SATURDAY) {
-                    cal.setHoliday(true);
-                    cal.setHolidayDescription("Saturday");
-                    cal.setHolidayType("WEEKEND");
-                } else if (dow == DayOfWeek.SUNDAY) {
+                if (dow == DayOfWeek.SUNDAY) {
                     cal.setHoliday(true);
                     cal.setHolidayDescription("Sunday");
+                    cal.setHolidayType("WEEKEND");
+                } else if (dow == DayOfWeek.SATURDAY && saturdayIsWeekend) {
+                    cal.setHoliday(true);
+                    cal.setHolidayDescription("Saturday");
                     cal.setHolidayType("WEEKEND");
                 } else {
                     cal.setHoliday(false);

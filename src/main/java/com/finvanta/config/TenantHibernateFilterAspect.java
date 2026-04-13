@@ -83,11 +83,19 @@ public class TenantHibernateFilterAspect {
             session.enableFilter("tenantFilter")
                     .setParameter("tenantId", tenantId);
         } catch (Exception e) {
-            // CBS Safety: Filter activation failure must NEVER break the request.
-            // Log and continue — application-level tenant filtering in repository
-            // queries provides the primary isolation. This is defense-in-depth.
-            log.warn("Failed to enable Hibernate tenant filter: {}",
+            // CBS CRITICAL: Fail-closed per RBI IT Governance Direction 2023 §8.1.
+            // If the Hibernate tenant filter cannot be activated, proceeding would
+            // allow cross-tenant data leakage — the repository query would return
+            // ALL tenants' data. This is a non-negotiable security boundary.
+            //
+            // Per Finacle/Temenos: infrastructure-level tenant isolation failure
+            // is a fatal condition — the request MUST be rejected.
+            log.error("CRITICAL: Failed to enable Hibernate tenant filter. "
+                    + "Rejecting repository call to prevent cross-tenant data leakage: {}",
                     e.getMessage());
+            throw new IllegalStateException(
+                    "CBS SECURITY: Tenant isolation filter activation failed. "
+                    + "Repository access denied to prevent cross-tenant data leakage.", e);
         }
     }
 }

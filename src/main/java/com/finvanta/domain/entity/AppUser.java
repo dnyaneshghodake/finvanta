@@ -264,7 +264,53 @@ public class AppUser extends BaseEntity {
         return mfaEnabled && (mfaSecret == null || mfaSecret.isBlank());
     }
 
-    /** Sets password with expiry and history tracking */
+    /**
+     * Checks if a password hash matches any of the last 3 passwords in history.
+     * Per RBI IT Governance Direction 2023 §8.2: users cannot reuse recent passwords.
+     *
+     * IMPORTANT: This checks raw hash equality. The caller must pass the ENCODED hash
+     * of the new password (not the plaintext). Since BCrypt produces different hashes
+     * for the same plaintext, the caller should use PasswordEncoder.matches() against
+     * each history entry instead. This method is for delegating-encoder formats where
+     * the same input produces the same hash (e.g., {noop} in dev).
+     *
+     * For production BCrypt usage, use {@link #isPasswordInHistory(String, org.springframework.security.crypto.password.PasswordEncoder)}
+     * which properly handles BCrypt's random salt.
+     *
+     * @param rawPassword The plaintext password to check
+     * @param encoder     The password encoder to use for matching
+     * @return true if the password matches any of the last 3 passwords
+     */
+    public boolean isPasswordInHistory(String rawPassword,
+            org.springframework.security.crypto.password.PasswordEncoder encoder) {
+        // Check against current password
+        if (this.passwordHash != null && encoder.matches(rawPassword, this.passwordHash)) {
+            return true;
+        }
+        // Check against password history
+        if (this.passwordHistory != null && !this.passwordHistory.isBlank()) {
+            String[] historyHashes = this.passwordHistory.split("\\|");
+            for (String historyHash : historyHashes) {
+                if (historyHash != null && !historyHash.isBlank()
+                        && encoder.matches(rawPassword, historyHash)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Sets password with expiry and history tracking.
+     * Per RBI IT Governance Direction 2023 §8.2:
+     * - Password rotation every 90 days
+     * - Last 3 passwords cannot be reused (history stored)
+     *
+     * IMPORTANT: Callers MUST check password reuse via {@link #isPasswordInHistory}
+     * BEFORE calling this method. This method only manages the history storage
+     * and expiry tracking — it does not validate reuse because it receives an
+     * already-encoded hash (cannot reverse BCrypt to check against history).
+     */
     public void changePassword(String newPasswordHash) {
         // Add current password to history (keep last 3)
         if (this.passwordHash != null) {
