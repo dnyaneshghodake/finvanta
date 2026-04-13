@@ -7,6 +7,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import org.hibernate.Session;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -34,6 +36,8 @@ import org.springframework.web.servlet.HandlerInterceptor;
 @Component
 public class HibernateTenantFilterInterceptor implements HandlerInterceptor {
 
+    private static final Logger log = LoggerFactory.getLogger(HibernateTenantFilterInterceptor.class);
+
     private final EntityManager entityManager;
 
     public HibernateTenantFilterInterceptor(EntityManager entityManager) {
@@ -42,13 +46,24 @@ public class HibernateTenantFilterInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        if (!TenantContext.isSet()) {
+            // TenantContext not set (e.g., static resources, login page) — skip filter.
+            // These requests don't access tenant-scoped data.
+            return true;
+        }
         try {
             String tenantId = TenantContext.getCurrentTenant();
             Session session = entityManager.unwrap(Session.class);
             session.enableFilter("tenantFilter").setParameter("tenantId", tenantId);
         } catch (Exception e) {
-            // TenantContext not set (e.g., static resources, login page) — skip filter.
-            // These requests don't access tenant-scoped data.
+            // CBS CRITICAL: Fail-closed per RBI IT Governance Direction 2023 §8.1.
+            // If TenantContext IS set but filter activation fails, this is a genuine
+            // infrastructure failure — not a pre-auth request. Proceeding would allow
+            // unfiltered queries to return cross-tenant data.
+            log.error("CRITICAL: Hibernate tenant filter activation failed for tenant-scoped request: {}",
+                    e.getMessage());
+            throw new IllegalStateException(
+                    "CBS SECURITY: Tenant filter activation failed. Request rejected.", e);
         }
         return true;
     }

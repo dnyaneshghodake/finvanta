@@ -169,6 +169,54 @@ public class CbsAuthenticationEventListener {
     }
 
     /**
+     * CBS: Logout handler — records session termination in immutable audit trail.
+     * Per RBI IT Governance Direction 2023 §8.3: all session lifecycle events
+     * (login, logout, session expiry) must be audited for security investigation.
+     *
+     * Per Finacle USER_MASTER / Temenos USER: logout events are critical for:
+     * - Detecting unauthorized session hijacking (logout without user action)
+     * - Compliance reporting (user session duration tracking)
+     * - Forensic analysis (correlating logout time with last transaction)
+     */
+    @EventListener
+    @Transactional
+    public void onLogoutSuccess(LogoutSuccessEvent event) {
+        String username = event.getAuthentication() != null
+                ? event.getAuthentication().getName() : "UNKNOWN";
+        String ipAddress = resolveClientIp();
+        String tenantId = resolveTenantId();
+
+        try {
+            boolean tenantWasNull = !TenantContext.isSet();
+            if (tenantWasNull) {
+                TenantContext.setCurrentTenant(tenantId);
+            }
+            try {
+                userRepository.findByTenantIdAndUsername(tenantId, username).ifPresent(user -> {
+                    auditService.logEvent(
+                            "AppUser", user.getId(), "LOGOUT", null,
+                            "ip=" + ipAddress,
+                            "SECURITY",
+                            "Logout: user=" + username
+                                    + " | IP=" + ipAddress
+                                    + " | Role=" + user.getRole()
+                                    + " | Branch="
+                                    + (user.getBranch() != null ? user.getBranch().getBranchCode() : "N/A"));
+
+                    log.info("LOGOUT: user={}, ip={}, role={}", username, ipAddress, user.getRole());
+                });
+            } finally {
+                if (tenantWasNull) {
+                    TenantContext.clear();
+                }
+            }
+        } catch (Exception e) {
+            // Logout event handlers must NEVER block logout — log and continue
+            log.error("Failed to record logout for {}: {}", username, e.getMessage());
+        }
+    }
+
+    /**
      * Resolve client IP address from the current HTTP request.
      * Handles X-Forwarded-For header for reverse proxy deployments.
      */

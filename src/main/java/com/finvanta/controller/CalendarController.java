@@ -78,12 +78,20 @@ public class CalendarController {
         return mav;
     }
 
-    /** CBS Day Open — opens a business date for transactions */
+    /**
+     * CBS Day Open — opens a business date for transactions at a specific branch.
+     * Per Finacle DAYCTRL: day control is branch-scoped. The branchId parameter
+     * identifies which branch's day to open. Uses the non-deprecated branch-explicit
+     * API instead of the deprecated user-branch-implicit API.
+     */
     @PostMapping("/day-open")
-    public String openDay(@RequestParam String businessDate, RedirectAttributes redirectAttributes) {
+    public String openDay(
+            @RequestParam String businessDate,
+            @RequestParam Long branchId,
+            RedirectAttributes redirectAttributes) {
         try {
             LocalDate date = LocalDate.parse(businessDate);
-            businessDateService.openDay(date);
+            businessDateService.openDay(date, branchId);
             redirectAttributes.addFlashAttribute("success", "Business day opened: " + businessDate);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
@@ -91,12 +99,18 @@ public class CalendarController {
         return "redirect:/calendar/list";
     }
 
-    /** CBS Day Close — closes a business date after EOD completion */
+    /**
+     * CBS Day Close — closes a business date after EOD completion at a specific branch.
+     * Per Finacle DAYCTRL: day close is branch-scoped.
+     */
     @PostMapping("/day-close")
-    public String closeDay(@RequestParam String businessDate, RedirectAttributes redirectAttributes) {
+    public String closeDay(
+            @RequestParam String businessDate,
+            @RequestParam Long branchId,
+            RedirectAttributes redirectAttributes) {
         try {
             LocalDate date = LocalDate.parse(businessDate);
-            businessDateService.closeDay(date);
+            businessDateService.closeDay(date, branchId);
             redirectAttributes.addFlashAttribute("success", "Business day closed: " + businessDate);
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
@@ -107,7 +121,9 @@ public class CalendarController {
     /**
      * CBS Calendar Generation — generates calendar for a month with auto-weekend detection.
      * Per Finacle DAYCTRL / RBI NI Act: every date in the month gets an entry.
-     * Saturdays and Sundays are auto-marked as holidays.
+     * Weekends are auto-marked based on tenant's businessDayPolicy:
+     *   MON_TO_SAT → only Sunday is weekend (default for Indian banks)
+     *   MON_TO_FRI → Saturday and Sunday are weekends
      * Idempotent — safe to call multiple times (skips existing entries).
      */
     @PostMapping("/generate")
