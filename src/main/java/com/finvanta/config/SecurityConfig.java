@@ -3,8 +3,11 @@ package com.finvanta.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -31,6 +34,7 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     private final MfaAuthenticationSuccessHandler mfaSuccessHandler;
@@ -46,8 +50,69 @@ public class SecurityConfig {
         return activeProfile != null && activeProfile.contains("dev");
     }
 
+    /**
+     * CBS API SecurityFilterChain — Stateless JWT authentication.
+     * Per Finacle Connect / Temenos IRIS: REST APIs use JWT tokens,
+     * no session, no CSRF, no form login.
+     *
+     * MUST be ordered BEFORE the UI chain (@Order(1)) so that
+     * /api/v1/** requests are matched by this chain first.
+     *
+     * Auth flow: Authorization: Bearer {jwt} → JwtAuthenticationFilter
+     *            → validates HMAC-SHA256 → sets SecurityContext
+     *            → @PreAuthorize on controller method
+     *
+     * /api/v1/auth/** is permitAll (token issuance endpoints).
+     * All other /api/v1/** require valid JWT ACCESS token.
+     */
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    @Order(1)
+    public SecurityFilterChain apiSecurityFilterChain(
+            HttpSecurity http,
+            JwtAuthenticationFilter jwtFilter)
+            throws Exception {
+        http.securityMatcher("/api/v1/**")
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(
+                                "/api/v1/auth/**")
+                        .permitAll()
+                        .anyRequest().authenticated())
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(
+                                SessionCreationPolicy.STATELESS))
+                .csrf(csrf -> csrf.disable())
+                .formLogin(form -> form.disable())
+                .logout(logout -> logout.disable())
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(
+                                (req, res, authEx) -> {
+                                    res.setStatus(401);
+                                    res.setContentType(
+                                            "application/json");
+                                    res.getWriter().write(
+                                            "{\"status\":\"ERROR\","
+                                            + "\"errorCode\":"
+                                            + "\"UNAUTHORIZED\","
+                                            + "\"message\":"
+                                            + "\"Authentication "
+                                            + "required. Provide "
+                                            + "Bearer token.\"}");
+                                }))
+                .addFilterBefore(jwtFilter,
+                        UsernamePasswordAuthenticationFilter.class);
+        return http.build();
+    }
+
+    /**
+     * CBS UI SecurityFilterChain — Session-based authentication.
+     * Per Finacle/Temenos: Thymeleaf UI uses form login + session + CSRF.
+     * This chain handles ALL non-API paths (/, /login, /deposit/*, /loan/*, etc.)
+     *
+     * @Order(2) ensures this is the fallback chain after the API chain.
+     */
+    @Bean
+    @Order(2)
+    public SecurityFilterChain uiSecurityFilterChain(HttpSecurity http) throws Exception {
         http.authorizeHttpRequests(auth -> {
                     auth.requestMatchers(
                                     "/login",
@@ -62,11 +127,6 @@ public class SecurityConfig {
                                     "/actuator/health",
                                     "/actuator/info")
                             .permitAll();
-                    // CBS SECURITY: H2 console ONLY accessible in dev profile.
-                    // In production, this matcher is not registered — /h2-console/**
-                    // falls through to .anyRequest().authenticated() and is blocked.
-                    // Per RBI IT Governance Direction 2023: database consoles must NEVER
-                    // be exposed in production environments.
                     if (isDevProfile()) {
                         auth.requestMatchers("/h2-console/**").permitAll();
                     }
@@ -224,8 +284,9 @@ public class SecurityConfig {
                         .maximumSessions(1)
                         .expiredUrl("/login?expired"))
                 .csrf(csrf -> {
-                    // CBS SECURITY: Only disable CSRF for H2 console in dev profile.
-                    // In production, CSRF is enforced on ALL endpoints without exception.
+                    // CBS SECURITY: CSRF enforced on ALL UI endpoints.
+                    // /api/v1/** is handled by the stateless API chain (no CSRF needed).
+                    // H2 console CSRF bypass only in dev profile.
                     if (isDevProfile()) {
                         csrf.ignoringRequestMatchers("/h2-console/**");
                     }

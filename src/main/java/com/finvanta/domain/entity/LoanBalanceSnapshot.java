@@ -96,4 +96,26 @@ public class LoanBalanceSnapshot extends BaseEntity {
     /** Provisioning amount at snapshot time (for provisioning adequacy audit) */
     @Column(name = "provisioning_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal provisioningAmount = BigDecimal.ZERO;
+
+    // === CRILC Reporting Fields (per RBI Master Direction on CRILC 2024) ===
+
+    /** RBI Sectoral Classification at snapshot time (for sectoral exposure trend) */
+    @Column(name = "sectoral_classification", length = 30)
+    private String sectoralClassification;
+
+    /** Borrower group ID at snapshot time (for connected party exposure) */
+    @Column(name = "borrower_group_id", length = 50)
+    private String borrowerGroupId;
+
+    /** Whether this account was CRILC-reportable at snapshot time */
+    @Column(name = "crilc_reportable")
+    private boolean crilcReportable = false;
+
+    /** Interest rate at snapshot time (for rate monitoring / EBLR compliance) */
+    @Column(name = "interest_rate", precision = 8, scale = 4)
+    private BigDecimal interestRate;
+
+    /** Collateral reference at snapshot time (for secured/unsecured provisioning audit) */
+    @Column(name = "collateral_reference", length = 100)
+    private String collateralReference;
 }

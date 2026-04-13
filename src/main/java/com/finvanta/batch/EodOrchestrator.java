@@ -15,9 +15,11 @@ import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DailyBalanceSnapshotRepository;
 import com.finvanta.repository.DepositAccountRepository;
+import com.finvanta.repository.FixedDepositRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanBalanceSnapshotRepository;
 import com.finvanta.service.DepositAccountService;
+import com.finvanta.service.FixedDepositService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
 import com.finvanta.service.impl.StandingInstructionServiceImpl;
@@ -83,8 +85,11 @@ import org.springframework.transaction.annotation.Transactional;
  *   Step 8.5: Standing Instruction Execution (per Finacle SI_MASTER — LOAN_EMI auto-debit)
  *   Step 8.6: CASA Balance Snapshot (per Finacle ACCT_BAL_HIST — must be AFTER all balance mutations)
  *   Step 8.7: Loan Balance Snapshot (per Finacle ACCT_BAL_HIST — sectoral exposure / NPA audit)
+ *   Step 8.8: FD Interest Accrual (per Finacle TD_ENGINE — daily P×r/36500)
+ *   Step 8.9: FD Maturity Processing (per Finacle TD_MATURITY — close/auto-renew)
  *   Step 9: CASA Dormancy Classification (per RBI Master Direction on KYC 2016 Sec 38)
  *   Step 10: KYC Expiry Flagging (per RBI Master Direction on KYC 2016 Sec 16)
+ *   Step 10.4: Clearing Network Timeout Escalation (per Finacle CLG_MONITOR)
  *
  * Day status: DAY_OPEN -> EOD_RUNNING -> (eodComplete=true)
  * Day close is a separate admin action after EOD completes.
@@ -105,7 +110,7 @@ public class EodOrchestrator {
     private final ReconciliationService reconciliationService;
     private final SubledgerReconciliationService subledgerReconciliationService;
     private final InterBranchSettlementService settlementService;
-    private final ClearingService clearingService;
+    private final ClearingEngine clearingEngine;
     private final BusinessCalendarRepository calendarRepository;
     private final BranchRepository branchRepository;
     private final BatchJobRepository batchJobRepository;
@@ -117,6 +122,8 @@ public class EodOrchestrator {
     private final ApprovalWorkflowService workflowService;
     private final DailyBalanceSnapshotRepository balanceSnapshotRepository;
     private final LoanBalanceSnapshotRepository loanBalanceSnapshotRepository;
+    private final FixedDepositService fixedDepositService;
+    private final FixedDepositRepository fixedDepositRepository;
 
     /** CBS: Snapshot step constants for audit logging */
     private static final String SNAPSHOT_STEP_NAME = "DAILY_BALANCE_SNAPSHOT";
@@ -133,7 +140,7 @@ public class EodOrchestrator {
             ReconciliationService reconciliationService,
             SubledgerReconciliationService subledgerReconciliationService,
             InterBranchSettlementService settlementService,
-            ClearingService clearingService,
+            ClearingEngine clearingEngine,
             BusinessCalendarRepository calendarRepository,
             BranchRepository branchRepository,
             BatchJobRepository batchJobRepository,
@@ -145,6 +152,8 @@ public class EodOrchestrator {
             ApprovalWorkflowService workflowService,
             DailyBalanceSnapshotRepository balanceSnapshotRepository,
             LoanBalanceSnapshotRepository loanBalanceSnapshotRepository,
+            FixedDepositService fixedDepositService,
+            FixedDepositRepository fixedDepositRepository,
             @Lazy EodOrchestrator self) {
         this.loanAccountService = loanAccountService;
         this.accountRepository = accountRepository;
@@ -153,7 +162,7 @@ public class EodOrchestrator {
         this.reconciliationService = reconciliationService;
         this.subledgerReconciliationService = subledgerReconciliationService;
         this.settlementService = settlementService;
-        this.clearingService = clearingService;
+        this.clearingEngine = clearingEngine;
         this.calendarRepository = calendarRepository;
         this.branchRepository = branchRepository;
         this.batchJobRepository = batchJobRepository;
@@ -165,6 +174,8 @@ public class EodOrchestrator {
         this.workflowService = workflowService;
         this.balanceSnapshotRepository = balanceSnapshotRepository;
         this.loanBalanceSnapshotRepository = loanBalanceSnapshotRepository;
+        this.fixedDepositService = fixedDepositService;
+        this.fixedDepositRepository = fixedDepositRepository;
         this.self = self;
     }
 
@@ -331,13 +342,37 @@ public class EodOrchestrator {
                     },
                     errors);
 
-            // Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)
+            // Step 7.6: Clearing Suspense Validation (per Finacle CLG_ENGINE)
+            // Two-phase check:
+            //   Phase 1: Count active clearing transactions per rail (fast check)
+            //   Phase 2: Reconcile GL balances vs clearing transaction sums per rail+direction
+            // Phase 2 catches GL balance discrepancies even without corresponding clearing
+            // records (e.g., orphaned GL entries from failed transactions).
             failedCount += runStep(
                     eodJob,
                     "CLEARING_SUSPENSE",
                     () -> {
-                        clearingService.validateSuspenseBalance(businessDate);
-                        log.info("EOD Step 7.6: clearing suspense validated");
+                        // Phase 1: Active transaction count check
+                        boolean suspenseClear = clearingEngine
+                                .validateAllSuspenseBalances(businessDate);
+                        if (suspenseClear) {
+                            log.info("EOD Step 7.6a: all clearing "
+                                    + "suspense transactions resolved");
+                        } else {
+                            log.warn("EOD Step 7.6a: active clearing "
+                                    + "suspense detected — investigate");
+                        }
+                        // Phase 2: GL balance vs clearing sum reconciliation
+                        var reconIssues = clearingEngine
+                                .reconcileSuspensePerRail(businessDate);
+                        if (!reconIssues.isEmpty()) {
+                            log.warn("EOD Step 7.6b: {} clearing GL "
+                                    + "discrepancies detected",
+                                    reconIssues.size());
+                        } else {
+                            log.info("EOD Step 7.6b: clearing GL "
+                                    + "reconciliation balanced");
+                        }
                     },
                     errors);
 
@@ -516,6 +551,15 @@ public class EodOrchestrator {
                         snapshot.setProvisioningAmount(
                                 loan.getProvisioningAmount() != null ? loan.getProvisioningAmount()
                                         : BigDecimal.ZERO);
+                        // CBS CRILC: Capture regulatory reporting fields at snapshot time
+                        // Per RBI Master Direction on CRILC 2024: sectoral classification,
+                        // borrower group, and collateral are denormalized into the snapshot
+                        // for efficient historical reporting without joining back to loan_accounts.
+                        snapshot.setSectoralClassification(loan.getSectoralClassification());
+                        snapshot.setBorrowerGroupId(loan.getBorrowerGroupId());
+                        snapshot.setCrilcReportable(loan.isCrilcReportable());
+                        snapshot.setInterestRate(loan.getInterestRate());
+                        snapshot.setCollateralReference(loan.getCollateralReference());
                         snapshot.setCreatedBy("SYSTEM_EOD");
                         loanBalanceSnapshotRepository.save(snapshot);
                         loanCaptured++;
@@ -540,6 +584,48 @@ public class EodOrchestrator {
                                 + ", total=" + loanAccounts.size()
                                 + ", skippedIdempotent=" + loanSkipped);
             }
+
+            // Step 8.8: FD Interest Accrual (per Finacle TD_ENGINE / RBI Actual/365)
+            // Daily accrual for all active FDs: P × r / 36500
+            // For REINVEST mode: quarterly compounding (principal += accrued at quarter-end)
+            self.updateStepName(eodJob.getId(), "FD_INTEREST_ACCRUAL");
+            {
+                var activeFds = fixedDepositRepository.findActiveForAccrual(tenantId);
+                int fdAccrued = 0;
+                for (var fd : activeFds) {
+                    try {
+                        fixedDepositService.accrueInterest(
+                                fd.getFdAccountNumber(), businessDate);
+                        fdAccrued++;
+                    } catch (Exception e) {
+                        failedCount++;
+                        appendError(errors, "FD_ACCRUAL",
+                                fd.getFdAccountNumber(), e);
+                    }
+                }
+                processedCount += fdAccrued;
+                log.info("EOD Step 8.8: FD interest accrued for {} deposits",
+                        fdAccrued);
+            }
+
+            // Step 8.9: FD Maturity Processing (per Finacle TD_MATURITY / RBI)
+            // Processes FDs maturing on or before businessDate:
+            //   NO_RENEWAL → maturityClose (principal + interest to CASA)
+            //   PRINCIPAL_ONLY / PRINCIPAL_AND_INTEREST → auto-renewal (future)
+            failedCount += runStep(
+                    eodJob,
+                    "FD_MATURITY_PROCESSING",
+                    () -> {
+                        int matured = fixedDepositService
+                                .processMaturityBatch(businessDate);
+                        if (matured > 0) {
+                            log.info("EOD Step 8.9: {} FDs matured/processed",
+                                    matured);
+                        } else {
+                            log.info("EOD Step 8.9: no FD maturities today");
+                        }
+                    },
+                    errors);
 
             // Step 9: CASA Dormancy Classification (RBI Master Direction on KYC 2016 Sec 38)
             // Accounts with no customer-initiated txn for 24+ months -> DORMANT
@@ -587,6 +673,27 @@ public class EodOrchestrator {
                                     expiringSoon.size());
                         } else {
                             log.info("EOD Step 10: no KYC expiry issues detected");
+                        }
+                    },
+                    errors);
+
+            // Step 10.4: Clearing Network Timeout Escalation (per Finacle CLG_MONITOR)
+            // Detects outward transactions stuck in SENT_TO_NETWORK beyond rail-specific
+            // TAT: RTGS 30 min, NEFT 60 min (one cycle), IMPS/UPI 5 min.
+            // Non-blocking: flags for investigation but doesn't stop EOD.
+            failedCount += runStep(
+                    eodJob,
+                    "CLEARING_NETWORK_TIMEOUT",
+                    () -> {
+                        int escalated = clearingEngine
+                                .escalateStuckNetworkTransactions();
+                        if (escalated > 0) {
+                            log.warn("EOD Step 10.4: {} clearing "
+                                    + "transactions stuck in network",
+                                    escalated);
+                        } else {
+                            log.info("EOD Step 10.4: no clearing "
+                                    + "network timeouts detected");
                         }
                     },
                     errors);
@@ -697,12 +804,23 @@ public class EodOrchestrator {
                     "No operational branches found for tenant " + tenantId);
         }
 
-        // Validate ALL branches have their day open for this date
+        // CBS CRITICAL: Validate ALL branches have a calendar entry AND are DAY_OPEN.
+        // Per Finacle DAYCTRL: a missing calendar entry is NOT acceptable — it means
+        // the branch was never set up for this business date. EOD would silently skip
+        // that branch's accounts (no interest accrual, no NPA classification, no
+        // balance snapshots) — causing silent data corruption.
         for (var branch : operationalBranches) {
             var branchCal = calendarRepository
                     .findByTenantIdAndBranchIdAndBusinessDate(tenantId, branch.getId(), businessDate)
                     .orElse(null);
-            if (branchCal != null && !branchCal.getDayStatus().canStartEod() && !branchCal.isEodComplete()) {
+            if (branchCal == null) {
+                throw new BusinessException(
+                        "CALENDAR_ENTRY_MISSING",
+                        "Cannot start EOD for " + businessDate + ". Branch " + branch.getBranchCode()
+                                + " has NO calendar entry for this date. "
+                                + "Generate the calendar via Calendar > Generate before running EOD.");
+            }
+            if (!branchCal.getDayStatus().canStartEod() && !branchCal.isEodComplete()) {
                 throw new BusinessException(
                         "EOD_NOT_ALLOWED",
                         "Cannot start EOD for " + businessDate + ". Branch " + branch.getBranchCode()

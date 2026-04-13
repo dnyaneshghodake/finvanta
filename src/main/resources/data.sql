@@ -159,8 +159,22 @@ INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance,
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2201', 'SGST Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2300', 'Inter-Branch Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
--- Clearing Suspense GL (P1-2)
+-- Clearing Suspense GL (legacy — deprecated, use rail-specific GLs below)
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2400', 'Clearing Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Rail-Specific Clearing Suspense GLs per RBI Payment Systems Act 2007
+-- Per RBI: each payment rail MUST have separate inward + outward suspense GLs
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2600', 'NEFT Outward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2601', 'NEFT Inward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2610', 'RTGS Outward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2611', 'RTGS Inward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2620', 'IMPS Outward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2621', 'IMPS Inward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2630', 'UPI Outward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2631', 'UPI Inward Suspense', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- RBI Settlement (Nostro) — bank's account with RBI for NEFT/RTGS settlement
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '1400', 'RBI Settlement Nostro', 'ASSET', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- CASA Module GL Codes (Savings/Current Accounts per Finacle CUSTACCT)
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2010', 'Customer Deposits - Savings', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
@@ -186,6 +200,25 @@ VALUES ('DEFAULT', 'SAVINGS_NRI', 'Savings - NRE/NRO', 'CASA_SAVINGS', 'NRI savi
 
 INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, interest_tiering_enabled, version, created_at, created_by)
 VALUES ('DEFAULT', 'CURRENT', 'Current Account - Business', 'CASA_CURRENT', 'Business current account. Zero interest per RBI norms. Min balance INR 10,000.', 'INR', 'ACTUAL_365', 'FIXED', 0.0000, 0.0000, 0.0000, 10000.00, 0.00, 0, 0, 'MONTHLY', '2020', '2020', '1100', '4010', '4002', '4003', '5010', '2020', '5002', '2100', 1, 'INTEREST_FIRST', 0, 0.0000, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Fixed Deposit Product Master (per Finacle TD_MASTER / RBI Banking Regulation Act)
+-- FD_REGULAR: Standard FD with compound quarterly interest, premature allowed, 1% penalty
+-- min_loan_amount repurposed as min_deposit for FD products
+-- max_loan_amount repurposed as max_deposit for FD products (0 = unlimited)
+-- min_tenure_months / max_tenure_months: FD tenure range (7 days to 10 years)
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, interest_tiering_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'FD_REGULAR', 'Fixed Deposit - Regular', 'TERM_DEPOSIT', 'Standard fixed deposit. Compound quarterly interest. Premature withdrawal with 1% penalty. Min 7 days, max 10 years.', 'INR', 'ACTUAL_365', 'FIXED', 5.5000, 7.5000, 1.0000, 10000.00, 0.00, 0, 120, 'MATURITY', '2030', '2031', '1100', '5011', '4002', '4003', '5011', '2030', '5002', '2100', 1, 'INTEREST_FIRST', 1, 0.0000, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, interest_tiering_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'FD_SENIOR', 'Fixed Deposit - Senior Citizen', 'TERM_DEPOSIT', 'Senior citizen FD with 0.50% bonus rate. Age 60+ eligible. Compound quarterly.', 'INR', 'ACTUAL_365', 'FIXED', 6.0000, 8.0000, 1.0000, 10000.00, 0.00, 0, 120, 'MATURITY', '2030', '2031', '1100', '5011', '4002', '4003', '5011', '2030', '5002', '2100', 1, 'INTEREST_FIRST', 1, 0.0000, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO product_master (tenant_id, product_code, product_name, product_category, description, currency_code, interest_method, interest_type, min_interest_rate, max_interest_rate, default_penal_rate, min_loan_amount, max_loan_amount, min_tenure_months, max_tenure_months, repayment_frequency, gl_loan_asset, gl_interest_receivable, gl_bank_operations, gl_interest_income, gl_fee_income, gl_penal_income, gl_provision_expense, gl_provision_npa, gl_write_off_expense, gl_interest_suspense, is_active, repayment_allocation, prepayment_penalty_applicable, processing_fee_pct, interest_tiering_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'FD_TAX_SAVER', 'Fixed Deposit - Tax Saver (80C)', 'TERM_DEPOSIT', 'Tax saving FD per IT Act Section 80C. 5-year lock-in. No premature withdrawal. Max INR 1.5L/year.', 'INR', 'ACTUAL_365', 'FIXED', 6.5000, 7.5000, 0.0000, 10000.00, 150000.00, 60, 60, 'MATURITY', '2030', '2031', '1100', '5011', '4002', '4003', '5011', '2030', '5002', '2100', 1, 'INTEREST_FIRST', 0, 0.0000, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Fixed Deposit GL Codes (per Finacle TD_MASTER / RBI Banking Regulation Act)
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2030', 'Customer Deposits - Fixed', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2031', 'FD Interest Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '5011', 'Interest Expense - Fixed Deposits', 'EXPENSE', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- P0-1: CHARGE CONFIGURATIONS (Finacle CHRG_MASTER)
 -- PROCESSING_FEE: 1% of loan amount, GST applicable (18%)
@@ -388,3 +421,64 @@ VALUES ('DEFAULT', 'APP-DEL001-000001', 2, 2,
     120, '2026-04-01', 'SUBMITTED',
     'SB-DEL001-000001',
     0, CURRENT_TIMESTAMP, 'maker2', 'maker2');
+
+-- ============================================================
+-- NOTIFICATION TEMPLATES (Finacle ALERT_TEMPLATE / RBI Customer Protection 2024)
+-- ============================================================
+-- Per RBI Master Direction on Digital Payment Security Controls 2021 Section 8.2:
+-- Banks MUST send real-time alerts for every debit/credit on customer accounts.
+-- Templates include: amount, masked account, balance, date, reference per RBI mandate.
+-- Per TRAI DND Regulations 2018: SMS templates must be DLT-registered (dlt_template_id).
+-- Global templates (product_code=NULL) apply to all products unless overridden.
+
+-- CASA Credit Alert — SMS (mandatory per RBI)
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CASA_CREDIT', 'SMS', NULL, 'CASA Credit SMS', 'Dear {customerName}, INR {amount} credited to A/c {accountNumber} on {date}. Avl Bal: INR {balance}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001001', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- CASA Credit Alert — EMAIL
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CASA_CREDIT', 'EMAIL', NULL, 'CASA Credit Email', 'Dear {customerName},\n\nINR {amount} has been credited to your account {accountNumber} on {date}.\n\nAvailable Balance: INR {balance}\nTransaction Reference: {transactionRef}\nNarration: {narration}\n\nIf you did not authorize this transaction, please contact your branch immediately.\n\nRegards,\nFinvanta Bank', 'Credit Alert: INR {amount} credited to {accountNumber}', NULL, 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- CASA Debit Alert — SMS (mandatory per RBI)
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CASA_DEBIT', 'SMS', NULL, 'CASA Debit SMS', 'Dear {customerName}, INR {amount} debited from A/c {accountNumber} on {date}. Avl Bal: INR {balance}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001002', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- CASA Debit Alert — EMAIL
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CASA_DEBIT', 'EMAIL', NULL, 'CASA Debit Email', 'Dear {customerName},\n\nINR {amount} has been debited from your account {accountNumber} on {date}.\n\nAvailable Balance: INR {balance}\nTransaction Reference: {transactionRef}\nNarration: {narration}\n\nIf you did not authorize this transaction, please contact your branch immediately or call our 24x7 helpline.\n\nRegards,\nFinvanta Bank', 'Debit Alert: INR {amount} debited from {accountNumber}', NULL, 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- CASA Transfer Sent — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CASA_TRANSFER_SENT', 'SMS', NULL, 'Transfer Sent SMS', 'Dear {customerName}, INR {amount} transferred from A/c {accountNumber} on {date}. Avl Bal: INR {balance}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001003', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- CASA Transfer Received — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CASA_TRANSFER_RECEIVED', 'SMS', NULL, 'Transfer Received SMS', 'Dear {customerName}, INR {amount} received in A/c {accountNumber} on {date}. Avl Bal: INR {balance}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001004', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Loan Disbursement Alert — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'LOAN_DISBURSED', 'SMS', NULL, 'Loan Disbursed SMS', 'Dear {customerName}, your loan of INR {amount} has been disbursed to A/c {accountNumber} on {date}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001005', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Loan EMI Debit Alert — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'LOAN_EMI_DEBIT', 'SMS', NULL, 'Loan EMI SMS', 'Dear {customerName}, EMI of INR {amount} debited from A/c {accountNumber} on {date}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001006', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Loan Overdue Alert — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'LOAN_OVERDUE', 'SMS', NULL, 'Loan Overdue SMS', 'Dear {customerName}, your EMI of INR {amount} on A/c {accountNumber} is overdue. Please pay immediately to avoid penal charges. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001007', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Clearing Outward Initiated — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CLEARING_OUTWARD_INITIATED', 'SMS', NULL, 'Clearing Outward SMS', 'Dear {customerName}, INR {amount} transfer initiated from A/c {accountNumber} on {date}. Avl Bal: INR {balance}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001008', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Clearing Inward Credited — SMS
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'CLEARING_INWARD_CREDITED', 'SMS', NULL, 'Clearing Inward SMS', 'Dear {customerName}, INR {amount} credited to A/c {accountNumber} via clearing on {date}. Avl Bal: INR {balance}. Ref: {transactionRef}. -Finvanta Bank', NULL, 'DLT1001009', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Password Changed — SMS (security alert per RBI Cyber Security Framework)
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'PASSWORD_CHANGED', 'SMS', NULL, 'Password Changed SMS', 'Dear Customer, your Finvanta Bank password was changed on {date}. If you did not make this change, call our 24x7 helpline immediately. -Finvanta Bank', NULL, 'DLT1001010', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Login Failed — SMS (security alert per RBI)
+INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
+VALUES ('DEFAULT', 'LOGIN_FAILED', 'SMS', NULL, 'Login Failed SMS', 'ALERT: Failed login attempt on your Finvanta Bank account on {date}. If this was not you, secure your account immediately. -Finvanta Bank', NULL, 'DLT1001011', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');

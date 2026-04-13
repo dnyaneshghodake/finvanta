@@ -38,7 +38,7 @@ import org.springframework.stereotype.Component;
  *   Step 1: Tenant       — bank identity per RBI Banking Regulation Act 1949
  *   Step 2: Head Office  — consolidation point per Finacle SOL hierarchy
  *   Step 3: Op. Branch   — first operational branch for transactions per RBI §23
- *   Step 4: GL Chart     — 28 Indian Banking Standard GL codes (1xxx–5xxx)
+ *   Step 4: GL Chart     — 40 Indian Banking Standard GL codes (1xxx–5xxx) incl. clearing suspense + FD
  *   Step 5: ADMIN user   — with branch assigned, password expired (T-1)
  *   Step 6: Calendar     — current month generated for all operational branches
  *   Step 7: Day Open     — first business day opened, txn batches auto-created
@@ -167,12 +167,28 @@ public class CbsBootstrapInitializer implements ApplicationRunner {
             {"2100","Interest Suspense NPA",GLAccountType.LIABILITY,false},{"2101","Sundry Suspense",GLAccountType.LIABILITY,false},
             {"2200","CGST Payable",GLAccountType.LIABILITY,false},{"2201","SGST Payable",GLAccountType.LIABILITY,false},
             {"2300","IB Payable",GLAccountType.LIABILITY,false},{"2400","Clearing Suspense",GLAccountType.LIABILITY,false},
-            {"2500","TDS Payable",GLAccountType.LIABILITY,false},{"3000","Equity",GLAccountType.EQUITY,true},
+            {"2500","TDS Payable",GLAccountType.LIABILITY,false},
+            // Clearing Suspense GLs per RBI Payment Systems (rail-specific inward + outward)
+            {"2600","NEFT Outward Suspense",GLAccountType.LIABILITY,false},
+            {"2601","NEFT Inward Suspense",GLAccountType.LIABILITY,false},
+            {"2610","RTGS Outward Suspense",GLAccountType.LIABILITY,false},
+            {"2611","RTGS Inward Suspense",GLAccountType.LIABILITY,false},
+            {"2620","IMPS Outward Suspense",GLAccountType.LIABILITY,false},
+            {"2621","IMPS Inward Suspense",GLAccountType.LIABILITY,false},
+            {"2630","UPI Outward Suspense",GLAccountType.LIABILITY,false},
+            {"2631","UPI Inward Suspense",GLAccountType.LIABILITY,false},
+            // RBI Settlement (Nostro) — bank's account with RBI
+            {"1400","RBI Settlement Nostro",GLAccountType.ASSET,false},
+            {"3000","Equity",GLAccountType.EQUITY,true},
             {"3001","Share Capital",GLAccountType.EQUITY,false},{"4000","Income",GLAccountType.INCOME,true},
             {"4001","Interest Income Loans",GLAccountType.INCOME,false},{"4002","Fee Income",GLAccountType.INCOME,false},
             {"4003","Penal Interest",GLAccountType.INCOME,false},{"4010","Interest Inc Deposits",GLAccountType.INCOME,false},
             {"5000","Expenses",GLAccountType.EXPENSE,true},{"5001","Provision Expense",GLAccountType.EXPENSE,false},
             {"5002","Write-Off Expense",GLAccountType.EXPENSE,false},{"5010","Interest Exp Deposits",GLAccountType.EXPENSE,false},
+            // Fixed Deposit GL Codes (per Finacle TD_MASTER / RBI Banking Regulation Act)
+            {"2030","Deposits - Fixed",GLAccountType.LIABILITY,false},
+            {"2031","FD Interest Payable",GLAccountType.LIABILITY,false},
+            {"5011","Interest Exp FD",GLAccountType.EXPENSE,false},
         };
         int created = 0;
         for (Object[] r : chart) {

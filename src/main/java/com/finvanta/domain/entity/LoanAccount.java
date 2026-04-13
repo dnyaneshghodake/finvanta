@@ -153,6 +153,60 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "risk_category", length = 20)
     private String riskCategory;
 
+    // === CRILC / SMA Reporting (per RBI Master Direction on CRILC 2024) ===
+
+    /**
+     * RBI Sectoral Classification for CRILC reporting.
+     * Per RBI: all credit exposures must be classified into sectors for
+     * sectoral exposure monitoring and regulatory reporting.
+     * Values: AGRICULTURE, MSME, RETAIL, CORPORATE, INFRASTRUCTURE,
+     *         HOUSING, EDUCATION, VEHICLE, PERSONAL, TRADE, OTHER
+     */
+    @Column(name = "sectoral_classification", length = 30)
+    private String sectoralClassification;
+
+    /**
+     * RBI Industry Classification Code per NIC (National Industrial Classification).
+     * Required for CRILC returns for exposures >= ₹5 crore.
+     * Example: "01" = Agriculture, "10" = Mining, "24" = Manufacturing
+     */
+    @Column(name = "industry_code", length = 10)
+    private String industryCode;
+
+    /**
+     * Borrower group identifier for related party exposure aggregation.
+     * Per RBI Large Exposure Framework: exposures to connected parties
+     * must be aggregated for limit monitoring (25% of Tier-1 capital).
+     * Null = standalone borrower (no group linkage).
+     */
+    @Column(name = "borrower_group_id", length = 50)
+    private String borrowerGroupId;
+
+    /**
+     * Date when account first entered SMA-0 (1-30 DPD).
+     * Per RBI CRILC: SMA entry date must be reported for early warning.
+     * Null if account has never been in SMA.
+     */
+    @Column(name = "sma_entry_date")
+    private LocalDate smaEntryDate;
+
+    /**
+     * Date when account first entered NPA (91+ DPD).
+     * Distinct from npaDate which tracks current NPA classification.
+     * smaEntryDate + npaDate together provide the full delinquency timeline
+     * for CRILC reporting and provisioning vintage calculation.
+     */
+    @Column(name = "first_npa_date")
+    private LocalDate firstNpaDate;
+
+    /**
+     * Whether this account's exposure is reported to CRILC.
+     * Per RBI: mandatory for aggregate exposure >= ₹5 crore per borrower.
+     * Set during account creation based on sanctioned amount + group exposure.
+     */
+    @Column(name = "crilc_reportable", nullable = false)
+    private boolean crilcReportable = false;
+
     // === Floating Rate Support (per RBI EBLR/MCLR Framework) ===
 
     /**
