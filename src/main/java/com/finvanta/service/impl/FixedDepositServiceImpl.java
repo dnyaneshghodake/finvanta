@@ -151,6 +151,11 @@ public class FixedDepositServiceImpl implements FixedDepositService {
     public void accrueInterest(String fdNo, LocalDate biz) {
         FixedDeposit fd = loadFd(TenantContext.getCurrentTenant(), fdNo);
         if (!fd.getStatus().isAccrualActive()) return;
+        // CBS: Idempotency guard — prevent double-accrual on EOD rerun per Finacle TD_ENGINE.
+        // Same pattern as CASA accrual in DepositAccountServiceImpl.accrueInterest().
+        // Without this, an EOD retry for the same business date would accrue interest twice,
+        // leading to incorrect FD interest calculations and GL imbalance.
+        if (biz.equals(fd.getLastAccrualDate())) return;
         BigDecimal daily = fd.getCurrentPrincipal().multiply(fd.getEffectiveRate())
                 .divide(BigDecimal.valueOf(36500), 2, RoundingMode.HALF_UP);
         fd.setAccruedInterest(fd.getAccruedInterest().add(daily));

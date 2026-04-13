@@ -53,9 +53,14 @@ public enum ClearingStatus {
     /** Inward transaction returned to originating bank */
     RETURNED;
 
-    /** Whether this is a terminal state (no further transitions allowed) */
+    /**
+     * Whether this is a terminal state (no further transitions allowed).
+     * Per RBI Payment Systems: VALIDATION_FAILED is semi-terminal — it allows
+     * transition to RETURNED (explicit operator return to originating bank)
+     * but no other transitions. All other terminal states are fully terminal.
+     */
     public boolean isTerminal() {
-        return this == COMPLETED || this == VALIDATION_FAILED || this == REVERSED
+        return this == COMPLETED || this == REVERSED
                 || this == RETURNED || this == NETWORK_REJECTED;
     }
 
@@ -85,20 +90,24 @@ public enum ClearingStatus {
         return switch (this) {
             // OUTWARD flow
             case INITIATED -> target == VALIDATED || target == VALIDATION_FAILED;
-            case VALIDATED -> target == SUSPENSE_POSTED || target == VALIDATION_FAILED;
+            case VALIDATED -> target == SUSPENSE_POSTED || target == VALIDATION_FAILED
+                    || target == RETURNED; // RETURNED for inward return before suspense
             case SUSPENSE_POSTED -> target == SENT_TO_NETWORK || target == COMPLETED
                     || target == CREDITED || target == REVERSED; // COMPLETED for real-time rails
             case SENT_TO_NETWORK -> target == SETTLED || target == NETWORK_REJECTED
                     || target == SETTLEMENT_FAILED || target == REVERSED;
             case SETTLED -> target == COMPLETED;
             // INWARD flow
-            case RECEIVED -> target == VALIDATED || target == VALIDATION_FAILED;
+            case RECEIVED -> target == VALIDATED || target == VALIDATION_FAILED
+                    || target == RETURNED; // RETURNED for direct inward return
             case CREDITED -> target == COMPLETED;
             // Failure states (can transition to reversal/return)
             case SETTLEMENT_FAILED -> target == REVERSED;
             case CREDIT_FAILED -> target == RETURNED;
+            // Semi-terminal: VALIDATION_FAILED allows only RETURNED (operator return)
+            case VALIDATION_FAILED -> target == RETURNED;
             // Terminal states
-            case COMPLETED, VALIDATION_FAILED, NETWORK_REJECTED,
+            case COMPLETED, NETWORK_REJECTED,
                     REVERSED, RETURNED -> false;
         };
     }

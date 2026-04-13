@@ -160,7 +160,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         SecurityContextHolder.getContext()
                 .setAuthentication(auth);
 
-        filterChain.doFilter(request, response);
+        try {
+            filterChain.doFilter(request, response);
+        } finally {
+            // CBS SECURITY: Clean up ThreadLocal and MDC after request completes.
+            // Per Finacle / Temenos: stateless API chain uses container thread pool.
+            // Without cleanup, stale tenant/MDC context leaks to subsequent requests
+            // on the same pooled thread — causing cross-tenant data access and
+            // incorrect log attribution. Per RBI IT Governance §8.3: tenant isolation
+            // must be enforced at every layer including thread-level context.
+            TenantContext.clear();
+            MDC.remove("tenantId");
+            MDC.remove("username");
+            MDC.remove("branchCode");
+        }
     }
 
     /**

@@ -108,8 +108,10 @@ public class ClearingServiceTest {
         assertTrue(ClearingStatus.COMPLETED.isTerminal());
         assertTrue(ClearingStatus.REVERSED.isTerminal());
         assertTrue(ClearingStatus.RETURNED.isTerminal());
-        assertTrue(ClearingStatus.VALIDATION_FAILED.isTerminal());
         assertTrue(ClearingStatus.NETWORK_REJECTED.isTerminal());
+
+        // VALIDATION_FAILED is semi-terminal: allows → RETURNED only
+        assertFalse(ClearingStatus.VALIDATION_FAILED.isTerminal());
 
         assertFalse(ClearingStatus.INITIATED.isTerminal());
         assertFalse(ClearingStatus.SUSPENSE_POSTED.isTerminal());
@@ -136,6 +138,19 @@ public class ClearingServiceTest {
         assertTrue(ClearingStatus.SENT_TO_NETWORK.canTransitionTo(ClearingStatus.SETTLEMENT_FAILED));
         assertTrue(ClearingStatus.SETTLEMENT_FAILED.canTransitionTo(ClearingStatus.REVERSED));
         assertTrue(ClearingStatus.CREDIT_FAILED.canTransitionTo(ClearingStatus.RETURNED));
+        // VALIDATION_FAILED is semi-terminal: allows only RETURNED
+        assertTrue(ClearingStatus.VALIDATION_FAILED.canTransitionTo(ClearingStatus.RETURNED));
+        assertFalse(ClearingStatus.VALIDATION_FAILED.canTransitionTo(ClearingStatus.COMPLETED));
+        assertFalse(ClearingStatus.VALIDATION_FAILED.canTransitionTo(ClearingStatus.REVERSED));
+    }
+
+    @Test
+    @DisplayName("Inward return: direct RECEIVED/VALIDATED → RETURNED transitions")
+    void testInwardReturnDirectTransitions() {
+        // Per Finacle CLG_RETURN: inward transactions can be returned directly
+        // from RECEIVED or VALIDATED without going through VALIDATION_FAILED first
+        assertTrue(ClearingStatus.RECEIVED.canTransitionTo(ClearingStatus.RETURNED));
+        assertTrue(ClearingStatus.VALIDATED.canTransitionTo(ClearingStatus.RETURNED));
     }
 
     @Test
