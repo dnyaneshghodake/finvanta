@@ -489,3 +489,56 @@ VALUES ('DEFAULT', 'PASSWORD_CHANGED', 'SMS', NULL, 'Password Changed SMS', 'Dea
 -- Login Failed — SMS (security alert per RBI)
 INSERT INTO notification_templates (tenant_id, event_type, channel, product_code, template_name, message_body, subject_template, dlt_template_id, is_active, language_code, version, created_at, created_by)
 VALUES ('DEFAULT', 'LOGIN_FAILED', 'SMS', NULL, 'Login Failed SMS', 'ALERT: Failed login attempt on your Finvanta Bank account on {date}. If this was not you, secure your account immediately. -Finvanta Bank', NULL, 'DLT1001011', 1, 'en', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- ============================================================
+-- PERMISSION MATRIX (Finacle AUTH_PERMISSION / RBI IT Governance §8.3)
+-- ============================================================
+-- Per RBI IT Governance Direction 2023 / SWIFT CSCF / Finacle AUTH_ENGINE:
+-- Granular operation-level permissions mapped to roles.
+-- Segregation of duties: MAKER creates, CHECKER approves (never the same).
+-- ADMIN has ALL permissions but self-approval blocked by workflow engine.
+-- AUDITOR has read-only permissions only.
+
+-- === PERMISSIONS (atomic operations) ===
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'LOAN_CREATE', 'Create loan application', 'LOAN', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'LOAN_VERIFY', 'Verify loan application', 'LOAN', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'LOAN_APPROVE', 'Approve loan application', 'LOAN', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'LOAN_DISBURSE', 'Disburse loan', 'LOAN', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'LOAN_REPAYMENT', 'Process loan repayment', 'LOAN', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'LOAN_WRITE_OFF', 'Write off NPA loan', 'LOAN', 'CRITICAL', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'LOAN_VIEW', 'View loan details', 'LOAN', 'LOW', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'DEPOSIT_OPEN', 'Open CASA account', 'DEPOSIT', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'DEPOSIT_ACTIVATE', 'Activate CASA account', 'DEPOSIT', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'DEPOSIT_DEPOSIT', 'Cash deposit', 'DEPOSIT', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'DEPOSIT_WITHDRAW', 'Cash withdrawal', 'DEPOSIT', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'DEPOSIT_TRANSFER', 'Fund transfer', 'DEPOSIT', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'DEPOSIT_CLOSE', 'Close CASA account', 'DEPOSIT', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'DEPOSIT_FREEZE', 'Freeze/unfreeze account', 'DEPOSIT', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'DEPOSIT_REVERSE', 'Reverse transaction', 'DEPOSIT', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'DEPOSIT_VIEW', 'View account/statement', 'DEPOSIT', 'LOW', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'CUSTOMER_CREATE', 'Create customer CIF', 'CUSTOMER', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'CUSTOMER_KYC_VERIFY', 'Verify customer KYC', 'CUSTOMER', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'CUSTOMER_DEACTIVATE', 'Deactivate customer', 'CUSTOMER', 'CRITICAL', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'CUSTOMER_VIEW', 'View customer details', 'CUSTOMER', 'LOW', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'CLEARING_INITIATE', 'Initiate outward clearing', 'CLEARING', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'CLEARING_APPROVE', 'Approve high-value clearing', 'CLEARING', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'CLEARING_SETTLE', 'Confirm settlement', 'CLEARING', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'CLEARING_REVERSE', 'Reverse clearing', 'CLEARING', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'GL_VIEW', 'View GL balances/trial balance', 'GL', 'LOW', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'GL_PERIOD_CLOSE', 'Close GL period', 'GL', 'CRITICAL', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'USER_MANAGE', 'Create/lock/unlock users', 'SYSTEM', 'CRITICAL', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'EOD_RUN', 'Run end-of-day batch', 'SYSTEM', 'CRITICAL', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'DAY_CONTROL', 'Open/close business day', 'SYSTEM', 'CRITICAL', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'PRODUCT_CONFIG', 'Configure products/charges', 'SYSTEM', 'CRITICAL', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'REPORT_VIEW', 'View reports and MIS', 'REPORT', 'LOW', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'AUDIT_VIEW', 'View audit trail', 'REPORT', 'LOW', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- === ROLE-PERMISSION MAPPING (segregation of duties per RBI) ===
+-- MAKER: Can CREATE/INITIATE but NOT APPROVE/VERIFY (segregation of duties)
+INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','MAKER',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND permission_code IN ('LOAN_CREATE','LOAN_REPAYMENT','LOAN_VIEW','DEPOSIT_OPEN','DEPOSIT_DEPOSIT','DEPOSIT_WITHDRAW','DEPOSIT_TRANSFER','DEPOSIT_VIEW','CUSTOMER_CREATE','CUSTOMER_VIEW','CLEARING_INITIATE');
+-- CHECKER: Can VERIFY/APPROVE but NOT CREATE (segregation of duties)
+INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','CHECKER',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND permission_code IN ('LOAN_VERIFY','LOAN_APPROVE','LOAN_DISBURSE','LOAN_VIEW','DEPOSIT_ACTIVATE','DEPOSIT_CLOSE','DEPOSIT_REVERSE','DEPOSIT_VIEW','CUSTOMER_KYC_VERIFY','CUSTOMER_VIEW','CLEARING_APPROVE','CLEARING_SETTLE','CLEARING_REVERSE','GL_VIEW','REPORT_VIEW');
+-- ADMIN: ALL permissions (self-approval blocked by workflow engine, not by permission matrix)
+INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','ADMIN',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND is_active=1;
+-- AUDITOR: Read-only permissions only (no financial operations)
+INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','AUDITOR',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND permission_code IN ('LOAN_VIEW','DEPOSIT_VIEW','CUSTOMER_VIEW','GL_VIEW','REPORT_VIEW','AUDIT_VIEW');
