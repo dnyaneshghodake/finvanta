@@ -1,17 +1,8 @@
 package com.finvanta.api;
 
-import com.finvanta.audit.AuditService;
-import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
-import com.finvanta.repository.BranchRepository;
-import com.finvanta.repository.CustomerRepository;
-import com.finvanta.repository.LoanAccountRepository;
-import com.finvanta.service.CbsReferenceService;
-import com.finvanta.util.BranchAccessValidator;
-import com.finvanta.util.BusinessException;
+import com.finvanta.service.CustomerCifService;
 import com.finvanta.util.PiiMaskingUtil;
-import com.finvanta.util.SecurityUtil;
-import com.finvanta.util.TenantContext;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -21,14 +12,15 @@ import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 /**
  * CBS Customer CIF REST API per Finacle CIF_API / Temenos IRIS Customer.
  *
- * Thin orchestration layer — delegates to repositories and services.
- * Per RBI KYC Master Direction 2016 / Digital Lending Guidelines 2022.
+ * Thin orchestration layer — delegates ALL business logic to CustomerCifService.
+ * Per Finacle/Temenos/BNP Tier-1 layering:
+ *   Controller: @PreAuthorize, request/response mapping, NO @Transactional
+ *   Service: @Transactional, business validations, repository calls, audit
  *
  * CBS Role Matrix:
  *   MAKER   → create customer
@@ -43,26 +35,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/customers")
 public class CustomerController {
 
-    private final CustomerRepository customerRepo;
-    private final BranchRepository branchRepo;
-    private final LoanAccountRepository loanRepo;
-    private final AuditService auditSvc;
-    private final BranchAccessValidator branchValidator;
-    private final CbsReferenceService refService;
+    private final CustomerCifService customerService;
 
     public CustomerController(
-            CustomerRepository customerRepo,
-            BranchRepository branchRepo,
-            LoanAccountRepository loanRepo,
-            AuditService auditSvc,
-            BranchAccessValidator branchValidator,
-            CbsReferenceService refService) {
-        this.customerRepo = customerRepo;
-        this.branchRepo = branchRepo;
-        this.loanRepo = loanRepo;
-        this.auditSvc = auditSvc;
-        this.branchValidator = branchValidator;
-        this.refService = refService;
+            CustomerCifService customerService) {
+        this.customerService = customerService;
     }
 
     // === CIF Lifecycle ===
@@ -70,58 +47,16 @@ public class CustomerController {
     /** Create customer with auto-generated CIF number. MAKER/ADMIN. */
     @PostMapping
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
-    @Transactional
     public ResponseEntity<ApiResponse<CustomerResponse>>
             createCustomer(
                     @Valid @RequestBody CreateCustomerRequest req) {
-        String tid = TenantContext.getCurrentTenant();
-        String user = SecurityUtil.getCurrentUsername();
-
-        // CBS: Duplicate PAN check per RBI KYC (one PAN = one CIF)
-        if (req.panNumber() != null
-                && !req.panNumber().isBlank()) {
-            if (customerRepo.existsByTenantIdAndPanNumber(
-                    tid, req.panNumber()))
-                throw new BusinessException("DUPLICATE_PAN",
-                        "Customer with this PAN already exists");
-        }
-
-        Branch branch = branchRepo.findById(req.branchId())
-                .filter(b -> b.getTenantId().equals(tid)
-                        && b.isActive())
-                .orElseThrow(() -> new BusinessException(
-                        "BRANCH_NOT_FOUND",
-                        "" + req.branchId()));
-
-        Customer c = new Customer();
-        c.setTenantId(tid);
-        c.setCustomerNumber(
-                refService.generateCustomerNumber(
-                        branch.getId()));
-        c.setFirstName(req.firstName());
-        c.setLastName(req.lastName());
-        c.setDateOfBirth(req.dateOfBirth());
-        c.setPanNumber(req.panNumber());
-        c.setAadhaarNumber(req.aadhaarNumber());
-        c.setMobileNumber(req.mobileNumber());
-        c.setEmail(req.email());
-        c.setAddress(req.address());
-        c.setCity(req.city());
-        c.setState(req.state());
-        c.setPinCode(req.pinCode());
-        c.setCustomerType(req.customerType() != null
-                ? req.customerType() : "INDIVIDUAL");
-        c.setBranch(branch);
-        c.setCreatedBy(user);
-        c.computePanHash();
-        c.computeAadhaarHash();
-
-        Customer saved = customerRepo.save(c);
-
-        auditSvc.logEvent("Customer", saved.getId(),
-                "CREATE", null,
-                saved.getCustomerNumber(), "CIF",
-                "API: Customer created by " + user);
+        Customer saved = customerService.createCustomer(
+                req.firstName(), req.lastName(),
+                req.dateOfBirth(), req.panNumber(),
+                req.aadhaarNumber(), req.mobileNumber(),
+                req.email(), req.address(), req.city(),
+                req.state(), req.pinCode(),
+                req.customerType(), req.branchId());
 
         return ResponseEntity.ok(ApiResponse.success(
                 CustomerResponse.from(saved),
@@ -134,42 +69,17 @@ public class CustomerController {
     @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<CustomerResponse>>
             getCustomer(@PathVariable Long id) {
-        String tid = TenantContext.getCurrentTenant();
-        Customer c = customerRepo.findById(id)
-                .filter(x -> x.getTenantId().equals(tid))
-                .orElseThrow(() -> new BusinessException(
-                        "CUSTOMER_NOT_FOUND", "" + id));
-        branchValidator.validateAccess(c.getBranch());
+        Customer c = customerService.getCustomer(id);
         return ResponseEntity.ok(ApiResponse.success(
                 CustomerResponse.from(c)));
     }
 
-    /** Verify KYC. CHECKER/ADMIN. */
+    /** Verify KYC. CHECKER/ADMIN. Uses CBS business date. */
     @PostMapping("/{id}/verify-kyc")
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
-    @Transactional
     public ResponseEntity<ApiResponse<CustomerResponse>>
             verifyKyc(@PathVariable Long id) {
-        String tid = TenantContext.getCurrentTenant();
-        String user = SecurityUtil.getCurrentUsername();
-        Customer c = customerRepo.findById(id)
-                .filter(x -> x.getTenantId().equals(tid))
-                .orElseThrow(() -> new BusinessException(
-                        "CUSTOMER_NOT_FOUND", "" + id));
-        branchValidator.validateAccess(c.getBranch());
-
-        c.setKycVerified(true);
-        c.setKycVerifiedBy(user);
-        c.setKycVerifiedDate(java.time.LocalDate.now());
-        c.computeKycExpiry();
-        c.setRekycDue(false);
-        c.setUpdatedBy(user);
-        customerRepo.save(c);
-
-        auditSvc.logEvent("Customer", c.getId(),
-                "KYC_VERIFY", "PENDING", "VERIFIED",
-                "CIF", "API: KYC verified by " + user);
-
+        Customer c = customerService.verifyKyc(id);
         return ResponseEntity.ok(ApiResponse.success(
                 CustomerResponse.from(c),
                 "KYC verified"));
@@ -178,34 +88,10 @@ public class CustomerController {
     /** Deactivate customer. ADMIN only. */
     @PostMapping("/{id}/deactivate")
     @PreAuthorize("hasRole('ADMIN')")
-    @Transactional
     public ResponseEntity<ApiResponse<CustomerResponse>>
             deactivate(@PathVariable Long id) {
-        String tid = TenantContext.getCurrentTenant();
-        String user = SecurityUtil.getCurrentUsername();
-        Customer c = customerRepo.findById(id)
-                .filter(x -> x.getTenantId().equals(tid))
-                .orElseThrow(() -> new BusinessException(
-                        "CUSTOMER_NOT_FOUND", "" + id));
-
-        long active = loanRepo
-                .findByTenantIdAndCustomerId(tid, id)
-                .stream()
-                .filter(a -> !a.getStatus().isTerminal())
-                .count();
-        if (active > 0)
-            throw new BusinessException(
-                    "CUSTOMER_HAS_ACTIVE_ACCOUNTS",
-                    active + " active loan account(s)");
-
-        c.setActive(false);
-        c.setUpdatedBy(user);
-        customerRepo.save(c);
-
-        auditSvc.logEvent("Customer", c.getId(),
-                "DEACTIVATE", "ACTIVE", "INACTIVE",
-                "CIF", "API: Deactivated by " + user);
-
+        Customer c = customerService
+                .deactivateCustomer(id);
         return ResponseEntity.ok(ApiResponse.success(
                 CustomerResponse.from(c),
                 "Customer deactivated"));
@@ -216,26 +102,8 @@ public class CustomerController {
     @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<CustomerResponse>>>
             search(@RequestParam String q) {
-        String tid = TenantContext.getCurrentTenant();
-        if (q == null || q.length() < 2)
-            throw new BusinessException("INVALID_SEARCH",
-                    "Search query must be at least 2 chars");
-
-        List<Customer> results;
-        if (SecurityUtil.isAdminRole()) {
-            results = customerRepo.searchCustomers(
-                    tid, q.trim());
-        } else {
-            Long branchId =
-                    SecurityUtil.getCurrentUserBranchId();
-            if (branchId == null)
-                return ResponseEntity.ok(
-                        ApiResponse.success(List.of()));
-            results = customerRepo
-                    .searchCustomersByBranch(
-                            tid, branchId, q.trim());
-        }
-
+        var results = customerService
+                .searchCustomers(q);
         var items = results.stream()
                 .map(CustomerResponse::from).toList();
         return ResponseEntity.ok(
