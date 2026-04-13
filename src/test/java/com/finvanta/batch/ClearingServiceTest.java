@@ -218,4 +218,15 @@ public class ClearingServiceTest {
         // CREDITED is NOT terminal
         assertFalse(ClearingStatus.CREDITED.isTerminal());
     }
+
+    @Test
+    @DisplayName("Inward state machine: SUSPENSE_POSTED → CREDIT_FAILED transition")
+    void testInwardCreditFailedTransition() {
+        // ClearingStateManager.markCreditFailed() transitions SUSPENSE_POSTED → CREDIT_FAILED
+        assertTrue(ClearingStatus.SUSPENSE_POSTED.canTransitionTo(ClearingStatus.CREDIT_FAILED));
+        // CREDIT_FAILED → RETURNED (return to originating bank)
+        assertTrue(ClearingStatus.CREDIT_FAILED.canTransitionTo(ClearingStatus.RETURNED));
+        // CREDIT_FAILED is NOT terminal (can still be returned)
+        assertFalse(ClearingStatus.CREDIT_FAILED.isTerminal());
+    }
 }

@@ -87,7 +87,8 @@ public enum ClearingStatus {
             case INITIATED -> target == VALIDATED || target == VALIDATION_FAILED;
             case VALIDATED -> target == SUSPENSE_POSTED || target == VALIDATION_FAILED;
             case SUSPENSE_POSTED -> target == SENT_TO_NETWORK || target == COMPLETED
-                    || target == CREDITED || target == REVERSED; // COMPLETED for real-time rails
+                    || target == CREDITED || target == REVERSED
+                    || target == CREDIT_FAILED; // COMPLETED for real-time rails
             case SENT_TO_NETWORK -> target == SETTLED || target == NETWORK_REJECTED
                     || target == SETTLEMENT_FAILED || target == REVERSED;
             case SETTLED -> target == COMPLETED;
