@@ -205,9 +205,13 @@ public class CustomerController {
     /**
      * CBS CIF Update — delegates to CustomerCifService.
      * PAN, Aadhaar, and customer number are IMMUTABLE after creation per RBI KYC norms.
+     *
+     * Per Finacle CIF_MASTER: on validation failure, re-display the edit form with
+     * entered data preserved. User should not re-enter all fields after a single error.
+     * Same pattern as addCustomer() — returns ModelAndView on error, redirect on success.
      */
     @PostMapping("/edit/{id}")
-    public String updateCustomer(
+    public Object updateCustomer(
             @PathVariable Long id,
             @ModelAttribute Customer updated,
             @RequestParam Long branchId,
@@ -215,10 +219,40 @@ public class CustomerController {
         try {
             Customer saved = customerService.updateCustomer(id, updated, branchId);
             redirectAttributes.addFlashAttribute("success", "Customer updated: " + saved.getCustomerNumber());
+            return "redirect:/customer/view/" + id;
         } catch (Exception e) {
-            redirectAttributes.addFlashAttribute("error", e.getMessage());
+            // CBS: On validation failure, re-display the edit form with entered data preserved.
+            // Per Finacle CIF_MASTER: user should not re-enter all fields after a single validation error.
+            // Reload immutable fields (customer number, masked PAN/Aadhaar) from the persisted entity.
+            String tenantId = TenantContext.getCurrentTenant();
+            ModelAndView mav = new ModelAndView("customer/edit");
+            try {
+                Customer existing = customerService.getCustomer(id);
+                // Merge: use entered mutable data but restore immutable identifiers
+                updated.setId(existing.getId());
+                updated.setCustomerNumber(existing.getCustomerNumber());
+                updated.setBranch(existing.getBranch());
+                mav.addObject("customer", updated);
+                mav.addObject("maskedPan", PiiMaskingUtil.maskPan(existing.getPanNumber()));
+                mav.addObject("maskedAadhaar", PiiMaskingUtil.maskAadhaar(existing.getAadhaarNumber()));
+            } catch (Exception ex) {
+                // Fallback: if customer can't be loaded, redirect to view with error
+                redirectAttributes.addFlashAttribute("error", e.getMessage());
+                return "redirect:/customer/view/" + id;
+            }
+            mav.addObject("error", e.getMessage());
+            if (SecurityUtil.isAdminRole()) {
+                mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+            } else {
+                Long userBranchId = SecurityUtil.getCurrentUserBranchId();
+                if (userBranchId != null) {
+                    branchRepository.findById(userBranchId)
+                            .filter(b -> b.getTenantId().equals(tenantId))
+                            .ifPresent(b -> mav.addObject("branches", java.util.List.of(b)));
+                }
+            }
+            return mav;
         }
-        return "redirect:/customer/view/" + id;
     }
 
     /** CBS KYC Verification — delegates to CustomerCifService */

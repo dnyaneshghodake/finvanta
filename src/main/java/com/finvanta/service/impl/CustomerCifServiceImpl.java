@@ -151,11 +151,35 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                 .filter(b -> b.getTenantId().equals(tid) && b.isActive())
                 .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "" + branchId));
 
+        // CBS CRITICAL: Mass Assignment Protection per OWASP A4 / Finacle CIF_MASTER.
+        // Spring MVC @ModelAttribute binds ALL request parameters to entity fields,
+        // including BaseEntity fields (id, version) and security-sensitive fields
+        // (kycVerified, kycVerifiedDate, active, ckycNumber, etc.).
+        // A malicious POST with kycVerified=true&id=<existing_id> would:
+        //   - Bypass the entire maker-checker KYC verification workflow (RBI violation)
+        //   - Overwrite an existing customer record via JPA merge() (data corruption)
+        // MUST reset all system-managed and security-sensitive fields before save.
+        c.setId(null);
+        c.setVersion(null);
+        c.setKycVerified(false);
+        c.setKycVerifiedDate(null);
+        c.setKycVerifiedBy(null);
+        c.setKycExpiryDate(null);
+        c.setRekycDue(false);
+        c.setActive(true);
+        c.setCkycNumber(null);
+        c.setCkycStatus("NOT_REGISTERED");
+        c.setCkycUploadDate(null);
+        c.setCkycDownloadDate(null);
+        c.setCustomerGroupId(null);
+        c.setCustomerGroupName(null);
+
         // CBS: Set system fields
         c.setTenantId(tid);
         c.setCustomerNumber(refService.generateCustomerNumber(branch.getId()));
         c.setBranch(branch);
         c.setCreatedBy(user);
+        c.setUpdatedBy(null);
         c.setCustomerType(c.getCustomerType() != null ? c.getCustomerType() : "INDIVIDUAL");
         c.computePanHash();
         c.computeAadhaarHash();

@@ -48,8 +48,14 @@ import lombok.Setter;
             @Index(name = "idx_cust_tenant_custno", columnList = "tenant_id, customer_number", unique = true),
             @Index(name = "idx_cust_pan", columnList = "tenant_id, pan_number"),
             @Index(name = "idx_cust_aadhaar", columnList = "tenant_id, aadhaar_number"),
-            @Index(name = "idx_cust_pan_hash", columnList = "tenant_id, pan_hash", unique = true),
-            @Index(name = "idx_cust_aadhaar_hash", columnList = "tenant_id, aadhaar_hash", unique = true),
+            // CBS: NOT unique at DB level — PAN/Aadhaar are optional fields, so pan_hash/aadhaar_hash
+            // can be NULL for many customers. SQL Server treats NULL as a single distinct value in
+            // unique indexes, meaning only ONE customer per tenant could have NULL PAN/Aadhaar.
+            // Duplicate prevention is enforced at the application level via
+            // CustomerCifServiceImpl.validateCustomerFields() using existsByTenantIdAndPanHash().
+            // This is the standard Finacle CIF_MASTER approach for optional-but-unique fields.
+            @Index(name = "idx_cust_pan_hash", columnList = "tenant_id, pan_hash"),
+            @Index(name = "idx_cust_aadhaar_hash", columnList = "tenant_id, aadhaar_hash"),
             @Index(name = "idx_cust_kyc_expiry", columnList = "tenant_id, kyc_expiry_date"),
             @Index(name = "idx_cust_tenant_branch", columnList = "tenant_id, branch_id"),
             @Index(name = "idx_cust_ckyc", columnList = "tenant_id, ckyc_number"),
