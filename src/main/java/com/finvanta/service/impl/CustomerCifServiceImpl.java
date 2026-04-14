@@ -390,6 +390,11 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         existing.setPermanentCountry(updated.getPermanentCountry());
         existing.setAddressSameAsPermanent(updated.isAddressSameAsPermanent());
 
+        // CBS: Nominee details (mutable — per RBI Nomination Guidelines)
+        existing.setNomineeDob(updated.getNomineeDob());
+        existing.setNomineeAddress(updated.getNomineeAddress());
+        existing.setNomineeGuardianName(updated.getNomineeGuardianName());
+
         // CBS: KYC risk category and PEP flag
         if (updated.getKycRiskCategory() != null) {
             existing.setKycRiskCategory(updated.getKycRiskCategory());
