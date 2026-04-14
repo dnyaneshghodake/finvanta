@@ -58,6 +58,9 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
             + "AND da.interestRate > 0")
     List<DepositAccount> findActiveSavingsAccounts(@Param("tenantId") String tenantId);
 
+    /** Accounts by product code (for product active account count) */
+    List<DepositAccount> findByTenantIdAndProductCode(String tenantId, String productCode);
+
     /** Accounts by customer */
     List<DepositAccount> findByTenantIdAndCustomerId(String tenantId, Long customerId);
 

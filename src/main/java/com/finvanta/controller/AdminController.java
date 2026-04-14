@@ -10,6 +10,7 @@ import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.repository.TransactionLimitRepository;
 import com.finvanta.service.MfaService;
+import com.finvanta.service.ProductMasterService;
 import com.finvanta.service.QrCodeGenerator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
@@ -40,6 +41,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 @RequestMapping("/admin")
 public class AdminController {
 
+    private final ProductMasterService productService;
     private final ProductMasterRepository productRepository;
     private final TransactionLimitRepository limitRepository;
     private final ChargeConfigRepository chargeConfigRepository;
@@ -52,6 +54,7 @@ public class AdminController {
     private final InterBranchSettlementService settlementService;
 
     public AdminController(
+            ProductMasterService productService,
             ProductMasterRepository productRepository,
             TransactionLimitRepository limitRepository,
             ChargeConfigRepository chargeConfigRepository,
@@ -62,6 +65,7 @@ public class AdminController {
             QrCodeGenerator qrCodeGenerator,
             AppUserRepository appUserRepository,
             InterBranchSettlementService settlementService) {
+        this.productService = productService;
         this.productRepository = productRepository;
         this.limitRepository = limitRepository;
         this.chargeConfigRepository = chargeConfigRepository;
@@ -87,17 +91,70 @@ public class AdminController {
         return mav;
     }
 
-    /** View product details — validates tenant ownership to prevent cross-tenant data leak */
+    /** View product details with active account count (GAP 5) */
     @GetMapping("/products/{id}")
     public ModelAndView viewProduct(@PathVariable Long id) {
-        String tenantId = TenantContext.getCurrentTenant();
-        var product = productRepository
-                .findById(id)
-                .filter(p -> p.getTenantId().equals(tenantId))
-                .orElseThrow(() -> new BusinessException("PRODUCT_NOT_FOUND", "Product not found: " + id));
+        ProductMaster product = productService.getProduct(id);
+        long activeAccounts = productService.countActiveAccounts(id);
         ModelAndView mav = new ModelAndView("admin/product-detail");
         mav.addObject("product", product);
+        mav.addObject("activeAccountCount", activeAccounts);
         return mav;
+    }
+
+    /** Product edit form — pre-populated with current values, immutable fields disabled */
+    @GetMapping("/products/{id}/edit")
+    public ModelAndView showEditProductForm(@PathVariable Long id) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ProductMaster product = productService.getProduct(id);
+        long activeAccounts = productService.countActiveAccounts(id);
+        ModelAndView mav = new ModelAndView("admin/product-edit");
+        mav.addObject("product", product);
+        mav.addObject("activeAccountCount", activeAccounts);
+        mav.addObject("glAccounts", glMasterRepository.findAllPostableAccounts(tenantId));
+        return mav;
+    }
+
+    /** Update product — delegates to ProductMasterService with full validation */
+    @PostMapping("/products/{id}/edit")
+    public Object updateProduct(@PathVariable Long id, @ModelAttribute ProductMaster updated,
+            RedirectAttributes redirectAttributes) {
+        try {
+            ProductMaster saved = productService.updateProduct(id, updated);
+            redirectAttributes.addFlashAttribute("success", "Product updated: " + saved.getProductCode());
+            return "redirect:/admin/products/" + id;
+        } catch (Exception e) {
+            String tenantId = TenantContext.getCurrentTenant();
+            ModelAndView mav = new ModelAndView("admin/product-edit");
+            try {
+                ProductMaster existing = productService.getProduct(id);
+                updated.setId(existing.getId());
+                updated.setProductCode(existing.getProductCode());
+                updated.setProductCategory(existing.getProductCategory());
+                mav.addObject("product", updated);
+                mav.addObject("activeAccountCount", productService.countActiveAccounts(id));
+            } catch (Exception ex) {
+                redirectAttributes.addFlashAttribute("error", e.getMessage());
+                return "redirect:/admin/products";
+            }
+            mav.addObject("error", e.getMessage());
+            mav.addObject("glAccounts", glMasterRepository.findAllPostableAccounts(tenantId));
+            return mav;
+        }
+    }
+
+    /** Product lifecycle status change — ACTIVE/SUSPENDED/RETIRED */
+    @PostMapping("/products/{id}/status")
+    public String changeProductStatus(@PathVariable Long id, @RequestParam String status,
+            RedirectAttributes redirectAttributes) {
+        try {
+            ProductMaster product = productService.changeStatus(id, status);
+            redirectAttributes.addFlashAttribute("success",
+                    "Product " + product.getProductCode() + " status changed to " + status);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/products/" + id;
     }
 
     /** Product creation form — shows GL codes for mapping */
@@ -111,94 +168,24 @@ public class AdminController {
     }
 
     /**
-     * Create a new product per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
-     * Per CBS standards: every product must have complete GL mapping before activation.
+     * Create product — delegates to ProductMasterService with full validation.
+     * Per CBS Tier-1: on error, re-displays form with entered data preserved (GAP 4).
      */
     @PostMapping("/products/create")
-    public String createProduct(
-            @RequestParam String productCode,
-            @RequestParam String productName,
-            @RequestParam String productCategory,
-            @RequestParam(required = false) String description,
-            @RequestParam(defaultValue = "ACTUAL_365") String interestMethod,
-            @RequestParam(defaultValue = "FIXED") String interestType,
-            @RequestParam BigDecimal minInterestRate,
-            @RequestParam BigDecimal maxInterestRate,
-            @RequestParam(defaultValue = "2.0000") BigDecimal defaultPenalRate,
-            @RequestParam BigDecimal minLoanAmount,
-            @RequestParam BigDecimal maxLoanAmount,
-            @RequestParam int minTenureMonths,
-            @RequestParam int maxTenureMonths,
-            @RequestParam(defaultValue = "MONTHLY") String repaymentFrequency,
-            @RequestParam String glLoanAsset,
-            @RequestParam String glInterestReceivable,
-            @RequestParam String glBankOperations,
-            @RequestParam String glInterestIncome,
-            @RequestParam String glFeeIncome,
-            @RequestParam String glPenalIncome,
-            @RequestParam String glProvisionExpense,
-            @RequestParam String glProvisionNpa,
-            @RequestParam String glWriteOffExpense,
-            @RequestParam String glInterestSuspense,
-            RedirectAttributes redirectAttributes) {
-        String tenantId = TenantContext.getCurrentTenant();
+    public Object createProduct(@ModelAttribute ProductMaster product, RedirectAttributes redirectAttributes) {
         try {
-            if (productRepository
-                    .findByTenantIdAndProductCode(tenantId, productCode)
-                    .isPresent()) {
-                throw new BusinessException("DUPLICATE_PRODUCT", "Product code already exists: " + productCode);
-            }
-
-            ProductMaster p = new ProductMaster();
-            p.setTenantId(tenantId);
-            p.setProductCode(productCode);
-            p.setProductName(productName);
-            p.setProductCategory(productCategory);
-            p.setDescription(description);
-            p.setCurrencyCode("INR");
-            p.setInterestMethod(interestMethod);
-            p.setInterestType(interestType);
-            p.setMinInterestRate(minInterestRate);
-            p.setMaxInterestRate(maxInterestRate);
-            p.setDefaultPenalRate(defaultPenalRate);
-            p.setMinLoanAmount(minLoanAmount);
-            p.setMaxLoanAmount(maxLoanAmount);
-            p.setMinTenureMonths(minTenureMonths);
-            p.setMaxTenureMonths(maxTenureMonths);
-            p.setRepaymentFrequency(repaymentFrequency);
-            p.setGlLoanAsset(glLoanAsset);
-            p.setGlInterestReceivable(glInterestReceivable);
-            p.setGlBankOperations(glBankOperations);
-            p.setGlInterestIncome(glInterestIncome);
-            p.setGlFeeIncome(glFeeIncome);
-            p.setGlPenalIncome(glPenalIncome);
-            p.setGlProvisionExpense(glProvisionExpense);
-            p.setGlProvisionNpa(glProvisionNpa);
-            p.setGlWriteOffExpense(glWriteOffExpense);
-            p.setGlInterestSuspense(glInterestSuspense);
-            p.setActive(true);
-            p.setRepaymentAllocation("INTEREST_FIRST");
-            p.setCreatedBy(SecurityUtil.getCurrentUsername());
-
-            ProductMaster saved = productRepository.save(p);
-            // Evict GL cache so new product's GL codes are loaded
-            glResolver.evictCache();
-
-            auditService.logEvent(
-                    "ProductMaster",
-                    saved.getId(),
-                    "PRODUCT_CREATED",
-                    null,
-                    productCode,
-                    "PRODUCT_MASTER",
-                    "Product created: " + productCode + " — " + productName + " | Category: " + productCategory
-                            + " | By: " + SecurityUtil.getCurrentUsername());
-
-            redirectAttributes.addFlashAttribute("success", "Product created: " + productCode);
+            ProductMaster saved = productService.createProduct(product);
+            redirectAttributes.addFlashAttribute("success", "Product created: " + saved.getProductCode());
+            return "redirect:/admin/products";
         } catch (Exception e) {
-            redirectAttributes.addFlashAttribute("error", e.getMessage());
+            // GAP 4: Preserve entered data on validation failure
+            String tenantId = TenantContext.getCurrentTenant();
+            ModelAndView mav = new ModelAndView("admin/product-create");
+            mav.addObject("product", product);
+            mav.addObject("error", e.getMessage());
+            mav.addObject("glAccounts", glMasterRepository.findAllPostableAccounts(tenantId));
+            return mav;
         }
-        return "redirect:/admin/products";
     }
 
     /**
