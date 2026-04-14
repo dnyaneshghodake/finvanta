@@ -29,15 +29,17 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "account_number", nullable = false, length = 40)
     private String accountNumber;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "application_id", nullable = false)
     private LoanApplication application;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    /** CBS: EAGER — customer name/CIF displayed on every loan screen */
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "customer_id", nullable = false)
     private Customer customer;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    /** CBS: EAGER — branch code displayed on every loan screen */
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
 
