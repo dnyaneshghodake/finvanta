@@ -35,7 +35,7 @@
                 <div class="row mb-3">
                     <div class="col-md-4"><label class="form-label">City</label><input type="text" name="city" class="form-control" /></div>
                     <div class="col-md-4"><label class="form-label">State</label><input type="text" name="state" class="form-control" /></div>
-                    <div class="col-md-4"><label class="form-label">PIN Code</label><input type="text" name="pinCode" class="form-control" maxlength="6" /></div>
+                    <div class="col-md-4"><label class="form-label">PIN Code</label><input type="text" name="pinCode" class="form-control" maxlength="6" pattern="[0-9]{6}" title="6-digit PIN code" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" /></div>
                 </div>
                 <div class="row mb-3">
                     <div class="col-md-6"><label class="form-label">CIBIL Score</label><input type="number" name="cibilScore" class="form-control" min="300" max="900" /></div>

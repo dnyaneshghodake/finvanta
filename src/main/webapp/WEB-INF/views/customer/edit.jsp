@@ -4,8 +4,11 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <c:if test="${not empty error}">
+        <div class="fv-alert alert alert-danger"><c:out value="${error}" /></div>
+    </c:if>
     <div class="fv-card">
-        <div class="card-header">Edit Customer &mdash; <c:out value="${customer.customerNumber}" /> <a href="${pageContext.request.contextPath}/customer/view/${customer.id}" class="btn btn-sm btn-outline-secondary float-end"><i class="bi bi-x-circle"></i> Cancel</a></div>
+        <div class="card-header"><i class="bi bi-pencil-square"></i> Edit Customer &mdash; <c:out value="${customer.customerNumber}" /> <a href="${pageContext.request.contextPath}/customer/view/${customer.id}" class="btn btn-sm btn-outline-secondary float-end"><i class="bi bi-x-circle"></i> Cancel</a></div>
         <div class="card-body">
             <form method="post" action="${pageContext.request.contextPath}/customer/edit/${customer.id}" class="fv-form">
                 <!-- Immutable fields (read-only per RBI KYC norms) — PII masked per RBI/UIDAI -->
@@ -28,14 +31,14 @@
                 </div>
                 <div class="row mb-3">
                     <div class="col-md-6"><label class="form-label">Date of Birth</label><input type="date" name="dateOfBirth" class="form-control" value="${customer.dateOfBirth}" /></div>
-                    <div class="col-md-6"><label class="form-label">Mobile Number *</label><input type="text" name="mobileNumber" class="form-control" value="<c:out value='${customer.mobileNumber}'/>" required maxlength="15" /></div>
+                    <div class="col-md-6"><label class="form-label">Mobile Number *</label><input type="text" name="mobileNumber" class="form-control" value="<c:out value='${customer.mobileNumber}'/>" required maxlength="10" pattern="[6-9][0-9]{9}" title="10-digit mobile starting with 6-9" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" /></div>
                 </div>
                 <div class="mb-3"><label class="form-label">Email</label><input type="email" name="email" class="form-control" value="<c:out value='${customer.email}'/>" /></div>
                 <div class="mb-3"><label class="form-label">Address</label><textarea name="address" class="form-control" rows="2"><c:out value="${customer.address}"/></textarea></div>
                 <div class="row mb-3">
                     <div class="col-md-4"><label class="form-label">City</label><input type="text" name="city" class="form-control" value="<c:out value='${customer.city}'/>" /></div>
                     <div class="col-md-4"><label class="form-label">State</label><input type="text" name="state" class="form-control" value="<c:out value='${customer.state}'/>" /></div>
-                    <div class="col-md-4"><label class="form-label">PIN Code</label><input type="text" name="pinCode" class="form-control" value="<c:out value='${customer.pinCode}'/>" maxlength="6" /></div>
+                    <div class="col-md-4"><label class="form-label">PIN Code</label><input type="text" name="pinCode" class="form-control" value="<c:out value='${customer.pinCode}'/>" maxlength="6" pattern="[0-9]{6}" title="6-digit PIN code" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" /></div>
                 </div>
                 <div class="row mb-3">
                     <div class="col-md-6"><label class="form-label">CIBIL Score</label><input type="number" name="cibilScore" class="form-control" value="${customer.cibilScore}" min="300" max="900" /></div>
