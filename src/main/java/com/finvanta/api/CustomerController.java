@@ -44,19 +44,33 @@ public class CustomerController {
 
     // === CIF Lifecycle ===
 
-    /** Create customer with auto-generated CIF number. MAKER/ADMIN. */
+    /**
+     * Create customer with auto-generated CIF number. MAKER/ADMIN.
+     * Per CBS Tier-1: uses createCustomerFromEntity() which accepts a full Customer
+     * entity — same method used by the UI controller. The service layer handles
+     * mass assignment protection, validation, duplicate checks, and audit logging.
+     */
     @PostMapping
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<CustomerResponse>>
             createCustomer(
                     @Valid @RequestBody CreateCustomerRequest req) {
-        Customer saved = customerService.createCustomer(
-                req.firstName(), req.lastName(),
-                req.dateOfBirth(), req.panNumber(),
-                req.aadhaarNumber(), req.mobileNumber(),
-                req.email(), req.address(), req.city(),
-                req.state(), req.pinCode(),
-                req.customerType(), req.branchId());
+        Customer c = new Customer();
+        c.setFirstName(req.firstName());
+        c.setLastName(req.lastName());
+        c.setDateOfBirth(req.dateOfBirth());
+        c.setPanNumber(req.panNumber());
+        c.setAadhaarNumber(req.aadhaarNumber());
+        c.setMobileNumber(req.mobileNumber());
+        c.setEmail(req.email());
+        c.setAddress(req.address());
+        c.setCity(req.city());
+        c.setState(req.state());
+        c.setPinCode(req.pinCode());
+        c.setCustomerType(req.customerType());
+
+        Customer saved = customerService
+                .createCustomerFromEntity(c, req.branchId());
 
         return ResponseEntity.ok(ApiResponse.success(
                 CustomerResponse.from(saved),
