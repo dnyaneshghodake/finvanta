@@ -27,7 +27,14 @@
                 <tr><td class="fw-bold">Customer Number</td><td><c:out value="${customer.customerNumber}" /></td></tr>
                 <tr><td class="fw-bold">Full Name</td><td><c:out value="${customer.fullName}" /></td></tr>
                 <tr><td class="fw-bold">Customer Type</td><td><c:out value="${customer.customerType}" /></td></tr>
+                <tr><td class="fw-bold">Gender</td><td><c:choose><c:when test="${customer.gender == 'M'}">Male</c:when><c:when test="${customer.gender == 'F'}">Female</c:when><c:when test="${customer.gender == 'T'}">Transgender</c:when><c:otherwise>--</c:otherwise></c:choose></td></tr>
                 <tr><td class="fw-bold">Date of Birth</td><td><c:out value="${customer.dateOfBirth}" /></td></tr>
+                <tr><td class="fw-bold">Marital Status</td><td><c:out value="${customer.maritalStatus}" default="--" /></td></tr>
+                <tr><td class="fw-bold">Father's Name</td><td><c:out value="${customer.fatherName}" default="--" /></td></tr>
+                <tr><td class="fw-bold">Mother's Name</td><td><c:out value="${customer.motherName}" default="--" /></td></tr>
+                <c:if test="${not empty customer.spouseName}"><tr><td class="fw-bold">Spouse Name</td><td><c:out value="${customer.spouseName}" /></td></tr></c:if>
+                <tr><td class="fw-bold">Nationality</td><td><c:out value="${customer.nationality}" default="INDIAN" /></td></tr>
+                <tr><td class="fw-bold">Occupation</td><td><c:out value="${customer.occupationCode}" default="--" /></td></tr>
                 <%-- CBS: PII masking per RBI IT Governance Direction 2023 / UIDAI Aadhaar Act 2016.
                      PAN/Aadhaar/Mobile are masked in display — only last 4 digits visible.
                      Full values are available in DB (encrypted) for authorized operations. --%>
@@ -78,6 +85,21 @@
                 <c:if test="${not empty customer.customerGroupName}">
                 <tr><td class="fw-bold">Customer Group</td><td><c:out value="${customer.customerGroupName}" /> (ID: <c:out value="${customer.customerGroupId}" />)</td></tr>
                 </c:if>
+                <%-- CKYC / CERSAI Status --%>
+                <tr><td class="fw-bold">CKYC Status</td><td>
+                    <c:choose>
+                        <c:when test="${customer.ckycStatus == 'REGISTERED'}"><span class="fv-badge fv-badge-active">REGISTERED</span> KIN: <c:out value="${customer.ckycNumber}" /></c:when>
+                        <c:when test="${customer.ckycStatus == 'UPLOADED'}"><span class="fv-badge fv-badge-pending">UPLOADED</span></c:when>
+                        <c:when test="${customer.ckycStatus == 'FAILED'}"><span class="fv-badge fv-badge-npa">FAILED</span></c:when>
+                        <c:otherwise><span class="text-muted">Not Registered</span></c:otherwise>
+                    </c:choose>
+                </td></tr>
+                <c:if test="${not empty customer.ckycNumber}"><tr><td class="fw-bold">CKYC Number (KIN)</td><td><c:out value="${customer.ckycNumber}" /></td></tr></c:if>
+                <tr><td class="fw-bold">KYC Mode</td><td><c:out value="${customer.kycMode}" default="--" /></td></tr>
+                <c:if test="${not empty customer.photoIdType}"><tr><td class="fw-bold">Photo ID</td><td><c:out value="${customer.photoIdType}" /></td></tr></c:if>
+                <c:if test="${not empty customer.addressProofType}"><tr><td class="fw-bold">Address Proof</td><td><c:out value="${customer.addressProofType}" /></td></tr></c:if>
+                <c:if test="${customer.videoKycDone}"><tr><td class="fw-bold">Video KYC</td><td><span class="fv-badge fv-badge-active">Completed</span></td></tr></c:if>
+                <tr><td class="fw-bold">Annual Income Band</td><td><c:out value="${customer.annualIncomeBand}" default="--" /></td></tr>
                 <tr><td class="fw-bold">CIBIL Score</td><td><c:out value="${customer.cibilScore}" /></td></tr>
                 <tr><td class="fw-bold">Branch</td><td><a href="${pageContext.request.contextPath}/branch/view/${customer.branch.id}"><c:out value="${customer.branch.branchCode}" /> - <c:out value="${customer.branch.branchName}" /></a></td></tr>
                 <tr><td class="fw-bold">Monthly Income</td><td class="amount"><c:if test="${customer.monthlyIncome != null}"><fmt:formatNumber value="${customer.monthlyIncome}" type="number" maxFractionDigits="2" /> INR</c:if><c:if test="${customer.monthlyIncome == null}">--</c:if></td></tr>

@@ -327,6 +327,31 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         existing.setEmploymentType(updated.getEmploymentType());
         existing.setEmployerName(updated.getEmployerName());
 
+        // CBS CKYC: Demographics (mutable — can be updated on re-KYC)
+        existing.setGender(updated.getGender());
+        existing.setFatherName(updated.getFatherName());
+        existing.setMotherName(updated.getMotherName());
+        existing.setSpouseName(updated.getSpouseName());
+        existing.setNationality(updated.getNationality());
+        existing.setMaritalStatus(updated.getMaritalStatus());
+        existing.setOccupationCode(updated.getOccupationCode());
+        existing.setAnnualIncomeBand(updated.getAnnualIncomeBand());
+
+        // CBS CKYC: KYC document details (mutable on re-KYC)
+        existing.setKycMode(updated.getKycMode());
+        existing.setPhotoIdType(updated.getPhotoIdType());
+        existing.setPhotoIdNumber(updated.getPhotoIdNumber());
+        existing.setAddressProofType(updated.getAddressProofType());
+        existing.setAddressProofNumber(updated.getAddressProofNumber());
+
+        // CBS CKYC: Permanent address (mutable)
+        existing.setPermanentAddress(updated.getPermanentAddress());
+        existing.setPermanentCity(updated.getPermanentCity());
+        existing.setPermanentState(updated.getPermanentState());
+        existing.setPermanentPinCode(updated.getPermanentPinCode());
+        existing.setPermanentCountry(updated.getPermanentCountry());
+        existing.setAddressSameAsPermanent(updated.isAddressSameAsPermanent());
+
         // CBS: KYC risk category and PEP flag
         if (updated.getKycRiskCategory() != null) {
             existing.setKycRiskCategory(updated.getKycRiskCategory());
