@@ -264,16 +264,20 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                     "CUSTOMER_HAS_ACTIVE_LOANS",
                     "Cannot deactivate: " + activeLoanCount + " active loan account(s).");
 
-        // CBS: Cannot deactivate customer with active CASA deposit accounts
-        long activeCasaCount = depositRepo
+        // CBS: Cannot deactivate customer with non-closed CASA deposit accounts.
+        // Per Finacle CIF_MASTER: any non-CLOSED deposit (ACTIVE, DORMANT, FROZEN,
+        // PENDING_ACTIVATION) blocks customer deactivation. Only CLOSED accounts
+        // are excluded — they have zero balance and no further operations.
+        long nonClosedCasaCount = depositRepo
                 .findByTenantIdAndCustomerId(tid, customerId)
                 .stream()
-                .filter(d -> d.isActive())
+                .filter(d -> !d.isClosed())
                 .count();
-        if (activeCasaCount > 0)
+        if (nonClosedCasaCount > 0)
             throw new BusinessException(
                     "CUSTOMER_HAS_ACTIVE_DEPOSITS",
-                    "Cannot deactivate: " + activeCasaCount + " active CASA deposit account(s).");
+                    "Cannot deactivate: " + nonClosedCasaCount
+                            + " non-closed CASA deposit account(s). Close all deposit accounts first.");
 
         c.setActive(false);
         c.setUpdatedBy(user);
