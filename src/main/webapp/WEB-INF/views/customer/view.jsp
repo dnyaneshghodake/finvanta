@@ -296,7 +296,25 @@
                     <c:forEach var="doc" items="${documents}">
                         <tr>
                             <td><c:out value="${doc.documentType.displayName}" /></td>
-                            <td><a href="${pageContext.request.contextPath}/customer/document/download/${doc.id}" target="_blank"><c:out value="${doc.fileName}" /></a></td>
+                            <td>
+                                <%-- CBS: Thumbnail preview for image documents per Finacle DOC_MASTER.
+                                     Images (JPG/PNG) show inline thumbnail for quick visual identification.
+                                     PDFs show file icon. Clicking opens the inline preview modal. --%>
+                                <c:choose>
+                                    <c:when test="${doc.contentType == 'image/jpeg' || doc.contentType == 'image/png'}">
+                                        <a href="javascript:void(0);" onclick="previewDoc('${pageContext.request.contextPath}/customer/document/download/${doc.id}', '${doc.contentType}', '${doc.documentType.displayName}');" title="Click to preview">
+                                            <img src="${pageContext.request.contextPath}/customer/document/download/${doc.id}" alt="<c:out value='${doc.fileName}'/>" style="max-height:40px; max-width:60px; border:1px solid #dee2e6; border-radius:3px; cursor:pointer;" />
+                                            <small class="ms-1"><c:out value="${doc.fileName}" /></small>
+                                        </a>
+                                    </c:when>
+                                    <c:otherwise>
+                                        <a href="javascript:void(0);" onclick="previewDoc('${pageContext.request.contextPath}/customer/document/download/${doc.id}', '${doc.contentType}', '${doc.documentType.displayName}');" title="Click to preview">
+                                            <i class="bi bi-file-earmark-pdf text-danger"></i>
+                                            <small class="ms-1"><c:out value="${doc.fileName}" /></small>
+                                        </a>
+                                    </c:otherwise>
+                                </c:choose>
+                            </td>
                             <td><fmt:formatNumber value="${doc.fileSize / 1024}" maxFractionDigits="0" /> KB</td>
                             <td><c:out value="${doc.documentNumber}" default="--" /></td>
                             <td>
@@ -309,20 +327,23 @@
                             <td><small><c:out value="${doc.createdBy}" /><br/><c:out value="${doc.createdAt}" /></small></td>
                             <td><c:if test="${not empty doc.verifiedBy}"><small><c:out value="${doc.verifiedBy}" /><br/><c:out value="${doc.verifiedDate}" /></small></c:if><c:if test="${empty doc.verifiedBy}"><small class="text-muted">--</small></c:if></td>
                             <td>
+                                <%-- CBS: View (inline preview) + Download (save to disk) per Finacle DOC_MASTER --%>
+                                <button type="button" class="btn btn-sm btn-outline-primary" title="Preview document" onclick="previewDoc('${pageContext.request.contextPath}/customer/document/download/${doc.id}', '${doc.contentType}', '${doc.documentType.displayName}');"><i class="bi bi-eye"></i></button>
+                                <a href="${pageContext.request.contextPath}/customer/document/download/${doc.id}" target="_blank" class="btn btn-sm btn-outline-secondary" title="Open in new tab"><i class="bi bi-box-arrow-up-right"></i></a>
                                 <c:if test="${doc.verificationStatus == 'UPLOADED'}">
                                 <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
                                     <form method="post" action="${pageContext.request.contextPath}/customer/document/verify/${doc.id}" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                         <input type="hidden" name="action" value="VERIFY" />
-                                        <button type="submit" class="btn btn-sm btn-success" data-confirm="Verify this document?"><i class="bi bi-check"></i></button>
+                                        <button type="submit" class="btn btn-sm btn-success" title="Verify document" data-confirm="Verify this document?"><i class="bi bi-check-lg"></i></button>
                                     </form>
                                     <form method="post" action="${pageContext.request.contextPath}/customer/document/verify/${doc.id}" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                         <input type="hidden" name="action" value="REJECT" />
                                         <input type="hidden" name="rejectionReason" value="" id="rejReason_${doc.id}" />
-                                        <button type="submit" class="btn btn-sm btn-danger"
+                                        <button type="submit" class="btn btn-sm btn-danger" title="Reject document"
                                             onclick="var r=prompt('Rejection reason (mandatory):'); if(!r||r.trim().length<3){alert('Reason is mandatory');return false;} document.getElementById('rejReason_${doc.id}').value=r; return confirm('Reject this document?');">
-                                            <i class="bi bi-x"></i></button>
+                                            <i class="bi bi-x-lg"></i></button>
                                     </form>
                                 </c:if>
                                 </c:if>
@@ -334,6 +355,30 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
+        </div>
+    </div>
+
+    <%-- CBS: Inline Document Preview Modal per Finacle DOC_MASTER / Temenos IM.DOCUMENT.IMAGE.
+         Per CBS standards: CHECKER must preview the document on the SAME SCREEN where they
+         verify/reject — no context-switching to a separate tab. This modal renders:
+         - PDF documents via <iframe> (browser's built-in PDF viewer)
+         - Image documents (JPG/PNG) via <img> with zoom capability
+         Per RBI KYC audit: document preview access is already logged via the download endpoint. --%>
+    <div class="modal fade" id="docPreviewModal" tabindex="-1" aria-labelledby="docPreviewLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title" id="docPreviewLabel"><i class="bi bi-file-earmark-text"></i> Document Preview</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-0" style="min-height:500px;">
+                    <div id="docPreviewContent" class="text-center" style="min-height:500px;"></div>
+                </div>
+                <div class="modal-footer">
+                    <a id="docPreviewOpenTab" href="#" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-box-arrow-up-right"></i> Open in New Tab</a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
             </div>
         </div>
     </div>
@@ -361,5 +406,35 @@
         </div>
     </div>
 </div>
+
+<%-- CBS: Document Preview JavaScript per Finacle DOC_MASTER / Temenos IM.DOCUMENT.IMAGE.
+     Renders uploaded KYC documents inline within a Bootstrap modal:
+     - PDF: embedded via <iframe> using browser's native PDF viewer
+     - JPG/PNG: rendered via <img> with responsive sizing
+     Per CBS maker-checker workflow: CHECKER previews the document on the same screen
+     where verify/reject buttons are available — no context-switching required.
+     Per RBI KYC audit: every preview triggers the download endpoint which is already
+     audited via CustomerDocumentServiceImpl.getDocument() branch access enforcement. --%>
+<script>
+function previewDoc(url, contentType, docTitle) {
+    var container = document.getElementById('docPreviewContent');
+    var label = document.getElementById('docPreviewLabel');
+    var openTabLink = document.getElementById('docPreviewOpenTab');
+
+    label.innerHTML = '<i class="bi bi-file-earmark-text"></i> ' + docTitle;
+    openTabLink.href = url;
+
+    if (contentType === 'application/pdf') {
+        container.innerHTML = '<iframe src="' + url + '" style="width:100%; height:600px; border:none;"></iframe>';
+    } else if (contentType === 'image/jpeg' || contentType === 'image/png') {
+        container.innerHTML = '<img src="' + url + '" alt="' + docTitle + '" style="max-width:100%; max-height:600px; padding:16px;" />';
+    } else {
+        container.innerHTML = '<div class="p-5 text-muted"><i class="bi bi-file-earmark-x" style="font-size:3rem;"></i><br/>Preview not available for this file type.<br/>Please open in a new tab.</div>';
+    }
+
+    var modal = new bootstrap.Modal(document.getElementById('docPreviewModal'));
+    modal.show();
+}
+</script>
 
 <%@ include file="../layout/footer.jsp" %>
