@@ -76,8 +76,11 @@ public class CustomerController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
         ModelAndView mav = new ModelAndView("customer/list");
+        // CBS: Sanitize pagination params — negative page/zero size causes IllegalArgumentException
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(Math.min(size, MAX_PAGE_SIZE), 1);
         Page<Customer> customerPage = customerService.searchCustomers("",
-                PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE), Sort.by("customerNumber").ascending()));
+                PageRequest.of(safePage, safeSize, Sort.by("customerNumber").ascending()));
         mav.addObject("customers", customerPage.getContent());
         mav.addObject("customerPage", customerPage);
         return mav;
@@ -93,14 +96,17 @@ public class CustomerController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
         ModelAndView mav = new ModelAndView("customer/list");
+        // CBS: Sanitize pagination params — negative page/zero size causes IllegalArgumentException
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(Math.min(size, MAX_PAGE_SIZE), 1);
         Page<Customer> customerPage;
         if (q != null && !q.isBlank() && q.length() >= 2) {
             customerPage = customerService.searchCustomers(q,
-                    PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE), Sort.by("customerNumber").ascending()));
+                    PageRequest.of(safePage, safeSize, Sort.by("customerNumber").ascending()));
             mav.addObject("searchQuery", q);
         } else {
             customerPage = customerService.searchCustomers("",
-                    PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE), Sort.by("customerNumber").ascending()));
+                    PageRequest.of(safePage, safeSize, Sort.by("customerNumber").ascending()));
         }
         mav.addObject("customers", customerPage.getContent());
         mav.addObject("customerPage", customerPage);

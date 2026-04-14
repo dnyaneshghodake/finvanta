@@ -158,7 +158,10 @@ public class CustomerController {
             String occupationCode,
             String annualIncomeBand,
             String kycRiskCategory,
-            boolean pep,
+            // CBS: Boolean wrapper — null means "not provided" (omitted from JSON).
+            // Primitive boolean defaults to false when omitted, which would silently
+            // clear PEP flag on partial updates — FATF/RBI compliance violation.
+            Boolean pep,
             // CBS KYC Document Details
             String kycMode,
             String photoIdType,
@@ -171,7 +174,8 @@ public class CustomerController {
             String permanentState,
             String permanentPinCode,
             String permanentCountry,
-            boolean addressSameAsPermanent,
+            // CBS: Boolean wrapper — same rationale as pep above.
+            Boolean addressSameAsPermanent,
             // CBS Income & Exposure (RBI Norms)
             BigDecimal monthlyIncome,
             BigDecimal maxBorrowingLimit,
@@ -251,7 +255,9 @@ public class CustomerController {
         c.setOccupationCode(req.occupationCode());
         c.setAnnualIncomeBand(req.annualIncomeBand());
         c.setKycRiskCategory(req.kycRiskCategory());
-        c.setPep(req.pep());
+        // CBS: Only set PEP if explicitly provided (non-null). Null = not provided in JSON.
+        // Prevents silent clearing of PEP flag on partial updates per FATF Recommendation 12.
+        if (req.pep() != null) c.setPep(req.pep());
         // KYC Document Details
         c.setKycMode(req.kycMode());
         c.setPhotoIdType(req.photoIdType());
@@ -264,7 +270,8 @@ public class CustomerController {
         c.setPermanentState(req.permanentState());
         c.setPermanentPinCode(req.permanentPinCode());
         c.setPermanentCountry(req.permanentCountry());
-        c.setAddressSameAsPermanent(req.addressSameAsPermanent());
+        // CBS: Only set addressSameAsPermanent if explicitly provided (non-null).
+        if (req.addressSameAsPermanent() != null) c.setAddressSameAsPermanent(req.addressSameAsPermanent());
         // Income & Exposure
         c.setMonthlyIncome(req.monthlyIncome());
         c.setMaxBorrowingLimit(req.maxBorrowingLimit());

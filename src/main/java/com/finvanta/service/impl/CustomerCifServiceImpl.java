@@ -297,6 +297,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         existing.setState(updated.getState());
         existing.setPinCode(updated.getPinCode());
         existing.setCustomerType(updated.getCustomerType());
+        existing.computeCkycAccountType(); // CBS: Recompute CKYC account type when customerType changes
         existing.setCibilScore(updated.getCibilScore());
         existing.setMonthlyIncome(updated.getMonthlyIncome());
         existing.setMaxBorrowingLimit(updated.getMaxBorrowingLimit());
