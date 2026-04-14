@@ -194,7 +194,15 @@ public class Customer extends BaseEntity {
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    /**
+     * CBS: EAGER fetch for branch — branch is needed on EVERY customer screen
+     * (list, view, edit) and is a single-row @ManyToOne (not a collection).
+     * Per Finacle CIF_MASTER: customer always carries its SOL/branch context.
+     * EAGER eliminates N+1 lazy-load queries when open-in-view=false (SQL Server).
+     * With H2 in-memory, lazy vs eager is invisible. With SQL Server over TCP,
+     * each lazy load costs ~2-5ms — EAGER joins it into the initial query for free.
+     */
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
 
