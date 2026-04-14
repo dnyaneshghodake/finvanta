@@ -133,10 +133,12 @@ public class CustomerDocument extends BaseEntity {
 
     /**
      * Verification status per CBS document lifecycle.
-     * Values: UPLOADED, VERIFIED, REJECTED, EXPIRED
+     * Per Finacle DOC_MASTER: stored as VARCHAR via @Enumerated(EnumType.STRING).
+     * Compile-time safe — prevents invalid status values at code level.
      */
+    @Enumerated(EnumType.STRING)
     @Column(name = "verification_status", nullable = false, length = 20)
-    private String verificationStatus = "UPLOADED";
+    private DocumentVerificationStatus verificationStatus = DocumentVerificationStatus.UPLOADED;
 
     /** Who verified/rejected the document (CHECKER username) */
     @Column(name = "verified_by", length = 100)
@@ -154,14 +156,14 @@ public class CustomerDocument extends BaseEntity {
     @Column(name = "remarks", length = 500)
     private String remarks;
 
-    // === Helpers ===
+    // === Helpers (delegate to enum methods for compile-time safety) ===
 
     public boolean isVerified() {
-        return "VERIFIED".equals(verificationStatus);
+        return verificationStatus == DocumentVerificationStatus.VERIFIED;
     }
 
     public boolean isRejected() {
-        return "REJECTED".equals(verificationStatus);
+        return verificationStatus == DocumentVerificationStatus.REJECTED;
     }
 
     public boolean isExpired() {
@@ -169,18 +171,13 @@ public class CustomerDocument extends BaseEntity {
         return java.time.LocalDate.now().isAfter(expiryDate);
     }
 
-    /** Returns true if this is an identity document (PAN, Aadhaar, Passport, etc.) */
+    /** Returns true if this is an identity document — delegates to DocumentType enum */
     public boolean isIdentityDocument() {
-        return "PAN_CARD".equals(documentType) || "AADHAAR_FRONT".equals(documentType)
-                || "AADHAAR_BACK".equals(documentType) || "PASSPORT".equals(documentType)
-                || "VOTER_ID".equals(documentType) || "DRIVING_LICENSE".equals(documentType);
+        return documentType != null && documentType.isIdentityDocument();
     }
 
-    /** Returns true if this is an address proof document */
+    /** Returns true if this is an address proof document — delegates to DocumentType enum */
     public boolean isAddressProof() {
-        return "UTILITY_BILL".equals(documentType) || "BANK_STATEMENT".equals(documentType)
-                || "RENT_AGREEMENT".equals(documentType) || "PASSPORT".equals(documentType)
-                || "VOTER_ID".equals(documentType) || "DRIVING_LICENSE".equals(documentType)
-                || "AADHAAR_FRONT".equals(documentType);
+        return documentType != null && documentType.isAddressProof();
     }
 }

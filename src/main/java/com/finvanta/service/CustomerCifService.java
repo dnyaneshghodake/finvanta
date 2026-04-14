@@ -105,4 +105,16 @@ public interface CustomerCifService {
      * @return List of matching customers
      */
     List<Customer> searchCustomers(String query);
+
+    /**
+     * Search customers with pagination per Finacle CIF_SEARCH / Temenos ENQUIRY.
+     * Branch-scoped for MAKER/CHECKER, all branches for ADMIN.
+     * Per CBS: large customer lists must be paginated to prevent OOM and improve UX.
+     *
+     * @param query    Search query (min 2 chars, or empty for full list)
+     * @param pageable Pagination parameters (page, size, sort)
+     * @return Page of matching customers
+     */
+    org.springframework.data.domain.Page<Customer> searchCustomers(
+            String query, org.springframework.data.domain.Pageable pageable);
 }

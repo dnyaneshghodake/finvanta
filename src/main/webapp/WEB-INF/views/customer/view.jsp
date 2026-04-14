@@ -289,7 +289,7 @@
                 <tbody>
                     <c:forEach var="doc" items="${documents}">
                         <tr>
-                            <td><c:out value="${doc.documentType}" /></td>
+                            <td><c:out value="${doc.documentType.displayName}" /></td>
                             <td><a href="${pageContext.request.contextPath}/customer/document/download/${doc.id}" target="_blank"><c:out value="${doc.fileName}" /></a></td>
                             <td><fmt:formatNumber value="${doc.fileSize / 1024}" maxFractionDigits="0" /> KB</td>
                             <td><c:out value="${doc.documentNumber}" default="--" /></td>

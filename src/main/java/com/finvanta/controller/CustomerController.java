@@ -1,17 +1,13 @@
 package com.finvanta.controller;
 
-import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.domain.entity.CustomerDocument;
 import com.finvanta.repository.BranchRepository;
-import com.finvanta.repository.CustomerDocumentRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
-import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CustomerCifService;
-import com.finvanta.service.DocumentStorageService;
-import com.finvanta.util.BusinessException;
+import com.finvanta.service.CustomerDocumentService;
 import com.finvanta.util.PiiMaskingUtil;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
@@ -24,58 +20,39 @@ import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /**
- * CBS Customer Information File (CIF) Controller.
- * Per Finacle/Temenos, CIF is the master record for all customer interactions.
- * Supports: Create (auto-number), View, Edit, KYC Verify, Deactivate.
+ * CBS Customer Information File (CIF) Controller — Thin HTTP Mapping Layer.
+ * Per Finacle/Temenos/BNP Tier-1 layering:
+ *   Controller → Service → Repository
+ *   Controller has NO @Transactional, NO direct repository writes, NO business logic.
+ *   All business logic is in CustomerCifService and CustomerDocumentService.
  *
- * CBS Code Quality: No @Transactional on controller methods.
- * All business logic and transactions are managed by CustomerCifService.
- * Controller only handles HTTP request/response mapping and view delegation.
+ * Repository reads (applicationRepository, accountRepository, depositAccountRepository)
+ * are retained for view-layer data assembly only — no writes, no business logic.
  */
 @Controller
 @RequestMapping("/customer")
 public class CustomerController {
 
-    /**
-     * Allowed document types per RBI KYC Direction — Officially Valid Documents (OVD) list.
-     * Server-side validation against this set prevents injection of arbitrary document types.
-     * Per Finacle DOC_MASTER: document types are a closed enumeration.
-     */
-    private static final java.util.Set<String> ALLOWED_DOCUMENT_TYPES = java.util.Set.of(
-            "PAN_CARD", "AADHAAR_FRONT", "AADHAAR_BACK", "PASSPORT", "VOTER_ID",
-            "DRIVING_LICENSE", "UTILITY_BILL", "BANK_STATEMENT", "RENT_AGREEMENT",
-            "PHOTO", "SIGNATURE", "FORM_60", "ITR", "SALARY_SLIP",
-            "COMPANY_REG", "TRUST_DEED", "OTHER");
-
     private final CustomerCifService customerService;
+    private final CustomerDocumentService documentService;
     private final BranchRepository branchRepository;
     private final LoanApplicationRepository applicationRepository;
     private final LoanAccountRepository accountRepository;
     private final DepositAccountRepository depositAccountRepository;
-    private final CustomerDocumentRepository documentRepository;
-    private final AuditService auditService;
-    private final BusinessDateService businessDateService;
-    private final DocumentStorageService documentStorageService;
 
     public CustomerController(
             CustomerCifService customerService,
+            CustomerDocumentService documentService,
             BranchRepository branchRepository,
             LoanApplicationRepository applicationRepository,
             LoanAccountRepository accountRepository,
-            DepositAccountRepository depositAccountRepository,
-            CustomerDocumentRepository documentRepository,
-            AuditService auditService,
-            BusinessDateService businessDateService,
-            DocumentStorageService documentStorageService) {
+            DepositAccountRepository depositAccountRepository) {
         this.customerService = customerService;
+        this.documentService = documentService;
         this.branchRepository = branchRepository;
         this.applicationRepository = applicationRepository;
         this.accountRepository = accountRepository;
         this.depositAccountRepository = depositAccountRepository;
-        this.documentRepository = documentRepository;
-        this.auditService = auditService;
-        this.businessDateService = businessDateService;
-        this.documentStorageService = documentStorageService;
     }
 
     /**
@@ -176,7 +153,7 @@ public class CustomerController {
         mav.addObject("loanApplications", applicationRepository.findByTenantIdAndCustomerId(tenantId, id));
         mav.addObject("loanAccounts", accountRepository.findByTenantIdAndCustomerId(tenantId, id));
         mav.addObject("depositAccounts", depositAccountRepository.findByTenantIdAndCustomerId(tenantId, id));
-        mav.addObject("documents", documentRepository.findByCustomer(tenantId, id));
+        mav.addObject("documents", documentService.getDocumentsForCustomer(id));
         return mav;
     }
 
@@ -247,10 +224,12 @@ public class CustomerController {
     }
 
     // ========================================================================
-    // DOCUMENT MANAGEMENT (per Finacle DOC_MASTER / RBI KYC Direction)
+    // DOCUMENT MANAGEMENT — Thin delegation to CustomerDocumentService.
+    // Per Finacle DOC_MASTER: all business logic in service layer.
+    // Controller only handles HTTP request/response mapping.
     // ========================================================================
 
-    /** CBS Document Upload — stores KYC document with metadata */
+    /** CBS Document Upload — delegates to CustomerDocumentService */
     @PostMapping("/document/upload/{customerId}")
     public String uploadDocument(
             @PathVariable Long customerId,
@@ -261,79 +240,12 @@ public class CustomerController {
             RedirectAttributes redirectAttributes) {
         try {
             if (file.isEmpty()) {
-                throw new BusinessException("FILE_EMPTY", "Please select a file to upload.");
+                redirectAttributes.addFlashAttribute("error", "Please select a file to upload.");
+                return "redirect:/customer/view/" + customerId;
             }
-            // CBS: Validate document type against allowed OVD list per RBI KYC Direction.
-            // Client-side <select> restricts values, but server must enforce per defense-in-depth.
-            if (!ALLOWED_DOCUMENT_TYPES.contains(documentType)) {
-                throw new BusinessException("INVALID_DOC_TYPE",
-                        "Invalid document type: " + documentType
-                                + ". Allowed types: " + String.join(", ", ALLOWED_DOCUMENT_TYPES));
-            }
-            // CBS: Max 5MB per document per RBI IT Governance
-            if (file.getSize() > 5 * 1024 * 1024) {
-                throw new BusinessException("FILE_TOO_LARGE",
-                        "File size exceeds 5MB limit. Please compress or resize the document.");
-            }
-            // CBS: Allowed formats only (PDF, JPG, PNG)
-            String contentType = file.getContentType();
-            if (contentType == null || (!contentType.equals("application/pdf")
-                    && !contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
-                throw new BusinessException("INVALID_FORMAT",
-                        "Only PDF, JPG, and PNG files are allowed.");
-            }
-
-            // CBS: Validate file content by magic bytes — Content-Type header is client-controlled
-            // and can be spoofed. Per RBI IT Governance Direction 2023: validate actual file content.
-            byte[] fileBytes = file.getBytes();
-            if (!isValidFileContent(fileBytes, contentType)) {
-                throw new BusinessException("CONTENT_MISMATCH",
-                        "File content does not match the declared type. Possible file spoofing detected.");
-            }
-
-            Customer customer = customerService.getCustomer(customerId);
-            String tenantId = TenantContext.getCurrentTenant();
-
-            // CBS: Sanitize filename — strip path traversal characters per OWASP.
-            // getOriginalFilename() can contain path separators (../../etc/passwd).
-            // Used in Content-Disposition header — unsanitized value enables header injection.
-            String safeFileName = sanitizeFileName(file.getOriginalFilename());
-
-            CustomerDocument doc = new CustomerDocument();
-            doc.setTenantId(tenantId);
-            doc.setCustomer(customer);
-            doc.setDocumentType(documentType);
-            doc.setFileName(safeFileName);
-            doc.setContentType(contentType);
-            doc.setFileSize(file.getSize());
-            doc.setDocumentNumber(documentNumber);
-            doc.setRemarks(remarks);
-            doc.setVerificationStatus("UPLOADED");
-            doc.setCreatedBy(SecurityUtil.getCurrentUsername());
-
-            // CBS: Store file content via configurable DocumentStorageService.
-            // Per Finacle DOC_MASTER: storage backend is transparent to business logic.
-            // DATABASE mode: fileData BLOB populated, storagePath = "BLOB"
-            // FILESYSTEM mode: file written to disk, storagePath = relative path, fileData = null
-            if ("DATABASE".equals(documentStorageService.getStorageType())) {
-                doc.setFileData(fileBytes);
-            }
-            // Save entity first to get the generated ID (needed for filesystem path)
-            documentRepository.save(doc);
-
-            // Store via configured backend and update storagePath
-            String storagePath = documentStorageService.store(
-                    tenantId, customer.getId(), doc.getId(), safeFileName, fileBytes);
-            doc.setStoragePath(storagePath);
-            documentRepository.save(doc);
-
-            auditService.logEvent("CustomerDocument", doc.getId(), "UPLOAD", null,
-                    documentType, "CIF",
-                    "Document uploaded: " + documentType + " for customer " + customer.getCustomerNumber()
-                            + " | File: " + file.getOriginalFilename()
-                            + " | Size: " + file.getSize() + " bytes"
-                            + " | Storage: " + documentStorageService.getStorageType());
-
+            documentService.uploadDocument(customerId, documentType,
+                    file.getOriginalFilename(), file.getContentType(), file.getSize(),
+                    file.getBytes(), documentNumber, remarks);
             redirectAttributes.addFlashAttribute("success",
                     "Document uploaded: " + documentType + " (" + file.getOriginalFilename() + ")");
         } catch (Exception e) {
@@ -342,147 +254,40 @@ public class CustomerController {
         return "redirect:/customer/view/" + customerId;
     }
 
-    /** CBS Document Download — serves document file for viewing/download */
+    /** CBS Document Download — delegates to CustomerDocumentService */
     @GetMapping("/document/download/{docId}")
     public ResponseEntity<byte[]> downloadDocument(@PathVariable Long docId) {
-        String tenantId = TenantContext.getCurrentTenant();
-        CustomerDocument doc = documentRepository.findById(docId)
-                .filter(d -> d.getTenantId().equals(tenantId))
-                .orElseThrow(() -> new BusinessException("DOC_NOT_FOUND", "Document not found"));
-
-        // CBS: Branch access enforcement — user must have access to the customer's branch
-        customerService.getCustomer(doc.getCustomer().getId());
-
-        // CBS: Retrieve file content via configurable DocumentStorageService.
-        // Per Finacle DOC_MASTER: storage backend is transparent to download logic.
-        // DATABASE mode: returns entity's BLOB data directly.
-        // FILESYSTEM mode: reads file from disk at storagePath, falls back to BLOB for legacy docs.
-        byte[] fileContent = documentStorageService.retrieve(doc.getStoragePath(), doc.getFileData());
-
-        // CBS: Sanitize filename in Content-Disposition header to prevent header injection.
-        // Even though filename was sanitized on upload, defense-in-depth applies on download too.
-        String safeFileName = sanitizeFileName(doc.getFileName());
+        CustomerDocument doc = documentService.getDocument(docId);
+        byte[] fileContent = documentService.retrieveFileContent(doc);
         return ResponseEntity.ok()
-                .header("Content-Disposition", "inline; filename=\"" + safeFileName + "\"")
+                .header("Content-Disposition", "inline; filename=\"" + doc.getFileName() + "\"")
                 .header("Content-Type", doc.getContentType())
                 .body(fileContent);
     }
 
-    /** CBS Document Verification — CHECKER/ADMIN marks document as verified or rejected */
+    /** CBS Document Verification — delegates to CustomerDocumentService */
     @PostMapping("/document/verify/{docId}")
     public String verifyDocument(
             @PathVariable Long docId,
             @RequestParam String action,
             @RequestParam(required = false) String rejectionReason,
             RedirectAttributes redirectAttributes) {
+        Long customerId = 0L;
         try {
-            String tenantId = TenantContext.getCurrentTenant();
-            CustomerDocument doc = documentRepository.findById(docId)
-                    .filter(d -> d.getTenantId().equals(tenantId))
-                    .orElseThrow(() -> new BusinessException("DOC_NOT_FOUND", "Document not found"));
-
-            // CBS: Branch access enforcement — user must have access to the customer's branch
-            customerService.getCustomer(doc.getCustomer().getId());
-
-            // CBS Tier-1 Maker-Checker: Document verifier must NOT be the same user who uploaded.
-            // Per RBI internal controls: maker and checker must be different users.
-            String currentUser = SecurityUtil.getCurrentUsername();
-            if (currentUser.equals(doc.getCreatedBy())) {
-                throw new BusinessException("SELF_VERIFY_PROHIBITED",
-                        "Document verification cannot be performed by the same user who uploaded it ("
-                                + currentUser + "). Per RBI internal controls, maker and checker must be different.");
-            }
-
-            // CBS: Prevent re-verification of already-verified/rejected documents
-            // Per Finacle DOC_MASTER: documents are immutable once verified.
-            if (!"UPLOADED".equals(doc.getVerificationStatus())) {
-                throw new BusinessException("DOC_ALREADY_PROCESSED",
-                        "Document already " + doc.getVerificationStatus().toLowerCase()
-                                + ". Upload a new version if correction is needed.");
-            }
-
-            if ("VERIFY".equals(action)) {
-                doc.setVerificationStatus("VERIFIED");
-            } else if ("REJECT".equals(action)) {
-                if (rejectionReason == null || rejectionReason.isBlank()) {
-                    throw new BusinessException("REASON_REQUIRED",
-                            "Rejection reason is mandatory per RBI audit norms.");
-                }
-                doc.setVerificationStatus("REJECTED");
-                doc.setRejectionReason(rejectionReason);
-            } else {
-                throw new BusinessException("INVALID_ACTION", "Action must be VERIFY or REJECT.");
-            }
-            doc.setVerifiedBy(SecurityUtil.getCurrentUsername());
-            // CBS: Use business date for verification date, NOT LocalDate.now().
-            // Per Finacle DOC_MASTER: consistent with KYC verification date handling.
-            doc.setVerifiedDate(businessDateService.getCurrentBusinessDate());
-            doc.setUpdatedBy(SecurityUtil.getCurrentUsername());
-            documentRepository.save(doc);
-
-            auditService.logEvent("CustomerDocument", doc.getId(),
-                    "VERIFY".equals(action) ? "DOC_VERIFIED" : "DOC_REJECTED",
-                    "UPLOADED", doc.getVerificationStatus(), "CIF",
-                    "Document " + doc.getVerificationStatus().toLowerCase() + ": " + doc.getDocumentType()
-                            + " | By: " + SecurityUtil.getCurrentUsername());
-
+            CustomerDocument doc = documentService.verifyDocument(docId, action, rejectionReason);
+            customerId = doc.getCustomer().getId();
             redirectAttributes.addFlashAttribute("success",
-                    "Document " + doc.getVerificationStatus().toLowerCase() + ": " + doc.getDocumentType());
+                    "Document " + doc.getVerificationStatus().name().toLowerCase()
+                            + ": " + doc.getDocumentType().getDisplayName());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
+            // Attempt to resolve customerId for redirect even on error
+            try {
+                customerId = documentService.getDocument(docId).getCustomer().getId();
+            } catch (Exception ignored) {
+                // If document not found, redirect to list
+            }
         }
-        Long customerId = documentRepository.findById(docId)
-                .map(d -> d.getCustomer().getId()).orElse(0L);
-        return "redirect:/customer/view/" + customerId;
-    }
-
-    // ========================================================================
-    // PRIVATE HELPERS
-    // ========================================================================
-
-    /**
-     * Sanitizes uploaded filename to prevent path traversal and header injection.
-     * Per OWASP: strip path separators, control characters, and quotes.
-     * Preserves only alphanumeric, dot, hyphen, underscore, and space.
-     */
-    private static String sanitizeFileName(String fileName) {
-        if (fileName == null || fileName.isBlank()) return "document";
-        // Strip path components (Windows and Unix)
-        String name = fileName;
-        int lastSlash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
-        if (lastSlash >= 0) name = name.substring(lastSlash + 1);
-        // Remove characters unsafe for Content-Disposition header
-        name = name.replaceAll("[^a-zA-Z0-9._\\- ]", "_");
-        // Collapse multiple underscores and trim
-        name = name.replaceAll("_+", "_").trim();
-        if (name.isBlank() || name.equals("_")) return "document";
-        // Limit length to 200 chars
-        if (name.length() > 200) name = name.substring(0, 200);
-        return name;
-    }
-
-    /**
-     * Validates file content by magic bytes (file signature) to prevent Content-Type spoofing.
-     * Per RBI IT Governance Direction 2023: validate actual file content, not just headers.
-     *
-     * Magic bytes:
-     *   PDF:  %PDF (0x25504446)
-     *   JPEG: FF D8 FF
-     *   PNG:  89 50 4E 47 0D 0A 1A 0A
-     */
-    private static boolean isValidFileContent(byte[] data, String declaredContentType) {
-        if (data == null || data.length < 8) return false;
-        if ("application/pdf".equals(declaredContentType)) {
-            // PDF magic: %PDF
-            return data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46;
-        } else if ("image/jpeg".equals(declaredContentType)) {
-            // JPEG magic: FF D8 FF
-            return (data[0] & 0xFF) == 0xFF && (data[1] & 0xFF) == 0xD8 && (data[2] & 0xFF) == 0xFF;
-        } else if ("image/png".equals(declaredContentType)) {
-            // PNG magic: 89 50 4E 47 0D 0A 1A 0A
-            return (data[0] & 0xFF) == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
-                    && data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A;
-        }
-        return false;
+        return customerId > 0 ? "redirect:/customer/view/" + customerId : "redirect:/customer/list";
     }
 }
