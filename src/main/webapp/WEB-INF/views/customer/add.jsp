@@ -70,12 +70,26 @@
                     <div class="col-md-6"><label class="form-label">Email</label><input type="email" name="email" class="form-control" maxlength="200" /></div>
                 </div>
 
-                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-geo-alt"></i> Address</h6>
+                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-geo-alt"></i> Correspondence Address</h6>
                 <div class="mb-2"><textarea name="address" class="form-control" rows="2" maxlength="500" placeholder="Correspondence address"></textarea></div>
                 <div class="row mb-3">
                     <div class="col-md-4"><input type="text" name="city" class="form-control" maxlength="100" placeholder="City" /></div>
                     <div class="col-md-4"><input type="text" name="state" class="form-control" maxlength="100" placeholder="State" /></div>
                     <div class="col-md-4"><input type="text" name="pinCode" class="form-control" maxlength="6" pattern="[0-9]{6}" title="6-digit PIN" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" placeholder="PIN Code" /></div>
+                </div>
+
+                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-geo-alt"></i> Permanent Address (CKYC/CERSAI)</h6>
+                <div class="row mb-2">
+                    <div class="col-md-12"><div class="form-check"><input type="checkbox" name="addressSameAsPermanent" value="true" class="form-check-input" id="addrSameAdd" checked onchange="togglePermanentAddrAdd();" /><label class="form-check-label" for="addrSameAdd">Same as correspondence address</label></div></div>
+                </div>
+                <div id="permanentAddrBlockAdd" style="display:none;">
+                    <div class="mb-2"><textarea name="permanentAddress" class="form-control" rows="2" maxlength="500" placeholder="Permanent address"></textarea></div>
+                    <div class="row mb-3">
+                        <div class="col-md-3"><input type="text" name="permanentCity" class="form-control" maxlength="100" placeholder="City" /></div>
+                        <div class="col-md-3"><input type="text" name="permanentState" class="form-control" maxlength="100" placeholder="State" /></div>
+                        <div class="col-md-3"><input type="text" name="permanentPinCode" class="form-control" maxlength="6" pattern="[0-9]{6}" title="6-digit PIN" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" placeholder="PIN Code" /></div>
+                        <div class="col-md-3"><select name="permanentCountry" class="form-select"><option value="INDIA" selected>India</option><option value="OTHER">Other</option></select></div>
+                    </div>
                 </div>
 
                 <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-currency-rupee"></i> Income &amp; Exposure (RBI Norms)</h6>
@@ -153,6 +167,13 @@ function syncAddressProof() {
         numField.readOnly = false;
         numField.classList.remove('bg-light');
     }
+}
+
+/* Permanent Address toggle */
+function togglePermanentAddrAdd() {
+    var block = document.getElementById('permanentAddrBlockAdd');
+    var checked = document.getElementById('addrSameAdd').checked;
+    block.style.display = checked ? 'none' : '';
 }
 </script>
 
