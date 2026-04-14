@@ -42,7 +42,13 @@
                 <tr><td class="fw-bold">Aadhaar</td><td><c:out value="${maskedAadhaar}" /></td></tr>
                 <tr><td class="fw-bold">Mobile</td><td><c:out value="${maskedMobile}" /></td></tr>
                 <tr><td class="fw-bold">Email</td><td><c:out value="${customer.email}" /></td></tr>
-                <tr><td class="fw-bold">Address</td><td><c:out value="${customer.address}" />, <c:out value="${customer.city}" />, <c:out value="${customer.state}" /> - <c:out value="${customer.pinCode}" /></td></tr>
+                <tr><td class="fw-bold">Correspondence Address</td><td><c:out value="${customer.address}" />, <c:out value="${customer.city}" />, <c:out value="${customer.state}" /> - <c:out value="${customer.pinCode}" /></td></tr>
+                <c:if test="${not customer.addressSameAsPermanent}">
+                <tr><td class="fw-bold">Permanent Address</td><td><c:out value="${customer.permanentAddress}" />, <c:out value="${customer.permanentCity}" />, <c:out value="${customer.permanentState}" /> - <c:out value="${customer.permanentPinCode}" /> (<c:out value="${customer.permanentCountry}" />)</td></tr>
+                </c:if>
+                <c:if test="${customer.addressSameAsPermanent}">
+                <tr><td class="fw-bold">Permanent Address</td><td><span class="text-muted">Same as correspondence</span></td></tr>
+                </c:if>
                 <tr><td class="fw-bold">KYC Status</td><td>
                     <c:choose>
                         <c:when test="${customer.kycVerified}"><span class="fv-badge fv-badge-active">Verified</span> (by <c:out value="${customer.kycVerifiedBy}" /> on <c:out value="${customer.kycVerifiedDate}" />)</c:when>
@@ -195,6 +201,44 @@
         </div>
     </div>
 
+    <!-- CASA Deposit Accounts for this Customer -->
+    <div class="fv-card">
+        <div class="card-header">Deposit Accounts (CASA)</div>
+        <div class="card-body">
+            <div class="table-responsive">
+            <table class="table fv-table">
+                <thead>
+                    <tr>
+                        <th>Account No.</th>
+                        <th>Type</th>
+                        <th class="text-end">Balance</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <c:forEach var="dep" items="${depositAccounts}">
+                        <tr>
+                            <td><a href="${pageContext.request.contextPath}/deposit/view/${dep.accountNumber}"><c:out value="${dep.accountNumber}" /></a></td>
+                            <td><c:out value="${dep.accountType}" /></td>
+                            <td class="amount"><fmt:formatNumber value="${dep.ledgerBalance}" type="number" maxFractionDigits="2" /></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${dep.accountStatus == 'ACTIVE'}"><span class="fv-badge fv-badge-active"><c:out value="${dep.accountStatus}" /></span></c:when>
+                                    <c:when test="${dep.accountStatus == 'CLOSED'}"><span class="fv-badge fv-badge-closed"><c:out value="${dep.accountStatus}" /></span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-pending"><c:out value="${dep.accountStatus}" /></span></c:otherwise>
+                                </c:choose>
+                            </td>
+                        </tr>
+                    </c:forEach>
+                    <c:if test="${empty depositAccounts}">
+                        <tr><td colspan="4" class="text-center text-muted">No deposit accounts</td></tr>
+                    </c:if>
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+
     <!-- CBS KYC Documents (per Finacle DOC_MASTER / RBI KYC Direction) -->
     <div class="fv-card">
         <div class="card-header"><i class="bi bi-file-earmark-text"></i> KYC Documents</div>
@@ -241,7 +285,7 @@
             </c:if>
             <div class="table-responsive">
             <table class="table fv-table table-sm">
-                <thead><tr><th>Type</th><th>File</th><th>Size</th><th>Doc No.</th><th>Status</th><th>Uploaded</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Type</th><th>File</th><th>Size</th><th>Doc No.</th><th>Status</th><th>Uploaded</th><th>Verified</th><th>Actions</th></tr></thead>
                 <tbody>
                     <c:forEach var="doc" items="${documents}">
                         <tr>
@@ -252,11 +296,12 @@
                             <td>
                                 <c:choose>
                                     <c:when test="${doc.verificationStatus == 'VERIFIED'}"><span class="fv-badge fv-badge-active">Verified</span></c:when>
-                                    <c:when test="${doc.verificationStatus == 'REJECTED'}"><span class="fv-badge fv-badge-rejected">Rejected</span></c:when>
+                                    <c:when test="${doc.verificationStatus == 'REJECTED'}"><span class="fv-badge fv-badge-rejected">Rejected</span><c:if test="${not empty doc.rejectionReason}"><br/><small class="text-danger"><i class="bi bi-info-circle"></i> <c:out value="${doc.rejectionReason}" /></small></c:if></c:when>
                                     <c:otherwise><span class="fv-badge fv-badge-pending">Pending</span></c:otherwise>
                                 </c:choose>
                             </td>
-                            <td><small><c:out value="${doc.createdBy}" /> <c:out value="${doc.createdAt}" /></small></td>
+                            <td><small><c:out value="${doc.createdBy}" /><br/><c:out value="${doc.createdAt}" /></small></td>
+                            <td><c:if test="${not empty doc.verifiedBy}"><small><c:out value="${doc.verifiedBy}" /><br/><c:out value="${doc.verifiedDate}" /></small></c:if><c:if test="${empty doc.verifiedBy}"><small class="text-muted">--</small></c:if></td>
                             <td>
                                 <c:if test="${doc.verificationStatus == 'UPLOADED'}">
                                 <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
@@ -279,7 +324,7 @@
                         </tr>
                     </c:forEach>
                     <c:if test="${empty documents}">
-                        <tr><td colspan="7" class="text-center text-muted">No documents uploaded</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted">No documents uploaded</td></tr>
                     </c:if>
                 </tbody>
             </table>

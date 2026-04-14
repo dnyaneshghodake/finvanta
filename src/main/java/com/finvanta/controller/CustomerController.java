@@ -5,6 +5,7 @@ import com.finvanta.domain.entity.Customer;
 import com.finvanta.domain.entity.CustomerDocument;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerDocumentRepository;
+import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.service.BusinessDateService;
@@ -35,10 +36,22 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 @RequestMapping("/customer")
 public class CustomerController {
 
+    /**
+     * Allowed document types per RBI KYC Direction — Officially Valid Documents (OVD) list.
+     * Server-side validation against this set prevents injection of arbitrary document types.
+     * Per Finacle DOC_MASTER: document types are a closed enumeration.
+     */
+    private static final java.util.Set<String> ALLOWED_DOCUMENT_TYPES = java.util.Set.of(
+            "PAN_CARD", "AADHAAR_FRONT", "AADHAAR_BACK", "PASSPORT", "VOTER_ID",
+            "DRIVING_LICENSE", "UTILITY_BILL", "BANK_STATEMENT", "RENT_AGREEMENT",
+            "PHOTO", "SIGNATURE", "FORM_60", "ITR", "SALARY_SLIP",
+            "COMPANY_REG", "TRUST_DEED", "OTHER");
+
     private final CustomerCifService customerService;
     private final BranchRepository branchRepository;
     private final LoanApplicationRepository applicationRepository;
     private final LoanAccountRepository accountRepository;
+    private final DepositAccountRepository depositAccountRepository;
     private final CustomerDocumentRepository documentRepository;
     private final AuditService auditService;
     private final BusinessDateService businessDateService;
@@ -49,6 +62,7 @@ public class CustomerController {
             BranchRepository branchRepository,
             LoanApplicationRepository applicationRepository,
             LoanAccountRepository accountRepository,
+            DepositAccountRepository depositAccountRepository,
             CustomerDocumentRepository documentRepository,
             AuditService auditService,
             BusinessDateService businessDateService,
@@ -57,6 +71,7 @@ public class CustomerController {
         this.branchRepository = branchRepository;
         this.applicationRepository = applicationRepository;
         this.accountRepository = accountRepository;
+        this.depositAccountRepository = depositAccountRepository;
         this.documentRepository = documentRepository;
         this.auditService = auditService;
         this.businessDateService = businessDateService;
@@ -119,16 +134,33 @@ public class CustomerController {
      * with all CKYC/demographic fields populated by Spring MVC @ModelAttribute binding.
      */
     @PostMapping("/add")
-    public String addCustomer(
+    public Object addCustomer(
             @ModelAttribute Customer customer, @RequestParam Long branchId, RedirectAttributes redirectAttributes) {
         try {
             Customer saved = customerService.createCustomerFromEntity(customer, branchId);
             redirectAttributes.addFlashAttribute(
                     "success", "Customer created: " + saved.getCustomerNumber() + " - " + saved.getFullName());
+            return "redirect:/customer/list";
         } catch (Exception e) {
-            redirectAttributes.addFlashAttribute("error", e.getMessage());
+            // CBS: On validation failure, re-display the add form with entered data preserved.
+            // Per Finacle CIF_MASTER: user should not re-enter all fields after a single validation error.
+            String tenantId = TenantContext.getCurrentTenant();
+            ModelAndView mav = new ModelAndView("customer/add");
+            mav.addObject("customer", customer);
+            mav.addObject("error", e.getMessage());
+            if (SecurityUtil.isAdminRole()) {
+                mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+            } else {
+                Long userBranchId = SecurityUtil.getCurrentUserBranchId();
+                if (userBranchId != null) {
+                    branchRepository.findById(userBranchId)
+                            .filter(b -> b.getTenantId().equals(tenantId))
+                            .ifPresent(b -> mav.addObject("branches", java.util.List.of(b)));
+                }
+            }
+            mav.addObject("defaultBranchId", SecurityUtil.getCurrentUserBranchId());
+            return mav;
         }
-        return "redirect:/customer/list";
     }
 
     /** CBS Customer View — delegates to CustomerCifService for branch access enforcement */
@@ -143,6 +175,7 @@ public class CustomerController {
         mav.addObject("maskedMobile", PiiMaskingUtil.maskMobile(customer.getMobileNumber()));
         mav.addObject("loanApplications", applicationRepository.findByTenantIdAndCustomerId(tenantId, id));
         mav.addObject("loanAccounts", accountRepository.findByTenantIdAndCustomerId(tenantId, id));
+        mav.addObject("depositAccounts", depositAccountRepository.findByTenantIdAndCustomerId(tenantId, id));
         mav.addObject("documents", documentRepository.findByCustomer(tenantId, id));
         return mav;
     }
@@ -229,6 +262,13 @@ public class CustomerController {
         try {
             if (file.isEmpty()) {
                 throw new BusinessException("FILE_EMPTY", "Please select a file to upload.");
+            }
+            // CBS: Validate document type against allowed OVD list per RBI KYC Direction.
+            // Client-side <select> restricts values, but server must enforce per defense-in-depth.
+            if (!ALLOWED_DOCUMENT_TYPES.contains(documentType)) {
+                throw new BusinessException("INVALID_DOC_TYPE",
+                        "Invalid document type: " + documentType
+                                + ". Allowed types: " + String.join(", ", ALLOWED_DOCUMENT_TYPES));
             }
             // CBS: Max 5MB per document per RBI IT Governance
             if (file.getSize() > 5 * 1024 * 1024) {

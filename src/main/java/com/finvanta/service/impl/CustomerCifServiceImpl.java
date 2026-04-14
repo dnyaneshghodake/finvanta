@@ -304,6 +304,13 @@ public class CustomerCifServiceImpl implements CustomerCifService {
 
         String beforeState = existing.getFullName() + "|" + existing.getMobileNumber();
 
+        // CBS Validation: validate mutable fields on update (format checks only — no duplicate PAN/Aadhaar).
+        // PAN/Aadhaar are IMMUTABLE after creation, so duplicate check is not needed on update.
+        // But mobile, PIN, email formats must still be validated per RBI KYC norms.
+        validateMutableFields(updated.getFirstName(), updated.getLastName(),
+                updated.getMobileNumber(), updated.getPinCode(), updated.getEmail(),
+                updated.getPermanentPinCode());
+
         // CBS: Detect identity-material field changes BEFORE applying updates.
         // Must compare old vs new values before overwriting existing fields.
         boolean identityChanged = !safeEquals(existing.getFirstName(), updated.getFirstName())
@@ -455,6 +462,32 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         }
     }
 
+    /**
+     * CBS Mutable Field Validation for customer update operations.
+     * Validates format only — no duplicate PAN/Aadhaar checks (those are immutable).
+     * Per Finacle CIF_MASTER: update operations must still validate data quality.
+     */
+    private void validateMutableFields(String firstName, String lastName,
+            String mobileNumber, String pinCode, String email, String permanentPinCode) {
+        if (firstName == null || firstName.isBlank())
+            throw new BusinessException("FIRST_NAME_REQUIRED", "First name is mandatory per RBI KYC norms.");
+        if (lastName == null || lastName.isBlank())
+            throw new BusinessException("LAST_NAME_REQUIRED", "Last name is mandatory per RBI KYC norms.");
+        if (mobileNumber != null && !mobileNumber.isBlank()
+                && !mobileNumber.matches("^[6-9][0-9]{9}$"))
+            throw new BusinessException("INVALID_MOBILE_FORMAT",
+                    "Mobile number must be 10 digits starting with 6-9.");
+        if (pinCode != null && !pinCode.isBlank()
+                && !pinCode.matches("^[0-9]{6}$"))
+            throw new BusinessException("INVALID_PINCODE_FORMAT", "PIN code must be exactly 6 digits.");
+        if (permanentPinCode != null && !permanentPinCode.isBlank()
+                && !permanentPinCode.matches("^[0-9]{6}$"))
+            throw new BusinessException("INVALID_PINCODE_FORMAT", "Permanent PIN code must be exactly 6 digits.");
+        if (email != null && !email.isBlank()
+                && !email.matches("^[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}$"))
+            throw new BusinessException("INVALID_EMAIL_FORMAT", "Email address format is invalid.");
+    }
+
     /** Null-safe string equality check for identity-material change detection. */
     private static boolean safeEquals(String a, String b) {
         if (a == null && b == null) return true;
@@ -498,13 +531,35 @@ public class CustomerCifServiceImpl implements CustomerCifService {
             }
         }
 
+        // CBS: PAN-based exact search via SHA-256 hash.
+        // Per Finacle CIF_SEARCH: if query matches PAN format (AAAAA0000A), do hash lookup.
+        // LIKE on encrypted pan_number column NEVER matches — hash is the only path.
+        String trimmed = query.trim();
+        if (trimmed.matches("^[A-Z]{5}[0-9]{4}[A-Z]$")) {
+            String panHash = computeSha256(trimmed);
+            java.util.Optional<Customer> panMatch = customerRepo.findByTenantIdAndPanHashAndActiveTrue(tid, panHash);
+            if (panMatch.isPresent()) {
+                Customer c = panMatch.get();
+                // CBS: Branch isolation — MAKER/CHECKER can only see their branch's customers
+                if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+                    return List.of(c);
+                }
+                Long userBranch = SecurityUtil.getCurrentUserBranchId();
+                if (userBranch != null && userBranch.equals(c.getBranch().getId())) {
+                    return List.of(c);
+                }
+                return List.of(); // Customer exists but at different branch
+            }
+            // PAN not found — fall through to name/CIF/mobile search below
+        }
+
         // CBS: Search with branch isolation per Finacle BRANCH_CONTEXT
         if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
-            return customerRepo.searchCustomers(tid, query.trim());
+            return customerRepo.searchCustomers(tid, trimmed);
         } else {
             Long branchId = SecurityUtil.getCurrentUserBranchId();
             if (branchId == null) return List.of();
-            return customerRepo.searchCustomersByBranch(tid, branchId, query.trim());
+            return customerRepo.searchCustomersByBranch(tid, branchId, trimmed);
         }
     }
 }
