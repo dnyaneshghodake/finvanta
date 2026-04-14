@@ -18,30 +18,55 @@
                     <div class="col-md-2"><label class="form-label">KYC Risk</label><select name="kycRiskCategory" class="form-select"><option value="MEDIUM">Medium</option><option value="LOW">Low</option><option value="HIGH">High</option></select></div>
                     <div class="col-md-2"><label class="form-label">PEP</label><div class="form-check mt-2"><input type="checkbox" name="pep" value="true" class="form-check-input" id="pepCheck" /><label class="form-check-label" for="pepCheck">Politically Exposed Person</label></div></div>
                 </div>
+                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-person"></i> Personal Details &amp; Demographics (CKYC)</h6>
                 <div class="row mb-3">
-                    <div class="col-md-6"><label class="form-label">First Name *</label><input type="text" name="firstName" class="form-control" required /></div>
-                    <div class="col-md-6"><label class="form-label">Last Name *</label><input type="text" name="lastName" class="form-control" required /></div>
+                    <div class="col-md-3"><label class="form-label">First Name *</label><input type="text" name="firstName" class="form-control" required maxlength="100" /></div>
+                    <div class="col-md-3"><label class="form-label">Last Name *</label><input type="text" name="lastName" class="form-control" required maxlength="100" /></div>
+                    <div class="col-md-2"><label class="form-label">Gender *</label><select name="gender" class="form-select" required><option value="">--</option><option value="M">Male</option><option value="F">Female</option><option value="T">Transgender</option></select></div>
+                    <div class="col-md-2"><label class="form-label">Date of Birth</label><input type="date" name="dateOfBirth" class="form-control" /></div>
+                    <div class="col-md-2"><label class="form-label">Marital Status</label><select name="maritalStatus" class="form-select"><option value="">--</option><option value="SINGLE">Single</option><option value="MARRIED">Married</option><option value="DIVORCED">Divorced</option><option value="WIDOWED">Widowed</option></select></div>
                 </div>
                 <div class="row mb-3">
-                    <div class="col-md-6"><label class="form-label">Date of Birth</label><input type="date" name="dateOfBirth" class="form-control" /></div>
-                    <div class="col-md-6"><label class="form-label">PAN Number</label><input type="text" name="panNumber" class="form-control" maxlength="10" pattern="[A-Z]{5}[0-9]{4}[A-Z]{1}" title="PAN format: AAAAA0000A" placeholder="ABCDE1234F" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase();" /><small class="text-muted">Immutable after creation</small></div>
+                    <div class="col-md-4"><label class="form-label">Father's Name</label><input type="text" name="fatherName" class="form-control" maxlength="200" /><small class="text-muted">CKYC mandatory</small></div>
+                    <div class="col-md-4"><label class="form-label">Mother's Name</label><input type="text" name="motherName" class="form-control" maxlength="200" /><small class="text-muted">CKYC mandatory</small></div>
+                    <div class="col-md-4"><label class="form-label">Spouse Name</label><input type="text" name="spouseName" class="form-control" maxlength="200" /></div>
                 </div>
                 <div class="row mb-3">
-                    <div class="col-md-6"><label class="form-label">Aadhaar Number</label><input type="text" name="aadhaarNumber" class="form-control" maxlength="12" pattern="[0-9]{12}" title="Aadhaar: exactly 12 digits" placeholder="123456789012" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" /><small class="text-muted">Immutable after creation</small></div>
-                    <div class="col-md-6"><label class="form-label">Mobile Number *</label><input type="text" name="mobileNumber" class="form-control" required maxlength="10" pattern="[6-9][0-9]{9}" title="10-digit mobile starting with 6-9" placeholder="9876543210" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" /></div>
+                    <div class="col-md-3"><label class="form-label">Nationality</label><select name="nationality" class="form-select"><option value="INDIAN" selected>Indian</option><option value="NRI">NRI</option><option value="PIO">PIO</option><option value="OCI">OCI</option><option value="FOREIGN">Foreign</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Occupation</label><select name="occupationCode" class="form-select"><option value="">--</option><option value="SALARIED_PRIVATE">Salaried (Pvt)</option><option value="SALARIED_GOVT">Salaried (Govt)</option><option value="BUSINESS">Business</option><option value="PROFESSIONAL">Professional</option><option value="RETIRED">Retired</option><option value="STUDENT">Student</option><option value="OTHER">Other</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Annual Income Band</label><select name="annualIncomeBand" class="form-select"><option value="">--</option><option value="BELOW_1L">&lt;1L</option><option value="1L_TO_5L">1-5L</option><option value="5L_TO_10L">5-10L</option><option value="10L_TO_25L">10-25L</option><option value="25L_TO_1CR">25L-1Cr</option><option value="ABOVE_1CR">&gt;1Cr</option></select></div>
+                    <div class="col-md-3"><label class="form-label">CIBIL Score</label><input type="number" name="cibilScore" class="form-control" min="300" max="900" /></div>
                 </div>
-                <div class="mb-3"><label class="form-label">Email</label><input type="email" name="email" class="form-control" /></div>
-                <div class="mb-3"><label class="form-label">Address</label><textarea name="address" class="form-control" rows="2"></textarea></div>
+
+                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-shield-check"></i> KYC Identity Documents</h6>
                 <div class="row mb-3">
-                    <div class="col-md-4"><label class="form-label">City</label><input type="text" name="city" class="form-control" /></div>
-                    <div class="col-md-4"><label class="form-label">State</label><input type="text" name="state" class="form-control" /></div>
-                    <div class="col-md-4"><label class="form-label">PIN Code</label><input type="text" name="pinCode" class="form-control" maxlength="6" pattern="[0-9]{6}" title="6-digit PIN code" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" /></div>
+                    <div class="col-md-3"><label class="form-label">Photo ID Type</label><select name="photoIdType" class="form-select"><option value="">--</option><option value="PASSPORT">Passport</option><option value="VOTER_ID">Voter ID</option><option value="DRIVING_LICENSE">DL</option><option value="PAN_CARD">PAN Card</option><option value="AADHAAR">Aadhaar</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Photo ID Number</label><input type="text" name="photoIdNumber" class="form-control" maxlength="30" /></div>
+                    <div class="col-md-3"><label class="form-label">Address Proof Type</label><select name="addressProofType" class="form-select"><option value="">--</option><option value="PASSPORT">Passport</option><option value="VOTER_ID">Voter ID</option><option value="UTILITY_BILL">Utility Bill</option><option value="AADHAAR">Aadhaar</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Address Proof No.</label><input type="text" name="addressProofNumber" class="form-control" maxlength="30" /></div>
                 </div>
                 <div class="row mb-3">
-                    <div class="col-md-6"><label class="form-label">CIBIL Score</label><input type="number" name="cibilScore" class="form-control" min="300" max="900" /></div>
+                    <div class="col-md-3"><label class="form-label">KYC Mode</label><select name="kycMode" class="form-select"><option value="IN_PERSON">In-Person</option><option value="VIDEO_KYC">Video KYC</option><option value="DIGITAL_KYC">Digital KYC</option><option value="CKYC_DOWNLOAD">CKYC Download</option></select></div>
+                    <div class="col-md-3"><label class="form-label">CKYC Number (KIN)</label><input type="text" name="ckycNumber" class="form-control" maxlength="14" pattern="[0-9]{14}" title="14-digit CKYC" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" placeholder="If registered" /></div>
+                    <div class="col-md-6"><label class="form-label">PAN Number</label><input type="text" name="panNumber" class="form-control" maxlength="10" pattern="[A-Z]{5}[0-9]{4}[A-Z]{1}" title="AAAAA0000A" placeholder="ABCDE1234F" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase();" /><small class="text-muted">Immutable after creation</small></div>
                 </div>
-                <hr />
-                <h6 class="mb-3">Income &amp; Exposure (RBI Exposure Norms)</h6>
+                <div class="row mb-3">
+                    <div class="col-md-6"><label class="form-label">Aadhaar Number</label><input type="text" name="aadhaarNumber" class="form-control" maxlength="12" pattern="[0-9]{12}" title="12 digits" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" /><small class="text-muted">Immutable after creation</small></div>
+                    <div class="col-md-6"><label class="form-label">Mobile Number *</label><input type="text" name="mobileNumber" class="form-control" required maxlength="10" pattern="[6-9][0-9]{9}" title="10-digit mobile" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" /></div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6"><label class="form-label">Email</label><input type="email" name="email" class="form-control" maxlength="200" /></div>
+                </div>
+
+                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-geo-alt"></i> Address</h6>
+                <div class="mb-2"><textarea name="address" class="form-control" rows="2" maxlength="500" placeholder="Correspondence address"></textarea></div>
+                <div class="row mb-3">
+                    <div class="col-md-4"><input type="text" name="city" class="form-control" maxlength="100" placeholder="City" /></div>
+                    <div class="col-md-4"><input type="text" name="state" class="form-control" maxlength="100" placeholder="State" /></div>
+                    <div class="col-md-4"><input type="text" name="pinCode" class="form-control" maxlength="6" pattern="[0-9]{6}" title="6-digit PIN" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" placeholder="PIN Code" /></div>
+                </div>
+
+                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-currency-rupee"></i> Income &amp; Exposure (RBI Norms)</h6>
                 <div class="row mb-3">
                     <div class="col-md-3"><label class="form-label">Monthly Income (INR)</label><input type="number" name="monthlyIncome" class="form-control" step="0.01" min="0" /></div>
                     <div class="col-md-3"><label class="form-label">Max Borrowing Limit (INR)</label><input type="number" name="maxBorrowingLimit" class="form-control" step="0.01" min="0" /></div>
