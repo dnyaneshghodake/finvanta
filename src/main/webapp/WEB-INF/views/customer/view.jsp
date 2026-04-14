@@ -195,6 +195,98 @@
         </div>
     </div>
 
+    <!-- CBS KYC Documents (per Finacle DOC_MASTER / RBI KYC Direction) -->
+    <div class="fv-card">
+        <div class="card-header"><i class="bi bi-file-earmark-text"></i> KYC Documents</div>
+        <div class="card-body">
+            <c:if test="${customer.active}">
+            <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+            <form method="post" action="${pageContext.request.contextPath}/customer/document/upload/${customer.id}" enctype="multipart/form-data" class="row g-2 mb-3 align-items-end">
+                <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                <div class="col-md-2">
+                    <label class="form-label">Document Type *</label>
+                    <select name="documentType" class="form-select form-select-sm" required>
+                        <option value="">-- Select --</option>
+                        <option value="PAN_CARD">PAN Card</option>
+                        <option value="AADHAAR_FRONT">Aadhaar (Front)</option>
+                        <option value="AADHAAR_BACK">Aadhaar (Back)</option>
+                        <option value="PASSPORT">Passport</option>
+                        <option value="VOTER_ID">Voter ID</option>
+                        <option value="DRIVING_LICENSE">Driving License</option>
+                        <option value="UTILITY_BILL">Utility Bill</option>
+                        <option value="PHOTO">Photo</option>
+                        <option value="SIGNATURE">Signature</option>
+                        <option value="SALARY_SLIP">Salary Slip</option>
+                        <option value="ITR">ITR</option>
+                        <option value="OTHER">Other</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">File (PDF/JPG/PNG, max 5MB) *</label>
+                    <input type="file" name="file" class="form-control form-control-sm" required accept=".pdf,.jpg,.jpeg,.png" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Doc Number</label>
+                    <input type="text" name="documentNumber" class="form-control form-control-sm" maxlength="50" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Remarks</label>
+                    <input type="text" name="remarks" class="form-control form-control-sm" maxlength="500" />
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-upload"></i> Upload</button>
+                </div>
+            </form>
+            </c:if>
+            </c:if>
+            <div class="table-responsive">
+            <table class="table fv-table table-sm">
+                <thead><tr><th>Type</th><th>File</th><th>Size</th><th>Doc No.</th><th>Status</th><th>Uploaded</th><th>Actions</th></tr></thead>
+                <tbody>
+                    <c:forEach var="doc" items="${documents}">
+                        <tr>
+                            <td><c:out value="${doc.documentType}" /></td>
+                            <td><a href="${pageContext.request.contextPath}/customer/document/download/${doc.id}" target="_blank"><c:out value="${doc.fileName}" /></a></td>
+                            <td><fmt:formatNumber value="${doc.fileSize / 1024}" maxFractionDigits="0" /> KB</td>
+                            <td><c:out value="${doc.documentNumber}" default="--" /></td>
+                            <td>
+                                <c:choose>
+                                    <c:when test="${doc.verificationStatus == 'VERIFIED'}"><span class="fv-badge fv-badge-active">Verified</span></c:when>
+                                    <c:when test="${doc.verificationStatus == 'REJECTED'}"><span class="fv-badge fv-badge-rejected">Rejected</span></c:when>
+                                    <c:otherwise><span class="fv-badge fv-badge-pending">Pending</span></c:otherwise>
+                                </c:choose>
+                            </td>
+                            <td><small><c:out value="${doc.createdBy}" /> <c:out value="${doc.createdAt}" /></small></td>
+                            <td>
+                                <c:if test="${doc.verificationStatus == 'UPLOADED'}">
+                                <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                                    <form method="post" action="${pageContext.request.contextPath}/customer/document/verify/${doc.id}" class="d-inline">
+                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                                        <input type="hidden" name="action" value="VERIFY" />
+                                        <button type="submit" class="btn btn-sm btn-success" data-confirm="Verify this document?"><i class="bi bi-check"></i></button>
+                                    </form>
+                                    <form method="post" action="${pageContext.request.contextPath}/customer/document/verify/${doc.id}" class="d-inline">
+                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                                        <input type="hidden" name="action" value="REJECT" />
+                                        <input type="hidden" name="rejectionReason" value="" id="rejReason_${doc.id}" />
+                                        <button type="submit" class="btn btn-sm btn-danger"
+                                            onclick="var r=prompt('Rejection reason (mandatory):'); if(!r||r.trim().length<3){alert('Reason is mandatory');return false;} document.getElementById('rejReason_${doc.id}').value=r; return confirm('Reject this document?');">
+                                            <i class="bi bi-x"></i></button>
+                                    </form>
+                                </c:if>
+                                </c:if>
+                            </td>
+                        </tr>
+                    </c:forEach>
+                    <c:if test="${empty documents}">
+                        <tr><td colspan="7" class="text-center text-muted">No documents uploaded</td></tr>
+                    </c:if>
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+
     <!-- CBS Actions: Apply for Loan + Deactivate -->
     <div class="fv-card">
         <div class="card-header">Actions</div>

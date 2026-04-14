@@ -31,16 +31,22 @@ public class CustomerController {
     private final BranchRepository branchRepository;
     private final LoanApplicationRepository applicationRepository;
     private final LoanAccountRepository accountRepository;
+    private final com.finvanta.repository.CustomerDocumentRepository documentRepository;
+    private final com.finvanta.audit.AuditService auditService;
 
     public CustomerController(
             CustomerCifService customerService,
             BranchRepository branchRepository,
             LoanApplicationRepository applicationRepository,
-            LoanAccountRepository accountRepository) {
+            LoanAccountRepository accountRepository,
+            com.finvanta.repository.CustomerDocumentRepository documentRepository,
+            com.finvanta.audit.AuditService auditService) {
         this.customerService = customerService;
         this.branchRepository = branchRepository;
         this.applicationRepository = applicationRepository;
         this.accountRepository = accountRepository;
+        this.documentRepository = documentRepository;
+        this.auditService = auditService;
     }
 
     /**
@@ -123,6 +129,7 @@ public class CustomerController {
         mav.addObject("maskedMobile", PiiMaskingUtil.maskMobile(customer.getMobileNumber()));
         mav.addObject("loanApplications", applicationRepository.findByTenantIdAndCustomerId(tenantId, id));
         mav.addObject("loanAccounts", accountRepository.findByTenantIdAndCustomerId(tenantId, id));
+        mav.addObject("documents", documentRepository.findByCustomer(tenantId, id));
         return mav;
     }
 
@@ -190,5 +197,128 @@ public class CustomerController {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
         return "redirect:/customer/view/" + id;
+    }
+
+    // ========================================================================
+    // DOCUMENT MANAGEMENT (per Finacle DOC_MASTER / RBI KYC Direction)
+    // ========================================================================
+
+    /** CBS Document Upload — stores KYC document with metadata */
+    @PostMapping("/document/upload/{customerId}")
+    public String uploadDocument(
+            @PathVariable Long customerId,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam String documentType,
+            @RequestParam(required = false) String documentNumber,
+            @RequestParam(required = false) String remarks,
+            RedirectAttributes redirectAttributes) {
+        try {
+            if (file.isEmpty()) {
+                throw new com.finvanta.util.BusinessException("FILE_EMPTY", "Please select a file to upload.");
+            }
+            // CBS: Max 5MB per document per RBI IT Governance
+            if (file.getSize() > 5 * 1024 * 1024) {
+                throw new com.finvanta.util.BusinessException("FILE_TOO_LARGE",
+                        "File size exceeds 5MB limit. Please compress or resize the document.");
+            }
+            // CBS: Allowed formats only (PDF, JPG, PNG)
+            String contentType = file.getContentType();
+            if (contentType == null || (!contentType.equals("application/pdf")
+                    && !contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
+                throw new com.finvanta.util.BusinessException("INVALID_FORMAT",
+                        "Only PDF, JPG, and PNG files are allowed.");
+            }
+
+            Customer customer = customerService.getCustomer(customerId);
+            String tenantId = TenantContext.getCurrentTenant();
+
+            com.finvanta.domain.entity.CustomerDocument doc = new com.finvanta.domain.entity.CustomerDocument();
+            doc.setTenantId(tenantId);
+            doc.setCustomer(customer);
+            doc.setDocumentType(documentType);
+            doc.setFileName(file.getOriginalFilename());
+            doc.setContentType(contentType);
+            doc.setFileSize(file.getSize());
+            doc.setFileData(file.getBytes());
+            doc.setDocumentNumber(documentNumber);
+            doc.setRemarks(remarks);
+            doc.setVerificationStatus("UPLOADED");
+            doc.setCreatedBy(SecurityUtil.getCurrentUsername());
+
+            documentRepository.save(doc);
+
+            auditService.logEvent("CustomerDocument", doc.getId(), "UPLOAD", null,
+                    documentType, "CIF",
+                    "Document uploaded: " + documentType + " for customer " + customer.getCustomerNumber()
+                            + " | File: " + file.getOriginalFilename()
+                            + " | Size: " + file.getSize() + " bytes");
+
+            redirectAttributes.addFlashAttribute("success",
+                    "Document uploaded: " + documentType + " (" + file.getOriginalFilename() + ")");
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/customer/view/" + customerId;
+    }
+
+    /** CBS Document Download — serves document file for viewing/download */
+    @GetMapping("/document/download/{docId}")
+    public org.springframework.http.ResponseEntity<byte[]> downloadDocument(@PathVariable Long docId) {
+        String tenantId = TenantContext.getCurrentTenant();
+        com.finvanta.domain.entity.CustomerDocument doc = documentRepository.findById(docId)
+                .filter(d -> d.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new com.finvanta.util.BusinessException("DOC_NOT_FOUND", "Document not found"));
+
+        // CBS: Branch access enforcement — user must have access to the customer's branch
+        customerService.getCustomer(doc.getCustomer().getId());
+
+        return org.springframework.http.ResponseEntity.ok()
+                .header("Content-Disposition", "inline; filename=\"" + doc.getFileName() + "\"")
+                .header("Content-Type", doc.getContentType())
+                .body(doc.getFileData());
+    }
+
+    /** CBS Document Verification — CHECKER/ADMIN marks document as verified or rejected */
+    @PostMapping("/document/verify/{docId}")
+    public String verifyDocument(
+            @PathVariable Long docId,
+            @RequestParam String action,
+            @RequestParam(required = false) String rejectionReason,
+            RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            com.finvanta.domain.entity.CustomerDocument doc = documentRepository.findById(docId)
+                    .filter(d -> d.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new com.finvanta.util.BusinessException("DOC_NOT_FOUND", "Document not found"));
+
+            if ("VERIFY".equals(action)) {
+                doc.setVerificationStatus("VERIFIED");
+            } else if ("REJECT".equals(action)) {
+                if (rejectionReason == null || rejectionReason.isBlank()) {
+                    throw new com.finvanta.util.BusinessException("REASON_REQUIRED",
+                            "Rejection reason is mandatory per RBI audit norms.");
+                }
+                doc.setVerificationStatus("REJECTED");
+                doc.setRejectionReason(rejectionReason);
+            }
+            doc.setVerifiedBy(SecurityUtil.getCurrentUsername());
+            doc.setVerifiedDate(java.time.LocalDate.now());
+            doc.setUpdatedBy(SecurityUtil.getCurrentUsername());
+            documentRepository.save(doc);
+
+            auditService.logEvent("CustomerDocument", doc.getId(),
+                    "VERIFY".equals(action) ? "DOC_VERIFIED" : "DOC_REJECTED",
+                    "UPLOADED", doc.getVerificationStatus(), "CIF",
+                    "Document " + doc.getVerificationStatus().toLowerCase() + ": " + doc.getDocumentType()
+                            + " | By: " + SecurityUtil.getCurrentUsername());
+
+            redirectAttributes.addFlashAttribute("success",
+                    "Document " + doc.getVerificationStatus().toLowerCase() + ": " + doc.getDocumentType());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        Long customerId = documentRepository.findById(docId)
+                .map(d -> d.getCustomer().getId()).orElse(0L);
+        return "redirect:/customer/view/" + customerId;
     }
 }
