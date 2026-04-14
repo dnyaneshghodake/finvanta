@@ -4,7 +4,11 @@ import com.finvanta.domain.enums.UserRole;
 import com.finvanta.repository.RolePermissionRepository;
 import com.finvanta.util.TenantContext;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+
 import java.io.Serializable;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +25,7 @@ import org.springframework.stereotype.Component;
  *
  * Per RBI IT Governance Direction 2023 §8.3 / SWIFT CSCF:
  * - Access control is data-driven (database permission matrix, not hardcoded)
- * - Permission changes take effect immediately (no redeployment)
+ * - Permission changes take effect within 5 minutes (Caffeine TTL cache)
  * - DENY takes precedence over ALLOW (per BNP RBAC)
  * - Every permission check is tenant-scoped
  *
@@ -50,11 +54,56 @@ public class CbsPermissionEvaluator implements PermissionEvaluator {
     private static final Logger log =
             LoggerFactory.getLogger(CbsPermissionEvaluator.class);
 
+    /**
+     * CBS Tier-1 Performance: Caffeine-based permission cache with TTL.
+     * Per Finacle AUTH_ENGINE / Temenos EB.PERMISSION.CHECK:
+     * Permission matrix is cached to avoid DB queries on every request.
+     * Cache key: "tenantId:role:permissionCode" → Boolean.
+     *
+     * TTL: 5 minutes — balances performance (no DB hit per request) with
+     * staleness (permission changes reflected within 5 min without restart).
+     * Max size: 10,000 entries — prevents unbounded memory growth.
+     *
+     * Separate caches for ALLOW and DENY to maintain BNP RBAC precedence rules.
+     * DENY is checked first — if cached as true, ALLOW is never checked.
+     *
+     * Per RBI IT Governance Direction 2023 §8.3: runtime permission changes
+     * (e.g., adding a DENY rule) must take effect within an acceptable window.
+     * The 5-minute TTL ensures stale entries are automatically refreshed.
+     * For immediate effect, call clearPermissionCache() from admin endpoints.
+     */
+    private final Cache<String, Boolean> allowCache = Caffeine.newBuilder()
+            .maximumSize(10_000)
+            .expireAfterWrite(5, TimeUnit.MINUTES)
+            .build();
+    private final Cache<String, Boolean> denyCache = Caffeine.newBuilder()
+            .maximumSize(10_000)
+            .expireAfterWrite(5, TimeUnit.MINUTES)
+            .build();
+
     private final RolePermissionRepository rolePermissionRepo;
 
     public CbsPermissionEvaluator(
             RolePermissionRepository rolePermissionRepo) {
         this.rolePermissionRepo = rolePermissionRepo;
+    }
+
+    /**
+     * Clears all cached permission lookups. Must be called whenever the
+     * role-permission matrix is modified (e.g., admin adds/removes a
+     * permission mapping) to ensure changes take effect immediately.
+     *
+     * Per Finacle AUTH_ENGINE: permission cache is invalidated on any
+     * change to the role-permission matrix. Without this, a newly added
+     * DENY rule would be silently bypassed until application restart.
+     */
+    public void clearPermissionCache() {
+        long allowSize = allowCache.estimatedSize();
+        long denySize = denyCache.estimatedSize();
+        allowCache.invalidateAll();
+        denyCache.invalidateAll();
+        log.info("CBS Permission cache cleared — {} ALLOW + {} DENY entries evicted",
+                allowSize, denySize);
     }
 
     /**
@@ -97,16 +146,35 @@ public class CbsPermissionEvaluator implements PermissionEvaluator {
             return false;
         }
 
+        // CBS Tier-1 Performance: Permission lookups are cached via Caffeine with
+        // 5-minute TTL to avoid 2 DB queries per request at 1M+ TPS.
+        // Per Finacle AUTH_ENGINE: permission matrix is cached per session.
+        // Per Temenos EB.PERMISSION.CHECK: cached with TTL-based invalidation.
+        //
+        // Cache key: "tenantId:role:permissionCode" → Boolean result.
+        // TTL: 5 minutes — stale entries auto-evicted, permission changes
+        // take effect within 5 min. For immediate effect, call clearPermissionCache().
+        String cacheKey = tenantId + ":" + userRole + ":" + permissionCode;
+
         // CBS: DENY takes precedence over ALLOW per BNP RBAC
-        if (rolePermissionRepo.isDenied(tenantId, userRole, permissionCode)) {
+        Boolean denied = denyCache.getIfPresent(cacheKey);
+        if (denied == null) {
+            denied = rolePermissionRepo.isDenied(tenantId, userRole, permissionCode);
+            denyCache.put(cacheKey, denied);
+        }
+        if (denied) {
             log.debug("Permission DENIED: user={}, role={}, perm={}",
                     authentication.getName(), userRole, permissionCode);
             return false;
         }
 
         // Check ALLOW grant
-        boolean allowed = rolePermissionRepo.hasPermission(
-                tenantId, userRole, permissionCode);
+        Boolean allowed = allowCache.getIfPresent(cacheKey);
+        if (allowed == null) {
+            allowed = rolePermissionRepo.hasPermission(
+                    tenantId, userRole, permissionCode);
+            allowCache.put(cacheKey, allowed);
+        }
 
         if (!allowed) {
             log.debug("Permission not granted: user={}, role={}, perm={}",

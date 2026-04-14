@@ -14,6 +14,7 @@ import com.finvanta.domain.rules.ProvisioningRule;
 import com.finvanta.repository.BatchJobRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.LoanAccountRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanScheduleService;
 import com.finvanta.service.TransactionBatchService;
@@ -67,6 +68,7 @@ public class BatchService {
     private final TransactionBatchService transactionBatchService;
     private final ProductGLResolver glResolver;
     private final StandingInstructionServiceImpl standingInstructionService;
+    private final BusinessDateService businessDateService;
 
     /**
      * Self-reference to invoke @Transactional methods through the Spring proxy.
@@ -88,7 +90,8 @@ public class BatchService {
             LoanScheduleService scheduleService,
             TransactionBatchService transactionBatchService,
             ProductGLResolver glResolver,
-            StandingInstructionServiceImpl standingInstructionService) {
+            StandingInstructionServiceImpl standingInstructionService,
+            BusinessDateService businessDateService) {
         this.batchJobRepository = batchJobRepository;
         this.calendarRepository = calendarRepository;
         this.loanAccountRepository = loanAccountRepository;
@@ -101,6 +104,7 @@ public class BatchService {
         this.transactionBatchService = transactionBatchService;
         this.glResolver = glResolver;
         this.standingInstructionService = standingInstructionService;
+        this.businessDateService = businessDateService;
     }
 
     /**
@@ -413,6 +417,17 @@ public class BatchService {
         freshCal.setLocked(false);
         freshCal.setUpdatedBy(SecurityUtil.getCurrentUsername());
         calendarRepository.save(freshCal);
+
+        // CBS Tier-1: Invalidate business date cache after EOD closes the day.
+        // This method bypasses BusinessDateService.closeDay() (which handles cache
+        // invalidation internally), so we must explicitly invalidate here.
+        // Without this, getCurrentBusinessDate() returns a stale cached date for
+        // a day that is already DAY_CLOSED — causing late-running processes to
+        // post transactions with an incorrect business date.
+        if (freshCal.getBranch() != null) {
+            businessDateService.invalidateBusinessDateCache(
+                    freshCal.getTenantId(), freshCal.getBranch().getId());
+        }
 
         BatchJob fresh = batchJobRepository.findById(eodJob.getId()).orElse(eodJob);
         fresh.setStatus(status);

@@ -1,18 +1,11 @@
 package com.finvanta.controller;
 
-import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.AppUser;
-import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.enums.UserRole;
-import com.finvanta.repository.AppUserRepository;
-import com.finvanta.repository.BranchRepository;
-import com.finvanta.util.BusinessException;
-import com.finvanta.util.SecurityUtil;
-import com.finvanta.util.TenantContext;
+import com.finvanta.service.BranchService;
+import com.finvanta.service.UserService;
 
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
@@ -26,43 +19,37 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
  * - Account lockout after configurable failed attempts
  * - All user lifecycle events must be audited
  *
+ * CBS Code Quality: No @Transactional on controller methods.
+ * All business logic and transactions are managed by UserService.
+ * Controller only handles HTTP request/response mapping and view delegation.
+ *
  * ADMIN-only access (enforced in SecurityConfig /admin/** rule).
  */
 @Controller
 @RequestMapping("/admin/users")
 public class UserController {
 
-    private final AppUserRepository userRepository;
-    private final BranchRepository branchRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final AuditService auditService;
+    private final UserService userService;
+    private final BranchService branchService;
 
-    public UserController(
-            AppUserRepository userRepository,
-            BranchRepository branchRepository,
-            PasswordEncoder passwordEncoder,
-            AuditService auditService) {
-        this.userRepository = userRepository;
-        this.branchRepository = branchRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.auditService = auditService;
+    public UserController(UserService userService, BranchService branchService) {
+        this.userService = userService;
+        this.branchService = branchService;
     }
 
     /** List all users for the tenant */
     @GetMapping
     public ModelAndView listUsers() {
-        String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("admin/users");
-        mav.addObject("users", userRepository.findByTenantIdOrderByRoleAscUsernameAsc(tenantId));
+        mav.addObject("users", userService.listUsers());
         mav.addObject("roles", UserRole.values());
-        mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+        mav.addObject("branches", branchService.listActiveBranches());
         mav.addObject("pageTitle", "User Management");
         return mav;
     }
 
-    /** Create a new user — password is bcrypt-hashed */
+    /** Create a new user — delegated to UserService */
     @PostMapping("/create")
-    @Transactional
     public String createUser(
             @RequestParam String username,
             @RequestParam String password,
@@ -71,53 +58,9 @@ public class UserController {
             @RequestParam String role,
             @RequestParam Long branchId,
             RedirectAttributes redirectAttributes) {
-        String tenantId = TenantContext.getCurrentTenant();
         try {
-            if (userRepository.existsByTenantIdAndUsername(tenantId, username)) {
-                throw new BusinessException("DUPLICATE_USERNAME", "Username already exists: " + username);
-            }
-            if (password == null || password.length() < 8) {
-                throw new BusinessException(
-                        "WEAK_PASSWORD", "Password must be at least 8 characters per RBI IT Governance");
-            }
-            if (!password.matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&#^()\\-_=+]).{8,}$")) {
-                throw new BusinessException("WEAK_PASSWORD",
-                        "Password must contain uppercase, lowercase, digit, and special character per RBI policy");
-            }
-
-            Branch branch = branchRepository
-                    .findById(branchId)
-                    .filter(b -> b.getTenantId().equals(tenantId))
-                    .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "Branch not found"));
-
-            AppUser user = new AppUser();
-            user.setTenantId(tenantId);
-            user.setUsername(username);
-            // CBS: Use changePassword() to set password with expiry and history tracking.
-            // Per RBI IT Governance Direction 2023: password rotation every 90 days.
-            // Note: New user creation — no history check needed (first password).
-            user.changePassword(passwordEncoder.encode(password));
-            user.setFullName(fullName);
-            user.setEmail(email);
-            user.setRole(UserRole.valueOf(role));
-            user.setBranch(branch);
-            user.setActive(true);
-            user.setLocked(false);
-            user.setFailedLoginAttempts(0);
-            user.setCreatedBy(SecurityUtil.getCurrentUsername());
-
-            AppUser saved = userRepository.save(user);
-            auditService.logEvent(
-                    "AppUser",
-                    saved.getId(),
-                    "USER_CREATED",
-                    null,
-                    username,
-                    "USER_MANAGEMENT",
-                    "User created: " + username + " | Role: " + role + " | Branch: " + branch.getBranchCode()
-                            + " | By: " + SecurityUtil.getCurrentUsername());
-
-            redirectAttributes.addFlashAttribute("success", "User created: " + username);
+            AppUser saved = userService.createUser(username, password, fullName, email, role, branchId);
+            redirectAttributes.addFlashAttribute("success", "User created: " + saved.getUsername());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -126,29 +69,11 @@ public class UserController {
 
     /** Toggle user active/inactive status */
     @PostMapping("/toggle-active/{id}")
-    @Transactional
     public String toggleActive(@PathVariable Long id, RedirectAttributes redirectAttributes) {
-        String tenantId = TenantContext.getCurrentTenant();
         try {
-            AppUser user = userRepository
-                    .findById(id)
-                    .filter(u -> u.getTenantId().equals(tenantId))
-                    .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", "User not found"));
-            boolean newState = !user.isActive();
-            user.setActive(newState);
-            user.setUpdatedBy(SecurityUtil.getCurrentUsername());
-            userRepository.save(user);
-            auditService.logEvent(
-                    "AppUser",
-                    user.getId(),
-                    newState ? "USER_ACTIVATED" : "USER_DEACTIVATED",
-                    String.valueOf(!newState),
-                    String.valueOf(newState),
-                    "USER_MANAGEMENT",
-                    "User " + (newState ? "activated" : "deactivated") + ": " + user.getUsername() + " by "
-                            + SecurityUtil.getCurrentUsername());
+            AppUser user = userService.toggleActive(id);
             redirectAttributes.addFlashAttribute(
-                    "success", "User " + (newState ? "activated" : "deactivated") + ": " + user.getUsername());
+                    "success", "User " + (user.isActive() ? "activated" : "deactivated") + ": " + user.getUsername());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }
@@ -157,26 +82,9 @@ public class UserController {
 
     /** Unlock a locked user account */
     @PostMapping("/unlock/{id}")
-    @Transactional
     public String unlockUser(@PathVariable Long id, RedirectAttributes redirectAttributes) {
-        String tenantId = TenantContext.getCurrentTenant();
         try {
-            AppUser user = userRepository
-                    .findById(id)
-                    .filter(u -> u.getTenantId().equals(tenantId))
-                    .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", "User not found"));
-            user.setLocked(false);
-            user.setFailedLoginAttempts(0);
-            user.setUpdatedBy(SecurityUtil.getCurrentUsername());
-            userRepository.save(user);
-            auditService.logEvent(
-                    "AppUser",
-                    user.getId(),
-                    "USER_UNLOCKED",
-                    "LOCKED",
-                    "UNLOCKED",
-                    "USER_MANAGEMENT",
-                    "User unlocked: " + user.getUsername() + " by " + SecurityUtil.getCurrentUsername());
+            AppUser user = userService.unlockUser(id);
             redirectAttributes.addFlashAttribute("success", "User unlocked: " + user.getUsername());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
@@ -184,45 +92,12 @@ public class UserController {
         return "redirect:/admin/users";
     }
 
-    /** Reset user password — bcrypt-hashed */
+    /** Reset user password — delegated to UserService */
     @PostMapping("/reset-password/{id}")
-    @Transactional
     public String resetPassword(
             @PathVariable Long id, @RequestParam String newPassword, RedirectAttributes redirectAttributes) {
-        String tenantId = TenantContext.getCurrentTenant();
         try {
-            if (newPassword == null || newPassword.length() < 8) {
-                throw new BusinessException(
-                        "WEAK_PASSWORD", "Password must be at least 8 characters per RBI IT Governance");
-            }
-            if (!newPassword.matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&#^()\\-_=+]).{8,}$")) {
-                throw new BusinessException("WEAK_PASSWORD",
-                        "Password must contain uppercase, lowercase, digit, and special character per RBI policy");
-            }
-            AppUser user = userRepository
-                    .findById(id)
-                    .filter(u -> u.getTenantId().equals(tenantId))
-                    .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", "User not found"));
-            // CBS: Check password reuse per RBI IT Governance Direction 2023 §8.2.
-            // Users cannot reuse their last 3 passwords. Uses PasswordEncoder.matches()
-            // to handle BCrypt's random salt correctly (same plaintext → different hashes).
-            if (user.isPasswordInHistory(newPassword, passwordEncoder)) {
-                throw new BusinessException("PASSWORD_REUSED",
-                        "Cannot reuse any of the last 3 passwords per RBI IT Governance policy. "
-                                + "Please choose a different password.");
-            }
-            // CBS: Use changePassword() to track password history and set expiry.
-            user.changePassword(passwordEncoder.encode(newPassword));
-            user.setUpdatedBy(SecurityUtil.getCurrentUsername());
-            userRepository.save(user);
-            auditService.logEvent(
-                    "AppUser",
-                    user.getId(),
-                    "PASSWORD_RESET",
-                    null,
-                    null,
-                    "USER_MANAGEMENT",
-                    "Password reset for: " + user.getUsername() + " by " + SecurityUtil.getCurrentUsername());
+            AppUser user = userService.resetPassword(id, newPassword);
             redirectAttributes.addFlashAttribute("success", "Password reset for: " + user.getUsername());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());

@@ -265,21 +265,16 @@ public class AppUser extends BaseEntity {
     }
 
     /**
-     * Checks if a password hash matches any of the last 3 passwords in history.
+     * Checks if a plaintext password matches the current password or any of the
+     * last 3 passwords in history. Uses PasswordEncoder.matches() which correctly
+     * handles BCrypt's random salt (same plaintext → different hashes).
+     *
      * Per RBI IT Governance Direction 2023 §8.2: users cannot reuse recent passwords.
+     * Checks current passwordHash + up to 3 entries in passwordHistory (pipe-delimited).
      *
-     * IMPORTANT: This checks raw hash equality. The caller must pass the ENCODED hash
-     * of the new password (not the plaintext). Since BCrypt produces different hashes
-     * for the same plaintext, the caller should use PasswordEncoder.matches() against
-     * each history entry instead. This method is for delegating-encoder formats where
-     * the same input produces the same hash (e.g., {noop} in dev).
-     *
-     * For production BCrypt usage, use {@link #isPasswordInHistory(String, org.springframework.security.crypto.password.PasswordEncoder)}
-     * which properly handles BCrypt's random salt.
-     *
-     * @param rawPassword The plaintext password to check
-     * @param encoder     The password encoder to use for matching
-     * @return true if the password matches any of the last 3 passwords
+     * @param rawPassword The plaintext password to check against history
+     * @param encoder     The password encoder (BCrypt) to use for matching
+     * @return true if the password matches the current or any of the last 3 passwords
      */
     public boolean isPasswordInHistory(String rawPassword,
             org.springframework.security.crypto.password.PasswordEncoder encoder) {

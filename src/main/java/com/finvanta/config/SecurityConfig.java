@@ -41,9 +41,12 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
 public class SecurityConfig {
 
     private final MfaAuthenticationSuccessHandler mfaSuccessHandler;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
-    public SecurityConfig(MfaAuthenticationSuccessHandler mfaSuccessHandler) {
+    public SecurityConfig(MfaAuthenticationSuccessHandler mfaSuccessHandler,
+            org.springframework.context.ApplicationEventPublisher eventPublisher) {
         this.mfaSuccessHandler = mfaSuccessHandler;
+        this.eventPublisher = eventPublisher;
     }
 
     @Value("${spring.profiles.active:prod}")
@@ -269,7 +272,12 @@ public class SecurityConfig {
                         // the CbsAuthenticationEventListener.onLogoutSuccess() would be dead code.
                         // Per RBI IT Governance Direction 2023 §8.3: all session lifecycle events
                         // (login, logout, session expiry) must be audited.
-                        .addLogoutHandler(new LogoutSuccessEventPublishingLogoutHandler())
+                        //
+                        // CBS CRITICAL: The handler implements ApplicationEventPublisherAware but
+                        // is not a Spring-managed bean (created with new). We must manually inject
+                        // the ApplicationEventPublisher — without it, the handler's logout() method
+                        // checks if (this.eventPublisher == null) { return; } and silently does nothing.
+                        .addLogoutHandler(createLogoutEventHandler())
                         .invalidateHttpSession(true)
                         .deleteCookies("FINVANTA_SESSION")
                         .permitAll())
@@ -328,6 +336,18 @@ public class SecurityConfig {
                 });
 
         return http.build();
+    }
+
+    /**
+     * Creates a LogoutSuccessEventPublishingLogoutHandler with the ApplicationEventPublisher
+     * manually injected. This handler is NOT a Spring-managed bean (created inline in the
+     * security filter chain), so Spring's ApplicationEventPublisherAware callback never fires.
+     * Without manual injection, the handler silently does nothing on logout.
+     */
+    private LogoutSuccessEventPublishingLogoutHandler createLogoutEventHandler() {
+        LogoutSuccessEventPublishingLogoutHandler handler = new LogoutSuccessEventPublishingLogoutHandler();
+        handler.setApplicationEventPublisher(this.eventPublisher);
+        return handler;
     }
 
     /**
