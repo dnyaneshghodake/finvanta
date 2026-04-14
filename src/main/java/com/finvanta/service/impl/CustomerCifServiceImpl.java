@@ -307,6 +307,10 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                 .filter(x -> x.getTenantId().equals(tid))
                 .orElseThrow(() -> new BusinessException(
                         "CUSTOMER_NOT_FOUND", "" + customerId));
+        // CBS Tier-1: Branch access enforcement on customer deactivation.
+        // Per Finacle CIF_MASTER: even ADMIN-only operations must validate branch context
+        // for defense-in-depth. Without this, a future role expansion could bypass isolation.
+        branchValidator.validateAccess(c.getBranch());
 
         // CBS: Cannot deactivate customer with active loan accounts
         long activeLoanCount = loanRepo

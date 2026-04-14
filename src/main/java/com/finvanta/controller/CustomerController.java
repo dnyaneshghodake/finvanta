@@ -299,6 +299,17 @@ public class CustomerController {
                     .filter(d -> d.getTenantId().equals(tenantId))
                     .orElseThrow(() -> new BusinessException("DOC_NOT_FOUND", "Document not found"));
 
+            // CBS: Branch access enforcement — user must have access to the customer's branch
+            customerService.getCustomer(doc.getCustomer().getId());
+
+            // CBS: Prevent re-verification of already-verified/rejected documents
+            // Per Finacle DOC_MASTER: documents are immutable once verified.
+            if (!"UPLOADED".equals(doc.getVerificationStatus())) {
+                throw new BusinessException("DOC_ALREADY_PROCESSED",
+                        "Document already " + doc.getVerificationStatus().toLowerCase()
+                                + ". Upload a new version if correction is needed.");
+            }
+
             if ("VERIFY".equals(action)) {
                 doc.setVerificationStatus("VERIFIED");
             } else if ("REJECT".equals(action)) {
@@ -308,6 +319,8 @@ public class CustomerController {
                 }
                 doc.setVerificationStatus("REJECTED");
                 doc.setRejectionReason(rejectionReason);
+            } else {
+                throw new BusinessException("INVALID_ACTION", "Action must be VERIFY or REJECT.");
             }
             doc.setVerifiedBy(SecurityUtil.getCurrentUsername());
             doc.setVerifiedDate(LocalDate.now());

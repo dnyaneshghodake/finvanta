@@ -150,6 +150,16 @@ public class SecurityConfig {
                             .hasRole("ADMIN")
                             .requestMatchers("/customer/verify-kyc/**")
                             .hasAnyRole("CHECKER", "ADMIN")
+                            // CBS Document Management: role restrictions per Finacle DOC_MASTER
+                            // MAKER uploads documents, CHECKER verifies/rejects, both can download.
+                            // Without these rules, document endpoints fall to .anyRequest().authenticated()
+                            // allowing any authenticated user (including AUDITOR) to upload/verify.
+                            .requestMatchers("/customer/document/upload/**")
+                            .hasAnyRole("MAKER", "ADMIN")
+                            .requestMatchers("/customer/document/verify/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/customer/document/download/**")
+                            .hasAnyRole("MAKER", "CHECKER", "ADMIN")
                             .requestMatchers("/branch/edit/**")
                             .hasRole("ADMIN")
                             .requestMatchers("/calendar/**")
