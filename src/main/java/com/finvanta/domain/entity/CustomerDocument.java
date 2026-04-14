@@ -77,16 +77,36 @@ public class CustomerDocument extends BaseEntity {
     private long fileSize;
 
     /**
-     * Document file content stored as BLOB.
+     * Document file content stored as BLOB (DATABASE storage mode).
      * Per RBI IT Governance Direction 2023: stored encrypted via DB-level TDE
      * or application-level encryption for sensitive documents (Aadhaar).
      *
-     * For production with high volume, consider external storage (S3/Azure Blob)
-     * with only the storage path stored here. BLOB is acceptable for < 10K customers.
+     * When finvanta.document.storage.type=FILESYSTEM, this column is NULL
+     * for new uploads (file content is on external filesystem). The storagePath
+     * column contains the filesystem reference instead.
+     *
+     * When finvanta.document.storage.type=DATABASE (default), this column
+     * contains the full file content and storagePath is "BLOB".
+     *
+     * Per Finacle DOC_MASTER: supports both inline BLOB and external DMS reference.
      */
     @Lob
-    @Column(name = "file_data", nullable = false)
+    @Column(name = "file_data")
     private byte[] fileData;
+
+    /**
+     * External storage path reference per Finacle DOC_MASTER / Temenos IMAGE.REF.
+     *
+     * Values:
+     *   "BLOB"                    — file content is in the fileData BLOB column (DATABASE mode)
+     *   "{tenantId}/documents/..." — relative path on external filesystem (FILESYSTEM mode)
+     *   null                      — legacy record (pre-storage-abstraction, treated as BLOB)
+     *
+     * Per Temenos IM.DOCUMENT.IMAGE: IMAGE.REF stores the external storage reference.
+     * The DocumentStorageService uses this field to locate the file content.
+     */
+    @Column(name = "storage_path", length = 500)
+    private String storagePath;
 
     /**
      * Document number/reference on the document itself.

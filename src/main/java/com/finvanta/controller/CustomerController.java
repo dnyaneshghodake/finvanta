@@ -9,6 +9,7 @@ import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CustomerCifService;
+import com.finvanta.service.DocumentStorageService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.PiiMaskingUtil;
 import com.finvanta.util.SecurityUtil;
@@ -41,6 +42,7 @@ public class CustomerController {
     private final CustomerDocumentRepository documentRepository;
     private final AuditService auditService;
     private final BusinessDateService businessDateService;
+    private final DocumentStorageService documentStorageService;
 
     public CustomerController(
             CustomerCifService customerService,
@@ -49,7 +51,8 @@ public class CustomerController {
             LoanAccountRepository accountRepository,
             CustomerDocumentRepository documentRepository,
             AuditService auditService,
-            BusinessDateService businessDateService) {
+            BusinessDateService businessDateService,
+            DocumentStorageService documentStorageService) {
         this.customerService = customerService;
         this.branchRepository = branchRepository;
         this.applicationRepository = applicationRepository;
@@ -57,6 +60,7 @@ public class CustomerController {
         this.documentRepository = documentRepository;
         this.auditService = auditService;
         this.businessDateService = businessDateService;
+        this.documentStorageService = documentStorageService;
     }
 
     /**
@@ -262,19 +266,33 @@ public class CustomerController {
             doc.setFileName(safeFileName);
             doc.setContentType(contentType);
             doc.setFileSize(file.getSize());
-            doc.setFileData(fileBytes);
             doc.setDocumentNumber(documentNumber);
             doc.setRemarks(remarks);
             doc.setVerificationStatus("UPLOADED");
             doc.setCreatedBy(SecurityUtil.getCurrentUsername());
 
+            // CBS: Store file content via configurable DocumentStorageService.
+            // Per Finacle DOC_MASTER: storage backend is transparent to business logic.
+            // DATABASE mode: fileData BLOB populated, storagePath = "BLOB"
+            // FILESYSTEM mode: file written to disk, storagePath = relative path, fileData = null
+            if ("DATABASE".equals(documentStorageService.getStorageType())) {
+                doc.setFileData(fileBytes);
+            }
+            // Save entity first to get the generated ID (needed for filesystem path)
+            documentRepository.save(doc);
+
+            // Store via configured backend and update storagePath
+            String storagePath = documentStorageService.store(
+                    tenantId, customer.getId(), doc.getId(), safeFileName, fileBytes);
+            doc.setStoragePath(storagePath);
             documentRepository.save(doc);
 
             auditService.logEvent("CustomerDocument", doc.getId(), "UPLOAD", null,
                     documentType, "CIF",
                     "Document uploaded: " + documentType + " for customer " + customer.getCustomerNumber()
                             + " | File: " + file.getOriginalFilename()
-                            + " | Size: " + file.getSize() + " bytes");
+                            + " | Size: " + file.getSize() + " bytes"
+                            + " | Storage: " + documentStorageService.getStorageType());
 
             redirectAttributes.addFlashAttribute("success",
                     "Document uploaded: " + documentType + " (" + file.getOriginalFilename() + ")");
