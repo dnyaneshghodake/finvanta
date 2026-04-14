@@ -327,15 +327,17 @@
                             <td><small><c:out value="${doc.createdBy}" /><br/><c:out value="${doc.createdAt}" /></small></td>
                             <td><c:if test="${not empty doc.verifiedBy}"><small><c:out value="${doc.verifiedBy}" /><br/><c:out value="${doc.verifiedDate}" /></small></c:if><c:if test="${empty doc.verifiedBy}"><small class="text-muted">--</small></c:if></td>
                             <td>
-                                <%-- CBS: View (inline preview) + Download (save to disk) per Finacle DOC_MASTER --%>
-                                <button type="button" class="btn btn-sm btn-outline-primary" title="Preview document" onclick="previewDoc('${pageContext.request.contextPath}/customer/document/download/${doc.id}', '${doc.contentType}', '${doc.documentType.displayName}');"><i class="bi bi-eye"></i></button>
-                                <a href="${pageContext.request.contextPath}/customer/document/download/${doc.id}" target="_blank" class="btn btn-sm btn-outline-secondary" title="Open in new tab"><i class="bi bi-box-arrow-up-right"></i></a>
+                                <%-- CBS: Action buttons with icon + text per Finacle DOC_MASTER / CBS UX standards.
+                                     Per Finacle/Temenos: all action buttons must have icon + text label for
+                                     clarity — icon-only buttons are ambiguous for branch operations staff. --%>
+                                <button type="button" class="btn btn-sm btn-outline-primary me-1" title="Preview document" onclick="previewDoc('${pageContext.request.contextPath}/customer/document/download/${doc.id}', '${doc.contentType}', '${doc.documentType.displayName}');"><i class="bi bi-eye"></i> Preview</button>
+                                <a href="${pageContext.request.contextPath}/customer/document/download/${doc.id}" target="_blank" class="btn btn-sm btn-outline-secondary me-1" title="Open in new tab"><i class="bi bi-box-arrow-up-right"></i> Open</a>
                                 <c:if test="${doc.verificationStatus == 'UPLOADED'}">
                                 <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
                                     <form method="post" action="${pageContext.request.contextPath}/customer/document/verify/${doc.id}" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                         <input type="hidden" name="action" value="VERIFY" />
-                                        <button type="submit" class="btn btn-sm btn-success" title="Verify document" data-confirm="Verify this document?"><i class="bi bi-check-lg"></i></button>
+                                        <button type="submit" class="btn btn-sm btn-success me-1" title="Verify document" data-confirm="Verify this document?"><i class="bi bi-patch-check"></i> Verify</button>
                                     </form>
                                     <form method="post" action="${pageContext.request.contextPath}/customer/document/verify/${doc.id}" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
@@ -343,7 +345,7 @@
                                         <input type="hidden" name="rejectionReason" value="" id="rejReason_${doc.id}" />
                                         <button type="submit" class="btn btn-sm btn-danger" title="Reject document"
                                             onclick="var r=prompt('Rejection reason (mandatory):'); if(!r||r.trim().length<3){alert('Reason is mandatory');return false;} document.getElementById('rejReason_${doc.id}').value=r; return confirm('Reject this document?');">
-                                            <i class="bi bi-x-lg"></i></button>
+                                            <i class="bi bi-x-circle"></i> Reject</button>
                                     </form>
                                 </c:if>
                                 </c:if>
