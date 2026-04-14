@@ -61,6 +61,9 @@ public class CustomerController {
     /** CBS: Default page size per Finacle CIF_LIST / Temenos ENQUIRY */
     private static final int DEFAULT_PAGE_SIZE = 25;
 
+    /** CBS: Max page size cap to prevent OOM on large result sets */
+    private static final int MAX_PAGE_SIZE = 100;
+
     /**
      * CBS Customer List with pagination per Finacle CIF_LIST / Temenos ENQUIRY.
      * Branch isolation enforced in service layer.
@@ -71,10 +74,10 @@ public class CustomerController {
     @GetMapping("/list")
     public ModelAndView listCustomers(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "25") int size) {
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
         ModelAndView mav = new ModelAndView("customer/list");
         Page<Customer> customerPage = customerService.searchCustomers("",
-                PageRequest.of(page, Math.min(size, 100), Sort.by("customerNumber").ascending()));
+                PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE), Sort.by("customerNumber").ascending()));
         mav.addObject("customers", customerPage.getContent());
         mav.addObject("customerPage", customerPage);
         return mav;
@@ -88,16 +91,16 @@ public class CustomerController {
     public ModelAndView searchCustomers(
             @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "25") int size) {
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
         ModelAndView mav = new ModelAndView("customer/list");
         Page<Customer> customerPage;
         if (q != null && !q.isBlank() && q.length() >= 2) {
             customerPage = customerService.searchCustomers(q,
-                    PageRequest.of(page, Math.min(size, 100), Sort.by("customerNumber").ascending()));
+                    PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE), Sort.by("customerNumber").ascending()));
             mav.addObject("searchQuery", q);
         } else {
             customerPage = customerService.searchCustomers("",
-                    PageRequest.of(page, Math.min(size, 100), Sort.by("customerNumber").ascending()));
+                    PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE), Sort.by("customerNumber").ascending()));
         }
         mav.addObject("customers", customerPage.getContent());
         mav.addObject("customerPage", customerPage);
@@ -106,24 +109,9 @@ public class CustomerController {
 
     @GetMapping("/add")
     public ModelAndView showAddForm() {
-        String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("customer/add");
         mav.addObject("customer", new Customer());
-        // CBS Tier-1: MAKER/CHECKER can only create customers at their home branch.
-        // ADMIN sees all branches. Per Finacle CIF_MASTER: customer is always created
-        // at the originating branch. Branch transfer is a separate maker-checker workflow.
-        if (SecurityUtil.isAdminRole()) {
-            mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
-        } else {
-            Long branchId = SecurityUtil.getCurrentUserBranchId();
-            if (branchId != null) {
-                branchRepository.findById(branchId)
-                        .filter(b -> b.getTenantId().equals(tenantId))
-                        .ifPresent(b -> mav.addObject("branches", java.util.List.of(b)));
-            }
-        }
-        // CBS: Default branch ID = user's current operating branch (home or switched)
-        // Per Finacle CIF_MASTER: branch dropdown pre-selects the user's branch
+        populateBranchDropdown(mav);
         mav.addObject("defaultBranchId", SecurityUtil.getCurrentUserBranchId());
         return mav;
     }
@@ -144,20 +132,10 @@ public class CustomerController {
         } catch (Exception e) {
             // CBS: On validation failure, re-display the add form with entered data preserved.
             // Per Finacle CIF_MASTER: user should not re-enter all fields after a single validation error.
-            String tenantId = TenantContext.getCurrentTenant();
             ModelAndView mav = new ModelAndView("customer/add");
             mav.addObject("customer", customer);
             mav.addObject("error", e.getMessage());
-            if (SecurityUtil.isAdminRole()) {
-                mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
-            } else {
-                Long userBranchId = SecurityUtil.getCurrentUserBranchId();
-                if (userBranchId != null) {
-                    branchRepository.findById(userBranchId)
-                            .filter(b -> b.getTenantId().equals(tenantId))
-                            .ifPresent(b -> mav.addObject("branches", java.util.List.of(b)));
-                }
-            }
+            populateBranchDropdown(mav);
             mav.addObject("defaultBranchId", SecurityUtil.getCurrentUserBranchId());
             return mav;
         }
