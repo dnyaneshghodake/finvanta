@@ -1,16 +1,24 @@
 package com.finvanta.controller;
 
+import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Customer;
+import com.finvanta.domain.entity.CustomerDocument;
 import com.finvanta.repository.BranchRepository;
+import com.finvanta.repository.CustomerDocumentRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.service.CustomerCifService;
+import com.finvanta.util.BusinessException;
 import com.finvanta.util.PiiMaskingUtil;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
+import java.time.LocalDate;
+
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
@@ -31,16 +39,16 @@ public class CustomerController {
     private final BranchRepository branchRepository;
     private final LoanApplicationRepository applicationRepository;
     private final LoanAccountRepository accountRepository;
-    private final com.finvanta.repository.CustomerDocumentRepository documentRepository;
-    private final com.finvanta.audit.AuditService auditService;
+    private final CustomerDocumentRepository documentRepository;
+    private final AuditService auditService;
 
     public CustomerController(
             CustomerCifService customerService,
             BranchRepository branchRepository,
             LoanApplicationRepository applicationRepository,
             LoanAccountRepository accountRepository,
-            com.finvanta.repository.CustomerDocumentRepository documentRepository,
-            com.finvanta.audit.AuditService auditService) {
+            CustomerDocumentRepository documentRepository,
+            AuditService auditService) {
         this.customerService = customerService;
         this.branchRepository = branchRepository;
         this.applicationRepository = applicationRepository;
@@ -207,32 +215,32 @@ public class CustomerController {
     @PostMapping("/document/upload/{customerId}")
     public String uploadDocument(
             @PathVariable Long customerId,
-            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam("file") MultipartFile file,
             @RequestParam String documentType,
             @RequestParam(required = false) String documentNumber,
             @RequestParam(required = false) String remarks,
             RedirectAttributes redirectAttributes) {
         try {
             if (file.isEmpty()) {
-                throw new com.finvanta.util.BusinessException("FILE_EMPTY", "Please select a file to upload.");
+                throw new BusinessException("FILE_EMPTY", "Please select a file to upload.");
             }
             // CBS: Max 5MB per document per RBI IT Governance
             if (file.getSize() > 5 * 1024 * 1024) {
-                throw new com.finvanta.util.BusinessException("FILE_TOO_LARGE",
+                throw new BusinessException("FILE_TOO_LARGE",
                         "File size exceeds 5MB limit. Please compress or resize the document.");
             }
             // CBS: Allowed formats only (PDF, JPG, PNG)
             String contentType = file.getContentType();
             if (contentType == null || (!contentType.equals("application/pdf")
                     && !contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
-                throw new com.finvanta.util.BusinessException("INVALID_FORMAT",
+                throw new BusinessException("INVALID_FORMAT",
                         "Only PDF, JPG, and PNG files are allowed.");
             }
 
             Customer customer = customerService.getCustomer(customerId);
             String tenantId = TenantContext.getCurrentTenant();
 
-            com.finvanta.domain.entity.CustomerDocument doc = new com.finvanta.domain.entity.CustomerDocument();
+            CustomerDocument doc = new CustomerDocument();
             doc.setTenantId(tenantId);
             doc.setCustomer(customer);
             doc.setDocumentType(documentType);
@@ -263,16 +271,16 @@ public class CustomerController {
 
     /** CBS Document Download — serves document file for viewing/download */
     @GetMapping("/document/download/{docId}")
-    public org.springframework.http.ResponseEntity<byte[]> downloadDocument(@PathVariable Long docId) {
+    public ResponseEntity<byte[]> downloadDocument(@PathVariable Long docId) {
         String tenantId = TenantContext.getCurrentTenant();
-        com.finvanta.domain.entity.CustomerDocument doc = documentRepository.findById(docId)
+        CustomerDocument doc = documentRepository.findById(docId)
                 .filter(d -> d.getTenantId().equals(tenantId))
-                .orElseThrow(() -> new com.finvanta.util.BusinessException("DOC_NOT_FOUND", "Document not found"));
+                .orElseThrow(() -> new BusinessException("DOC_NOT_FOUND", "Document not found"));
 
         // CBS: Branch access enforcement — user must have access to the customer's branch
         customerService.getCustomer(doc.getCustomer().getId());
 
-        return org.springframework.http.ResponseEntity.ok()
+        return ResponseEntity.ok()
                 .header("Content-Disposition", "inline; filename=\"" + doc.getFileName() + "\"")
                 .header("Content-Type", doc.getContentType())
                 .body(doc.getFileData());
@@ -287,22 +295,22 @@ public class CustomerController {
             RedirectAttributes redirectAttributes) {
         try {
             String tenantId = TenantContext.getCurrentTenant();
-            com.finvanta.domain.entity.CustomerDocument doc = documentRepository.findById(docId)
+            CustomerDocument doc = documentRepository.findById(docId)
                     .filter(d -> d.getTenantId().equals(tenantId))
-                    .orElseThrow(() -> new com.finvanta.util.BusinessException("DOC_NOT_FOUND", "Document not found"));
+                    .orElseThrow(() -> new BusinessException("DOC_NOT_FOUND", "Document not found"));
 
             if ("VERIFY".equals(action)) {
                 doc.setVerificationStatus("VERIFIED");
             } else if ("REJECT".equals(action)) {
                 if (rejectionReason == null || rejectionReason.isBlank()) {
-                    throw new com.finvanta.util.BusinessException("REASON_REQUIRED",
+                    throw new BusinessException("REASON_REQUIRED",
                             "Rejection reason is mandatory per RBI audit norms.");
                 }
                 doc.setVerificationStatus("REJECTED");
                 doc.setRejectionReason(rejectionReason);
             }
             doc.setVerifiedBy(SecurityUtil.getCurrentUsername());
-            doc.setVerifiedDate(java.time.LocalDate.now());
+            doc.setVerifiedDate(LocalDate.now());
             doc.setUpdatedBy(SecurityUtil.getCurrentUsername());
             documentRepository.save(doc);
 
