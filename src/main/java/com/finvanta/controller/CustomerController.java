@@ -7,13 +7,12 @@ import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerDocumentRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CustomerCifService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.PiiMaskingUtil;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
-
-import java.time.LocalDate;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -41,6 +40,7 @@ public class CustomerController {
     private final LoanAccountRepository accountRepository;
     private final CustomerDocumentRepository documentRepository;
     private final AuditService auditService;
+    private final BusinessDateService businessDateService;
 
     public CustomerController(
             CustomerCifService customerService,
@@ -48,13 +48,15 @@ public class CustomerController {
             LoanApplicationRepository applicationRepository,
             LoanAccountRepository accountRepository,
             CustomerDocumentRepository documentRepository,
-            AuditService auditService) {
+            AuditService auditService,
+            BusinessDateService businessDateService) {
         this.customerService = customerService;
         this.branchRepository = branchRepository;
         this.applicationRepository = applicationRepository;
         this.accountRepository = accountRepository;
         this.documentRepository = documentRepository;
         this.auditService = auditService;
+        this.businessDateService = businessDateService;
     }
 
     /**
@@ -348,7 +350,9 @@ public class CustomerController {
                 throw new BusinessException("INVALID_ACTION", "Action must be VERIFY or REJECT.");
             }
             doc.setVerifiedBy(SecurityUtil.getCurrentUsername());
-            doc.setVerifiedDate(LocalDate.now());
+            // CBS: Use business date for verification date, NOT LocalDate.now().
+            // Per Finacle DOC_MASTER: consistent with KYC verification date handling.
+            doc.setVerifiedDate(businessDateService.getCurrentBusinessDate());
             doc.setUpdatedBy(SecurityUtil.getCurrentUsername());
             documentRepository.save(doc);
 

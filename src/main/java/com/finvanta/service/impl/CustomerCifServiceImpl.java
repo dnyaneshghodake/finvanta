@@ -304,6 +304,15 @@ public class CustomerCifServiceImpl implements CustomerCifService {
 
         String beforeState = existing.getFullName() + "|" + existing.getMobileNumber();
 
+        // CBS: Detect identity-material field changes BEFORE applying updates.
+        // Must compare old vs new values before overwriting existing fields.
+        boolean identityChanged = !safeEquals(existing.getFirstName(), updated.getFirstName())
+                || !safeEquals(existing.getLastName(), updated.getLastName())
+                || !safeEquals(
+                        existing.getDateOfBirth() != null ? existing.getDateOfBirth().toString() : null,
+                        updated.getDateOfBirth() != null ? updated.getDateOfBirth().toString() : null)
+                || !safeEquals(existing.getCustomerType(), updated.getCustomerType());
+
         // CBS: Update ONLY mutable fields. PAN, Aadhaar, customerNumber are IMMUTABLE.
         existing.setFirstName(updated.getFirstName());
         existing.setLastName(updated.getLastName());
@@ -357,14 +366,26 @@ public class CustomerCifServiceImpl implements CustomerCifService {
             existing.computeKycExpiry();
         }
 
+        // CBS: Flag re-KYC if identity-material fields were changed.
+        // Per Finacle CIF_MASTER / RBI KYC Direction: material changes to customer identity
+        // (name, DOB, customer type) invalidate the existing KYC verification.
+        // Only flag re-KYC if KYC was previously verified — new customers are already pending.
+        if (identityChanged && existing.isKycVerified()) {
+            existing.setRekycDue(true);
+            log.info("Re-KYC flagged for cif={} due to identity-material field change by {}",
+                    existing.getCustomerNumber(), user);
+        }
+
         existing.setBranch(branch);
         existing.setUpdatedBy(user);
         customerRepo.save(existing);
 
+        String reKycNote = identityChanged && existing.isKycVerified()
+                ? " | RE-KYC FLAGGED (identity change)" : "";
         auditSvc.logEvent("Customer", existing.getId(),
                 "UPDATE", beforeState,
                 existing.getFullName() + "|" + existing.getMobileNumber(),
-                "CIF", "Customer updated by " + user);
+                "CIF", "Customer updated by " + user + reKycNote);
 
         log.info("Customer updated: cif={}, user={}", existing.getCustomerNumber(), user);
         return existing;
@@ -432,6 +453,13 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                 throw new BusinessException("INVALID_EMAIL_FORMAT",
                         "Email address format is invalid.");
         }
+    }
+
+    /** Null-safe string equality check for identity-material change detection. */
+    private static boolean safeEquals(String a, String b) {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        return a.equals(b);
     }
 
     /**
