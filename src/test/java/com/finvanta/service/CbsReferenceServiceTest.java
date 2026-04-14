@@ -4,9 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-import com.finvanta.util.ReferenceGenerator;
-
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,7 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * globally sequential, deterministic across JVM restarts, and cluster-safe.
  *
  * Validates:
- * - CIF format: 11 pure digits with Luhn check digit
+ * - CIF format: 11 pure digits, strictly incremental {SOL:3}{SERIAL:8}
  * - CASA account format: {SB|CA}-{BRANCH}-{6-digit}
  * - Loan account format: LN-{BRANCH}-{6-digit}
  * - Application format: APP-{BRANCH}-{6-digit}
@@ -40,7 +37,7 @@ class CbsReferenceServiceTest {
     private CbsReferenceService cbsReferenceService;
 
     @Test
-    @DisplayName("CIF is 11 pure digits with valid Luhn check — sequential from DB")
+    @DisplayName("CIF is 11 pure digits, strictly incremental — {SOL:3}{SERIAL:8}")
     void generateCustomerNumber_correctFormat() {
         // DB sequence returns 1 (first customer)
         when(sequenceGenerator.nextValue("CIF_SEQ")).thenReturn(1L);
@@ -50,22 +47,20 @@ class CbsReferenceServiceTest {
         assertEquals(11, cif.length(), "CIF must be exactly 11 digits");
         assertTrue(cif.matches("\\d{11}"), "CIF must be pure numeric");
         assertTrue(cif.startsWith("002"), "CIF must start with 3-digit SOL from branchId=2");
-        // Serial part should be 0000001 (from DB sequence value 1)
-        assertEquals("0000001", cif.substring(3, 10), "Serial must be sequential from DB");
-        // Verify Luhn check digit
-        String base = cif.substring(0, 10);
-        int expectedCheck = ReferenceGenerator.computeLuhn(base);
-        assertEquals(expectedCheck, cif.charAt(10) - '0', "Luhn check digit must be valid");
+        // Serial part should be 00000001 (8-digit from DB sequence value 1)
+        assertEquals("00000001", cif.substring(3), "Serial must be 8-digit sequential from DB");
+        assertEquals("00200000001", cif, "Full CIF must be 00200000001");
     }
 
     @Test
-    @DisplayName("CIF sequential numbering — second customer gets serial 0000002")
+    @DisplayName("CIF sequential numbering — second customer gets serial 00000002")
     void generateCustomerNumber_sequential() {
         when(sequenceGenerator.nextValue("CIF_SEQ")).thenReturn(2L);
 
         String cif = cbsReferenceService.generateCustomerNumber(1L);
 
-        assertEquals("0000002", cif.substring(3, 10), "Second CIF serial must be 0000002");
+        assertEquals("00000002", cif.substring(3), "Second CIF serial must be 00000002");
+        assertEquals("00100000002", cif, "Full CIF must be 00100000002");
     }
 
     @Test
