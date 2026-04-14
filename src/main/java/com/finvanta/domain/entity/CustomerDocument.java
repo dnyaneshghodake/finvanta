@@ -1,5 +1,8 @@
 package com.finvanta.domain.entity;
 
+import com.finvanta.domain.enums.DocumentType;
+import com.finvanta.domain.enums.DocumentVerificationStatus;
+
 import jakarta.persistence.*;
 
 import java.time.LocalDate;
@@ -57,12 +60,12 @@ public class CustomerDocument extends BaseEntity {
 
     /**
      * Document type per RBI KYC Direction OVD list.
-     * Values: PAN_CARD, AADHAAR_FRONT, AADHAAR_BACK, PASSPORT, VOTER_ID,
-     *         DRIVING_LICENSE, UTILITY_BILL, BANK_STATEMENT, RENT_AGREEMENT,
-     *         PHOTO, SIGNATURE, FORM_60, ITR, SALARY_SLIP, COMPANY_REG, TRUST_DEED, OTHER
+     * Per Finacle DOC_MASTER: stored as VARCHAR via @Enumerated(EnumType.STRING).
+     * Compile-time safe — prevents invalid document types at code level.
      */
+    @Enumerated(EnumType.STRING)
     @Column(name = "document_type", nullable = false, length = 30)
-    private String documentType;
+    private DocumentType documentType;
 
     /** Original filename as uploaded by the user */
     @Column(name = "file_name", nullable = false, length = 255)

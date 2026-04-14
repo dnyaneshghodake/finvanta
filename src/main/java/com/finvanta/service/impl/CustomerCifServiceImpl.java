@@ -11,6 +11,7 @@ import com.finvanta.service.CbsReferenceService;
 import com.finvanta.service.CustomerCifService;
 import com.finvanta.util.BranchAccessValidator;
 import com.finvanta.util.BusinessException;
+import com.finvanta.util.PiiHashUtil;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
@@ -426,7 +427,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                 throw new BusinessException("INVALID_PAN_FORMAT",
                         "PAN must be in format AAAAA0000A (5 letters + 4 digits + 1 letter).");
             // Duplicate PAN check via hash (encrypted column can't be compared)
-            if (customerRepo.existsByTenantIdAndPanHash(tid, computeSha256(panNumber)))
+            if (customerRepo.existsByTenantIdAndPanHash(tid, PiiHashUtil.computeSha256(panNumber)))
                 throw new BusinessException("DUPLICATE_PAN",
                         "Customer with this PAN already exists. Per RBI KYC norms, one PAN = one CIF.");
         }
@@ -435,7 +436,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         if (aadhaarNumber != null && !aadhaarNumber.isBlank()) {
             if (!aadhaarNumber.matches("^[0-9]{12}$"))
                 throw new BusinessException("INVALID_AADHAAR_FORMAT", "Aadhaar must be exactly 12 digits.");
-            if (customerRepo.existsByTenantIdAndAadhaarHash(tid, computeSha256(aadhaarNumber)))
+            if (customerRepo.existsByTenantIdAndAadhaarHash(tid, PiiHashUtil.computeSha256(aadhaarNumber)))
                 throw new BusinessException("DUPLICATE_AADHAAR",
                         "Customer with this Aadhaar already exists. Duplicate CIFs are prohibited per RBI KYC.");
         }
@@ -495,26 +496,6 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         return a.equals(b);
     }
 
-    /**
-     * Computes SHA-256 hash for PII de-duplication.
-     * Same algorithm as Customer.computeSha256() — normalizes to uppercase + trim.
-     */
-    private static String computeSha256(String input) {
-        if (input == null || input.isBlank()) return null;
-        try {
-            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = digest.digest(
-                    input.trim().toUpperCase().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hashBytes) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
-        }
-    }
-
     @Override
     @Transactional(readOnly = true)
     public List<Customer> searchCustomers(String query) {
@@ -536,7 +517,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         // LIKE on encrypted pan_number column NEVER matches — hash is the only path.
         String trimmed = query.trim();
         if (trimmed.matches("^[A-Z]{5}[0-9]{4}[A-Z]$")) {
-            String panHash = computeSha256(trimmed);
+            String panHash = PiiHashUtil.computeSha256(trimmed);
             java.util.Optional<Customer> panMatch = customerRepo.findByTenantIdAndPanHashAndActiveTrue(tid, panHash);
             if (panMatch.isPresent()) {
                 Customer c = panMatch.get();

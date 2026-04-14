@@ -1,12 +1,10 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.config.PiiEncryptionConverter;
+import com.finvanta.util.PiiHashUtil;
 
 import jakarta.persistence.*;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 
 import lombok.Getter;
@@ -500,7 +498,7 @@ public class Customer extends BaseEntity {
      * Called when panNumber is set during customer creation/update.
      */
     public void computePanHash() {
-        this.panHash = computeSha256(this.panNumber);
+        this.panHash = PiiHashUtil.computeSha256(this.panNumber);
     }
 
     /**
@@ -508,21 +506,6 @@ public class Customer extends BaseEntity {
      * Called when aadhaarNumber is set during customer creation/update.
      */
     public void computeAadhaarHash() {
-        this.aadhaarHash = computeSha256(this.aadhaarNumber);
-    }
-
-    private static String computeSha256(String input) {
-        if (input == null || input.isBlank()) return null;
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = digest.digest(input.trim().toUpperCase().getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hashBytes) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
-        }
+        this.aadhaarHash = PiiHashUtil.computeSha256(this.aadhaarNumber);
     }
 }
