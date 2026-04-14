@@ -21,7 +21,17 @@
                 <!-- Mutable fields -->
                 <div class="row mb-3">
                     <div class="col-md-3"><label class="form-label">Customer Type *</label><select name="customerType" class="form-select" required><option value="INDIVIDUAL" ${customer.customerType == 'INDIVIDUAL' ? 'selected' : ''}>Individual</option><option value="JOINT" ${customer.customerType == 'JOINT' ? 'selected' : ''}>Joint</option><option value="HUF" ${customer.customerType == 'HUF' ? 'selected' : ''}>HUF</option><option value="PARTNERSHIP" ${customer.customerType == 'PARTNERSHIP' ? 'selected' : ''}>Partnership</option><option value="COMPANY" ${customer.customerType == 'COMPANY' ? 'selected' : ''}>Company</option><option value="TRUST" ${customer.customerType == 'TRUST' ? 'selected' : ''}>Trust</option><option value="NRI" ${customer.customerType == 'NRI' ? 'selected' : ''}>NRI</option><option value="MINOR" ${customer.customerType == 'MINOR' ? 'selected' : ''}>Minor</option><option value="GOVERNMENT" ${customer.customerType == 'GOVERNMENT' ? 'selected' : ''}>Government</option></select></div>
-                    <div class="col-md-3"><label class="form-label">Branch *</label><select name="branchId" class="form-select" required><c:forEach var="branch" items="${branches}"><option value="${branch.id}" ${branch.id == customer.branch.id ? 'selected' : ''}><c:out value="${branch.branchCode}" /> - <c:out value="${branch.branchName}" /></option></c:forEach></select></div>
+                    <div class="col-md-3"><label class="form-label">Branch *</label>
+                        <c:choose>
+                            <c:when test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                                <select name="branchId" class="form-select" required><c:forEach var="branch" items="${branches}"><option value="${branch.id}" ${branch.id == customer.branch.id ? 'selected' : ''}><c:out value="${branch.branchCode}" /> - <c:out value="${branch.branchName}" /></option></c:forEach></select>
+                            </c:when>
+                            <c:otherwise>
+                                <input type="text" class="form-control" value="${customer.branch.branchCode} - ${customer.branch.branchName}" disabled />
+                                <input type="hidden" name="branchId" value="${customer.branch.id}" />
+                            </c:otherwise>
+                        </c:choose>
+                    </div>
                     <div class="col-md-3"><label class="form-label">KYC Risk Category</label><select name="kycRiskCategory" class="form-select"><option value="LOW" ${customer.kycRiskCategory == 'LOW' ? 'selected' : ''}>Low</option><option value="MEDIUM" ${customer.kycRiskCategory == 'MEDIUM' ? 'selected' : ''}>Medium</option><option value="HIGH" ${customer.kycRiskCategory == 'HIGH' ? 'selected' : ''}>High</option></select></div>
                     <div class="col-md-3"><label class="form-label">PEP</label><div class="form-check mt-2"><input type="checkbox" name="pep" value="true" class="form-check-input" id="pepEdit" ${customer.pep ? 'checked' : ''} /><label class="form-check-label" for="pepEdit">Politically Exposed Person</label></div></div>
                 </div>
