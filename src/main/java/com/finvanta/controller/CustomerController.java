@@ -313,13 +313,19 @@ public class CustomerController {
         // CBS: Branch access enforcement — user must have access to the customer's branch
         customerService.getCustomer(doc.getCustomer().getId());
 
+        // CBS: Retrieve file content via configurable DocumentStorageService.
+        // Per Finacle DOC_MASTER: storage backend is transparent to download logic.
+        // DATABASE mode: returns entity's BLOB data directly.
+        // FILESYSTEM mode: reads file from disk at storagePath, falls back to BLOB for legacy docs.
+        byte[] fileContent = documentStorageService.retrieve(doc.getStoragePath(), doc.getFileData());
+
         // CBS: Sanitize filename in Content-Disposition header to prevent header injection.
         // Even though filename was sanitized on upload, defense-in-depth applies on download too.
         String safeFileName = sanitizeFileName(doc.getFileName());
         return ResponseEntity.ok()
                 .header("Content-Disposition", "inline; filename=\"" + safeFileName + "\"")
                 .header("Content-Type", doc.getContentType())
-                .body(doc.getFileData());
+                .body(fileContent);
     }
 
     /** CBS Document Verification — CHECKER/ADMIN marks document as verified or rejected */
