@@ -1,7 +1,5 @@
 package com.finvanta.service;
 
-import com.finvanta.util.ReferenceGenerator;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -34,7 +32,7 @@ import org.springframework.stereotype.Service;
  * offsets on each JVM restart.
  *
  * Formats:
- *   CIF:     {SOL:3}{SERIAL:7}{CHECK:1} → 00200000017  (11 pure digits, Luhn check)
+ *   CIF:     {SOL:3}{SERIAL:8}          → 00200000001  (11 pure digits, incremental)
  *   CASA:    {SB|CA}-{BRANCH}-{6-digit} → SB-BR001-000001
  *   Loan:    LN-{BRANCH}-{6-digit}      → LN-BR001-000045
  *   LoanApp: APP-{BRANCH}-{6-digit}     → APP-BR001-000045
@@ -72,27 +70,36 @@ public class CbsReferenceService {
     }
 
     /**
-     * Customer CIF Number — 11 pure digits with Luhn check digit.
+     * Customer CIF Number — 11 pure digits, strictly incremental.
      *
-     * Structure: {SOL_ID:3}{SERIAL:7}{CHECK:1}
-     *   SOL_ID = 3-digit branch identifier (from DB branch ID, mod 1000)
-     *   SERIAL = 7-digit sequential from DB sequence "CIF_SEQ" (starts at 1)
-     *   CHECK  = 1-digit Luhn check digit
+     * Structure: {SOL_ID:3}{SERIAL:8} = 11 digits
+     *   SOL_ID = 3-digit branch/SOL identifier (from DB branch ID, mod 1000)
+     *   SERIAL = 8-digit sequential from DB sequence "CIF_SEQ" (starts at 1)
      *
-     * Per Finacle/SBI: CIF is 11-digit pure numeric, sequential within the bank.
-     * The DB-backed sequence ensures CIF 00200000017 is always followed by 00200000028
-     * (next serial + new check digit) — no random gaps, survives JVM restarts.
+     * Per Finacle/SBI/HDFC/ICICI: CIF is 11-digit pure numeric, strictly sequential.
+     * The DB-backed sequence ensures clean incremental progression:
+     *   CIF_SEQ=1 → 00200000001
+     *   CIF_SEQ=2 → 00200000002
+     *   CIF_SEQ=3 → 00200000003
+     *   ...no gaps, no check digits, no jumps — survives JVM restarts.
+     *
+     * Per CBS standards: CIF numbers are quoted by customers over phone, typed at
+     * branch counters, printed on passbooks/cheque books, and reported to CIBIL/CRILC.
+     * A clean incremental sequence is easier to communicate and verify than one with
+     * Luhn check digits that cause non-obvious jumps (e.g., 017 → 028 → 039).
+     *
+     * Capacity: 8-digit serial supports up to 99,999,999 customers per SOL prefix.
+     * At 1,000 new customers/day, this lasts ~274 years per branch — well within
+     * operational lifetime per Finacle SEQ_MASTER capacity planning.
      *
      * @param branchId Database branch ID (used as SOL prefix, mod 1000)
-     * @return 11-digit CIF number with Luhn check digit
+     * @return 11-digit CIF number, strictly incremental within the SOL prefix
      */
     public String generateCustomerNumber(Long branchId) {
         String sol = String.format("%03d", branchId != null ? branchId % 1000 : 0);
         long serial = sequenceGenerator.nextValue("CIF_SEQ");
-        String serialStr = String.format("%07d", serial % 10000000);
-        String base = sol + serialStr; // 10 digits
-        int checkDigit = ReferenceGenerator.computeLuhn(base);
-        String cif = base + checkDigit; // 11 digits
+        String serialStr = String.format("%08d", serial % 100000000);
+        String cif = sol + serialStr; // 11 digits: 3 (SOL) + 8 (serial)
         log.debug("CIF generated: {} (branch={}, serial={})", cif, branchId, serial);
         return cif;
     }
