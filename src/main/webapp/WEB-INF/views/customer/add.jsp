@@ -52,18 +52,18 @@
 
                 <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-shield-check"></i> KYC Identity Documents</h6>
                 <div class="row mb-3">
-                    <div class="col-md-3"><label class="form-label">Photo ID Type</label><select name="photoIdType" class="form-select"><option value="">--</option><option value="PASSPORT">Passport</option><option value="VOTER_ID">Voter ID</option><option value="DRIVING_LICENSE">DL</option><option value="PAN_CARD">PAN Card</option><option value="AADHAAR">Aadhaar</option></select></div>
-                    <div class="col-md-3"><label class="form-label">Photo ID Number</label><input type="text" name="photoIdNumber" class="form-control" maxlength="30" /></div>
-                    <div class="col-md-3"><label class="form-label">Address Proof Type</label><select name="addressProofType" class="form-select"><option value="">--</option><option value="PASSPORT">Passport</option><option value="VOTER_ID">Voter ID</option><option value="UTILITY_BILL">Utility Bill</option><option value="AADHAAR">Aadhaar</option></select></div>
-                    <div class="col-md-3"><label class="form-label">Address Proof No.</label><input type="text" name="addressProofNumber" class="form-control" maxlength="30" /></div>
+                    <div class="col-md-3"><label class="form-label">PAN Number</label><input type="text" name="panNumber" id="panNumber" class="form-control" maxlength="10" pattern="[A-Z]{5}[0-9]{4}[A-Z]{1}" title="AAAAA0000A" placeholder="ABCDE1234F" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase();" onblur="validatePan(this);" /><small class="text-muted" id="panHint">Immutable after creation</small></div>
+                    <div class="col-md-3"><label class="form-label">Aadhaar Number</label><input type="text" name="aadhaarNumber" id="aadhaarNumber" class="form-control" maxlength="12" pattern="[0-9]{12}" title="12 digits" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" onblur="validateAadhaar(this);" /><small class="text-muted" id="aadhaarHint">Immutable after creation</small></div>
+                    <div class="col-md-3"><label class="form-label">Photo ID Type</label><select name="photoIdType" id="photoIdType" class="form-select" onchange="syncPhotoId();"><option value="">--</option><option value="PASSPORT">Passport</option><option value="VOTER_ID">Voter ID</option><option value="DRIVING_LICENSE">DL</option><option value="PAN_CARD">PAN Card</option><option value="AADHAAR">Aadhaar</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Photo ID Number</label><input type="text" name="photoIdNumber" id="photoIdNumber" class="form-control" maxlength="30" /></div>
                 </div>
                 <div class="row mb-3">
+                    <div class="col-md-3"><label class="form-label">Address Proof Type</label><select name="addressProofType" id="addressProofType" class="form-select" onchange="syncAddressProof();"><option value="">--</option><option value="PASSPORT">Passport</option><option value="VOTER_ID">Voter ID</option><option value="UTILITY_BILL">Utility Bill</option><option value="AADHAAR">Aadhaar</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Address Proof No.</label><input type="text" name="addressProofNumber" id="addressProofNumber" class="form-control" maxlength="30" /></div>
                     <div class="col-md-3"><label class="form-label">KYC Mode</label><select name="kycMode" class="form-select"><option value="IN_PERSON">In-Person</option><option value="VIDEO_KYC">Video KYC</option><option value="DIGITAL_KYC">Digital KYC</option><option value="CKYC_DOWNLOAD">CKYC Download</option></select></div>
                     <div class="col-md-3"><label class="form-label">CKYC Number (KIN)</label><input type="text" name="ckycNumber" class="form-control" maxlength="14" pattern="[0-9]{14}" title="14-digit CKYC" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" placeholder="If registered" /></div>
-                    <div class="col-md-6"><label class="form-label">PAN Number</label><input type="text" name="panNumber" class="form-control" maxlength="10" pattern="[A-Z]{5}[0-9]{4}[A-Z]{1}" title="AAAAA0000A" placeholder="ABCDE1234F" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase();" /><small class="text-muted">Immutable after creation</small></div>
                 </div>
                 <div class="row mb-3">
-                    <div class="col-md-6"><label class="form-label">Aadhaar Number</label><input type="text" name="aadhaarNumber" class="form-control" maxlength="12" pattern="[0-9]{12}" title="12 digits" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" /><small class="text-muted">Immutable after creation</small></div>
                     <div class="col-md-6"><label class="form-label">Mobile Number *</label><input type="text" name="mobileNumber" class="form-control" required maxlength="10" pattern="[6-9][0-9]{9}" title="10-digit mobile" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" /></div>
                 </div>
                 <div class="row mb-3">
@@ -91,5 +91,69 @@
         </div>
     </div>
 </div>
+
+<script>
+/* CBS Customer Form — Real-time validation + ID field linkage per Finacle CIF_MASTER */
+
+/* PAN: validate format onblur (AAAAA0000A) */
+function validatePan(el) {
+    var hint = document.getElementById('panHint');
+    if (!el.value) { el.classList.remove('is-invalid','is-valid'); hint.textContent='Immutable after creation'; hint.className='text-muted'; return; }
+    if (/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(el.value)) {
+        el.classList.remove('is-invalid'); el.classList.add('is-valid');
+        hint.textContent='Valid PAN format'; hint.className='text-success';
+    } else {
+        el.classList.remove('is-valid'); el.classList.add('is-invalid');
+        hint.textContent='Invalid! Format: AAAAA0000A'; hint.className='text-danger';
+    }
+    syncPhotoId(); /* auto-sync if Photo ID Type is PAN_CARD */
+}
+
+/* Aadhaar: validate format onblur (12 digits) */
+function validateAadhaar(el) {
+    var hint = document.getElementById('aadhaarHint');
+    if (!el.value) { el.classList.remove('is-invalid','is-valid'); hint.textContent='Immutable after creation'; hint.className='text-muted'; return; }
+    if (/^[0-9]{12}$/.test(el.value)) {
+        el.classList.remove('is-invalid'); el.classList.add('is-valid');
+        hint.textContent='Valid Aadhaar format'; hint.className='text-success';
+    } else {
+        el.classList.remove('is-valid'); el.classList.add('is-invalid');
+        hint.textContent='Invalid! Must be exactly 12 digits'; hint.className='text-danger';
+    }
+    syncAddressProof(); /* auto-sync if Address Proof Type is AADHAAR */
+}
+
+/* Photo ID Type → auto-populate Photo ID Number from PAN/Aadhaar */
+function syncPhotoId() {
+    var type = document.getElementById('photoIdType').value;
+    var numField = document.getElementById('photoIdNumber');
+    if (type === 'PAN_CARD') {
+        numField.value = document.getElementById('panNumber').value;
+        numField.readOnly = true;
+        numField.classList.add('bg-light');
+    } else if (type === 'AADHAAR') {
+        numField.value = document.getElementById('aadhaarNumber').value;
+        numField.readOnly = true;
+        numField.classList.add('bg-light');
+    } else {
+        numField.readOnly = false;
+        numField.classList.remove('bg-light');
+    }
+}
+
+/* Address Proof Type → auto-populate Address Proof Number from Aadhaar */
+function syncAddressProof() {
+    var type = document.getElementById('addressProofType').value;
+    var numField = document.getElementById('addressProofNumber');
+    if (type === 'AADHAAR') {
+        numField.value = document.getElementById('aadhaarNumber').value;
+        numField.readOnly = true;
+        numField.classList.add('bg-light');
+    } else {
+        numField.readOnly = false;
+        numField.classList.remove('bg-light');
+    }
+}
+</script>
 
 <%@ include file="../layout/footer.jsp" %>
