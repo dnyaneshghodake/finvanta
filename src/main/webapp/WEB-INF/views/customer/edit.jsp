@@ -55,16 +55,41 @@
                     <div class="col-md-3"><label class="form-label">CIBIL Score</label><input type="number" name="cibilScore" class="form-control" value="${customer.cibilScore}" min="300" max="900" /></div>
                 </div>
 
-                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-telephone"></i> Contact &amp; Address</h6>
+                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-shield-check"></i> KYC Document Details</h6>
+                <div class="row mb-3">
+                    <div class="col-md-3"><label class="form-label">Photo ID Type</label><select name="photoIdType" class="form-select"><option value="">--</option><option value="PASSPORT" ${customer.photoIdType == 'PASSPORT' ? 'selected' : ''}>Passport</option><option value="VOTER_ID" ${customer.photoIdType == 'VOTER_ID' ? 'selected' : ''}>Voter ID</option><option value="DRIVING_LICENSE" ${customer.photoIdType == 'DRIVING_LICENSE' ? 'selected' : ''}>DL</option><option value="PAN_CARD" ${customer.photoIdType == 'PAN_CARD' ? 'selected' : ''}>PAN Card</option><option value="AADHAAR" ${customer.photoIdType == 'AADHAAR' ? 'selected' : ''}>Aadhaar</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Photo ID Number</label><input type="text" name="photoIdNumber" class="form-control" value="<c:out value='${customer.photoIdNumber}'/>" maxlength="30" /></div>
+                    <div class="col-md-3"><label class="form-label">Address Proof Type</label><select name="addressProofType" class="form-select"><option value="">--</option><option value="PASSPORT" ${customer.addressProofType == 'PASSPORT' ? 'selected' : ''}>Passport</option><option value="VOTER_ID" ${customer.addressProofType == 'VOTER_ID' ? 'selected' : ''}>Voter ID</option><option value="UTILITY_BILL" ${customer.addressProofType == 'UTILITY_BILL' ? 'selected' : ''}>Utility Bill</option><option value="AADHAAR" ${customer.addressProofType == 'AADHAAR' ? 'selected' : ''}>Aadhaar</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Address Proof No.</label><input type="text" name="addressProofNumber" class="form-control" value="<c:out value='${customer.addressProofNumber}'/>" maxlength="30" /></div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-3"><label class="form-label">KYC Mode</label><select name="kycMode" class="form-select"><option value="">--</option><option value="IN_PERSON" ${customer.kycMode == 'IN_PERSON' ? 'selected' : ''}>In-Person</option><option value="VIDEO_KYC" ${customer.kycMode == 'VIDEO_KYC' ? 'selected' : ''}>Video KYC</option><option value="DIGITAL_KYC" ${customer.kycMode == 'DIGITAL_KYC' ? 'selected' : ''}>Digital KYC</option><option value="CKYC_DOWNLOAD" ${customer.kycMode == 'CKYC_DOWNLOAD' ? 'selected' : ''}>CKYC Download</option></select></div>
+                </div>
+
+                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-telephone"></i> Contact &amp; Correspondence Address</h6>
                 <div class="row mb-3">
                     <div class="col-md-4"><label class="form-label">Mobile Number *</label><input type="text" name="mobileNumber" class="form-control" value="<c:out value='${customer.mobileNumber}'/>" required maxlength="10" pattern="[6-9][0-9]{9}" title="10-digit mobile" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" /></div>
                     <div class="col-md-4"><label class="form-label">Email</label><input type="email" name="email" class="form-control" value="<c:out value='${customer.email}'/>" maxlength="200" /></div>
                 </div>
-                <div class="mb-2"><label class="form-label">Address</label><textarea name="address" class="form-control" rows="2" maxlength="500"><c:out value="${customer.address}"/></textarea></div>
+                <div class="mb-2"><label class="form-label">Correspondence Address</label><textarea name="address" class="form-control" rows="2" maxlength="500"><c:out value="${customer.address}"/></textarea></div>
                 <div class="row mb-3">
                     <div class="col-md-4"><input type="text" name="city" class="form-control" value="<c:out value='${customer.city}'/>" maxlength="100" placeholder="City" /></div>
                     <div class="col-md-4"><input type="text" name="state" class="form-control" value="<c:out value='${customer.state}'/>" maxlength="100" placeholder="State" /></div>
                     <div class="col-md-4"><input type="text" name="pinCode" class="form-control" value="<c:out value='${customer.pinCode}'/>" maxlength="6" pattern="[0-9]{6}" title="6-digit PIN" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" placeholder="PIN Code" /></div>
+                </div>
+
+                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-geo-alt"></i> Permanent Address (CKYC/CERSAI)</h6>
+                <div class="row mb-2">
+                    <div class="col-md-12"><div class="form-check"><input type="checkbox" name="addressSameAsPermanent" value="true" class="form-check-input" id="addrSame" ${customer.addressSameAsPermanent ? 'checked' : ''} onchange="togglePermanentAddr();" /><label class="form-check-label" for="addrSame">Same as correspondence address</label></div></div>
+                </div>
+                <div id="permanentAddrBlock" style="${customer.addressSameAsPermanent ? 'display:none;' : ''}">
+                    <div class="mb-2"><textarea name="permanentAddress" class="form-control" rows="2" maxlength="500" placeholder="Permanent address"><c:out value="${customer.permanentAddress}"/></textarea></div>
+                    <div class="row mb-3">
+                        <div class="col-md-3"><input type="text" name="permanentCity" class="form-control" value="<c:out value='${customer.permanentCity}'/>" maxlength="100" placeholder="City" /></div>
+                        <div class="col-md-3"><input type="text" name="permanentState" class="form-control" value="<c:out value='${customer.permanentState}'/>" maxlength="100" placeholder="State" /></div>
+                        <div class="col-md-3"><input type="text" name="permanentPinCode" class="form-control" value="<c:out value='${customer.permanentPinCode}'/>" maxlength="6" pattern="[0-9]{6}" title="6-digit PIN" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" placeholder="PIN Code" /></div>
+                        <div class="col-md-3"><select name="permanentCountry" class="form-select"><option value="INDIA" ${customer.permanentCountry == 'INDIA' ? 'selected' : ''}>India</option><option value="OTHER" ${customer.permanentCountry != 'INDIA' and not empty customer.permanentCountry ? 'selected' : ''}>Other</option></select></div>
+                    </div>
                 </div>
 
                 <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-currency-rupee"></i> Income &amp; Exposure (RBI Norms)</h6>
@@ -80,5 +105,13 @@
         </div>
     </div>
 </div>
+
+<script>
+function togglePermanentAddr() {
+    var block = document.getElementById('permanentAddrBlock');
+    var checked = document.getElementById('addrSame').checked;
+    block.style.display = checked ? 'none' : '';
+}
+</script>
 
 <%@ include file="../layout/footer.jsp" %>

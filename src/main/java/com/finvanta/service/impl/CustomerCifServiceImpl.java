@@ -84,67 +84,9 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         String tid = TenantContext.getCurrentTenant();
         String user = SecurityUtil.getCurrentUsername();
 
-        // CBS Validation: Mandatory fields per RBI KYC Master Direction 2016
-        if (firstName == null || firstName.isBlank()) {
-            throw new BusinessException("FIRST_NAME_REQUIRED", "First name is mandatory per RBI KYC norms.");
-        }
-        if (lastName == null || lastName.isBlank()) {
-            throw new BusinessException("LAST_NAME_REQUIRED", "Last name is mandatory per RBI KYC norms.");
-        }
-
-        // CBS Validation: PAN format (AAAAA0000A) if provided
-        if (panNumber != null && !panNumber.isBlank()) {
-            if (!panNumber.matches("^[A-Z]{5}[0-9]{4}[A-Z]$")) {
-                throw new BusinessException("INVALID_PAN_FORMAT",
-                        "PAN must be in format AAAAA0000A (5 letters + 4 digits + 1 letter).");
-            }
-        }
-
-        // CBS Validation: Aadhaar format (12 digits) if provided
-        if (aadhaarNumber != null && !aadhaarNumber.isBlank()) {
-            if (!aadhaarNumber.matches("^[0-9]{12}$")) {
-                throw new BusinessException("INVALID_AADHAAR_FORMAT",
-                        "Aadhaar must be exactly 12 digits.");
-            }
-        }
-
-        // CBS Validation: Mobile format (10 digits) if provided
-        if (mobileNumber != null && !mobileNumber.isBlank()) {
-            if (!mobileNumber.matches("^[6-9][0-9]{9}$")) {
-                throw new BusinessException("INVALID_MOBILE_FORMAT",
-                        "Mobile number must be 10 digits starting with 6-9.");
-            }
-        }
-
-        // CBS Validation: PIN code (6 digits) if provided
-        if (pinCode != null && !pinCode.isBlank()) {
-            if (!pinCode.matches("^[0-9]{6}$")) {
-                throw new BusinessException("INVALID_PINCODE_FORMAT",
-                        "PIN code must be exactly 6 digits.");
-            }
-        }
-
-        // CBS: Duplicate PAN check per RBI KYC (one PAN = one CIF).
-        // CRITICAL: Must use hash-based lookup, NOT encrypted column comparison.
-        // PAN is encrypted via AES-256-GCM with random IV — same plaintext produces
-        // different ciphertext each time. existsByTenantIdAndPanNumber() compares
-        // ciphertext and NEVER matches. Hash-based check is the only reliable method.
-        if (panNumber != null && !panNumber.isBlank()) {
-            String panHash = computeSha256(panNumber);
-            if (customerRepo.existsByTenantIdAndPanHash(tid, panHash))
-                throw new BusinessException("DUPLICATE_PAN",
-                        "Customer with this PAN already exists. "
-                                + "Per RBI KYC norms, one PAN = one CIF.");
-        }
-
-        // CBS: Duplicate Aadhaar check (same encryption issue as PAN)
-        if (aadhaarNumber != null && !aadhaarNumber.isBlank()) {
-            String aadhaarHash = computeSha256(aadhaarNumber);
-            if (customerRepo.existsByTenantIdAndAadhaarHash(tid, aadhaarHash))
-                throw new BusinessException("DUPLICATE_AADHAAR",
-                        "Customer with this Aadhaar already exists. "
-                                + "Duplicate CIFs are prohibited per RBI KYC.");
-        }
+        // CBS Validation: centralized field validation (DRY)
+        validateCustomerFields(tid, firstName, lastName, panNumber, aadhaarNumber,
+                mobileNumber, pinCode, email);
 
         Branch branch = branchRepo.findById(branchId)
                 .filter(b -> b.getTenantId().equals(tid)
@@ -197,26 +139,9 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         String tid = TenantContext.getCurrentTenant();
         String user = SecurityUtil.getCurrentUsername();
 
-        // CBS Validation: reuse same checks as createCustomer
-        if (c.getFirstName() == null || c.getFirstName().isBlank())
-            throw new BusinessException("FIRST_NAME_REQUIRED", "First name is mandatory.");
-        if (c.getLastName() == null || c.getLastName().isBlank())
-            throw new BusinessException("LAST_NAME_REQUIRED", "Last name is mandatory.");
-        if (c.getPanNumber() != null && !c.getPanNumber().isBlank()) {
-            if (!c.getPanNumber().matches("^[A-Z]{5}[0-9]{4}[A-Z]$"))
-                throw new BusinessException("INVALID_PAN_FORMAT", "PAN format: AAAAA0000A");
-            if (customerRepo.existsByTenantIdAndPanHash(tid, computeSha256(c.getPanNumber())))
-                throw new BusinessException("DUPLICATE_PAN", "Customer with this PAN already exists.");
-        }
-        if (c.getAadhaarNumber() != null && !c.getAadhaarNumber().isBlank()) {
-            if (!c.getAadhaarNumber().matches("^[0-9]{12}$"))
-                throw new BusinessException("INVALID_AADHAAR_FORMAT", "Aadhaar: exactly 12 digits.");
-            if (customerRepo.existsByTenantIdAndAadhaarHash(tid, computeSha256(c.getAadhaarNumber())))
-                throw new BusinessException("DUPLICATE_AADHAAR", "Customer with this Aadhaar already exists.");
-        }
-        if (c.getMobileNumber() != null && !c.getMobileNumber().isBlank()
-                && !c.getMobileNumber().matches("^[6-9][0-9]{9}$"))
-            throw new BusinessException("INVALID_MOBILE_FORMAT", "Mobile: 10 digits starting with 6-9.");
+        // CBS Validation: centralized field validation (DRY — same rules as createCustomer)
+        validateCustomerFields(tid, c.getFirstName(), c.getLastName(), c.getPanNumber(),
+                c.getAadhaarNumber(), c.getMobileNumber(), c.getPinCode(), c.getEmail());
 
         Branch branch = branchRepo.findById(branchId)
                 .filter(b -> b.getTenantId().equals(tid) && b.isActive())
@@ -269,6 +194,16 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                 .orElseThrow(() -> new BusinessException(
                         "CUSTOMER_NOT_FOUND", "" + customerId));
         branchValidator.validateAccess(c.getBranch());
+
+        // CBS Tier-1 Maker-Checker: Verifier must NOT be the same user who created the CIF.
+        // Per RBI internal controls / Finacle CIF_MASTER / Temenos CUSTOMER:
+        // "The person who creates a record must not be the person who verifies it."
+        // This prevents a single user from creating a fictitious CIF and self-approving KYC.
+        if (user.equals(c.getCreatedBy())) {
+            throw new BusinessException("SELF_VERIFY_PROHIBITED",
+                    "KYC verification cannot be performed by the same user who created the customer ("
+                            + user + "). Per RBI internal controls, maker and checker must be different users.");
+        }
 
         // CBS CRITICAL: Use business date for KYC verification date.
         // Per Finacle CIF_MASTER / RBI KYC Master Direction 2016:
@@ -433,6 +368,70 @@ public class CustomerCifServiceImpl implements CustomerCifService {
 
         log.info("Customer updated: cif={}, user={}", existing.getCustomerNumber(), user);
         return existing;
+    }
+
+    // ========================================================================
+    // PRIVATE HELPERS
+    // ========================================================================
+
+    /**
+     * CBS Centralized Customer Field Validation per RBI KYC Master Direction 2016.
+     * Shared between createCustomer() and createCustomerFromEntity() to enforce DRY.
+     * Validates: mandatory fields, PAN/Aadhaar/Mobile/PIN format, email format,
+     * and duplicate PAN/Aadhaar via hash-based lookup.
+     *
+     * Per Finacle CIF_MASTER VALIDATE hook: all field-level validations run before
+     * any persistence operation. Validation errors are fail-fast (first error thrown).
+     */
+    private void validateCustomerFields(String tid, String firstName, String lastName,
+            String panNumber, String aadhaarNumber, String mobileNumber,
+            String pinCode, String email) {
+        // Mandatory fields
+        if (firstName == null || firstName.isBlank())
+            throw new BusinessException("FIRST_NAME_REQUIRED", "First name is mandatory per RBI KYC norms.");
+        if (lastName == null || lastName.isBlank())
+            throw new BusinessException("LAST_NAME_REQUIRED", "Last name is mandatory per RBI KYC norms.");
+
+        // PAN format: AAAAA0000A (5 letters + 4 digits + 1 letter)
+        if (panNumber != null && !panNumber.isBlank()) {
+            if (!panNumber.matches("^[A-Z]{5}[0-9]{4}[A-Z]$"))
+                throw new BusinessException("INVALID_PAN_FORMAT",
+                        "PAN must be in format AAAAA0000A (5 letters + 4 digits + 1 letter).");
+            // Duplicate PAN check via hash (encrypted column can't be compared)
+            if (customerRepo.existsByTenantIdAndPanHash(tid, computeSha256(panNumber)))
+                throw new BusinessException("DUPLICATE_PAN",
+                        "Customer with this PAN already exists. Per RBI KYC norms, one PAN = one CIF.");
+        }
+
+        // Aadhaar format: exactly 12 digits
+        if (aadhaarNumber != null && !aadhaarNumber.isBlank()) {
+            if (!aadhaarNumber.matches("^[0-9]{12}$"))
+                throw new BusinessException("INVALID_AADHAAR_FORMAT", "Aadhaar must be exactly 12 digits.");
+            if (customerRepo.existsByTenantIdAndAadhaarHash(tid, computeSha256(aadhaarNumber)))
+                throw new BusinessException("DUPLICATE_AADHAAR",
+                        "Customer with this Aadhaar already exists. Duplicate CIFs are prohibited per RBI KYC.");
+        }
+
+        // Mobile format: 10 digits starting with 6-9 (Indian mobile)
+        if (mobileNumber != null && !mobileNumber.isBlank()) {
+            if (!mobileNumber.matches("^[6-9][0-9]{9}$"))
+                throw new BusinessException("INVALID_MOBILE_FORMAT",
+                        "Mobile number must be 10 digits starting with 6-9.");
+        }
+
+        // PIN code format: exactly 6 digits
+        if (pinCode != null && !pinCode.isBlank()) {
+            if (!pinCode.matches("^[0-9]{6}$"))
+                throw new BusinessException("INVALID_PINCODE_FORMAT", "PIN code must be exactly 6 digits.");
+        }
+
+        // Email format per RBI Digital Lending Guidelines 2022:
+        // All customer communication channels must be validated.
+        if (email != null && !email.isBlank()) {
+            if (!email.matches("^[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}$"))
+                throw new BusinessException("INVALID_EMAIL_FORMAT",
+                        "Email address format is invalid.");
+        }
     }
 
     /**

@@ -237,17 +237,30 @@ public class CustomerController {
                         "Only PDF, JPG, and PNG files are allowed.");
             }
 
+            // CBS: Validate file content by magic bytes — Content-Type header is client-controlled
+            // and can be spoofed. Per RBI IT Governance Direction 2023: validate actual file content.
+            byte[] fileBytes = file.getBytes();
+            if (!isValidFileContent(fileBytes, contentType)) {
+                throw new BusinessException("CONTENT_MISMATCH",
+                        "File content does not match the declared type. Possible file spoofing detected.");
+            }
+
             Customer customer = customerService.getCustomer(customerId);
             String tenantId = TenantContext.getCurrentTenant();
+
+            // CBS: Sanitize filename — strip path traversal characters per OWASP.
+            // getOriginalFilename() can contain path separators (../../etc/passwd).
+            // Used in Content-Disposition header — unsanitized value enables header injection.
+            String safeFileName = sanitizeFileName(file.getOriginalFilename());
 
             CustomerDocument doc = new CustomerDocument();
             doc.setTenantId(tenantId);
             doc.setCustomer(customer);
             doc.setDocumentType(documentType);
-            doc.setFileName(file.getOriginalFilename());
+            doc.setFileName(safeFileName);
             doc.setContentType(contentType);
             doc.setFileSize(file.getSize());
-            doc.setFileData(file.getBytes());
+            doc.setFileData(fileBytes);
             doc.setDocumentNumber(documentNumber);
             doc.setRemarks(remarks);
             doc.setVerificationStatus("UPLOADED");
@@ -280,8 +293,11 @@ public class CustomerController {
         // CBS: Branch access enforcement — user must have access to the customer's branch
         customerService.getCustomer(doc.getCustomer().getId());
 
+        // CBS: Sanitize filename in Content-Disposition header to prevent header injection.
+        // Even though filename was sanitized on upload, defense-in-depth applies on download too.
+        String safeFileName = sanitizeFileName(doc.getFileName());
         return ResponseEntity.ok()
-                .header("Content-Disposition", "inline; filename=\"" + doc.getFileName() + "\"")
+                .header("Content-Disposition", "inline; filename=\"" + safeFileName + "\"")
                 .header("Content-Type", doc.getContentType())
                 .body(doc.getFileData());
     }
@@ -301,6 +317,15 @@ public class CustomerController {
 
             // CBS: Branch access enforcement — user must have access to the customer's branch
             customerService.getCustomer(doc.getCustomer().getId());
+
+            // CBS Tier-1 Maker-Checker: Document verifier must NOT be the same user who uploaded.
+            // Per RBI internal controls: maker and checker must be different users.
+            String currentUser = SecurityUtil.getCurrentUsername();
+            if (currentUser.equals(doc.getCreatedBy())) {
+                throw new BusinessException("SELF_VERIFY_PROHIBITED",
+                        "Document verification cannot be performed by the same user who uploaded it ("
+                                + currentUser + "). Per RBI internal controls, maker and checker must be different.");
+            }
 
             // CBS: Prevent re-verification of already-verified/rejected documents
             // Per Finacle DOC_MASTER: documents are immutable once verified.
@@ -341,5 +366,55 @@ public class CustomerController {
         Long customerId = documentRepository.findById(docId)
                 .map(d -> d.getCustomer().getId()).orElse(0L);
         return "redirect:/customer/view/" + customerId;
+    }
+
+    // ========================================================================
+    // PRIVATE HELPERS
+    // ========================================================================
+
+    /**
+     * Sanitizes uploaded filename to prevent path traversal and header injection.
+     * Per OWASP: strip path separators, control characters, and quotes.
+     * Preserves only alphanumeric, dot, hyphen, underscore, and space.
+     */
+    private static String sanitizeFileName(String fileName) {
+        if (fileName == null || fileName.isBlank()) return "document";
+        // Strip path components (Windows and Unix)
+        String name = fileName;
+        int lastSlash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        if (lastSlash >= 0) name = name.substring(lastSlash + 1);
+        // Remove characters unsafe for Content-Disposition header
+        name = name.replaceAll("[^a-zA-Z0-9._\\- ]", "_");
+        // Collapse multiple underscores and trim
+        name = name.replaceAll("_+", "_").trim();
+        if (name.isBlank() || name.equals("_")) return "document";
+        // Limit length to 200 chars
+        if (name.length() > 200) name = name.substring(0, 200);
+        return name;
+    }
+
+    /**
+     * Validates file content by magic bytes (file signature) to prevent Content-Type spoofing.
+     * Per RBI IT Governance Direction 2023: validate actual file content, not just headers.
+     *
+     * Magic bytes:
+     *   PDF:  %PDF (0x25504446)
+     *   JPEG: FF D8 FF
+     *   PNG:  89 50 4E 47 0D 0A 1A 0A
+     */
+    private static boolean isValidFileContent(byte[] data, String declaredContentType) {
+        if (data == null || data.length < 8) return false;
+        if ("application/pdf".equals(declaredContentType)) {
+            // PDF magic: %PDF
+            return data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46;
+        } else if ("image/jpeg".equals(declaredContentType)) {
+            // JPEG magic: FF D8 FF
+            return (data[0] & 0xFF) == 0xFF && (data[1] & 0xFF) == 0xD8 && (data[2] & 0xFF) == 0xFF;
+        } else if ("image/png".equals(declaredContentType)) {
+            // PNG magic: 89 50 4E 47 0D 0A 1A 0A
+            return (data[0] & 0xFF) == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
+                    && data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A;
+        }
+        return false;
     }
 }
