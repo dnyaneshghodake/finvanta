@@ -63,6 +63,34 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     List<Customer> searchCustomersByBranch(
             @Param("tenantId") String tenantId, @Param("branchId") Long branchId, @Param("query") String query);
 
+    // === Paginated Search (per Finacle CIF_SEARCH / Temenos ENQUIRY) ===
+
+    /** Paginated: all active customers for a tenant (ADMIN/AUDITOR) */
+    Page<Customer> findByTenantIdAndActiveTrue(String tenantId, Pageable pageable);
+
+    /** Paginated: active customers at a specific branch (MAKER/CHECKER) */
+    Page<Customer> findByTenantIdAndBranchIdAndActiveTrue(String tenantId, Long branchId, Pageable pageable);
+
+    /** Paginated: search all branches (ADMIN/AUDITOR) */
+    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId AND c.active = true AND ("
+            + "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "c.customerNumber LIKE CONCAT('%', :query, '%') OR "
+            + "c.mobileNumber LIKE CONCAT('%', :query, '%'))")
+    Page<Customer> searchCustomersPaged(
+            @Param("tenantId") String tenantId, @Param("query") String query, Pageable pageable);
+
+    /** Paginated: search within branch (MAKER/CHECKER) */
+    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId AND c.active = true "
+            + "AND c.branch.id = :branchId AND ("
+            + "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "c.customerNumber LIKE CONCAT('%', :query, '%') OR "
+            + "c.mobileNumber LIKE CONCAT('%', :query, '%'))")
+    Page<Customer> searchCustomersByBranchPaged(
+            @Param("tenantId") String tenantId, @Param("branchId") Long branchId,
+            @Param("query") String query, Pageable pageable);
+
     /**
      * PAN-based customer lookup via SHA-256 hash.
      * Per CBS: PAN is encrypted (AES-256-GCM), so LIKE/= on ciphertext doesn't work.

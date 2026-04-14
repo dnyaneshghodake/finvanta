@@ -12,6 +12,9 @@ import com.finvanta.util.PiiMaskingUtil;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
@@ -55,29 +58,49 @@ public class CustomerController {
         this.depositAccountRepository = depositAccountRepository;
     }
 
+    /** CBS: Default page size per Finacle CIF_LIST / Temenos ENQUIRY */
+    private static final int DEFAULT_PAGE_SIZE = 25;
+
     /**
-     * CBS Customer List — delegates search/list to CustomerCifService.
+     * CBS Customer List with pagination per Finacle CIF_LIST / Temenos ENQUIRY.
      * Branch isolation enforced in service layer.
+     *
+     * @param page Page number (0-based, default 0)
+     * @param size Page size (default 25 per CBS standard)
      */
     @GetMapping("/list")
-    public ModelAndView listCustomers() {
+    public ModelAndView listCustomers(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size) {
         ModelAndView mav = new ModelAndView("customer/list");
-        mav.addObject("customers", customerService.searchCustomers(""));
+        Page<Customer> customerPage = customerService.searchCustomers("",
+                PageRequest.of(page, Math.min(size, 100), Sort.by("customerNumber").ascending()));
+        mav.addObject("customers", customerPage.getContent());
+        mav.addObject("customerPage", customerPage);
         return mav;
     }
 
     /**
-     * CBS Customer Search — delegates to CustomerCifService with branch isolation.
+     * CBS Customer Search with pagination per Finacle CIF_SEARCH.
+     * Branch isolation enforced in service layer.
      */
     @GetMapping("/search")
-    public ModelAndView searchCustomers(@RequestParam(required = false) String q) {
+    public ModelAndView searchCustomers(
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size) {
         ModelAndView mav = new ModelAndView("customer/list");
+        Page<Customer> customerPage;
         if (q != null && !q.isBlank() && q.length() >= 2) {
-            mav.addObject("customers", customerService.searchCustomers(q));
+            customerPage = customerService.searchCustomers(q,
+                    PageRequest.of(page, Math.min(size, 100), Sort.by("customerNumber").ascending()));
             mav.addObject("searchQuery", q);
         } else {
-            mav.addObject("customers", customerService.searchCustomers(""));
+            customerPage = customerService.searchCustomers("",
+                    PageRequest.of(page, Math.min(size, 100), Sort.by("customerNumber").ascending()));
         }
+        mav.addObject("customers", customerPage.getContent());
+        mav.addObject("customerPage", customerPage);
         return mav;
     }
 

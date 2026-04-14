@@ -20,6 +20,9 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -541,6 +544,50 @@ public class CustomerCifServiceImpl implements CustomerCifService {
             Long branchId = SecurityUtil.getCurrentUserBranchId();
             if (branchId == null) return List.of();
             return customerRepo.searchCustomersByBranch(tid, branchId, trimmed);
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<Customer> searchCustomers(String query, Pageable pageable) {
+        String tid = TenantContext.getCurrentTenant();
+
+        // CBS: Empty/short query returns paginated full list (branch-isolated)
+        if (query == null || query.isBlank() || query.length() < 2) {
+            if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+                return customerRepo.findByTenantIdAndActiveTrue(tid, pageable);
+            } else {
+                Long branchId = SecurityUtil.getCurrentUserBranchId();
+                if (branchId == null) return Page.empty(pageable);
+                return customerRepo.findByTenantIdAndBranchIdAndActiveTrue(tid, branchId, pageable);
+            }
+        }
+
+        // CBS: PAN-based exact search via SHA-256 hash (returns single result as page)
+        String trimmed = query.trim();
+        if (trimmed.matches("^[A-Z]{5}[0-9]{4}[A-Z]$")) {
+            String panHash = PiiHashUtil.computeSha256(trimmed);
+            java.util.Optional<Customer> panMatch = customerRepo.findByTenantIdAndPanHashAndActiveTrue(tid, panHash);
+            if (panMatch.isPresent()) {
+                Customer c = panMatch.get();
+                if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+                    return new PageImpl<>(List.of(c), pageable, 1);
+                }
+                Long userBranch = SecurityUtil.getCurrentUserBranchId();
+                if (userBranch != null && userBranch.equals(c.getBranch().getId())) {
+                    return new PageImpl<>(List.of(c), pageable, 1);
+                }
+                return Page.empty(pageable);
+            }
+        }
+
+        // CBS: Paginated search with branch isolation
+        if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+            return customerRepo.searchCustomersPaged(tid, trimmed, pageable);
+        } else {
+            Long branchId = SecurityUtil.getCurrentUserBranchId();
+            if (branchId == null) return Page.empty(pageable);
+            return customerRepo.searchCustomersByBranchPaged(tid, branchId, trimmed, pageable);
         }
     }
 }

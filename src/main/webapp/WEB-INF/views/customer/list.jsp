@@ -67,6 +67,37 @@
                 </tbody>
             </table>
             </div>
+            <%-- CBS: Pagination controls per Finacle CIF_LIST / Temenos ENQUIRY --%>
+            <c:if test="${not empty customerPage and customerPage.totalPages > 1}">
+            <nav aria-label="Customer list pagination" class="mt-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">
+                        Showing ${customerPage.number * customerPage.size + 1}–${customerPage.number * customerPage.size + customerPage.numberOfElements}
+                        of ${customerPage.totalElements} customers (Page ${customerPage.number + 1} of ${customerPage.totalPages})
+                    </small>
+                    <ul class="pagination pagination-sm mb-0">
+                        <c:set var="baseUrl" value="${not empty searchQuery ? '/customer/search?q='.concat(searchQuery).concat('&') : '/customer/list?'}" />
+                        <li class="page-item ${customerPage.first ? 'disabled' : ''}">
+                            <a class="page-link" href="${pageContext.request.contextPath}${baseUrl}page=0&size=${customerPage.size}"><i class="bi bi-chevron-double-left"></i></a>
+                        </li>
+                        <li class="page-item ${customerPage.first ? 'disabled' : ''}">
+                            <a class="page-link" href="${pageContext.request.contextPath}${baseUrl}page=${customerPage.number - 1}&size=${customerPage.size}"><i class="bi bi-chevron-left"></i></a>
+                        </li>
+                        <c:forEach var="i" begin="${customerPage.number > 2 ? customerPage.number - 2 : 0}" end="${customerPage.number + 2 < customerPage.totalPages ? customerPage.number + 2 : customerPage.totalPages - 1}">
+                            <li class="page-item ${i == customerPage.number ? 'active' : ''}">
+                                <a class="page-link" href="${pageContext.request.contextPath}${baseUrl}page=${i}&size=${customerPage.size}">${i + 1}</a>
+                            </li>
+                        </c:forEach>
+                        <li class="page-item ${customerPage.last ? 'disabled' : ''}">
+                            <a class="page-link" href="${pageContext.request.contextPath}${baseUrl}page=${customerPage.number + 1}&size=${customerPage.size}"><i class="bi bi-chevron-right"></i></a>
+                        </li>
+                        <li class="page-item ${customerPage.last ? 'disabled' : ''}">
+                            <a class="page-link" href="${pageContext.request.contextPath}${baseUrl}page=${customerPage.totalPages - 1}&size=${customerPage.size}"><i class="bi bi-chevron-double-right"></i></a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+            </c:if>
         </div>
     </div>
 </div>
