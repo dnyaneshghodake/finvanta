@@ -69,6 +69,22 @@ public class BusinessDateService {
      */
     private final ConcurrentHashMap<String, LocalDate> businessDateCache = new ConcurrentHashMap<>();
 
+    /**
+     * Invalidates the business date cache for a specific branch.
+     * Called by BusinessDateService.closeDay() and also by external callers
+     * (e.g., BatchService.completeEodBatch) that directly close the day
+     * via calendarRepository without going through closeDay().
+     *
+     * Per Finacle DAYCTRL: any code path that transitions a day to DAY_CLOSED
+     * MUST invalidate the cache to prevent stale business date lookups.
+     *
+     * @param tenantId Tenant identifier
+     * @param branchId Branch whose cache entry should be invalidated
+     */
+    public void invalidateBusinessDateCache(String tenantId, Long branchId) {
+        businessDateCache.remove(tenantId + ":" + branchId);
+    }
+
     private final BusinessCalendarRepository calendarRepository;
     private final TransactionBatchRepository batchRepository;
     private final BranchRepository branchRepository;

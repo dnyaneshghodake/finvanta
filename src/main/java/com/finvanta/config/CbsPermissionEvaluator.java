@@ -71,6 +71,24 @@ public class CbsPermissionEvaluator implements PermissionEvaluator {
     }
 
     /**
+     * Clears all cached permission lookups. Must be called whenever the
+     * role-permission matrix is modified (e.g., admin adds/removes a
+     * permission mapping) to ensure changes take effect immediately.
+     *
+     * Per Finacle AUTH_ENGINE: permission cache is invalidated on any
+     * change to the role-permission matrix. Without this, a newly added
+     * DENY rule would be silently bypassed until application restart.
+     */
+    public void clearPermissionCache() {
+        int allowSize = allowCache.size();
+        int denySize = denyCache.size();
+        allowCache.clear();
+        denyCache.clear();
+        log.info("CBS Permission cache cleared — {} ALLOW + {} DENY entries evicted",
+                allowSize, denySize);
+    }
+
+    /**
      * Evaluates whether the authenticated user has the specified permission.
      *
      * Called by Spring Security when @PreAuthorize("hasPermission(null, 'LOAN_CREATE')")
