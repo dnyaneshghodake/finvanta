@@ -1,6 +1,7 @@
 package com.finvanta.repository;
 
 import com.finvanta.domain.entity.CustomerDocument;
+import com.finvanta.domain.enums.DocumentType;
 
 import java.util.List;
 
@@ -21,14 +22,20 @@ public interface CustomerDocumentRepository extends JpaRepository<CustomerDocume
     List<CustomerDocument> findByCustomer(
             @Param("tenantId") String tenantId, @Param("customerId") Long customerId);
 
-    /** Documents of a specific type for a customer */
+    /**
+     * Documents of a specific type for a customer.
+     * Per Finacle DOC_MASTER: docType is a DocumentType enum (stored as VARCHAR via
+     * @Enumerated(EnumType.STRING)). Parameter must match the entity field type for
+     * type-safe JPQL binding — String parameter would cause type mismatch on strict
+     * JPA providers (Hibernate 6.x).
+     */
     @Query("SELECT d FROM CustomerDocument d WHERE d.tenantId = :tenantId "
             + "AND d.customer.id = :customerId AND d.documentType = :docType "
             + "ORDER BY d.createdAt DESC")
     List<CustomerDocument> findByCustomerAndType(
             @Param("tenantId") String tenantId,
             @Param("customerId") Long customerId,
-            @Param("docType") String docType);
+            @Param("docType") DocumentType docType);
 
     /** Count of unverified documents for a customer (for dashboard badge) */
     @Query("SELECT COUNT(d) FROM CustomerDocument d WHERE d.tenantId = :tenantId "
