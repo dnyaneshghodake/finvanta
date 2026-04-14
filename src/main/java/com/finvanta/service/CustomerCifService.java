@@ -51,6 +51,17 @@ public interface CustomerCifService {
             Long branchId);
 
     /**
+     * Create a new customer from a populated entity with auto-generated CIF number.
+     * Per RBI KYC: validates all fields, duplicate PAN/Aadhaar, branch existence.
+     * Accepts full Customer entity with all CKYC/demographic fields populated.
+     *
+     * @param customer Customer entity with all fields populated from the form
+     * @param branchId Branch ID for the customer (mandatory)
+     * @return Created customer entity with auto-generated CIF number
+     */
+    Customer createCustomerFromEntity(Customer customer, Long branchId);
+
+    /**
      * Get customer by ID with branch access enforcement.
      *
      * @param customerId Customer ID

@@ -107,19 +107,16 @@ public class CustomerController {
         return mav;
     }
 
-    /** CBS CIF Creation — delegates to CustomerCifService */
+    /**
+     * CBS CIF Creation — delegates to CustomerCifService.
+     * Uses createCustomerFromEntity() which accepts the full Customer entity
+     * with all CKYC/demographic fields populated by Spring MVC @ModelAttribute binding.
+     */
     @PostMapping("/add")
     public String addCustomer(
             @ModelAttribute Customer customer, @RequestParam Long branchId, RedirectAttributes redirectAttributes) {
         try {
-            Customer saved = customerService.createCustomer(
-                    customer.getFirstName(), customer.getLastName(),
-                    customer.getDateOfBirth(),
-                    customer.getPanNumber(), customer.getAadhaarNumber(),
-                    customer.getMobileNumber(), customer.getEmail(),
-                    customer.getAddress(), customer.getCity(), customer.getState(),
-                    customer.getPinCode(), customer.getCustomerType(),
-                    branchId);
+            Customer saved = customerService.createCustomerFromEntity(customer, branchId);
             redirectAttributes.addFlashAttribute(
                     "success", "Customer created: " + saved.getCustomerNumber() + " - " + saved.getFullName());
         } catch (Exception e) {

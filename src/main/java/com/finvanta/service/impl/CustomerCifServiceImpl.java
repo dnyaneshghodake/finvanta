@@ -192,6 +192,61 @@ public class CustomerCifServiceImpl implements CustomerCifService {
     }
 
     @Override
+    @Transactional
+    public Customer createCustomerFromEntity(Customer c, Long branchId) {
+        String tid = TenantContext.getCurrentTenant();
+        String user = SecurityUtil.getCurrentUsername();
+
+        // CBS Validation: reuse same checks as createCustomer
+        if (c.getFirstName() == null || c.getFirstName().isBlank())
+            throw new BusinessException("FIRST_NAME_REQUIRED", "First name is mandatory.");
+        if (c.getLastName() == null || c.getLastName().isBlank())
+            throw new BusinessException("LAST_NAME_REQUIRED", "Last name is mandatory.");
+        if (c.getPanNumber() != null && !c.getPanNumber().isBlank()) {
+            if (!c.getPanNumber().matches("^[A-Z]{5}[0-9]{4}[A-Z]$"))
+                throw new BusinessException("INVALID_PAN_FORMAT", "PAN format: AAAAA0000A");
+            if (customerRepo.existsByTenantIdAndPanHash(tid, computeSha256(c.getPanNumber())))
+                throw new BusinessException("DUPLICATE_PAN", "Customer with this PAN already exists.");
+        }
+        if (c.getAadhaarNumber() != null && !c.getAadhaarNumber().isBlank()) {
+            if (!c.getAadhaarNumber().matches("^[0-9]{12}$"))
+                throw new BusinessException("INVALID_AADHAAR_FORMAT", "Aadhaar: exactly 12 digits.");
+            if (customerRepo.existsByTenantIdAndAadhaarHash(tid, computeSha256(c.getAadhaarNumber())))
+                throw new BusinessException("DUPLICATE_AADHAAR", "Customer with this Aadhaar already exists.");
+        }
+        if (c.getMobileNumber() != null && !c.getMobileNumber().isBlank()
+                && !c.getMobileNumber().matches("^[6-9][0-9]{9}$"))
+            throw new BusinessException("INVALID_MOBILE_FORMAT", "Mobile: 10 digits starting with 6-9.");
+
+        Branch branch = branchRepo.findById(branchId)
+                .filter(b -> b.getTenantId().equals(tid) && b.isActive())
+                .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "" + branchId));
+
+        // CBS: Set system fields
+        c.setTenantId(tid);
+        c.setCustomerNumber(refService.generateCustomerNumber(branch.getId()));
+        c.setBranch(branch);
+        c.setCreatedBy(user);
+        c.setCustomerType(c.getCustomerType() != null ? c.getCustomerType() : "INDIVIDUAL");
+        c.computePanHash();
+        c.computeAadhaarHash();
+        c.computeCkycAccountType();
+
+        // CBS: PEP auto-sets HIGH risk per FATF
+        if (c.isPep()) c.setKycRiskCategory("HIGH");
+
+        Customer saved = customerRepo.save(c);
+
+        auditSvc.logEvent("Customer", saved.getId(), "CREATE", null,
+                saved.getCustomerNumber(), "CIF",
+                "Customer created by " + user + " at branch " + branch.getBranchCode());
+
+        log.info("Customer created: cif={}, branch={}, user={}",
+                saved.getCustomerNumber(), branch.getBranchCode(), user);
+        return saved;
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public Customer getCustomer(Long customerId) {
         String tid = TenantContext.getCurrentTenant();
