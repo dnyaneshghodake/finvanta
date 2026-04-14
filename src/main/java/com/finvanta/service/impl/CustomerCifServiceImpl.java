@@ -81,12 +81,26 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         String tid = TenantContext.getCurrentTenant();
         String user = SecurityUtil.getCurrentUsername();
 
-        // CBS: Duplicate PAN check per RBI KYC (one PAN = one CIF)
+        // CBS: Duplicate PAN check per RBI KYC (one PAN = one CIF).
+        // CRITICAL: Must use hash-based lookup, NOT encrypted column comparison.
+        // PAN is encrypted via AES-256-GCM with random IV — same plaintext produces
+        // different ciphertext each time. existsByTenantIdAndPanNumber() compares
+        // ciphertext and NEVER matches. Hash-based check is the only reliable method.
         if (panNumber != null && !panNumber.isBlank()) {
-            if (customerRepo.existsByTenantIdAndPanNumber(
-                    tid, panNumber))
+            String panHash = computeSha256(panNumber);
+            if (customerRepo.existsByTenantIdAndPanHash(tid, panHash))
                 throw new BusinessException("DUPLICATE_PAN",
-                        "Customer with this PAN already exists");
+                        "Customer with this PAN already exists. "
+                                + "Per RBI KYC norms, one PAN = one CIF.");
+        }
+
+        // CBS: Duplicate Aadhaar check (same encryption issue as PAN)
+        if (aadhaarNumber != null && !aadhaarNumber.isBlank()) {
+            String aadhaarHash = computeSha256(aadhaarNumber);
+            if (customerRepo.existsByTenantIdAndAadhaarHash(tid, aadhaarHash))
+                throw new BusinessException("DUPLICATE_AADHAAR",
+                        "Customer with this Aadhaar already exists. "
+                                + "Duplicate CIFs are prohibited per RBI KYC.");
         }
 
         Branch branch = branchRepo.findById(branchId)
@@ -221,24 +235,49 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         return c;
     }
 
+    /**
+     * Computes SHA-256 hash for PII de-duplication.
+     * Same algorithm as Customer.computeSha256() — normalizes to uppercase + trim.
+     */
+    private static String computeSha256(String input) {
+        if (input == null || input.isBlank()) return null;
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hashBytes = digest.digest(
+                    input.trim().toUpperCase().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hashBytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<Customer> searchCustomers(String query) {
         String tid = TenantContext.getCurrentTenant();
-        if (query == null || query.length() < 2)
-            throw new BusinessException("INVALID_SEARCH",
-                    "Search query must be at least 2 chars");
 
-        if (SecurityUtil.isAdminRole()) {
-            return customerRepo.searchCustomers(
-                    tid, query.trim());
+        // CBS: Empty/short query returns full list (branch-isolated)
+        if (query == null || query.isBlank() || query.length() < 2) {
+            if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+                return customerRepo.findByTenantIdAndActiveTrue(tid);
+            } else {
+                Long branchId = SecurityUtil.getCurrentUserBranchId();
+                if (branchId == null) return List.of();
+                return customerRepo.findByTenantIdAndBranchIdAndActiveTrue(tid, branchId);
+            }
+        }
+
+        // CBS: Search with branch isolation per Finacle BRANCH_CONTEXT
+        if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+            return customerRepo.searchCustomers(tid, query.trim());
         } else {
-            Long branchId =
-                    SecurityUtil.getCurrentUserBranchId();
-            if (branchId == null)
-                return List.of();
-            return customerRepo.searchCustomersByBranch(
-                    tid, branchId, query.trim());
+            Long branchId = SecurityUtil.getCurrentUserBranchId();
+            if (branchId == null) return List.of();
+            return customerRepo.searchCustomersByBranch(tid, branchId, query.trim());
         }
     }
 }

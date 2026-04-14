@@ -264,17 +264,36 @@ public class Customer extends BaseEntity {
         }
     }
 
-    /** Returns true if KYC has expired (past expiry date) */
-    public boolean isKycExpired() {
+    /**
+     * Returns true if KYC has expired (past expiry date).
+     * Per CBS standards: uses provided business date, NOT LocalDate.now().
+     * The no-arg overload is retained for JSP EL compatibility (view layer)
+     * where business date is not directly available — uses system date as
+     * approximation. Service-layer code MUST use the parameterized version.
+     */
+    public boolean isKycExpired(LocalDate businessDate) {
         if (kycExpiryDate == null) return !kycVerified;
-        return LocalDate.now().isAfter(kycExpiryDate);
+        return businessDate.isAfter(kycExpiryDate);
     }
 
-    /** Returns true if KYC is expiring within the next 90 days */
-    public boolean isKycExpiringSoon() {
+    /** JSP/view-layer convenience — uses system date as approximation. */
+    public boolean isKycExpired() {
+        return isKycExpired(LocalDate.now());
+    }
+
+    /**
+     * Returns true if KYC is expiring within the next 90 days.
+     * Per CBS standards: uses provided business date, NOT LocalDate.now().
+     */
+    public boolean isKycExpiringSoon(LocalDate businessDate) {
         if (kycExpiryDate == null) return false;
-        return LocalDate.now().isAfter(kycExpiryDate.minusDays(90))
-                && !LocalDate.now().isAfter(kycExpiryDate);
+        return businessDate.isAfter(kycExpiryDate.minusDays(90))
+                && !businessDate.isAfter(kycExpiryDate);
+    }
+
+    /** JSP/view-layer convenience — uses system date as approximation. */
+    public boolean isKycExpiringSoon() {
+        return isKycExpiringSoon(LocalDate.now());
     }
 
     // === PII Hash Helpers ===
