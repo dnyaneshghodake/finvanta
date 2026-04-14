@@ -1,5 +1,7 @@
 package com.finvanta.domain.entity;
 
+import com.finvanta.domain.enums.ProductStatus;
+
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
@@ -19,8 +21,14 @@ import lombok.Setter;
  * - Product-specific repayment allocation priority
  * - Multi-currency product support
  *
- * Lifecycle: DRAFT → ACTIVE → SUSPENDED → RETIRED
- * Only ACTIVE products can be used for new loan origination.
+ * Lifecycle per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG:
+ *   DRAFT     → Product being configured (GL mapping may be incomplete)
+ *   ACTIVE    → Live product (new origination allowed, EOD operations run)
+ *   SUSPENDED → Temporarily paused (no new origination, existing accounts continue)
+ *   RETIRED   → Permanently closed (no new origination, existing run to maturity)
+ *
+ * Only ACTIVE products can be used for new loan/account origination.
+ * SUSPENDED and RETIRED products allow EOD operations on existing accounts.
  *
  * Example:
  *   Product: TERM_LOAN_SECURED
@@ -143,6 +151,26 @@ public class ProductMaster extends BaseEntity {
 
     // --- Product Status ---
 
+    /**
+     * Product lifecycle status per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
+     * Controls origination gating and EOD operation eligibility.
+     * Stored as VARCHAR via @Enumerated(EnumType.STRING) for readability.
+     *
+     * CBS Backward Compatibility: existing seed data has is_active=1 but no
+     * product_status column. Hibernate ddl-auto=update adds the column with
+     * default 'ACTIVE'. The isActive() method returns true for ACTIVE status,
+     * maintaining compatibility with all existing code that checks isActive().
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "product_status", nullable = false, length = 20)
+    private ProductStatus productStatus = ProductStatus.ACTIVE;
+
+    /**
+     * CBS Backward Compatibility: retained for existing code that checks isActive().
+     * Derived from productStatus — ACTIVE status = active=true, all others = false.
+     * Per Finacle PDDEF: use productStatus for lifecycle management, isActive() for
+     * simple origination-allowed checks.
+     */
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 
