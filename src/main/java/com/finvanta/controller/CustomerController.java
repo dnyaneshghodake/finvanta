@@ -101,6 +101,9 @@ public class CustomerController {
                         .ifPresent(b -> mav.addObject("branches", java.util.List.of(b)));
             }
         }
+        // CBS: Default branch ID = user's current operating branch (home or switched)
+        // Per Finacle CIF_MASTER: branch dropdown pre-selects the user's branch
+        mav.addObject("defaultBranchId", SecurityUtil.getCurrentUserBranchId());
         return mav;
     }
 
