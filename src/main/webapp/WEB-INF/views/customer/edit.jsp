@@ -33,7 +33,7 @@
                         </c:choose>
                     </div>
                     <div class="col-md-3"><label class="form-label">KYC Risk Category</label><select name="kycRiskCategory" class="form-select"><option value="LOW" ${customer.kycRiskCategory == 'LOW' ? 'selected' : ''}>Low</option><option value="MEDIUM" ${customer.kycRiskCategory == 'MEDIUM' ? 'selected' : ''}>Medium</option><option value="HIGH" ${customer.kycRiskCategory == 'HIGH' ? 'selected' : ''}>High</option></select></div>
-                    <div class="col-md-3"><label class="form-label">PEP</label><div class="form-check mt-2"><input type="checkbox" name="pep" value="true" class="form-check-input" id="pepEdit" ${customer.pep ? 'checked' : ''} /><label class="form-check-label" for="pepEdit">Politically Exposed Person</label></div></div>
+                    <div class="col-md-3"><label class="form-label">PEP</label><div class="form-check mt-2"><input type="hidden" name="_pep" value="on" /><input type="checkbox" name="pep" value="true" class="form-check-input" id="pepEdit" ${customer.pep ? 'checked' : ''} /><label class="form-check-label" for="pepEdit">Politically Exposed Person</label></div></div>
                 </div>
                 <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-person"></i> Personal Details &amp; Demographics</h6>
                 <div class="row mb-3">
@@ -80,7 +80,7 @@
 
                 <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-geo-alt"></i> Permanent Address (CKYC/CERSAI)</h6>
                 <div class="row mb-2">
-                    <div class="col-md-12"><div class="form-check"><input type="checkbox" name="addressSameAsPermanent" value="true" class="form-check-input" id="addrSame" ${customer.addressSameAsPermanent ? 'checked' : ''} onchange="togglePermanentAddr();" /><label class="form-check-label" for="addrSame">Same as correspondence address</label></div></div>
+                    <div class="col-md-12"><div class="form-check"><input type="hidden" name="_addressSameAsPermanent" value="on" /><input type="checkbox" name="addressSameAsPermanent" value="true" class="form-check-input" id="addrSame" ${customer.addressSameAsPermanent ? 'checked' : ''} onchange="togglePermanentAddr();" /><label class="form-check-label" for="addrSame">Same as correspondence address</label></div></div>
                 </div>
                 <div id="permanentAddrBlock" style="${customer.addressSameAsPermanent ? 'display:none;' : ''}">
                     <div class="mb-2"><textarea name="permanentAddress" class="form-control" rows="2" maxlength="500" placeholder="Permanent address"><c:out value="${customer.permanentAddress}"/></textarea></div>
@@ -98,6 +98,13 @@
                     <div class="col-md-3"><label class="form-label">Max Borrowing Limit (INR)</label><input type="number" name="maxBorrowingLimit" class="form-control" value="${customer.maxBorrowingLimit}" step="0.01" min="0" /></div>
                     <div class="col-md-3"><label class="form-label">Employment Type</label><select name="employmentType" class="form-select"><option value="">-- Select --</option><option value="SALARIED" ${customer.employmentType == 'SALARIED' ? 'selected' : ''}>Salaried</option><option value="SELF_EMPLOYED" ${customer.employmentType == 'SELF_EMPLOYED' ? 'selected' : ''}>Self Employed</option><option value="BUSINESS" ${customer.employmentType == 'BUSINESS' ? 'selected' : ''}>Business</option><option value="RETIRED" ${customer.employmentType == 'RETIRED' ? 'selected' : ''}>Retired</option><option value="OTHER" ${customer.employmentType == 'OTHER' ? 'selected' : ''}>Other</option></select></div>
                     <div class="col-md-3"><label class="form-label">Employer Name</label><input type="text" name="employerName" class="form-control" value="<c:out value='${customer.employerName}'/>" /></div>
+                </div>
+
+                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-people"></i> Nominee Details (RBI Nomination Guidelines)</h6>
+                <div class="row mb-3">
+                    <div class="col-md-4"><label class="form-label">Nominee Date of Birth</label><input type="date" name="nomineeDob" class="form-control" value="${customer.nomineeDob}" /></div>
+                    <div class="col-md-4"><label class="form-label">Nominee Guardian Name</label><input type="text" name="nomineeGuardianName" class="form-control" value="<c:out value='${customer.nomineeGuardianName}'/>" maxlength="200" /><small class="text-muted">Required if nominee is a minor</small></div>
+                    <div class="col-md-4"><label class="form-label">Nominee Address</label><input type="text" name="nomineeAddress" class="form-control" value="<c:out value='${customer.nomineeAddress}'/>" maxlength="500" /></div>
                 </div>
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                 <button type="submit" class="btn btn-sm btn-fv-primary mt-2"><i class="bi bi-check-circle"></i> Save Changes</button>
