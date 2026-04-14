@@ -38,6 +38,22 @@
                     <div class="col-md-2"><label class="form-label">Frequency</label><select name="repaymentFrequency" class="form-select"><option value="MONTHLY" ${product.repaymentFrequency == 'MONTHLY' ? 'selected' : ''}>Monthly</option><option value="QUARTERLY" ${product.repaymentFrequency == 'QUARTERLY' ? 'selected' : ''}>Quarterly</option><option value="BULLET" ${product.repaymentFrequency == 'BULLET' ? 'selected' : ''}>Bullet</option><option value="MATURITY" ${product.repaymentFrequency == 'MATURITY' ? 'selected' : ''}>Maturity</option></select></div>
                 </div>
 
+                <div class="row mb-3">
+                    <div class="col-md-3"><label class="form-label">Repayment Allocation</label><select name="repaymentAllocation" class="form-select"><option value="INTEREST_FIRST" ${product.repaymentAllocation == 'INTEREST_FIRST' ? 'selected' : ''}>Interest First</option><option value="PRINCIPAL_FIRST" ${product.repaymentAllocation == 'PRINCIPAL_FIRST' ? 'selected' : ''}>Principal First</option><option value="PRO_RATA" ${product.repaymentAllocation == 'PRO_RATA' ? 'selected' : ''}>Pro-Rata</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Processing Fee %</label><input type="number" name="processingFeePct" class="form-control" step="0.01" min="0" value="${product.processingFeePct}"/></div>
+                    <div class="col-md-3"><label class="form-label">Prepayment Penalty</label><div class="form-check mt-2"><input type="hidden" name="_prepaymentPenaltyApplicable" value="on" /><input type="checkbox" name="prepaymentPenaltyApplicable" value="true" class="form-check-input" id="prepayEditCheck" ${product.prepaymentPenaltyApplicable ? 'checked' : ''}/><label class="form-check-label" for="prepayEditCheck">Applicable</label></div></div>
+                    <div class="col-md-3"><label class="form-label">Currency</label><input type="text" class="form-control" value="<c:out value='${product.currencyCode}'/>" disabled /><small class="text-muted">Immutable after creation</small></div>
+                </div>
+
+                <h6 class="mb-3 text-primary">Floating Rate Configuration (RBI EBLR/MCLR)</h6>
+                <div class="row mb-3">
+                    <div class="col-md-2"><label class="form-label">Benchmark</label><select name="defaultBenchmarkName" class="form-select"><option value="">-- None --</option><option value="EBLR" ${product.defaultBenchmarkName == 'EBLR' ? 'selected' : ''}>EBLR</option><option value="MCLR" ${product.defaultBenchmarkName == 'MCLR' ? 'selected' : ''}>MCLR</option><option value="RLLR" ${product.defaultBenchmarkName == 'RLLR' ? 'selected' : ''}>RLLR</option><option value="T_BILL" ${product.defaultBenchmarkName == 'T_BILL' ? 'selected' : ''}>T-Bill</option></select></div>
+                    <div class="col-md-2"><label class="form-label">Reset Frequency</label><select name="defaultRateResetFrequency" class="form-select"><option value="">-- N/A --</option><option value="QUARTERLY" ${product.defaultRateResetFrequency == 'QUARTERLY' ? 'selected' : ''}>Quarterly</option><option value="HALF_YEARLY" ${product.defaultRateResetFrequency == 'HALF_YEARLY' ? 'selected' : ''}>Half Yearly</option><option value="YEARLY" ${product.defaultRateResetFrequency == 'YEARLY' ? 'selected' : ''}>Yearly</option></select></div>
+                    <div class="col-md-2"><label class="form-label">Default Spread %</label><input type="number" name="defaultSpread" class="form-control" step="0.01" value="${product.defaultSpread}"/></div>
+                    <div class="col-md-2"><label class="form-label">CASA Tiering</label><div class="form-check mt-2"><input type="hidden" name="_interestTieringEnabled" value="on" /><input type="checkbox" name="interestTieringEnabled" value="true" class="form-check-input" id="tieringEditCheck" ${product.interestTieringEnabled ? 'checked' : ''}/><label class="form-check-label" for="tieringEditCheck">Enable</label></div></div>
+                    <div class="col-md-4"><label class="form-label">Tiering JSON</label><input type="text" name="interestTieringJson" class="form-control" value="<c:out value='${product.interestTieringJson}'/>"/></div>
+                </div>
+
                 <h6 class="mb-3 text-primary">Amount &amp; Tenure Limits</h6>
                 <div class="row mb-3">
                     <div class="col-md-3"><label class="form-label">Min Amount *</label><input type="number" name="minLoanAmount" class="form-control" step="0.01" required value="${product.minLoanAmount}"/></div>
