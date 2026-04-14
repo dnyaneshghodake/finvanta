@@ -8,10 +8,13 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
+import org.springframework.security.crypto.password.NoOpPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.authentication.logout.LogoutSuccessEventPublishingLogoutHandler;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 
 /**
@@ -38,9 +41,12 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
 public class SecurityConfig {
 
     private final MfaAuthenticationSuccessHandler mfaSuccessHandler;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
-    public SecurityConfig(MfaAuthenticationSuccessHandler mfaSuccessHandler) {
+    public SecurityConfig(MfaAuthenticationSuccessHandler mfaSuccessHandler,
+            org.springframework.context.ApplicationEventPublisher eventPublisher) {
         this.mfaSuccessHandler = mfaSuccessHandler;
+        this.eventPublisher = eventPublisher;
     }
 
     @Value("${spring.profiles.active:prod}")
@@ -260,6 +266,18 @@ public class SecurityConfig {
                         .permitAll())
                 .logout(logout -> logout.logoutUrl("/logout")
                         .logoutSuccessUrl("/login?logout")
+                        // CBS Audit: Register LogoutSuccessEventPublishingLogoutHandler to publish
+                        // LogoutSuccessEvent via ApplicationEventPublisher. Without this handler,
+                        // Spring Security 6.2.x does NOT publish LogoutSuccessEvent by default —
+                        // the CbsAuthenticationEventListener.onLogoutSuccess() would be dead code.
+                        // Per RBI IT Governance Direction 2023 §8.3: all session lifecycle events
+                        // (login, logout, session expiry) must be audited.
+                        //
+                        // CBS CRITICAL: The handler implements ApplicationEventPublisherAware but
+                        // is not a Spring-managed bean (created with new). We must manually inject
+                        // the ApplicationEventPublisher — without it, the handler's logout() method
+                        // checks if (this.eventPublisher == null) { return; } and silently does nothing.
+                        .addLogoutHandler(createLogoutEventHandler())
                         .invalidateHttpSession(true)
                         .deleteCookies("FINVANTA_SESSION")
                         .permitAll())
@@ -321,12 +339,40 @@ public class SecurityConfig {
     }
 
     /**
-     * Uses DelegatingPasswordEncoder (Spring Security standard).
-     * Supports {bcrypt}, {noop}, {scrypt}, {argon2} prefixes.
-     * Dev seed data uses {noop} prefix (plaintext). Production passwords must always be {bcrypt}.
+     * Creates a LogoutSuccessEventPublishingLogoutHandler with the ApplicationEventPublisher
+     * manually injected. This handler is NOT a Spring-managed bean (created inline in the
+     * security filter chain), so Spring's ApplicationEventPublisherAware callback never fires.
+     * Without manual injection, the handler silently does nothing on logout.
+     */
+    private LogoutSuccessEventPublishingLogoutHandler createLogoutEventHandler() {
+        LogoutSuccessEventPublishingLogoutHandler handler = new LogoutSuccessEventPublishingLogoutHandler();
+        handler.setApplicationEventPublisher(this.eventPublisher);
+        return handler;
+    }
+
+    /**
+     * CBS Password Encoder — BCrypt with 12 rounds per RBI IT Governance Direction 2023.
+     *
+     * Per RBI IT Governance §8.2 and NIST SP 800-63B:
+     * - BCrypt minimum 12 rounds for banking-grade password hashing
+     * - Spring Security default is 10 rounds — insufficient for Tier-1 CBS
+     * - 12 rounds provides ~4x the computational cost of 10 rounds
+     *
+     * Uses DelegatingPasswordEncoder to support multiple formats:
+     * - {bcrypt} → BCryptPasswordEncoder(12) — production standard
+     * - {noop}   → NoOpPasswordEncoder — dev seed data only (NEVER in production)
+     *
+     * Per Finacle USER_MASTER / Temenos USER: password hashing strength must
+     * exceed the minimum recommended by the national banking regulator.
      */
     @Bean
+    @SuppressWarnings("deprecation")
     public PasswordEncoder passwordEncoder() {
-        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+        java.util.Map<String, PasswordEncoder> encoders = new java.util.HashMap<>();
+        encoders.put("bcrypt", new BCryptPasswordEncoder(12));
+        encoders.put("noop", NoOpPasswordEncoder.getInstance());
+        DelegatingPasswordEncoder delegating = new DelegatingPasswordEncoder("bcrypt", encoders);
+        delegating.setDefaultPasswordEncoderForMatches(new BCryptPasswordEncoder(12));
+        return delegating;
     }
 }

@@ -27,14 +27,43 @@
             </div>
         </div>
         <div class="card-body">
-            <table class="table fv-table">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 class="text-muted border-bottom pb-1 mb-2"><i class="bi bi-tag"></i> Identity</h6>
+                    <table class="table fv-table table-sm">
+                        <tbody>
+                        <tr><td class="fw-bold" style="width:40%">Branch Code</td><td><c:out value="${branch.branchCode}" /></td></tr>
+                        <tr><td class="fw-bold">Branch Name</td><td><c:out value="${branch.branchName}" /></td></tr>
+                        <tr><td class="fw-bold">IFSC Code</td><td><c:out value="${branch.ifscCode}" default="--" /></td></tr>
+                        <tr><td class="fw-bold">Status</td><td><c:choose><c:when test="${branch.active}"><span class="fv-badge fv-badge-active">Active</span></c:when><c:otherwise><span class="fv-badge fv-badge-rejected">Inactive</span></c:otherwise></c:choose></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <h6 class="text-muted border-bottom pb-1 mb-2"><i class="bi bi-diagram-3"></i> Hierarchy</h6>
+                    <table class="table fv-table table-sm">
+                        <tbody>
+                        <tr><td class="fw-bold" style="width:40%">Branch Type</td><td>
+                            <c:choose>
+                                <c:when test="${branch.branchType == 'HEAD_OFFICE'}"><span class="fv-badge fv-badge-npa">HEAD OFFICE</span></c:when>
+                                <c:when test="${branch.branchType == 'ZONAL_OFFICE'}"><span class="fv-badge fv-badge-pending">ZONAL OFFICE</span></c:when>
+                                <c:when test="${branch.branchType == 'REGIONAL_OFFICE'}"><span class="fv-badge fv-badge-closed">REGIONAL OFFICE</span></c:when>
+                                <c:otherwise><span class="fv-badge fv-badge-approved">BRANCH</span></c:otherwise>
+                            </c:choose>
+                        </td></tr>
+                        <tr><td class="fw-bold">Parent Branch</td><td><c:choose><c:when test="${not empty branch.parentBranch}"><a href="${pageContext.request.contextPath}/branch/view/${branch.parentBranch.id}"><c:out value="${branch.parentBranch.branchCode}" /></a> &mdash; <c:out value="${branch.parentBranch.branchName}" /></c:when><c:otherwise><span class="text-muted">-- Root (No Parent) --</span></c:otherwise></c:choose></td></tr>
+                        <tr><td class="fw-bold">Zone Code</td><td><c:out value="${branch.zoneCode}" default="--" /></td></tr>
+                        <tr><td class="fw-bold">Region Code</td><td><c:out value="${branch.regionCode}" default="--" /></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <h6 class="text-muted border-bottom pb-1 mb-2 mt-2"><i class="bi bi-geo-alt"></i> Location</h6>
+            <table class="table fv-table table-sm">
                 <tbody>
-                <tr><td class="fw-bold">Branch Code</td><td><c:out value="${branch.branchCode}" /></td></tr>
-                <tr><td class="fw-bold">Branch Name</td><td><c:out value="${branch.branchName}" /></td></tr>
-                <tr><td class="fw-bold">IFSC Code</td><td><c:out value="${branch.ifscCode}" default="--" /></td></tr>
-                <tr><td class="fw-bold">Region</td><td><c:out value="${branch.region}" default="--" /></td></tr>
-                <tr><td class="fw-bold">Address</td><td><c:out value="${branch.address}" />, <c:out value="${branch.city}" />, <c:out value="${branch.state}" /> - <c:out value="${branch.pinCode}" /></td></tr>
-                <tr><td class="fw-bold">Status</td><td><span class="fv-badge fv-badge-active">Active</span></td></tr>
+                <tr><td class="fw-bold" style="width:20%">Address</td><td><c:out value="${branch.address}" default="--" /></td></tr>
+                <tr><td class="fw-bold">City / State / PIN</td><td><c:out value="${branch.city}" default="--" /> / <c:out value="${branch.state}" default="--" /> - <c:out value="${branch.pinCode}" default="--" /></td></tr>
+                <tr><td class="fw-bold">Region (Display)</td><td><c:out value="${branch.region}" default="--" /></td></tr>
                 </tbody>
             </table>
         </div>

@@ -41,13 +41,13 @@ public class FixedDepositServiceImpl implements FixedDepositService {
     private final TransactionEngine txnEng;
     private final BusinessDateService bdSvc;
     private final AuditService audit;
-    private final com.finvanta.service.CbsReferenceService refService;
+    private final CbsReferenceService refService;
 
     public FixedDepositServiceImpl(FixedDepositRepository fdRepo,
             CustomerRepository custRepo, BranchRepository brRepo,
             DepositAccountRepository casaRepo, DepositAccountService casaSvc,
             TransactionEngine txnEng, BusinessDateService bdSvc, AuditService audit,
-            com.finvanta.service.CbsReferenceService refService) {
+            CbsReferenceService refService) {
         this.fdRepo = fdRepo; this.custRepo = custRepo; this.brRepo = brRepo;
         this.casaRepo = casaRepo; this.casaSvc = casaSvc;
         this.txnEng = txnEng; this.bdSvc = bdSvc; this.audit = audit;

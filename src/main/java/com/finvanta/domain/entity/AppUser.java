@@ -264,7 +264,48 @@ public class AppUser extends BaseEntity {
         return mfaEnabled && (mfaSecret == null || mfaSecret.isBlank());
     }
 
-    /** Sets password with expiry and history tracking */
+    /**
+     * Checks if a plaintext password matches the current password or any of the
+     * last 3 passwords in history. Uses PasswordEncoder.matches() which correctly
+     * handles BCrypt's random salt (same plaintext → different hashes).
+     *
+     * Per RBI IT Governance Direction 2023 §8.2: users cannot reuse recent passwords.
+     * Checks current passwordHash + up to 3 entries in passwordHistory (pipe-delimited).
+     *
+     * @param rawPassword The plaintext password to check against history
+     * @param encoder     The password encoder (BCrypt) to use for matching
+     * @return true if the password matches the current or any of the last 3 passwords
+     */
+    public boolean isPasswordInHistory(String rawPassword,
+            org.springframework.security.crypto.password.PasswordEncoder encoder) {
+        // Check against current password
+        if (this.passwordHash != null && encoder.matches(rawPassword, this.passwordHash)) {
+            return true;
+        }
+        // Check against password history
+        if (this.passwordHistory != null && !this.passwordHistory.isBlank()) {
+            String[] historyHashes = this.passwordHistory.split("\\|");
+            for (String historyHash : historyHashes) {
+                if (historyHash != null && !historyHash.isBlank()
+                        && encoder.matches(rawPassword, historyHash)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Sets password with expiry and history tracking.
+     * Per RBI IT Governance Direction 2023 §8.2:
+     * - Password rotation every 90 days
+     * - Last 3 passwords cannot be reused (history stored)
+     *
+     * IMPORTANT: Callers MUST check password reuse via {@link #isPasswordInHistory}
+     * BEFORE calling this method. This method only manages the history storage
+     * and expiry tracking — it does not validate reuse because it receives an
+     * already-encoded hash (cannot reverse BCrypt to check against history).
+     */
     public void changePassword(String newPasswordHash) {
         // Add current password to history (keep last 3)
         if (this.passwordHash != null) {

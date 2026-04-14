@@ -60,20 +60,28 @@
             <div class="table-responsive">
             <table class="table fv-table fv-datatable table-sm">
                 <thead><tr>
-                    <th>Username</th><th>Full Name</th><th>Role</th><th>Branch</th>
-                    <th>Active</th><th>Locked</th><th>Pwd Expiry</th><th>Last Login</th><th>Actions</th>
+                    <th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Branch</th>
+                    <th>Active</th><th>Locked</th><th>MFA</th><th>Pwd Expiry</th><th>Last Login</th><th>Actions</th>
                 </tr></thead>
                 <tbody>
                 <c:forEach var="u" items="${users}">
                     <tr class="${!u.active ? 'table-secondary' : u.locked ? 'table-warning' : ''}">
                         <td class="fw-bold"><c:out value="${u.username}"/></td>
                         <td><c:out value="${u.fullName}"/></td>
+                        <td><small><c:out value="${u.email}" default="--"/></small></td>
                         <td><span class="badge ${u.role == 'ADMIN' ? 'bg-danger' : u.role == 'CHECKER' ? 'bg-primary' : u.role == 'MAKER' ? 'bg-success' : 'bg-info'}"><c:out value="${u.role}"/></span></td>
                         <td><c:out value="${u.branch.branchCode}" default="--"/></td>
                         <td><c:choose><c:when test="${u.active}"><span class="fv-badge fv-badge-active">Active</span></c:when><c:otherwise><span class="fv-badge fv-badge-rejected">Inactive</span></c:otherwise></c:choose></td>
                         <td>
                             <c:if test="${u.locked}"><span class="fv-badge fv-badge-npa">LOCKED</span><br/><small class="text-muted">Attempts: <c:out value="${u.failedLoginAttempts}"/></small></c:if>
                             <c:if test="${!u.locked}">--</c:if>
+                        </td>
+                        <td>
+                            <c:choose>
+                                <c:when test="${u.mfaEnabled and not empty u.mfaEnrolledDate}"><span class="fv-badge fv-badge-approved">Enrolled</span></c:when>
+                                <c:when test="${u.mfaEnabled}"><span class="fv-badge fv-badge-pending">Pending</span></c:when>
+                                <c:otherwise><span class="text-muted">--</span></c:otherwise>
+                            </c:choose>
                         </td>
                         <td>
                             <c:choose>
@@ -117,7 +125,7 @@
                         </td>
                     </tr>
                 </c:forEach>
-                <c:if test="${empty users}"><tr><td colspan="9" class="text-center text-muted">No users found</td></tr></c:if>
+                <c:if test="${empty users}"><tr><td colspan="11" class="text-center text-muted">No users found</td></tr></c:if>
                 </tbody>
             </table>
             </div>
