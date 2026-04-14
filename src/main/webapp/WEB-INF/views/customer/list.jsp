@@ -7,9 +7,26 @@
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
+    <c:if test="${not empty error}">
+        <div class="fv-alert alert alert-danger"><c:out value="${error}" /></div>
+    </c:if>
     <div class="fv-card">
         <div class="card-header">Customer List <a href="${pageContext.request.contextPath}/customer/add" class="btn btn-sm btn-fv-primary float-end"><i class="bi bi-plus-circle"></i> Add Customer</a></div>
         <div class="card-body">
+            <!-- CBS: Customer search per Finacle CIF_SEARCH -->
+            <form method="get" action="${pageContext.request.contextPath}/customer/search" class="row g-2 mb-3">
+                <div class="col-auto">
+                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by name, CIF, mobile, PAN..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:320px;" />
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>
+                </div>
+                <c:if test="${not empty searchQuery}">
+                <div class="col-auto">
+                    <a href="${pageContext.request.contextPath}/customer/list" class="btn btn-sm btn-outline-secondary">Clear</a>
+                </div>
+                </c:if>
+            </form>
             <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
