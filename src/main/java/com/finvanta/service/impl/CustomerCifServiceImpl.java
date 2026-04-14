@@ -46,6 +46,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
     private final CustomerRepository customerRepo;
     private final BranchRepository branchRepo;
     private final LoanAccountRepository loanRepo;
+    private final com.finvanta.repository.DepositAccountRepository depositRepo;
     private final AuditService auditSvc;
     private final BranchAccessValidator branchValidator;
     private final CbsReferenceService refService;
@@ -55,6 +56,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
             CustomerRepository customerRepo,
             BranchRepository branchRepo,
             LoanAccountRepository loanRepo,
+            com.finvanta.repository.DepositAccountRepository depositRepo,
             AuditService auditSvc,
             BranchAccessValidator branchValidator,
             CbsReferenceService refService,
@@ -62,6 +64,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         this.customerRepo = customerRepo;
         this.branchRepo = branchRepo;
         this.loanRepo = loanRepo;
+        this.depositRepo = depositRepo;
         this.auditSvc = auditSvc;
         this.branchValidator = branchValidator;
         this.refService = refService;
@@ -80,6 +83,46 @@ public class CustomerCifServiceImpl implements CustomerCifService {
             Long branchId) {
         String tid = TenantContext.getCurrentTenant();
         String user = SecurityUtil.getCurrentUsername();
+
+        // CBS Validation: Mandatory fields per RBI KYC Master Direction 2016
+        if (firstName == null || firstName.isBlank()) {
+            throw new BusinessException("FIRST_NAME_REQUIRED", "First name is mandatory per RBI KYC norms.");
+        }
+        if (lastName == null || lastName.isBlank()) {
+            throw new BusinessException("LAST_NAME_REQUIRED", "Last name is mandatory per RBI KYC norms.");
+        }
+
+        // CBS Validation: PAN format (AAAAA0000A) if provided
+        if (panNumber != null && !panNumber.isBlank()) {
+            if (!panNumber.matches("^[A-Z]{5}[0-9]{4}[A-Z]$")) {
+                throw new BusinessException("INVALID_PAN_FORMAT",
+                        "PAN must be in format AAAAA0000A (5 letters + 4 digits + 1 letter).");
+            }
+        }
+
+        // CBS Validation: Aadhaar format (12 digits) if provided
+        if (aadhaarNumber != null && !aadhaarNumber.isBlank()) {
+            if (!aadhaarNumber.matches("^[0-9]{12}$")) {
+                throw new BusinessException("INVALID_AADHAAR_FORMAT",
+                        "Aadhaar must be exactly 12 digits.");
+            }
+        }
+
+        // CBS Validation: Mobile format (10 digits) if provided
+        if (mobileNumber != null && !mobileNumber.isBlank()) {
+            if (!mobileNumber.matches("^[6-9][0-9]{9}$")) {
+                throw new BusinessException("INVALID_MOBILE_FORMAT",
+                        "Mobile number must be 10 digits starting with 6-9.");
+            }
+        }
+
+        // CBS Validation: PIN code (6 digits) if provided
+        if (pinCode != null && !pinCode.isBlank()) {
+            if (!pinCode.matches("^[0-9]{6}$")) {
+                throw new BusinessException("INVALID_PINCODE_FORMAT",
+                        "PIN code must be exactly 6 digits.");
+            }
+        }
 
         // CBS: Duplicate PAN check per RBI KYC (one PAN = one CIF).
         // CRITICAL: Must use hash-based lookup, NOT encrypted column comparison.
@@ -211,15 +254,26 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                         "CUSTOMER_NOT_FOUND", "" + customerId));
 
         // CBS: Cannot deactivate customer with active loan accounts
-        long active = loanRepo
+        long activeLoanCount = loanRepo
                 .findByTenantIdAndCustomerId(tid, customerId)
                 .stream()
                 .filter(a -> !a.getStatus().isTerminal())
                 .count();
-        if (active > 0)
+        if (activeLoanCount > 0)
             throw new BusinessException(
-                    "CUSTOMER_HAS_ACTIVE_ACCOUNTS",
-                    active + " active loan account(s)");
+                    "CUSTOMER_HAS_ACTIVE_LOANS",
+                    "Cannot deactivate: " + activeLoanCount + " active loan account(s).");
+
+        // CBS: Cannot deactivate customer with active CASA deposit accounts
+        long activeCasaCount = depositRepo
+                .findByTenantIdAndCustomerId(tid, customerId)
+                .stream()
+                .filter(d -> d.isActive())
+                .count();
+        if (activeCasaCount > 0)
+            throw new BusinessException(
+                    "CUSTOMER_HAS_ACTIVE_DEPOSITS",
+                    "Cannot deactivate: " + activeCasaCount + " active CASA deposit account(s).");
 
         c.setActive(false);
         c.setUpdatedBy(user);
@@ -233,6 +287,64 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                 c.getCustomerNumber(), user);
 
         return c;
+    }
+
+    @Override
+    @Transactional
+    public Customer updateCustomer(Long customerId, Customer updated, Long branchId) {
+        String tid = TenantContext.getCurrentTenant();
+        String user = SecurityUtil.getCurrentUsername();
+
+        Customer existing = customerRepo.findById(customerId)
+                .filter(x -> x.getTenantId().equals(tid))
+                .orElseThrow(() -> new BusinessException("CUSTOMER_NOT_FOUND", "" + customerId));
+        branchValidator.validateAccess(existing.getBranch());
+
+        Branch branch = branchRepo.findById(branchId)
+                .filter(b -> b.getTenantId().equals(tid) && b.isActive())
+                .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "" + branchId));
+
+        String beforeState = existing.getFullName() + "|" + existing.getMobileNumber();
+
+        // CBS: Update ONLY mutable fields. PAN, Aadhaar, customerNumber are IMMUTABLE.
+        existing.setFirstName(updated.getFirstName());
+        existing.setLastName(updated.getLastName());
+        existing.setDateOfBirth(updated.getDateOfBirth());
+        existing.setMobileNumber(updated.getMobileNumber());
+        existing.setEmail(updated.getEmail());
+        existing.setAddress(updated.getAddress());
+        existing.setCity(updated.getCity());
+        existing.setState(updated.getState());
+        existing.setPinCode(updated.getPinCode());
+        existing.setCustomerType(updated.getCustomerType());
+        existing.setCibilScore(updated.getCibilScore());
+        existing.setMonthlyIncome(updated.getMonthlyIncome());
+        existing.setMaxBorrowingLimit(updated.getMaxBorrowingLimit());
+        existing.setEmploymentType(updated.getEmploymentType());
+        existing.setEmployerName(updated.getEmployerName());
+
+        // CBS: KYC risk category and PEP flag
+        if (updated.getKycRiskCategory() != null) {
+            existing.setKycRiskCategory(updated.getKycRiskCategory());
+            existing.computeKycExpiry();
+        }
+        existing.setPep(updated.isPep());
+        if (updated.isPep()) {
+            existing.setKycRiskCategory("HIGH");
+            existing.computeKycExpiry();
+        }
+
+        existing.setBranch(branch);
+        existing.setUpdatedBy(user);
+        customerRepo.save(existing);
+
+        auditSvc.logEvent("Customer", existing.getId(),
+                "UPDATE", beforeState,
+                existing.getFullName() + "|" + existing.getMobileNumber(),
+                "CIF", "Customer updated by " + user);
+
+        log.info("Customer updated: cif={}, user={}", existing.getCustomerNumber(), user);
+        return existing;
     }
 
     /**

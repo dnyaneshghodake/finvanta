@@ -149,9 +149,8 @@ public class CustomerController {
     }
 
     /**
-     * CBS CIF Update — mutable fields only.
-     * Customer number, PAN, Aadhaar are immutable after creation per RBI KYC norms.
-     * TODO: Move update logic to CustomerCifService in next sprint.
+     * CBS CIF Update — delegates to CustomerCifService.
+     * PAN, Aadhaar, and customer number are IMMUTABLE after creation per RBI KYC norms.
      */
     @PostMapping("/edit/{id}")
     public String updateCustomer(
@@ -160,10 +159,8 @@ public class CustomerController {
             @RequestParam Long branchId,
             RedirectAttributes redirectAttributes) {
         try {
-            // TODO: Delegate to customerService.updateCustomer() when method is added.
-            // For now, minimal inline update to avoid breaking existing flow.
-            // PAN and Aadhaar are NOT updated — they are immutable after creation.
-            redirectAttributes.addFlashAttribute("success", "Customer updated successfully.");
+            Customer saved = customerService.updateCustomer(id, updated, branchId);
+            redirectAttributes.addFlashAttribute("success", "Customer updated: " + saved.getCustomerNumber());
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
         }

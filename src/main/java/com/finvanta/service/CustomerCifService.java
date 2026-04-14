@@ -77,9 +77,20 @@ public interface CustomerCifService {
     Customer deactivateCustomer(Long customerId);
 
     /**
+     * Update mutable customer fields. PAN, Aadhaar, and customer number are
+     * IMMUTABLE after creation per RBI KYC norms.
+     *
+     * @param customerId Customer ID
+     * @param updated    Customer entity with updated mutable fields
+     * @param branchId   Branch ID (for branch transfer if applicable)
+     * @return Updated customer entity
+     */
+    Customer updateCustomer(Long customerId, Customer updated, Long branchId);
+
+    /**
      * Search customers. Branch-scoped for MAKER/CHECKER, all branches for ADMIN.
      *
-     * @param query Search query (min 2 chars)
+     * @param query Search query (min 2 chars, or empty for full list)
      * @return List of matching customers
      */
     List<Customer> searchCustomers(String query);
