@@ -112,6 +112,9 @@ INSERT INTO business_calendar (tenant_id, branch_id, branch_code, business_date,
 -- monthly_income: for DTI ratio check (total EMI <= 60% of income)
 -- max_borrowing_limit: per-customer cap on total outstanding exposure
 -- Sprint 1.2: Added is_pep, rekyc_due (NOT NULL), kyc_risk_category for new Customer entity fields
+-- NOTE: pan_hash / aadhaar_hash are NOT set here because data.sql bypasses JPA lifecycle.
+-- PiiHashBackfillRunner auto-computes them on startup via ApplicationReadyEvent.
+-- This also encrypts plaintext PAN/Aadhaar via PiiEncryptionConverter on first save.
 INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, is_pep, rekyc_due, kyc_risk_category, branch_id, monthly_income, max_borrowing_limit, employment_type, employer_name, address_same_as_permanent, video_kyc_done, version, created_at, created_by)
 VALUES ('DEFAULT', 'CUST001', 'Rajesh', 'Sharma', '1985-03-15', 'ABCDE1234F', '123456789012', '9876543210', 'rajesh.sharma@email.com', '123 MG Road', 'Mumbai', 'Maharashtra', '400001', 1, '2026-01-15', 'admin', 750, 'INDIVIDUAL', 1, 0, 0, 'LOW', 1, 150000.00, 5000000.00, 'SALARIED', 'Tata Consultancy Services', 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
