@@ -111,6 +111,10 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         c.setCkycDownloadDate(null);
         c.setCustomerGroupId(null);
         c.setCustomerGroupName(null);
+        // CBS: Video KYC completion must be system-verified, not user-asserted.
+        // Per RBI circular RBI/2020-21/12: V-KYC status is set by the V-KYC workflow
+        // engine after successful video session, NOT via customer creation form.
+        c.setVideoKycDone(false);
 
         // CBS: Set system fields
         c.setTenantId(tid);
