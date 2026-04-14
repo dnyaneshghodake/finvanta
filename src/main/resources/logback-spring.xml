@@ -236,15 +236,14 @@
             <appender-ref ref="APP_FILE" />
         </logger>
 
-        <!-- SQL: Hibernate queries → dedicated SQL log file ONLY (never console, never app log).
-             Per Finacle DBA_TRACE / Temenos SQL.MONITOR:
-             - org.hibernate.SQL at DEBUG: logs SQL statements (useful for DBA query tuning)
-             - org.hibernate.orm.jdbc.bind at WARN: bind parameter values are SUPPRESSED.
-               CBS SECURITY: TRACE-level bind logging exposes PII (PAN, Aadhaar, mobile,
-               customer names) in plaintext in log files — violates RBI IT Governance
-               Direction 2023 §8.3 and UIDAI Aadhaar Act 2016 Section 29.
-               Enable TRACE ONLY for short debugging sessions, then revert to WARN. -->
-        <logger name="org.hibernate.SQL" level="DEBUG" additivity="false">
+        <!-- SQL: Hibernate query logging per Finacle DBA_TRACE / Temenos SQL.MONITOR.
+             CBS SECURITY: SQL statements expose internal schema (table/column names,
+             query patterns) that are valuable to attackers. Per RBI IT Governance
+             Direction 2023 §8.3: SQL logging is OFF by default on sqlserver profile.
+             DBA can enable temporarily by changing WARN → DEBUG for investigation,
+             then revert. Bind parameters (TRACE) are ALWAYS suppressed — they contain
+             PII (PAN, Aadhaar) in plaintext, violating UIDAI Act 2016 Section 29. -->
+        <logger name="org.hibernate.SQL" level="WARN" additivity="false">
             <appender-ref ref="SQL_FILE" />
         </logger>
         <logger name="org.hibernate.orm.jdbc.bind" level="WARN" additivity="false">
@@ -452,15 +451,17 @@
             <appender-ref ref="ASYNC_APP" />
         </logger>
 
-        <!-- SQL: Hibernate queries → dedicated SQL log file ONLY (never console).
-             CBS SECURITY: bind parameter TRACE is DISABLED in production.
-             PII (PAN, Aadhaar, mobile) would appear in plaintext in sql.log.
-             Per RBI IT Governance §8.3: PII must not be logged unencrypted.
-             SQL statements at DEBUG are retained for DBA slow-query analysis. -->
-        <logger name="org.hibernate.SQL" level="DEBUG" additivity="false">
+        <!-- SQL: Hibernate query logging — OFF in production per CBS security standards.
+             CBS SECURITY: SQL statements expose internal schema (table names, column names,
+             query patterns) valuable to attackers. Bind parameters expose PII in plaintext.
+             Per RBI IT Governance Direction 2023 §8.3 / Finacle PROD_SECURITY:
+             SQL logging is DISABLED by default in production. DBA can enable temporarily
+             by changing OFF → DEBUG for org.hibernate.SQL during incident investigation,
+             then revert immediately. Bind parameters must NEVER be enabled in production. -->
+        <logger name="org.hibernate.SQL" level="OFF" additivity="false">
             <appender-ref ref="SQL_FILE" />
         </logger>
-        <logger name="org.hibernate.orm.jdbc.bind" level="WARN" additivity="false">
+        <logger name="org.hibernate.orm.jdbc.bind" level="OFF" additivity="false">
             <appender-ref ref="SQL_FILE" />
         </logger>
 
