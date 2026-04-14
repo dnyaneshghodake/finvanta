@@ -161,22 +161,12 @@ public class CustomerController {
     /** CBS CIF Edit — pre-populated form for mutable fields */
     @GetMapping("/edit/{id}")
     public ModelAndView showEditForm(@PathVariable Long id) {
-        String tenantId = TenantContext.getCurrentTenant();
         Customer customer = customerService.getCustomer(id);
         ModelAndView mav = new ModelAndView("customer/edit");
         mav.addObject("customer", customer);
         mav.addObject("maskedPan", PiiMaskingUtil.maskPan(customer.getPanNumber()));
         mav.addObject("maskedAadhaar", PiiMaskingUtil.maskAadhaar(customer.getAadhaarNumber()));
-        if (SecurityUtil.isAdminRole()) {
-            mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
-        } else {
-            Long userBranchId = SecurityUtil.getCurrentUserBranchId();
-            if (userBranchId != null) {
-                branchRepository.findById(userBranchId)
-                        .filter(b -> b.getTenantId().equals(tenantId))
-                        .ifPresent(b -> mav.addObject("branches", java.util.List.of(b)));
-            }
-        }
+        populateBranchDropdown(mav);
         return mav;
     }
 
@@ -202,7 +192,6 @@ public class CustomerController {
             // CBS: On validation failure, re-display the edit form with entered data preserved.
             // Per Finacle CIF_MASTER: user should not re-enter all fields after a single validation error.
             // Reload immutable fields (customer number, masked PAN/Aadhaar) from the persisted entity.
-            String tenantId = TenantContext.getCurrentTenant();
             ModelAndView mav = new ModelAndView("customer/edit");
             try {
                 Customer existing = customerService.getCustomer(id);
@@ -219,16 +208,7 @@ public class CustomerController {
                 return "redirect:/customer/view/" + id;
             }
             mav.addObject("error", e.getMessage());
-            if (SecurityUtil.isAdminRole()) {
-                mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
-            } else {
-                Long userBranchId = SecurityUtil.getCurrentUserBranchId();
-                if (userBranchId != null) {
-                    branchRepository.findById(userBranchId)
-                            .filter(b -> b.getTenantId().equals(tenantId))
-                            .ifPresent(b -> mav.addObject("branches", java.util.List.of(b)));
-                }
-            }
+            populateBranchDropdown(mav);
             return mav;
         }
     }
@@ -294,8 +274,13 @@ public class CustomerController {
     public ResponseEntity<byte[]> downloadDocument(@PathVariable Long docId) {
         CustomerDocument doc = documentService.getDocument(docId);
         byte[] fileContent = documentService.retrieveFileContent(doc);
+        // CBS Security: Sanitize filename in Content-Disposition header to prevent
+        // HTTP response splitting (CVE-class). Strip CR/LF/quotes/backslash.
+        // The service layer already sanitizes on upload, but defense-in-depth
+        // requires re-sanitizing at the HTTP boundary per OWASP guidelines.
+        String safeFileName = doc.getFileName().replaceAll("[\\r\\n\"\\\\]", "_");
         return ResponseEntity.ok()
-                .header("Content-Disposition", "inline; filename=\"" + doc.getFileName() + "\"")
+                .header("Content-Disposition", "inline; filename=\"" + safeFileName + "\"")
                 .header("Content-Type", doc.getContentType())
                 .body(fileContent);
     }
@@ -324,5 +309,33 @@ public class CustomerController {
             }
         }
         return customerId > 0 ? "redirect:/customer/view/" + customerId : "redirect:/customer/list";
+    }
+
+    // ========================================================================
+    // PRIVATE HELPERS — DRY per Finacle/Temenos coding standards.
+    // ========================================================================
+
+    /**
+     * CBS: Populates branch dropdown for customer forms per Finacle BRANCH_CONTEXT.
+     * MAKER/CHECKER: restricted to their home branch (single-item list).
+     * ADMIN: sees all active branches across the tenant.
+     * Per Finacle CIF_MASTER: customer is always created at the originating branch.
+     * Branch transfer is a separate maker-checker workflow.
+     *
+     * Extracted to eliminate 4x duplication across showAddForm, addCustomer (error),
+     * showEditForm, and updateCustomer (error) — DRY per CBS coding standards.
+     */
+    private void populateBranchDropdown(ModelAndView mav) {
+        String tenantId = TenantContext.getCurrentTenant();
+        if (SecurityUtil.isAdminRole()) {
+            mav.addObject("branches", branchRepository.findByTenantIdAndActiveTrue(tenantId));
+        } else {
+            Long branchId = SecurityUtil.getCurrentUserBranchId();
+            if (branchId != null) {
+                branchRepository.findById(branchId)
+                        .filter(b -> b.getTenantId().equals(tenantId))
+                        .ifPresent(b -> mav.addObject("branches", java.util.List.of(b)));
+            }
+        }
     }
 }

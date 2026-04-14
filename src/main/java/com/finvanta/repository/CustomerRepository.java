@@ -19,8 +19,6 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     List<Customer> findByTenantIdAndActiveTrue(String tenantId);
 
-    Optional<Customer> findByTenantIdAndPanNumber(String tenantId, String panNumber);
-
     boolean existsByTenantIdAndCustomerNumber(String tenantId, String customerNumber);
 
     List<Customer> findByTenantIdAndKycVerifiedFalse(String tenantId);
@@ -98,14 +96,6 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
      * Returns Optional since one PAN = one CIF per RBI KYC norms.
      */
     Optional<Customer> findByTenantIdAndPanHashAndActiveTrue(String tenantId, String panHash);
-
-    // === P1 Gap 5.2: Duplicate CIF Detection (per RBI KYC: one PAN = one CIF) ===
-
-    /** Check if PAN already exists (for duplicate CIF prevention) */
-    boolean existsByTenantIdAndPanNumber(String tenantId, String panNumber);
-
-    /** Check if Aadhaar already exists */
-    boolean existsByTenantIdAndAadhaarNumber(String tenantId, String aadhaarNumber);
 
     // === KYC Re-Verification (RBI Master Direction on KYC 2016 Section 16) ===
 

@@ -23,34 +23,6 @@ import java.util.List;
 public interface CustomerCifService {
 
     /**
-     * Create a new customer with auto-generated CIF number.
-     * Per RBI KYC: validates duplicate PAN, branch existence, tenant isolation.
-     *
-     * @param firstName     Customer first name (mandatory)
-     * @param lastName      Customer last name (mandatory)
-     * @param dateOfBirth   Date of birth (optional)
-     * @param panNumber     PAN number (optional, but unique per tenant if provided)
-     * @param aadhaarNumber Aadhaar number (optional)
-     * @param mobileNumber  Mobile number (optional)
-     * @param email         Email address (optional)
-     * @param address       Address (optional)
-     * @param city          City (optional)
-     * @param state         State (optional)
-     * @param pinCode       PIN code (optional)
-     * @param customerType  INDIVIDUAL or CORPORATE (defaults to INDIVIDUAL)
-     * @param branchId      Branch ID for the customer (mandatory)
-     * @return Created customer entity
-     */
-    Customer createCustomer(
-            String firstName, String lastName,
-            java.time.LocalDate dateOfBirth,
-            String panNumber, String aadhaarNumber,
-            String mobileNumber, String email,
-            String address, String city, String state,
-            String pinCode, String customerType,
-            Long branchId);
-
-    /**
      * Create a new customer from a populated entity with auto-generated CIF number.
      * Per RBI KYC: validates all fields, duplicate PAN/Aadhaar, branch existence.
      * Accepts full Customer entity with all CKYC/demographic fields populated.

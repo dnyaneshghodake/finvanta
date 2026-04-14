@@ -77,68 +77,6 @@ public class CustomerCifServiceImpl implements CustomerCifService {
 
     @Override
     @Transactional
-    public Customer createCustomer(
-            String firstName, String lastName,
-            LocalDate dateOfBirth,
-            String panNumber, String aadhaarNumber,
-            String mobileNumber, String email,
-            String address, String city, String state,
-            String pinCode, String customerType,
-            Long branchId) {
-        String tid = TenantContext.getCurrentTenant();
-        String user = SecurityUtil.getCurrentUsername();
-
-        // CBS Validation: centralized field validation (DRY)
-        validateCustomerFields(tid, firstName, lastName, panNumber, aadhaarNumber,
-                mobileNumber, pinCode, email);
-
-        Branch branch = branchRepo.findById(branchId)
-                .filter(b -> b.getTenantId().equals(tid)
-                        && b.isActive())
-                .orElseThrow(() -> new BusinessException(
-                        "BRANCH_NOT_FOUND",
-                        "" + branchId));
-
-        Customer c = new Customer();
-        c.setTenantId(tid);
-        c.setCustomerNumber(
-                refService.generateCustomerNumber(
-                        branch.getId()));
-        c.setFirstName(firstName);
-        c.setLastName(lastName);
-        c.setDateOfBirth(dateOfBirth);
-        c.setPanNumber(panNumber);
-        c.setAadhaarNumber(aadhaarNumber);
-        c.setMobileNumber(mobileNumber);
-        c.setEmail(email);
-        c.setAddress(address);
-        c.setCity(city);
-        c.setState(state);
-        c.setPinCode(pinCode);
-        c.setCustomerType(customerType != null
-                ? customerType : "INDIVIDUAL");
-        c.setBranch(branch);
-        c.setCreatedBy(user);
-        c.computePanHash();
-        c.computeAadhaarHash();
-
-        Customer saved = customerRepo.save(c);
-
-        auditSvc.logEvent("Customer", saved.getId(),
-                "CREATE", null,
-                saved.getCustomerNumber(), "CIF",
-                "Customer created by " + user
-                        + " at branch " + branch.getBranchCode());
-
-        log.info("Customer created: cif={}, branch={}, user={}",
-                saved.getCustomerNumber(),
-                branch.getBranchCode(), user);
-
-        return saved;
-    }
-
-    @Override
-    @Transactional
     public Customer createCustomerFromEntity(Customer c, Long branchId) {
         String tid = TenantContext.getCurrentTenant();
         String user = SecurityUtil.getCurrentUsername();
