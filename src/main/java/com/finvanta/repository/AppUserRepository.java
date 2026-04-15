@@ -53,4 +53,23 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
     List<AppUser> findDormantUserCandidates(
             @Param("tenantId") String tenantId,
             @Param("cutoffDateTime") java.time.LocalDateTime cutoffDateTime);
+
+    // === CBS USER_INQUIRY: User Search per Finacle USER_INQUIRY / RBI IT Governance §8.2 ===
+
+    /**
+     * Search users by username, full name, email, role, or branch code.
+     * Per RBI IT Governance Direction 2023 §8.2: audit of user access must be searchable.
+     * Per Finacle USER_INQUIRY: ADMIN must locate users instantly for access management,
+     * RBI inspection queries (e.g., "show all CHECKER users at branch BR003").
+     * Tenant-scoped. ADMIN-only (enforced in SecurityConfig).
+     */
+    @Query("SELECT u FROM AppUser u WHERE u.tenantId = :tenantId AND ("
+            + "LOWER(u.username) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(u.fullName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(CAST(u.role AS string)) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(u.branch.branchCode) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + " ORDER BY u.role ASC, u.username ASC")
+    List<AppUser> searchUsers(
+            @Param("tenantId") String tenantId, @Param("query") String query);
 }

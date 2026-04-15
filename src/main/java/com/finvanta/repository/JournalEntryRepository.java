@@ -52,4 +52,35 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
             @Param("tenantId") String tenantId,
             @Param("glCode") String glCode,
             @Param("debitCredit") DebitCredit debitCredit);
+
+    // === CBS JRNL_INQUIRY: Journal Entry Search per Finacle JRNL_INQUIRY / Temenos STMT.ENTRY.BOOK ===
+
+    /**
+     * Search journal entries by journal ref, narration, source module, source ref, or branch code.
+     * Per Finacle JRNL_INQUIRY: operations/audit staff must locate journal entries instantly
+     * for reconciliation, RBI inspection, and transaction tracing.
+     * All branches visible (ADMIN/AUDITOR). Branch-scoped variant below.
+     */
+    @Query("SELECT je FROM JournalEntry je WHERE je.tenantId = :tenantId AND ("
+            + "je.journalRef LIKE CONCAT('%', :query, '%') OR "
+            + "LOWER(je.narration) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(je.sourceModule) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "je.sourceRef LIKE CONCAT('%', :query, '%') OR "
+            + "je.branchCode LIKE CONCAT('%', :query, '%'))"
+            + " ORDER BY je.postingDate DESC")
+    List<JournalEntry> searchJournalEntries(
+            @Param("tenantId") String tenantId, @Param("query") String query,
+            org.springframework.data.domain.Pageable pageable);
+
+    /** Branch-scoped journal search for MAKER/CHECKER per Finacle BRANCH_CONTEXT */
+    @Query("SELECT je FROM JournalEntry je WHERE je.tenantId = :tenantId "
+            + "AND je.branch.id = :branchId AND ("
+            + "je.journalRef LIKE CONCAT('%', :query, '%') OR "
+            + "LOWER(je.narration) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(je.sourceModule) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "je.sourceRef LIKE CONCAT('%', :query, '%'))"
+            + " ORDER BY je.postingDate DESC")
+    List<JournalEntry> searchJournalEntriesByBranch(
+            @Param("tenantId") String tenantId, @Param("branchId") Long branchId,
+            @Param("query") String query, org.springframework.data.domain.Pageable pageable);
 }
