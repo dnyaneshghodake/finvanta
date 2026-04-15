@@ -25,11 +25,20 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
 
     boolean existsByTenantIdAndUsername(String tenantId, String username);
 
-    /** All users for a tenant (for user management UI) */
-    List<AppUser> findByTenantIdOrderByRoleAscUsernameAsc(String tenantId);
+    /**
+     * All users for a tenant with branch eagerly fetched (for user management UI).
+     * JOIN FETCH prevents LazyInitializationException when JSP accesses u.branch.branchCode
+     * outside the Hibernate session boundary.
+     */
+    @Query("SELECT u FROM AppUser u LEFT JOIN FETCH u.branch WHERE u.tenantId = :tenantId "
+            + "ORDER BY u.role ASC, u.username ASC")
+    List<AppUser> findByTenantIdOrderByRoleAscUsernameAsc(@Param("tenantId") String tenantId);
 
-    /** Users by branch (for branch-level user management) */
-    List<AppUser> findByTenantIdAndBranchIdOrderByRoleAscUsernameAsc(String tenantId, Long branchId);
+    /** Users by branch with branch eagerly fetched (for branch-level user management) */
+    @Query("SELECT u FROM AppUser u LEFT JOIN FETCH u.branch WHERE u.tenantId = :tenantId "
+            + "AND u.branch.id = :branchId ORDER BY u.role ASC, u.username ASC")
+    List<AppUser> findByTenantIdAndBranchIdOrderByRoleAscUsernameAsc(
+            @Param("tenantId") String tenantId, @Param("branchId") Long branchId);
 
     /** Check if username already exists (for duplicate prevention) */
     boolean existsByTenantIdAndEmail(String tenantId, String email);
@@ -63,7 +72,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
      * RBI inspection queries (e.g., "show all CHECKER users at branch BR003").
      * Tenant-scoped. ADMIN-only (enforced in SecurityConfig).
      */
-    @Query("SELECT u FROM AppUser u WHERE u.tenantId = :tenantId AND ("
+    @Query("SELECT u FROM AppUser u LEFT JOIN FETCH u.branch WHERE u.tenantId = :tenantId AND ("
             + "LOWER(u.username) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(u.fullName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')) OR "
