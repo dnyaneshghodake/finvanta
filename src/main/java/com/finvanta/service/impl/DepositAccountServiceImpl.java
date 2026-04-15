@@ -988,6 +988,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         }
 
         String gl = glForAccount(acct);
+        // CBS Tier-1: Resolve interest expense GL from ProductMaster via ProductGLResolver.
+        // For CASA products, glInterestReceivable stores the interest expense GL (5010).
+        // Fallback to GLConstants.INTEREST_EXPENSE_DEPOSITS if product not configured.
+        String interestExpenseGl = glResolver.getInterestReceivableGL(acct.getProductCode());
+        if (GLConstants.INTEREST_RECEIVABLE.equals(interestExpenseGl)) {
+            // ProductGLResolver returned loan-module default (1002) — wrong for CASA.
+            interestExpenseGl = GLConstants.INTEREST_EXPENSE_DEPOSITS;
+        }
         TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("DEPOSIT")
                 .transactionType("INTEREST_CREDIT")
@@ -999,7 +1007,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 .systemGenerated(true)
                 .journalLines(List.of(
                         new JournalLineRequest(
-                                GLConstants.INTEREST_EXPENSE_DEPOSITS, DebitCredit.DEBIT, interest, "Interest expense"),
+                                interestExpenseGl, DebitCredit.DEBIT, interest, "Interest expense"),
                         new JournalLineRequest(gl, DebitCredit.CREDIT, interest, "Interest credit " + acn)))
                 .build());
         acct.setLedgerBalance(acct.getLedgerBalance().add(interest));
