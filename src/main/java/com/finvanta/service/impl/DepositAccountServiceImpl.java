@@ -1397,22 +1397,26 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         if (dailyWithdrawalLimit != null) {
             if (dailyWithdrawalLimit.signum() < 0)
                 throw new BusinessException("INVALID_LIMIT", "Daily withdrawal limit cannot be negative.");
-            beforeState.append("|wdlLimit=").append(acct.getDailyWithdrawalLimit());
-            acct.setDailyWithdrawalLimit(dailyWithdrawalLimit);
-            afterState.append("|wdlLimit=").append(acct.getDailyWithdrawalLimit());
-            changes.append("WithdrawalLimit: INR ").append(dailyWithdrawalLimit).append("; ");
-            modified = true;
+            if (dailyWithdrawalLimit.compareTo(acct.getDailyWithdrawalLimit()) != 0) {
+                beforeState.append("|wdlLimit=").append(acct.getDailyWithdrawalLimit());
+                acct.setDailyWithdrawalLimit(dailyWithdrawalLimit);
+                afterState.append("|wdlLimit=").append(acct.getDailyWithdrawalLimit());
+                changes.append("WithdrawalLimit: INR ").append(dailyWithdrawalLimit).append("; ");
+                modified = true;
+            }
         }
 
         // Daily Transfer Limit
         if (dailyTransferLimit != null) {
             if (dailyTransferLimit.signum() < 0)
                 throw new BusinessException("INVALID_LIMIT", "Daily transfer limit cannot be negative.");
-            beforeState.append("|xfrLimit=").append(acct.getDailyTransferLimit());
-            acct.setDailyTransferLimit(dailyTransferLimit);
-            afterState.append("|xfrLimit=").append(acct.getDailyTransferLimit());
-            changes.append("TransferLimit: INR ").append(dailyTransferLimit).append("; ");
-            modified = true;
+            if (dailyTransferLimit.compareTo(acct.getDailyTransferLimit()) != 0) {
+                beforeState.append("|xfrLimit=").append(acct.getDailyTransferLimit());
+                acct.setDailyTransferLimit(dailyTransferLimit);
+                afterState.append("|xfrLimit=").append(acct.getDailyTransferLimit());
+                changes.append("TransferLimit: INR ").append(dailyTransferLimit).append("; ");
+                modified = true;
+            }
         }
 
         // OD Limit (CURRENT_OD accounts only)
@@ -1422,12 +1426,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                         "OD limit is only applicable for CURRENT_OD accounts. This account is " + acct.getAccountType());
             if (odLimit.signum() < 0)
                 throw new BusinessException("INVALID_LIMIT", "OD limit cannot be negative.");
-            beforeState.append("|od=").append(acct.getOdLimit());
-            acct.setOdLimit(odLimit);
-            recomputeAvailable(acct);
-            afterState.append("|od=").append(acct.getOdLimit());
-            changes.append("ODLimit: INR ").append(odLimit).append("; ");
-            modified = true;
+            if (odLimit.compareTo(acct.getOdLimit()) != 0) {
+                beforeState.append("|od=").append(acct.getOdLimit());
+                acct.setOdLimit(odLimit);
+                recomputeAvailable(acct);
+                afterState.append("|od=").append(acct.getOdLimit());
+                changes.append("ODLimit: INR ").append(odLimit).append("; ");
+                modified = true;
+            }
         }
 
         // Interest Rate Override (ADMIN only, savings accounts only)
@@ -1437,22 +1443,26 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                         "Interest rate override is only applicable for savings accounts. This account is " + acct.getAccountType());
             if (interestRate.signum() < 0 || interestRate.compareTo(new BigDecimal("100")) > 0)
                 throw new BusinessException("INVALID_RATE", "Interest rate must be between 0% and 100%.");
-            beforeState.append("|rate=").append(acct.getInterestRate());
-            acct.setInterestRate(interestRate);
-            afterState.append("|rate=").append(acct.getInterestRate());
-            changes.append("InterestRate: ").append(interestRate).append("%; ");
-            modified = true;
+            if (interestRate.compareTo(acct.getInterestRate()) != 0) {
+                beforeState.append("|rate=").append(acct.getInterestRate());
+                acct.setInterestRate(interestRate);
+                afterState.append("|rate=").append(acct.getInterestRate());
+                changes.append("InterestRate: ").append(interestRate).append("%; ");
+                modified = true;
+            }
         }
 
         // Minimum Balance Override/Waiver
         if (minimumBalance != null) {
             if (minimumBalance.signum() < 0)
                 throw new BusinessException("INVALID_AMOUNT", "Minimum balance cannot be negative.");
-            beforeState.append("|minBal=").append(acct.getMinimumBalance());
-            acct.setMinimumBalance(minimumBalance);
-            afterState.append("|minBal=").append(acct.getMinimumBalance());
-            changes.append("MinBalance: INR ").append(minimumBalance).append("; ");
-            modified = true;
+            if (minimumBalance.compareTo(acct.getMinimumBalance()) != 0) {
+                beforeState.append("|minBal=").append(acct.getMinimumBalance());
+                acct.setMinimumBalance(minimumBalance);
+                afterState.append("|minBal=").append(acct.getMinimumBalance());
+                changes.append("MinBalance: INR ").append(minimumBalance).append("; ");
+                modified = true;
+            }
         }
 
         if (!modified) {

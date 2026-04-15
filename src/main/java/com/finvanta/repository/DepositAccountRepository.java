@@ -86,7 +86,13 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
             + "LOWER(da.customer.lastName) LIKE LOWER(CONCAT('%', :query, '%')))"
             + " ORDER BY da.accountNumber")
     List<DepositAccount> searchAccounts(
-            @Param("tenantId") String tenantId, @Param("query") String query);
+            @Param("tenantId") String tenantId, @Param("query") String query,
+            org.springframework.data.domain.Pageable pageable);
+
+    /** Convenience overload — default max 500 results to prevent OOM at scale */
+    default List<DepositAccount> searchAccounts(String tenantId, String query) {
+        return searchAccounts(tenantId, query, org.springframework.data.domain.PageRequest.of(0, 500));
+    }
 
     /** Branch-scoped CASA search for MAKER/CHECKER per Finacle BRANCH_CONTEXT */
     @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
@@ -98,7 +104,12 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
             + " ORDER BY da.accountNumber")
     List<DepositAccount> searchAccountsByBranch(
             @Param("tenantId") String tenantId, @Param("branchId") Long branchId,
-            @Param("query") String query);
+            @Param("query") String query, org.springframework.data.domain.Pageable pageable);
+
+    /** Convenience overload — default max 500 results */
+    default List<DepositAccount> searchAccountsByBranch(String tenantId, Long branchId, String query) {
+        return searchAccountsByBranch(tenantId, branchId, query, org.springframework.data.domain.PageRequest.of(0, 500));
+    }
 
     /** Accounts by customer */
     List<DepositAccount> findByTenantIdAndCustomerId(String tenantId, Long customerId);

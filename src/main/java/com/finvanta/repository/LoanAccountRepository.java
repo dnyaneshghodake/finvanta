@@ -81,7 +81,13 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
             + "LOWER(la.customer.lastName) LIKE LOWER(CONCAT('%', :query, '%')))"
             + " ORDER BY la.accountNumber")
     List<LoanAccount> searchAccounts(
-            @Param("tenantId") String tenantId, @Param("query") String query);
+            @Param("tenantId") String tenantId, @Param("query") String query,
+            org.springframework.data.domain.Pageable pageable);
+
+    /** Convenience overload — default max 500 results to prevent OOM at scale */
+    default List<LoanAccount> searchAccounts(String tenantId, String query) {
+        return searchAccounts(tenantId, query, org.springframework.data.domain.PageRequest.of(0, 500));
+    }
 
     /** Branch-scoped loan search for MAKER/CHECKER per Finacle BRANCH_CONTEXT */
     @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId "
@@ -93,7 +99,12 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
             + " ORDER BY la.accountNumber")
     List<LoanAccount> searchAccountsByBranch(
             @Param("tenantId") String tenantId, @Param("branchId") Long branchId,
-            @Param("query") String query);
+            @Param("query") String query, org.springframework.data.domain.Pageable pageable);
+
+    /** Convenience overload — default max 500 results */
+    default List<LoanAccount> searchAccountsByBranch(String tenantId, Long branchId, String query) {
+        return searchAccountsByBranch(tenantId, branchId, query, org.springframework.data.domain.PageRequest.of(0, 500));
+    }
 
     /** CBS Dashboard: Total NPA outstanding (Sub-Standard + Doubtful + Loss) */
     @Query(

@@ -43,7 +43,13 @@ public interface LoanApplicationRepository extends JpaRepository<LoanApplication
             + "LOWER(la.customer.lastName) LIKE LOWER(CONCAT('%', :query, '%')))"
             + " ORDER BY la.createdAt DESC")
     List<LoanApplication> searchApplications(
-            @Param("tenantId") String tenantId, @Param("query") String query);
+            @Param("tenantId") String tenantId, @Param("query") String query,
+            org.springframework.data.domain.Pageable pageable);
+
+    /** Convenience overload — default max 500 results to prevent OOM at scale */
+    default List<LoanApplication> searchApplications(String tenantId, String query) {
+        return searchApplications(tenantId, query, org.springframework.data.domain.PageRequest.of(0, 500));
+    }
 
     /** Branch-scoped application search for MAKER/CHECKER per Finacle BRANCH_CONTEXT */
     @Query("SELECT la FROM LoanApplication la WHERE la.tenantId = :tenantId "
@@ -56,5 +62,10 @@ public interface LoanApplicationRepository extends JpaRepository<LoanApplication
             + " ORDER BY la.createdAt DESC")
     List<LoanApplication> searchApplicationsByBranch(
             @Param("tenantId") String tenantId, @Param("branchId") Long branchId,
-            @Param("query") String query);
+            @Param("query") String query, org.springframework.data.domain.Pageable pageable);
+
+    /** Convenience overload — default max 500 results */
+    default List<LoanApplication> searchApplicationsByBranch(String tenantId, Long branchId, String query) {
+        return searchApplicationsByBranch(tenantId, branchId, query, org.springframework.data.domain.PageRequest.of(0, 500));
+    }
 }
