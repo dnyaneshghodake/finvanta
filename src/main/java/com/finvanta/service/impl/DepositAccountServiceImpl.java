@@ -396,6 +396,16 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // Produces sequential, deterministic account numbers that survive JVM restarts.
         // Branch-scoped: each branch has its own sequence starting from 1.
         // Format: {SB|CA}-{BRANCH}-{6-digit} → SB-BR001-000001
+        //
+        // CBS CRITICAL: Sequence allocation is deferred to AFTER all validations pass.
+        // Per Finacle SEQ_MASTER / Temenos EB.SEQUENCE: reference numbers use REQUIRES_NEW
+        // propagation (commits independently of caller's transaction). If allocated before
+        // validation and the validation fails, the sequence is consumed but no record is
+        // created — causing gaps (e.g., SB-BR001-000002 instead of 000001).
+        // Per RBI IT Governance / Finacle ACCTOPN: account numbers must be sequential
+        // with minimal gaps. Gaps trigger RBI gap analysis queries during inspection.
+        // Moving allocation here ensures the sequence is only consumed when the account
+        // WILL be persisted — all customer/branch/type/product validations have passed.
         String accNo = cbsReferenceService.generateDepositAccountNumber(
                 branch.getBranchCode(), parsedAccountType.isSavings());
         DepositAccount a = new DepositAccount();
