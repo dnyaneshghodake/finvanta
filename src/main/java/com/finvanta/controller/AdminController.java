@@ -233,6 +233,122 @@ public class AdminController {
         return mav;
     }
 
+    /**
+     * CBS Transaction Limit Create per Finacle LIMDEF / Temenos LIMIT.CHECK.
+     * Per RBI Internal Controls: per-role, per-type amount limits for operational risk.
+     */
+    @PostMapping("/limits/create")
+    public String createLimit(
+            @RequestParam String role,
+            @RequestParam String transactionType,
+            @RequestParam(required = false) BigDecimal perTransactionLimit,
+            @RequestParam(required = false) BigDecimal dailyAggregateLimit,
+            @RequestParam(required = false) String description,
+            RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            String user = SecurityUtil.getCurrentUsername();
+
+            if (role == null || role.isBlank())
+                throw new BusinessException("ROLE_REQUIRED", "Role is mandatory.");
+            if (transactionType == null || transactionType.isBlank())
+                throw new BusinessException("TXN_TYPE_REQUIRED", "Transaction type is mandatory.");
+
+            com.finvanta.domain.entity.TransactionLimit tl = new com.finvanta.domain.entity.TransactionLimit();
+            tl.setTenantId(tenantId);
+            tl.setRole(role);
+            tl.setTransactionType(transactionType);
+            tl.setPerTransactionLimit(perTransactionLimit);
+            tl.setDailyAggregateLimit(dailyAggregateLimit);
+            tl.setDescription(description);
+            tl.setActive(true);
+            tl.setCreatedBy(user);
+
+            limitRepository.save(tl);
+
+            auditService.logEvent("TransactionLimit", tl.getId(), "LIMIT_CREATED", null,
+                    tl.getRole() + "/" + tl.getTransactionType(), "LIMIT_CONFIG",
+                    "Limit created: " + tl.getRole() + "/" + tl.getTransactionType()
+                            + " | Per-txn: " + tl.getPerTransactionLimit()
+                            + " | Daily: " + tl.getDailyAggregateLimit() + " | By: " + user);
+
+            redirectAttributes.addFlashAttribute("success",
+                    "Limit created: " + tl.getRole() + " / " + tl.getTransactionType());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/limits";
+    }
+
+    /** CBS Transaction Limit Edit per Finacle LIMDEF */
+    @PostMapping("/limits/{id}/edit")
+    public String updateLimit(
+            @PathVariable Long id,
+            @RequestParam(required = false) BigDecimal perTransactionLimit,
+            @RequestParam(required = false) BigDecimal dailyAggregateLimit,
+            @RequestParam(required = false) String description,
+            RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            String user = SecurityUtil.getCurrentUsername();
+
+            com.finvanta.domain.entity.TransactionLimit tl = limitRepository.findById(id)
+                    .filter(l -> l.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("LIMIT_NOT_FOUND", "Limit not found: " + id));
+
+            String before = tl.getPerTransactionLimit() + "|" + tl.getDailyAggregateLimit();
+
+            tl.setPerTransactionLimit(perTransactionLimit);
+            tl.setDailyAggregateLimit(dailyAggregateLimit);
+            tl.setDescription(description);
+            tl.setUpdatedBy(user);
+
+            limitRepository.save(tl);
+
+            String after = tl.getPerTransactionLimit() + "|" + tl.getDailyAggregateLimit();
+            auditService.logEvent("TransactionLimit", tl.getId(), "LIMIT_UPDATED", before, after,
+                    "LIMIT_CONFIG", "Limit updated: " + tl.getRole() + "/" + tl.getTransactionType() + " by " + user);
+
+            redirectAttributes.addFlashAttribute("success",
+                    "Limit updated: " + tl.getRole() + " / " + tl.getTransactionType());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/limits";
+    }
+
+    /** CBS Transaction Limit Activate/Deactivate per Finacle LIMDEF */
+    @PostMapping("/limits/{id}/toggle-active")
+    public String toggleLimitActive(@PathVariable Long id, RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            String user = SecurityUtil.getCurrentUsername();
+
+            com.finvanta.domain.entity.TransactionLimit tl = limitRepository.findById(id)
+                    .filter(l -> l.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("LIMIT_NOT_FOUND", "Limit not found: " + id));
+
+            boolean newState = !tl.isActive();
+            tl.setActive(newState);
+            tl.setUpdatedBy(user);
+            limitRepository.save(tl);
+
+            auditService.logEvent("TransactionLimit", tl.getId(),
+                    newState ? "LIMIT_ACTIVATED" : "LIMIT_DEACTIVATED",
+                    String.valueOf(!newState), String.valueOf(newState),
+                    "LIMIT_CONFIG",
+                    "Limit " + (newState ? "activated" : "deactivated") + ": "
+                            + tl.getRole() + "/" + tl.getTransactionType() + " by " + user);
+
+            redirectAttributes.addFlashAttribute("success",
+                    "Limit " + (newState ? "activated" : "deactivated") + ": "
+                            + tl.getRole() + " / " + tl.getTransactionType());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/limits";
+    }
+
     // ========================================================================
     // Charge Configuration Management (Finacle CHRG_MASTER)
     // ========================================================================
