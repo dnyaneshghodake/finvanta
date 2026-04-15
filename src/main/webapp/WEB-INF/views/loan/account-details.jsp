@@ -340,7 +340,7 @@
                     <div class="row mb-2">
                         <div class="col-md-4">
                             <label class="form-label">Tranche Amount (INR) *</label>
-                            <input type="number" name="trancheAmount" class="form-control" step="0.01" min="1" max="${account.undisbursedAmount}" required />
+                            <input type="number" name="trancheAmount" class="form-control" data-fv-type="amount" min="1" max="${account.undisbursedAmount}" required />
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Narration</label>
@@ -367,7 +367,7 @@
                     <div class="row mb-3">
                         <div class="col-md-4">
                             <label for="amount" class="form-label">Repayment Amount (INR)</label>
-                            <input type="number" name="amount" id="amount" class="form-control" step="0.01" min="1" required value="${account.emiAmount}" />
+                            <input type="number" name="amount" id="amount" class="form-control" data-fv-type="amount" min="1" required value="${account.emiAmount}" />
                         </div>
                     </div>
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
@@ -386,7 +386,7 @@
                     <div class="row mb-3">
                         <div class="col-md-4">
                             <label class="form-label">Total Outstanding (INR)</label>
-                            <input type="number" name="amount" class="form-control" step="0.01" min="1" required value="${account.totalOutstanding}" />
+                            <input type="number" name="amount" class="form-control" data-fv-type="amount" min="1" required value="${account.totalOutstanding}" />
                         </div>
                     </div>
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
@@ -415,7 +415,7 @@
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Amount (INR)</label>
-                            <input type="number" name="feeAmount" class="form-control" step="0.01" min="1" required />
+                            <input type="number" name="feeAmount" class="form-control" data-fv-type="amount" min="1" required />
                         </div>
                     </div>
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
@@ -451,7 +451,7 @@
                     <div class="row mb-3">
                         <div class="col-md-3">
                             <label class="form-label">New Interest Rate (% p.a.)</label>
-                            <input type="number" name="newRate" class="form-control" step="0.01" min="0.01" max="50" placeholder="Leave blank for no change" value="" />
+                            <input type="number" name="newRate" class="form-control" data-fv-type="rate" step="0.01" placeholder="Leave blank for no change" value="" />
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Extend Tenure (months)</label>
