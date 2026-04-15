@@ -82,4 +82,26 @@ public interface ProductMasterService {
      * @return Updated product with new GL codes applied
      */
     ProductMaster applyApprovedGlChange(Long workflowId);
+
+    /**
+     * CBS Tier-1 Gap #7: Clone an existing product to create a variant per Finacle PDDEF.
+     *
+     * Per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG: product cloning is a standard
+     * operation for creating product variants (e.g., clone TERM_LOAN_SECURED to create
+     * TERM_LOAN_GOLD with different GL codes and rate ranges). The clone:
+     *   - Copies ALL parameters from the source product (GL codes, rates, limits, etc.)
+     *   - Requires a NEW unique product code (immutable after creation)
+     *   - Starts in ACTIVE status (same as createProduct)
+     *   - configVersion starts at 1 (independent version history)
+     *   - Full audit trail linking clone to source product
+     *
+     * Per RBI Fair Practices Code 2023: product variants must be independently
+     * documented and auditable. The clone link provides traceability.
+     *
+     * @param sourceProductId The product to clone from
+     * @param newProductCode  Unique code for the new product (validated same as createProduct)
+     * @param newProductName  Name for the new product
+     * @return The newly created cloned product
+     */
+    ProductMaster cloneProduct(Long sourceProductId, String newProductCode, String newProductName);
 }

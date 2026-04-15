@@ -201,6 +201,11 @@ public class LoanAccountServiceImpl implements LoanAccountService {
         // Per Tier-1 CBS: loan proceeds credit the borrower's operating account.
         // Validated at disbursement time (account must be ACTIVE, same CIF).
         account.setDisbursementAccountNumber(application.getDisbursementAccountNumber());
+        // CBS Tier-1 Gap #3: Capture product configVersion at origination.
+        // Per Finacle PDDEF: this permanently records which product version the account
+        // was opened under. If the product is later modified, this field answers the
+        // RBI inspection question: "what were the product terms at origination?"
+        account.setProductConfigVersion(product != null ? product.getConfigVersion() : null);
         account.setStatus(LoanStatus.ACTIVE);
         account.setCreatedBy(currentUser);
 

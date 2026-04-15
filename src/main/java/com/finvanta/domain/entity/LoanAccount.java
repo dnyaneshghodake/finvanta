@@ -47,6 +47,25 @@ public class LoanAccount extends BaseEntity {
     private String productType;
 
     /**
+     * CBS Tier-1 Gap #3: Product configuration version at account origination.
+     *
+     * Captures the ProductMaster.configVersion at the time this account was created.
+     * This answers the RBI inspection question: "which product version was this
+     * account opened under?" — critical when product GL codes or rate ranges have
+     * been modified since origination.
+     *
+     * Per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG: accounts are originated under
+     * a specific product configuration. If the product is later modified, the
+     * origination version provides audit traceability. Combined with the audit_log
+     * entries for that configVersion, inspectors can reconstruct the exact product
+     * parameters that were in effect when this account was opened.
+     *
+     * Null for accounts created before configVersion was introduced (backward compatible).
+     */
+    @Column(name = "product_config_version")
+    private Integer productConfigVersion;
+
+    /**
      * ISO 4217 currency code for all monetary amounts on this account.
      * Per CBS multi-currency standards, every account must declare its currency.
      * All amounts (sanctioned, outstanding, accrued, etc.) are in this currency.

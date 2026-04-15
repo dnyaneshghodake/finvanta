@@ -253,13 +253,17 @@ public class ProductMasterServiceImpl implements ProductMasterService {
         e.setDefaultSpread(u.getDefaultSpread());
         e.setInterestTieringEnabled(u.isInterestTieringEnabled());
         e.setInterestTieringJson(u.getInterestTieringJson());
+        // CBS Tier-1 Gap #3: Increment product configuration version on every update.
+        // Per Finacle PDDEF: configVersion provides deterministic version tracking.
+        // Correlated with audit_log before/after state = complete version history.
+        e.setConfigVersion(e.getConfigVersion() + 1);
         e.setUpdatedBy(user);
         productRepo.save(e);
         glResolver.evictCache();
 
         String auditAction = glCodesChanged && activeAccounts > 0
                 ? "PRODUCT_GL_CHANGED_WITH_ACTIVE_ACCOUNTS" : "PRODUCT_UPDATED";
-        String description = "Updated: " + e.getProductCode() + " by " + user
+        String description = "Updated: " + e.getProductCode() + " v" + e.getConfigVersion() + " by " + user
                 + (glCodesChanged && activeAccounts > 0
                 ? " | CBS CRITICAL: GL codes changed with " + activeAccounts + " active accounts" : "");
         auditSvc.logEvent("ProductMaster", e.getId(), auditAction,
@@ -363,6 +367,104 @@ public class ProductMasterServiceImpl implements ProductMasterService {
                 product.getProductCode(), wf.getCheckerUserId(), workflowId);
 
         return product;
+    }
+
+    /**
+     * CBS Tier-1 Gap #7: Clone product per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
+     *
+     * Deep-copies ALL product parameters (GL codes, rates, limits, floating config,
+     * tiering config) from the source product into a new product with a unique code.
+     * The clone is independent — changes to the source do NOT affect the clone.
+     *
+     * Per Finacle PDDEF: cloning is the standard way to create product variants.
+     * E.g., clone HOME_LOAN to create HOME_LOAN_AFFORDABLE with lower rate range
+     * and different GL codes for priority sector lending reporting.
+     */
+    @Override
+    @Transactional
+    public ProductMaster cloneProduct(Long sourceProductId, String newProductCode, String newProductName) {
+        String tid = TenantContext.getCurrentTenant();
+        String user = SecurityUtil.getCurrentUsername();
+
+        ProductMaster source = productRepo.findById(sourceProductId)
+                .filter(p -> p.getTenantId().equals(tid))
+                .orElseThrow(() -> new BusinessException("PRODUCT_NOT_FOUND", "" + sourceProductId));
+
+        // Validate new product code (same rules as createProduct)
+        validateProductCode(newProductCode);
+        if (productRepo.findByTenantIdAndProductCode(tid, newProductCode).isPresent())
+            throw new BusinessException("DUPLICATE_PRODUCT", "Product code exists: " + newProductCode);
+        if (newProductName == null || newProductName.isBlank())
+            throw new BusinessException("PRODUCT_NAME_REQUIRED", "Product name is mandatory for clone.");
+
+        // Deep-copy all parameters from source
+        ProductMaster clone = new ProductMaster();
+        clone.setProductCode(newProductCode);
+        clone.setProductName(newProductName);
+        clone.setProductCategory(source.getProductCategory());
+        clone.setDescription("Cloned from " + source.getProductCode() + ". " +
+                (source.getDescription() != null ? source.getDescription() : ""));
+        clone.setCurrencyCode(source.getCurrencyCode());
+        // Interest configuration
+        clone.setInterestMethod(source.getInterestMethod());
+        clone.setInterestType(source.getInterestType());
+        clone.setMinInterestRate(source.getMinInterestRate());
+        clone.setMaxInterestRate(source.getMaxInterestRate());
+        clone.setDefaultPenalRate(source.getDefaultPenalRate());
+        clone.setRepaymentFrequency(source.getRepaymentFrequency());
+        clone.setRepaymentAllocation(source.getRepaymentAllocation());
+        clone.setPrepaymentPenaltyApplicable(source.isPrepaymentPenaltyApplicable());
+        clone.setProcessingFeePct(source.getProcessingFeePct());
+        // Amount & tenure limits
+        clone.setMinLoanAmount(source.getMinLoanAmount());
+        clone.setMaxLoanAmount(source.getMaxLoanAmount());
+        clone.setMinTenureMonths(source.getMinTenureMonths());
+        clone.setMaxTenureMonths(source.getMaxTenureMonths());
+        // GL code mapping (complete copy)
+        clone.setGlLoanAsset(source.getGlLoanAsset());
+        clone.setGlInterestReceivable(source.getGlInterestReceivable());
+        clone.setGlBankOperations(source.getGlBankOperations());
+        clone.setGlInterestIncome(source.getGlInterestIncome());
+        clone.setGlFeeIncome(source.getGlFeeIncome());
+        clone.setGlPenalIncome(source.getGlPenalIncome());
+        clone.setGlProvisionExpense(source.getGlProvisionExpense());
+        clone.setGlProvisionNpa(source.getGlProvisionNpa());
+        clone.setGlWriteOffExpense(source.getGlWriteOffExpense());
+        clone.setGlInterestSuspense(source.getGlInterestSuspense());
+        // Floating rate configuration
+        clone.setDefaultBenchmarkName(source.getDefaultBenchmarkName());
+        clone.setDefaultRateResetFrequency(source.getDefaultRateResetFrequency());
+        clone.setDefaultSpread(source.getDefaultSpread());
+        // CASA tiering
+        clone.setInterestTieringEnabled(source.isInterestTieringEnabled());
+        clone.setInterestTieringJson(source.getInterestTieringJson());
+        // System fields — new product, independent lifecycle
+        clone.setId(null);
+        clone.setVersion(null);
+        clone.setTenantId(tid);
+        clone.setProductStatus(ProductStatus.ACTIVE);
+        clone.setActive(true);
+        clone.setConfigVersion(1);
+        clone.setCreatedBy(user);
+        clone.setUpdatedBy(null);
+
+        // Validate GL codes for the clone (same rules as createProduct)
+        validateGlCodes(tid, clone);
+
+        ProductMaster saved = productRepo.save(clone);
+        glResolver.evictCache();
+
+        auditSvc.logEvent("ProductMaster", saved.getId(), "PRODUCT_CLONED", null,
+                saved.getProductCode(), "PRODUCT_MASTER",
+                "Cloned: " + saved.getProductCode() + " from " + source.getProductCode()
+                        + " (sourceId=" + sourceProductId + ", sourceVersion=v" + source.getConfigVersion() + ")"
+                        + " | Category: " + saved.getProductCategory()
+                        + " | By: " + user);
+
+        log.info("Product cloned: {} from {} (sourceId={}, sourceVersion=v{})",
+                saved.getProductCode(), source.getProductCode(), sourceProductId, source.getConfigVersion());
+
+        return saved;
     }
 
     private void validateProductCode(String code) {
