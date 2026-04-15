@@ -285,9 +285,24 @@ public class CustomerController {
         // The service layer already sanitizes on upload, but defense-in-depth
         // requires re-sanitizing at the HTTP boundary per OWASP guidelines.
         String safeFileName = doc.getFileName().replaceAll("[\\r\\n\"\\\\]", "_");
+        // CBS Security: Re-validate Content-Type at download boundary (defense-in-depth).
+        // Upload validates magic bytes, but DB-stored contentType could be tampered.
+        String safeContentType = doc.getContentType();
+        if (!"application/pdf".equals(safeContentType)
+                && !"image/jpeg".equals(safeContentType)
+                && !"image/png".equals(safeContentType)) {
+            safeContentType = "application/octet-stream"; // Force download for unknown types
+        }
         return ResponseEntity.ok()
                 .header("Content-Disposition", "inline; filename=\"" + safeFileName + "\"")
-                .header("Content-Type", doc.getContentType())
+                .header("Content-Type", safeContentType)
+                // CBS Security: Prevent MIME sniffing — browser must honor declared Content-Type.
+                // Without this, a browser could re-interpret file content (e.g., SVG with JS).
+                .header("X-Content-Type-Options", "nosniff")
+                // CBS Security: Sandbox user-uploaded content to prevent embedded JS execution.
+                // Per OWASP: uploaded PDFs can contain JavaScript that executes in browser context.
+                // 'sandbox' isolates the content from the application's origin/cookies/session.
+                .header("Content-Security-Policy", "sandbox")
                 .body(fileContent);
     }
 

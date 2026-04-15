@@ -331,22 +331,62 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         existing.setPermanentState(updated.getPermanentState());
         existing.setPermanentPinCode(updated.getPermanentPinCode());
         existing.setPermanentCountry(updated.getPermanentCountry());
-        existing.setAddressSameAsPermanent(updated.isAddressSameAsPermanent());
+        // CBS: addressSameAsPermanent defaults to true on Customer entity.
+        // For API path: when field is omitted from JSON, entity carries default (true),
+        // which would silently overwrite an existing false value — hiding the customer's
+        // distinct permanent address. Only overwrite when the updated entity has permanent
+        // address fields populated (indicating the caller explicitly provided address data)
+        // OR when the flag is being set to true (collapsing addresses is always safe).
+        if (updated.isAddressSameAsPermanent()) {
+            existing.setAddressSameAsPermanent(true);
+        } else if (updated.getPermanentAddress() != null && !updated.getPermanentAddress().isBlank()) {
+            // Caller explicitly provided permanent address data → honor the false flag
+            existing.setAddressSameAsPermanent(false);
+        }
+        // If updated.addressSameAsPermanent=true (default) and no permanent address provided,
+        // preserve existing value — prevents silent override from API partial updates.
 
         // CBS: Nominee details (mutable — per RBI Nomination Guidelines)
         existing.setNomineeDob(updated.getNomineeDob());
         existing.setNomineeAddress(updated.getNomineeAddress());
         existing.setNomineeGuardianName(updated.getNomineeGuardianName());
 
-        // CBS: KYC risk category and PEP flag
+        // CBS: KYC risk category and PEP flag.
+        // CBS CRITICAL: PEP flag is a FATF/RBI compliance field. The service layer
+        // receives the full Customer entity from both MVC (always sends pep via hidden
+        // field) and API (uses Boolean wrapper with null-guard in populateCustomerFromRequest).
+        // For API path: when pep is omitted from JSON, the entity carries Java default (false),
+        // which would silently clear a PEP=true flag — a FATF Recommendation 12 violation.
+        // Fix: only overwrite PEP if the updated entity explicitly sets it to true,
+        // OR if the existing entity was already non-PEP (safe to copy false).
+        // Same pattern for addressSameAsPermanent (entity default=true could override false).
         if (updated.getKycRiskCategory() != null) {
             existing.setKycRiskCategory(updated.getKycRiskCategory());
             existing.computeKycExpiry();
         }
-        existing.setPep(updated.isPep());
+        // CBS: Only clear PEP flag if updated entity explicitly has pep=false AND
+        // caller actually provided the field. Since we can't distinguish "not provided"
+        // from "false" on a primitive boolean, we use a conservative rule:
+        // - If updated.pep=true → always set (escalation is always safe)
+        // - If updated.pep=false AND existing.pep=true → preserve existing (don't silently clear)
+        //   unless kycRiskCategory was also explicitly changed (indicates intentional update)
+        // For MVC path: the hidden _pep field ensures pep is always explicitly sent.
+        // For API path: populateCustomerFromRequest only sets pep when non-null.
         if (updated.isPep()) {
+            existing.setPep(true);
             existing.setKycRiskCategory("HIGH");
             existing.computeKycExpiry();
+        } else if (!existing.isPep()) {
+            // Both are false — no change needed, but safe to set explicitly
+            existing.setPep(false);
+        }
+        // If existing.isPep()=true and updated.isPep()=false, we preserve existing PEP=true.
+        // To explicitly de-PEP a customer, the kycRiskCategory must also be changed
+        // (indicating an intentional risk reassessment, not a missing field).
+        if (!updated.isPep() && existing.isPep() && updated.getKycRiskCategory() != null
+                && !"HIGH".equals(updated.getKycRiskCategory())) {
+            // Intentional de-PEP: risk category explicitly changed away from HIGH
+            existing.setPep(false);
         }
 
         // CBS: Flag re-KYC if identity-material fields were changed.
@@ -490,7 +530,8 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         // CBS: PAN-based exact search via SHA-256 hash.
         // Per Finacle CIF_SEARCH: if query matches PAN format (AAAAA0000A), do hash lookup.
         // LIKE on encrypted pan_number column NEVER matches — hash is the only path.
-        String trimmed = query.trim();
+        // CBS UX: normalize to uppercase — branch staff may type lowercase PAN.
+        String trimmed = query.trim().toUpperCase();
         if (trimmed.matches("^[A-Z]{5}[0-9]{4}[A-Z]$")) {
             String panHash = PiiHashUtil.computeSha256(trimmed);
             java.util.Optional<Customer> panMatch = customerRepo.findByTenantIdAndPanHashAndActiveTrue(tid, panHash);
@@ -536,7 +577,8 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         }
 
         // CBS: PAN-based exact search via SHA-256 hash (returns single result as page)
-        String trimmed = query.trim();
+        // CBS UX: normalize to uppercase — branch staff may type lowercase PAN.
+        String trimmed = query.trim().toUpperCase();
         if (trimmed.matches("^[A-Z]{5}[0-9]{4}[A-Z]$")) {
             String panHash = PiiHashUtil.computeSha256(trimmed);
             java.util.Optional<Customer> panMatch = customerRepo.findByTenantIdAndPanHashAndActiveTrue(tid, panHash);

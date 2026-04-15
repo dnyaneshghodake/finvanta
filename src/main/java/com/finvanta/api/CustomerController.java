@@ -254,7 +254,12 @@ public class CustomerController {
         c.setMaritalStatus(req.maritalStatus());
         c.setOccupationCode(req.occupationCode());
         c.setAnnualIncomeBand(req.annualIncomeBand());
-        c.setKycRiskCategory(req.kycRiskCategory());
+        // CBS: Only set kycRiskCategory if explicitly provided (non-null).
+        // Null = not provided in JSON → preserve entity default ("MEDIUM").
+        // Without this guard, omitting kycRiskCategory from API request overwrites
+        // the Customer entity default of "MEDIUM" (Customer.java:136) with null,
+        // leaving customers with no risk category — violates RBI KYC Section 16.
+        if (req.kycRiskCategory() != null) c.setKycRiskCategory(req.kycRiskCategory());
         // CBS: Only set PEP if explicitly provided (non-null). Null = not provided in JSON.
         // Prevents silent clearing of PEP flag on partial updates per FATF Recommendation 12.
         if (req.pep() != null) c.setPep(req.pep());
