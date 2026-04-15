@@ -21,10 +21,15 @@ without a configured product.
 | Category | Code | Purpose | Examples |
 |----------|------|---------|----------|
 | Term Loan | `TERM_LOAN` | EMI-based loans with fixed tenure | Personal Loan, Vehicle Loan |
-| Demand Loan | `DEMAND_LOAN` | Bullet/on-demand repayment | Gold Loan, Overdraft |
+| Demand Loan | `DEMAND_LOAN` | Bullet/on-demand repayment | Gold Loan, Crop Loan |
+| Overdraft | `OVERDRAFT` | Revolving credit against collateral | OD against FD, OD against Property |
+| Cash Credit | `CASH_CREDIT` | Working capital facility for businesses | CC against Stock, CC against Debtors |
 | CASA Savings | `CASA_SAVINGS` | Interest-bearing savings accounts | Regular SB, PMJDY, NRI SB |
 | CASA Current | `CASA_CURRENT` | Zero-interest business accounts | Business CA |
 | Term Deposit | `TERM_DEPOSIT` | Fixed deposits with maturity | Regular FD, Senior FD, Tax Saver |
+
+> **Category is immutable after creation.** It determines GL accounting semantics (ASSET vs LIABILITY)
+> for the product's entire lifecycle. To change category, create a new product and retire the old one.
 
 ---
 
@@ -108,7 +113,7 @@ Only for CASA Savings products with balance-based slab rates.
 Each GL code is validated against `gl_master` for existence, active status, and correct account type.
 **GL type rules are category-aware** — CASA/FD products use LIABILITY/EXPENSE GLs where loan products use ASSET/INCOME.
 
-#### Loan Products (TERM_LOAN, DEMAND_LOAN)
+#### Loan Products (TERM_LOAN, DEMAND_LOAN, OVERDRAFT, CASH_CREDIT)
 
 | GL Field | Label | Expected Type | Default GL |
 |----------|-------|:---:|:---:|
@@ -359,19 +364,109 @@ applied automatically based on the existing product's category.
 
 ---
 
-## 7. Important Notes
+## 7. Maker-Checker for GL Code Changes
+
+When GL codes are modified on a product that has **active accounts** (loan or deposit), the
+change requires dual authorization per RBI Internal Controls:
+
+```
+Step 1: MAKER edits GL codes → system detects active accounts exist
+Step 2: System creates PENDING_APPROVAL workflow → MAKER sees "pending approval" message
+Step 3: CHECKER reviews GL diff on Approval Dashboard → Approves or Rejects
+Step 4: MAKER re-submits the same edit → system finds approved workflow → applies change
+Step 5: Approved workflow is consumed (one-time use, prevents replay)
+```
+
+**When maker-checker is NOT required:**
+- Non-GL changes (name, rates, limits, description) — always apply immediately
+- GL changes on products with **zero** active accounts — apply immediately
+- New product creation — no existing accounts to affect
+
+The GL diff is recorded in the workflow's `payloadSnapshot` for audit trail.
+
+---
+
+## 8. Product Cloning
+
+Clone an existing product to create variants without re-entering all 30+ fields.
+
+**Access:** Admin → Product Detail → Clone Product
+
+```
+Source Product:    HOME_LOAN (v3, ACTIVE, 245 accounts)
+New Product Code:  HOME_LOAN_AFFORDABLE
+New Product Name:  Home Loan - Affordable Housing
+```
+
+**What is copied:** All parameters — GL codes, rates, limits, floating config, tiering JSON.
+
+**What is NOT copied:** Product code, name, description (set by admin). The clone gets
+`configVersion=1`, independent lifecycle, and its own audit trail.
+
+**Validation:** The clone's GL codes are re-validated against the source product's category.
+If the source is CASA_SAVINGS, the clone inherits CASA_SAVINGS category and must have
+LIABILITY/EXPENSE GLs.
+
+---
+
+## 9. Product-Driven GL Resolution
+
+When a CASA transaction is posted (deposit, withdrawal, transfer, interest credit), the
+system resolves GL codes from the account's product via `ProductGLResolver`:
+
+```
+1. Read account.productCode (e.g., "SAVINGS")
+2. ProductGLResolver.getLoanAssetGL("SAVINGS") → looks up product_master cache
+3. Returns product's glLoanAsset (e.g., "2010" = SB Deposits LIABILITY)
+4. If product not found → falls back to GLConstants (hardcoded default)
+```
+
+**Impact:** Changing a GL code on a CASA product immediately affects all future transactions
+on every account using that product. This is the core value of product-driven GL architecture.
+
+**Fallback chain:** If `ProductGLResolver` returns the loan-module default (GL 1001 = Loan Asset),
+the system detects this is wrong for CASA and falls back to type-based hardcoded GLs
+(2010 for Savings, 2020 for Current).
+
+---
+
+## 10. Config Version Tracking
+
+Every product edit increments `configVersion` (starting at 1 on creation). Combined with
+the audit trail's before/after field snapshots, this provides a complete version history:
+
+```
+v1: Created by admin — TERM_LOAN, rate 8-14%, GL 1001/1002/...
+v2: Updated by admin — rate changed to 8-16%
+v3: Updated by admin — GL 1001 → 1010 (approved by checker)
+```
+
+The config version is displayed on the product detail page and in audit log entries.
+
+---
+
+## 11. Product Search
+
+**Access:** Admin → Products → Search bar
+
+Search by product code, name, category, or status. Minimum 2 characters.
+Examples: `SAVINGS`, `TERM`, `ACTIVE`, `CASA`.
+
+---
+
+## 12. Important Notes
 
 1. **GL Cache:** When GL codes are changed on a product, the system automatically evicts
    the ProductGLResolver cache. All future transactions will use the new GL codes.
 
-2. **Active Accounts Warning:** The edit form shows a warning when the product has active
-   loan or deposit accounts. GL code changes affect all future transactions on these accounts.
+2. **Active Accounts Warning:** The edit form shows the count of active loan + deposit
+   accounts using this product. GL code changes affect all future transactions on these accounts.
 
 3. **CASA Field Reinterpretation:** For CASA products, `Min Amount` = minimum balance and
    `Max Amount` = maximum balance (0 = unlimited). Tenure fields should be 0.
 
 4. **Immutable Fields:** Product Code, Category, and Currency cannot be changed after creation.
-   To change these, create a new product and retire the old one.
+   To change these, create a new product (or clone) and retire the old one.
 
 5. **Floating Rate per RBI:** Since October 2019, all new floating rate retail loans must be
    linked to an external benchmark (EBLR). Prepayment penalty is prohibited on floating rate loans.
@@ -385,3 +480,15 @@ applied automatically based on the existing product's category.
    (GL 2031, LIABILITY) representing accrued interest owed to the depositor. CASA products use
    `glInterestReceivable` = Interest Expense (GL 5010, EXPENSE) representing the P&L charge.
    This distinction is enforced by separate validation branches for CASA vs FD categories.
+
+8. **Mass Assignment Protection:** On product creation, the system explicitly nullifies `id`
+   and `version` fields to prevent OWASP A4 mass assignment attacks where a malicious POST
+   could overwrite an existing product by injecting `id=<existing_id>`.
+
+9. **Field-Level Audit Trail:** Every product edit records a complete before/after diff of
+   all changed fields (rates, GL codes, limits, etc.) in the audit log per RBI IT Governance
+   Direction 2023 §8.3. Auditors can reconstruct the exact state of any product at any point.
+
+10. **Overdraft/Cash Credit:** These loan categories use the same ASSET GL validation as
+    TERM_LOAN and DEMAND_LOAN. They differ in repayment behavior (revolving vs bullet) but
+    share the same GL accounting semantics.
