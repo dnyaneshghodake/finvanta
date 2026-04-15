@@ -177,8 +177,16 @@ public class AccountingController {
         // because journal postings are sparse — the user must manually expand the range.
         // 30 days matches the standard CBS monthly journal register view.
         LocalDate currentBizDate = resolveCurrentBusinessDate();
-        LocalDate from = fromDate != null ? LocalDate.parse(fromDate) : currentBizDate.minusDays(30);
-        LocalDate to = toDate != null ? LocalDate.parse(toDate) : currentBizDate;
+        LocalDate from;
+        LocalDate to;
+        try {
+            from = (fromDate != null && !fromDate.isBlank()) ? LocalDate.parse(fromDate) : currentBizDate.minusDays(30);
+            to = (toDate != null && !toDate.isBlank()) ? LocalDate.parse(toDate) : currentBizDate;
+        } catch (Exception e) {
+            from = currentBizDate.minusDays(30);
+            to = currentBizDate;
+            mav.addObject("error", "Invalid date format. Showing default 30-day range.");
+        }
 
         mav.addObject("entries", journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to));
         mav.addObject("fromDate", from);
@@ -290,9 +298,15 @@ public class AccountingController {
 
         // CBS: Default to current business date (DAY_OPEN), not system date.
         // Per Finacle VCHREGISTER: voucher register is a daily report for the business date.
-        LocalDate date = (businessDate != null && !businessDate.isBlank())
-                ? LocalDate.parse(businessDate)
-                : resolveCurrentBusinessDate();
+        LocalDate date;
+        try {
+            date = (businessDate != null && !businessDate.isBlank())
+                    ? LocalDate.parse(businessDate)
+                    : resolveCurrentBusinessDate();
+        } catch (Exception e) {
+            date = resolveCurrentBusinessDate();
+            mav.addObject("error", "Invalid date format. Showing current business date.");
+        }
 
         // Ledger entries for the date (all vouchers)
         mav.addObject(
