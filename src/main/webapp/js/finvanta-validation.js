@@ -58,11 +58,14 @@ FV.Validation = (function() {
             re: /^[0-9]+$/,
             strip: /[^0-9]/g,
             msg: 'Positive whole numbers only',
-            a: { min: 0, step: 1 }
+            a: { min: 0, step: 1, maxlength: 15 }
         },
         'amount': {
             msg: 'Positive amount (up to 2 decimal places)',
-            a: { min: 0, step: 0.01 }, numType: 'number'
+            // CBS: max 999999999999.99 (12+2 digits) per RBI RTGS/NEFT ceiling.
+            // Prevents absurdly large values that could cause UI/precision issues.
+            // Server-side BigDecimal(19,4) is the authoritative constraint.
+            a: { min: 0, max: 999999999999.99, step: 0.01 }, numType: 'number'
         },
         'rate': {
             msg: 'Percentage between 0% and 100%',
@@ -114,7 +117,8 @@ FV.Validation = (function() {
         'no-special': {
             re: /^[A-Za-z0-9\s]{1,500}$/,
             strip: /[^A-Za-z0-9\s]/g,
-            msg: 'No special characters allowed'
+            msg: 'No special characters allowed',
+            a: { maxlength: 500 }
         },
         'uppercase': {
             tx: 'upper'

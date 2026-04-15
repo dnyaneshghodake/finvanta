@@ -40,11 +40,11 @@
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small">Per-Transaction Limit</label>
-                        <input type="number" name="perTransactionLimit" class="form-control form-control-sm" step="0.01" min="0" placeholder="e.g., 1000000"/>
+                        <input type="number" name="perTransactionLimit" class="form-control form-control-sm" data-fv-type="amount" placeholder="e.g., 1000000"/>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small">Daily Aggregate Limit</label>
-                        <input type="number" name="dailyAggregateLimit" class="form-control form-control-sm" step="0.01" min="0" placeholder="e.g., 5000000"/>
+                        <input type="number" name="dailyAggregateLimit" class="form-control form-control-sm" data-fv-type="amount" placeholder="e.g., 5000000"/>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label small">Description</label>
