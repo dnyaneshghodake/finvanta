@@ -5,6 +5,7 @@ import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.entity.ProductMaster;
 import com.finvanta.domain.enums.GLAccountType;
+import com.finvanta.domain.enums.ProductCategory;
 import com.finvanta.domain.enums.ProductStatus;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.GLMasterRepository;
@@ -51,6 +52,12 @@ public class ProductMasterServiceImpl implements ProductMasterService {
         String tid = TenantContext.getCurrentTenant();
         String user = SecurityUtil.getCurrentUsername();
         validateProductCode(p.getProductCode());
+        // CBS: Validate product category is a known enum value.
+        // Per Finacle PDDEF: category determines GL accounting semantics.
+        // A null/invalid category would silently bypass GL type validation.
+        if (p.getProductCategory() == null)
+            throw new BusinessException("CATEGORY_REQUIRED",
+                    "Product category is mandatory. Valid values: " + java.util.Arrays.toString(ProductCategory.values()));
         if (productRepo.findByTenantIdAndProductCode(tid, p.getProductCode()).isPresent())
             throw new BusinessException("DUPLICATE_PRODUCT", "Product code exists: " + p.getProductCode());
         validateFields(p);
@@ -252,11 +259,11 @@ public class ProductMasterServiceImpl implements ProductMasterService {
      *     - glPenalIncome must be INCOME (penalty charges)
      */
     private void validateGlCodes(String tid, ProductMaster p) {
-        String cat = p.getProductCategory();
-        boolean isCasa = "CASA_SAVINGS".equals(cat) || "CASA_CURRENT".equals(cat);
-        boolean isFd = "TERM_DEPOSIT".equals(cat);
+        ProductCategory cat = p.getProductCategory();
+        if (cat == null)
+            throw new BusinessException("CATEGORY_REQUIRED", "Product category is mandatory for GL validation.");
 
-        if (isCasa) {
+        if (cat.isCasa()) {
             // CASA: Deposit-specific GL type validation
             validateGl(tid, p.getGlLoanAsset(), "Deposit Liability", GLAccountType.LIABILITY);
             validateGl(tid, p.getGlInterestReceivable(), "Interest Expense", GLAccountType.EXPENSE);

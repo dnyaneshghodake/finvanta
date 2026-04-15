@@ -1,5 +1,6 @@
 package com.finvanta.domain.entity;
 
+import com.finvanta.domain.enums.ProductCategory;
 import com.finvanta.domain.enums.ProductStatus;
 
 import jakarta.persistence.*;
@@ -57,9 +58,18 @@ public class ProductMaster extends BaseEntity {
     @Column(name = "product_name", nullable = false, length = 200)
     private String productName;
 
-    /** Product category: TERM_LOAN, OVERDRAFT, CASH_CREDIT, DEMAND_LOAN */
+    /**
+     * Product category per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
+     * Determines GL accounting semantics (loan=ASSET vs deposit=LIABILITY).
+     * IMMUTABLE after creation — changing category would corrupt GL postings
+     * for all existing accounts under this product.
+     *
+     * Stored as VARCHAR via @Enumerated(EnumType.STRING) for readability and
+     * backward compatibility with existing seed data (e.g., 'TERM_LOAN').
+     */
+    @Enumerated(EnumType.STRING)
     @Column(name = "product_category", nullable = false, length = 50)
-    private String productCategory;
+    private ProductCategory productCategory;
 
     @Column(name = "description", length = 500)
     private String description;
