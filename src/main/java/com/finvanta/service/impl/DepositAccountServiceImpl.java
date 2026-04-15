@@ -1404,7 +1404,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         if (dailyWithdrawalLimit != null) {
             if (dailyWithdrawalLimit.signum() < 0)
                 throw new BusinessException("INVALID_LIMIT", "Daily withdrawal limit cannot be negative.");
-            if (dailyWithdrawalLimit.compareTo(acct.getDailyWithdrawalLimit()) != 0) {
+            if (acct.getDailyWithdrawalLimit() == null || dailyWithdrawalLimit.compareTo(acct.getDailyWithdrawalLimit()) != 0) {
                 beforeState.append("|wdlLimit=").append(acct.getDailyWithdrawalLimit());
                 acct.setDailyWithdrawalLimit(dailyWithdrawalLimit);
                 afterState.append("|wdlLimit=").append(acct.getDailyWithdrawalLimit());
@@ -1417,7 +1417,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         if (dailyTransferLimit != null) {
             if (dailyTransferLimit.signum() < 0)
                 throw new BusinessException("INVALID_LIMIT", "Daily transfer limit cannot be negative.");
-            if (dailyTransferLimit.compareTo(acct.getDailyTransferLimit()) != 0) {
+            if (acct.getDailyTransferLimit() == null || dailyTransferLimit.compareTo(acct.getDailyTransferLimit()) != 0) {
                 beforeState.append("|xfrLimit=").append(acct.getDailyTransferLimit());
                 acct.setDailyTransferLimit(dailyTransferLimit);
                 afterState.append("|xfrLimit=").append(acct.getDailyTransferLimit());
@@ -1433,7 +1433,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                         "OD limit is only applicable for CURRENT_OD accounts. This account is " + acct.getAccountType());
             if (odLimit.signum() < 0)
                 throw new BusinessException("INVALID_LIMIT", "OD limit cannot be negative.");
-            if (odLimit.compareTo(acct.getOdLimit()) != 0) {
+            if (acct.getOdLimit() == null || odLimit.compareTo(acct.getOdLimit()) != 0) {
                 beforeState.append("|od=").append(acct.getOdLimit());
                 acct.setOdLimit(odLimit);
                 recomputeAvailable(acct);
@@ -1450,7 +1450,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                         "Interest rate override is only applicable for savings accounts. This account is " + acct.getAccountType());
             if (interestRate.signum() < 0 || interestRate.compareTo(new BigDecimal("100")) > 0)
                 throw new BusinessException("INVALID_RATE", "Interest rate must be between 0% and 100%.");
-            if (interestRate.compareTo(acct.getInterestRate()) != 0) {
+            if (acct.getInterestRate() == null || interestRate.compareTo(acct.getInterestRate()) != 0) {
                 beforeState.append("|rate=").append(acct.getInterestRate());
                 acct.setInterestRate(interestRate);
                 afterState.append("|rate=").append(acct.getInterestRate());
@@ -1463,7 +1463,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         if (minimumBalance != null) {
             if (minimumBalance.signum() < 0)
                 throw new BusinessException("INVALID_AMOUNT", "Minimum balance cannot be negative.");
-            if (minimumBalance.compareTo(acct.getMinimumBalance()) != 0) {
+            if (acct.getMinimumBalance() == null || minimumBalance.compareTo(acct.getMinimumBalance()) != 0) {
                 beforeState.append("|minBal=").append(acct.getMinimumBalance());
                 acct.setMinimumBalance(minimumBalance);
                 afterState.append("|minBal=").append(acct.getMinimumBalance());
