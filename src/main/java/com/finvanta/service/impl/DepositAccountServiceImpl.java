@@ -2,6 +2,7 @@ package com.finvanta.service.impl;
 
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
+import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
@@ -69,6 +70,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
 
     /** RBI Master Direction on KYC 2016, Section 38: 24 months no customer-initiated txn = DORMANT */
     private static final long DORMANCY_MONTHS = 24;
+    /** RBI Unclaimed Deposits Direction 2024: 10 years no txn = INOPERATIVE (unclaimed deposit) */
+    private static final long INOPERATIVE_MONTHS = 120;
     /** IT Act Section 194A: TDS threshold for non-senior citizens (INR 40,000 per FY) */
     private static final BigDecimal TDS_THRESHOLD_REGULAR = new BigDecimal("40000.00");
     /** IT Act Section 194A: TDS threshold for senior citizens age >= 60 (INR 50,000 per FY) */
@@ -84,6 +87,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     private final BranchRepository branchRepository;
     private final InterestAccrualRepository accrualRepository;
     private final ProductMasterRepository productMasterRepository;
+    private final ProductGLResolver glResolver;
     private final TransactionEngine transactionEngine;
     private final BusinessDateService businessDateService;
     private final AuditService auditService;
@@ -100,6 +104,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             BranchRepository branchRepository,
             InterestAccrualRepository accrualRepository,
             ProductMasterRepository productMasterRepository,
+            ProductGLResolver glResolver,
             TransactionEngine transactionEngine,
             BusinessDateService businessDateService,
             AuditService auditService,
@@ -114,6 +119,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         this.branchRepository = branchRepository;
         this.accrualRepository = accrualRepository;
         this.productMasterRepository = productMasterRepository;
+        this.glResolver = glResolver;
         this.transactionEngine = transactionEngine;
         this.businessDateService = businessDateService;
         this.auditService = auditService;
@@ -148,8 +154,30 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 acct.getLedgerBalance().subtract(acct.getHoldAmount()).subtract(acct.getUnclearedAmount()));
     }
 
+    /**
+     * CBS Tier-1: Product-driven GL resolution for CASA accounts per Finacle PDDEF.
+     *
+     * Resolves the deposit liability GL code from ProductMaster via ProductGLResolver.
+     * For CASA products, the product's glLoanAsset field stores the deposit liability GL
+     * (e.g., 2010 for SB, 2020 for CA) per the category-aware GL mapping.
+     *
+     * Fallback chain:
+     *   1. ProductGLResolver.getLoanAssetGL(productCode) — reads from product_master cache
+     *   2. If product not configured → GLConstants.SB_DEPOSITS / CA_DEPOSITS (hardcoded fallback)
+     *
+     * This ensures that changing GL codes on a CASA product in Product Master immediately
+     * affects all future transaction postings for accounts using that product — the core
+     * value proposition of product-driven GL architecture per Finacle PDDEF.
+     */
     private String glForAccount(DepositAccount a) {
-        return a.isSavings() ? GLConstants.SB_DEPOSITS : GLConstants.CA_DEPOSITS;
+        String productGl = glResolver.getLoanAssetGL(a.getProductCode());
+        // CBS: If ProductGLResolver returns the loan-module default (1001), it means
+        // the product is not configured or the fallback kicked in. For CASA accounts,
+        // 1001 (Loan Asset) is WRONG — use the type-based hardcoded fallback instead.
+        if (GLConstants.LOAN_ASSET.equals(productGl)) {
+            return a.isSavings() ? GLConstants.SB_DEPOSITS : GLConstants.CA_DEPOSITS;
+        }
+        return productGl;
     }
 
     /**
@@ -362,6 +390,22 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             throw new BusinessException("INVALID_ACCOUNT_TYPE",
                     "Invalid account type: " + accountType + ". Valid types: "
                             + Arrays.toString(DepositAccountType.values()));
+        }
+
+        // CBS Gap #3: Duplicate CIF+Type+Branch check per Finacle ACCTOPN.
+        // Per Finacle: one account per CIF per account type per branch (configurable).
+        // Prevents a customer from having two SAVINGS accounts at the same branch.
+        // Uses non-closed accounts only — closed accounts don't count as duplicates.
+        long existingCount = accountRepository.findByTenantIdAndCustomerId(tid, customerId).stream()
+                .filter(existing -> existing.getAccountType() == parsedAccountType
+                        && existing.getBranch().getId().equals(branchId)
+                        && !existing.isClosed())
+                .count();
+        if (existingCount > 0) {
+            throw new BusinessException("DUPLICATE_ACCOUNT",
+                    "Customer " + cust.getCustomerNumber() + " already has an active "
+                            + parsedAccountType + " account at branch " + branch.getBranchCode()
+                            + ". Per Finacle ACCTOPN: one account per CIF per type per branch.");
         }
 
         // CBS CRITICAL: Resolve business date BEFORE sequence allocation.
@@ -1178,7 +1222,44 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             count++;
         }
         if (count > 0) log.info("Marked {} accounts as DORMANT (cutoff={})", count, cutoff);
-        return count;
+
+        // CBS Gap #2: INOPERATIVE classification per RBI Unclaimed Deposits Direction 2024.
+        // Accounts DORMANT for 10+ years (no customer-initiated txn for 120+ months total)
+        // must transition to INOPERATIVE. INOPERATIVE accounts require senior management
+        // approval to reactivate and must be reported to RBI UDGAM portal.
+        // Per RBI: DORMANT (2yr) → INOPERATIVE (10yr) → Unclaimed (reported to UDGAM)
+        LocalDate inoperativeCutoff = businessDate.minusMonths(INOPERATIVE_MONTHS);
+        var inoperativeCandidates = accountRepository.findDormancyCandidates(tid, inoperativeCutoff).stream()
+                .filter(a -> a.getAccountStatus() == DepositAccountStatus.DORMANT)
+                .toList();
+        int inoperativeCount = 0;
+        for (var acct : inoperativeCandidates) {
+            // Only classify as INOPERATIVE if already DORMANT and last txn > 10 years
+            if (acct.getLastTransactionDate() != null
+                    && acct.getLastTransactionDate().isBefore(inoperativeCutoff)) {
+                acct.setAccountStatus(DepositAccountStatus.INOPERATIVE);
+                acct.setUpdatedBy("SYSTEM_EOD");
+                accountRepository.save(acct);
+
+                auditService.logEvent(
+                        "DepositAccount",
+                        acct.getId(),
+                        "INOPERATIVE_CLASSIFIED",
+                        "DORMANT",
+                        "INOPERATIVE",
+                        "DEPOSIT",
+                        "Account marked INOPERATIVE (10yr+): " + acct.getAccountNumber()
+                                + " | Last txn: " + acct.getLastTransactionDate()
+                                + " | Balance: INR " + acct.getLedgerBalance()
+                                + " | Per RBI Unclaimed Deposits Direction 2024");
+                inoperativeCount++;
+            }
+        }
+        if (inoperativeCount > 0) {
+            log.info("Marked {} accounts as INOPERATIVE (10yr+ no txn)", inoperativeCount);
+        }
+
+        return count + inoperativeCount;
     }
 
     // === Account Maintenance (Finacle ACCTMOD / Temenos ACCOUNT.MODIFY) ===
