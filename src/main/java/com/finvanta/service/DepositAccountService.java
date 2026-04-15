@@ -138,6 +138,8 @@ public interface DepositAccountService {
      *   - chequeBookEnabled, debitCardEnabled (operational flags)
      *   - dailyWithdrawalLimit, dailyTransferLimit (per-account risk controls)
      *   - odLimit (for CURRENT_OD accounts only)
+     *   - interestRate (per-account override, ADMIN only, savings accounts only)
+     *   - minimumBalance (per-account override/waiver, ADMIN only)
      *
      * Immutable after creation (must open new account):
      *   - accountNumber, accountType, productCode, currencyCode, branch, customer
@@ -154,6 +156,8 @@ public interface DepositAccountService {
      * @param dailyWithdrawalLimit New daily withdrawal limit (null = no change)
      * @param dailyTransferLimit New daily transfer limit (null = no change)
      * @param odLimit New OD limit for CURRENT_OD accounts (null = no change)
+     * @param interestRate Per-account interest rate override (null = no change)
+     * @param minimumBalance Per-account minimum balance override/waiver (null = no change)
      * @return Updated account
      */
     DepositAccount maintainAccount(
@@ -165,7 +169,9 @@ public interface DepositAccountService {
             Boolean debitCardEnabled,
             java.math.BigDecimal dailyWithdrawalLimit,
             java.math.BigDecimal dailyTransferLimit,
-            java.math.BigDecimal odLimit);
+            java.math.BigDecimal odLimit,
+            java.math.BigDecimal interestRate,
+            java.math.BigDecimal minimumBalance);
 
     /** Get account by number (read-only, no lock) */
     DepositAccount getAccount(String accountNumber);

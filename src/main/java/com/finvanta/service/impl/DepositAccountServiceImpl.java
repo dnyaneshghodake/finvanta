@@ -1274,7 +1274,9 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             Boolean debitCardEnabled,
             BigDecimal dailyWithdrawalLimit,
             BigDecimal dailyTransferLimit,
-            BigDecimal odLimit) {
+            BigDecimal odLimit,
+            BigDecimal interestRate,
+            BigDecimal minimumBalance) {
         String tid = TenantContext.getCurrentTenant();
         String user = SecurityUtil.getCurrentUsername();
         DepositAccount acct = lockAccount(tid, acn);
