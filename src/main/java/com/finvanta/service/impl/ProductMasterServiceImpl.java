@@ -247,10 +247,11 @@ public class ProductMasterServiceImpl implements ProductMasterService {
      */
     private void validateGlCodes(String tid, ProductMaster p) {
         String cat = p.getProductCategory();
-        boolean isCasa = "CASA_SAVINGS".equals(cat) || "CASA_CURRENT".equals(cat) || "TERM_DEPOSIT".equals(cat);
+        boolean isCasa = "CASA_SAVINGS".equals(cat) || "CASA_CURRENT".equals(cat);
+        boolean isFd = "TERM_DEPOSIT".equals(cat);
 
         if (isCasa) {
-            // CASA/FD: Deposit-specific GL type validation
+            // CASA: Deposit-specific GL type validation
             validateGl(tid, p.getGlLoanAsset(), "Deposit Liability", GLAccountType.LIABILITY);
             validateGl(tid, p.getGlInterestReceivable(), "Interest Expense", GLAccountType.EXPENSE);
             validateGl(tid, p.getGlBankOperations(), "Bank Operations", GLAccountType.ASSET);
@@ -259,6 +260,20 @@ public class ProductMasterServiceImpl implements ProductMasterService {
             validateGl(tid, p.getGlFeeIncome(), "Fee Income", GLAccountType.INCOME);
             validateGl(tid, p.getGlPenalIncome(), "Penalty Charges Income", GLAccountType.INCOME);
             validateGl(tid, p.getGlProvisionExpense(), "Interest Expense (Provision)", GLAccountType.EXPENSE);
+            validateGl(tid, p.getGlWriteOffExpense(), "Closure/Write-Off Expense", GLAccountType.EXPENSE);
+            validateGl(tid, p.getGlInterestSuspense(), "Interest Suspense", GLAccountType.LIABILITY);
+        } else if (isFd) {
+            // FD: Similar to CASA but glInterestReceivable = FD Interest Payable (LIABILITY, not EXPENSE)
+            // Per Finacle TD_MASTER: FD interest payable (2031) is a LIABILITY representing
+            // accrued interest owed to the depositor, credited at maturity or quarterly.
+            validateGl(tid, p.getGlLoanAsset(), "FD Deposit Liability", GLAccountType.LIABILITY);
+            validateGl(tid, p.getGlInterestReceivable(), "FD Interest Payable", GLAccountType.LIABILITY);
+            validateGl(tid, p.getGlBankOperations(), "Bank Operations", GLAccountType.ASSET);
+            validateGl(tid, p.getGlProvisionNpa(), "TDS Payable", GLAccountType.LIABILITY);
+            validateGl(tid, p.getGlInterestIncome(), "FD Interest Expense (P&L)", GLAccountType.EXPENSE);
+            validateGl(tid, p.getGlFeeIncome(), "Fee Income", GLAccountType.INCOME);
+            validateGl(tid, p.getGlPenalIncome(), "Premature Penalty Income", GLAccountType.INCOME);
+            validateGl(tid, p.getGlProvisionExpense(), "FD Interest Expense", GLAccountType.EXPENSE);
             validateGl(tid, p.getGlWriteOffExpense(), "Closure/Write-Off Expense", GLAccountType.EXPENSE);
             validateGl(tid, p.getGlInterestSuspense(), "Interest Suspense", GLAccountType.LIABILITY);
         } else {
