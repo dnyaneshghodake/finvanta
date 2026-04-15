@@ -146,4 +146,25 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
             "SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
                     + "AND da.accountStatus IN ('DORMANT', 'FROZEN', 'INOPERATIVE') ORDER BY da.accountStatus, da.accountNumber")
     List<DepositAccount> findAttentionRequired(@Param("tenantId") String tenantId);
+
+    // === CBS UDGAM: Unclaimed Deposits Reporting per RBI Direction 2024 ===
+
+    /**
+     * Find INOPERATIVE accounts for RBI UDGAM unclaimed deposits reporting.
+     * Per RBI Unclaimed Deposits Direction 2024: accounts with no customer-initiated
+     * transaction for 10+ years must be reported to the UDGAM portal.
+     * Returns accounts with non-zero balance (zero-balance INOPERATIVE accounts
+     * are not reportable — no funds to claim).
+     */
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.accountStatus = 'INOPERATIVE' AND da.ledgerBalance > 0 "
+            + "ORDER BY da.lastTransactionDate ASC")
+    List<DepositAccount> findUnclaimedDeposits(@Param("tenantId") String tenantId);
+
+    /**
+     * Summary: total unclaimed deposit amount for regulatory reporting.
+     */
+    @Query("SELECT COALESCE(SUM(da.ledgerBalance), 0) FROM DepositAccount da "
+            + "WHERE da.tenantId = :tenantId AND da.accountStatus = 'INOPERATIVE' AND da.ledgerBalance > 0")
+    java.math.BigDecimal sumUnclaimedDepositBalance(@Param("tenantId") String tenantId);
 }

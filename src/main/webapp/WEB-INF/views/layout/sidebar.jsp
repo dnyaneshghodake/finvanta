@@ -56,6 +56,7 @@
         <li><a href="${pageContext.request.contextPath}/reports/dpd" class="nav-link"><i class="bi bi-clock-history"></i><span class="nav-text">DPD Report</span></a></li>
         <li><a href="${pageContext.request.contextPath}/reports/irac" class="nav-link"><i class="bi bi-exclamation-triangle"></i><span class="nav-text">IRAC Report</span></a></li>
         <li><a href="${pageContext.request.contextPath}/reports/provision" class="nav-link"><i class="bi bi-percent"></i><span class="nav-text">Provision Report</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/reports/udgam" class="nav-link"><i class="bi bi-archive"></i><span class="nav-text">Unclaimed Deposits</span></a></li>
         </c:if>
 
         <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">

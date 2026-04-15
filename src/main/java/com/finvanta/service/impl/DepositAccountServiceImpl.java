@@ -648,6 +648,21 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         }
         if (!acct.isDebitAllowed())
             throw new BusinessException("ACCOUNT_NOT_DEBITABLE", "Status " + acct.getAccountStatus());
+        // CBS Gap #10: Multi-signatory enforcement for JOINTLY-mode joint accounts.
+        // Per Finacle ACCTOPN / RBI Joint Account Guidelines:
+        // When jointHolderMode = "JOINTLY", ALL signatories must authorize debits.
+        // Phase 1: Block self-service debits with clear message — require branch visit.
+        // Phase 2: Digital multi-signatory workflow with pending authorization queue.
+        // System-generated debits (SI, EMI, TDS) are exempt — they execute per mandate.
+        if ("JOINTLY".equals(acct.getJointHolderMode())
+                && !"STANDING_INSTRUCTION".equals(channel)
+                && !"SYSTEM".equals(channel)
+                && !"LOAN_EMI_DEBIT".equals(channel)) {
+            throw new BusinessException("JOINT_AUTHORIZATION_REQUIRED",
+                    "Account " + acn + " is a JOINTLY-operated joint account. "
+                            + "All signatories must authorize debits. Please visit the branch "
+                            + "with all account holders for joint authorization.");
+        }
         if (!acct.hasSufficientFunds(amount))
             throw new BusinessException(
                     "INSUFFICIENT_BALANCE", "Withdrawal " + amount + " > available " + acct.getEffectiveAvailable());
@@ -735,6 +750,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         var tgt = fromFirst ? secondAcct : firstAcct;
         if (!src.isDebitAllowed())
             throw new BusinessException("SOURCE_NOT_DEBITABLE", "Source " + src.getAccountStatus());
+        // CBS: Multi-signatory enforcement on transfer source (same as withdrawal)
+        if ("JOINTLY".equals(src.getJointHolderMode())) {
+            throw new BusinessException("JOINT_AUTHORIZATION_REQUIRED",
+                    "Source account " + from + " is a JOINTLY-operated joint account. "
+                            + "All signatories must authorize debits. Please visit the branch.");
+        }
         if (!tgt.isCreditAllowed())
             throw new BusinessException("TARGET_NOT_CREDITABLE", "Target " + tgt.getAccountStatus());
         if (!src.hasSufficientFunds(amount))
@@ -1161,6 +1182,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     public DepositAccount closeAccount(String acn, String reason) {
         var acct = lockAccount(TenantContext.getCurrentTenant(), acn);
         if (acct.isClosed()) throw new BusinessException("ALREADY_CLOSED", "Already closed");
+        // CBS: Multi-signatory enforcement on account closure
+        if ("JOINTLY".equals(acct.getJointHolderMode())) {
+            throw new BusinessException("JOINT_AUTHORIZATION_REQUIRED",
+                    "Account " + acn + " is a JOINTLY-operated joint account. "
+                            + "All signatories must authorize closure. Please visit the branch.");
+        }
         if (acct.getAccruedInterest() != null && acct.getAccruedInterest().signum() > 0)
             throw new BusinessException(
                     "PENDING_INTEREST",
