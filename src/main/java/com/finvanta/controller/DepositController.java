@@ -85,13 +85,14 @@ public class DepositController {
     /**
      * CBS CASA Account List with branch isolation per Finacle BRANCH_CONTEXT / SOL.
      * MAKER/CHECKER: see only accounts at their home branch.
-     * ADMIN: sees all accounts across all branches.
+     * ADMIN/AUDITOR: sees all accounts across all branches (read-only for AUDITOR).
+     * Per SecurityUtil.isAuditorRole(): AUDITOR is read-only, sees all branches.
      */
     @GetMapping("/accounts")
     public ModelAndView listAccounts() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("deposit/accounts");
-        if (SecurityUtil.isAdminRole()) {
+        if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
             mav.addObject("accounts", depositService.getAllAccounts());
         } else {
             Long branchId = SecurityUtil.getCurrentUserBranchId();

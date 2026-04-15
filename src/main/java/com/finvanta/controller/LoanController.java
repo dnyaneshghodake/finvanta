@@ -193,12 +193,12 @@ public class LoanController {
     /**
      * CBS Loan Application List with branch isolation per Finacle BRANCH_CONTEXT.
      * MAKER/CHECKER: see only applications from their home branch.
-     * ADMIN: sees all applications across all branches.
+     * ADMIN/AUDITOR: sees all applications across all branches (read-only for AUDITOR).
      */
     @GetMapping("/applications")
     public ModelAndView listApplications() {
         ModelAndView mav = new ModelAndView("loan/applications");
-        if (SecurityUtil.isAdminRole()) {
+        if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
             mav.addObject("applications", applicationService.getApplicationsByStatus(ApplicationStatus.SUBMITTED));
             mav.addObject("verifiedApplications", applicationService.getApplicationsByStatus(ApplicationStatus.VERIFIED));
             mav.addObject("approvedApplications", applicationService.getApplicationsByStatus(ApplicationStatus.APPROVED));
@@ -286,14 +286,14 @@ public class LoanController {
     /**
      * CBS Loan Account List with branch isolation per Finacle BRANCH_CONTEXT.
      * MAKER/CHECKER: see only accounts at their home branch.
-     * ADMIN: sees all accounts across all branches.
+     * ADMIN/AUDITOR: sees all accounts across all branches (read-only for AUDITOR).
      */
     @GetMapping("/accounts")
     public ModelAndView listAccounts() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("loan/accounts");
 
-        if (SecurityUtil.isAdminRole()) {
+        if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
             mav.addObject("accounts", accountService.getActiveAccounts());
         } else {
             Long branchId = SecurityUtil.getCurrentUserBranchId();
