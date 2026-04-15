@@ -36,4 +36,43 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     default List<AuditLog> findTopByTenantIdOrderByIdDesc(String tenantId) {
         return findTopByTenantIdOrderByIdDesc(tenantId, org.springframework.data.domain.PageRequest.of(0, 1));
     }
+
+    // === CBS AUDITINQ: Audit Trail Search per Finacle AUDIT_INQUIRY / RBI IT Governance §8.3 ===
+
+    /**
+     * Search audit logs by entity type, action, user, or description.
+     * Per RBI IT Governance Direction 2023 §8.3: audit trails must be searchable
+     * by entity, user, and date range for regulatory examination.
+     * Per Finacle AUDIT_INQUIRY: operations/compliance staff must locate audit
+     * records instantly for internal investigation and RBI on-site inspection.
+     */
+    @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId AND ("
+            + "LOWER(al.entityType) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(al.action) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(al.performedBy) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(al.module) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(al.description) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + " ORDER BY al.eventTimestamp DESC")
+    List<AuditLog> searchAuditLogsPaged(
+            @Param("tenantId") String tenantId, @Param("query") String query,
+            org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Search audit logs with date range filter.
+     * Per RBI Inspection Manual: inspectors specify date ranges for examination periods.
+     * Combined with text search for targeted investigation (e.g., "all KYC_VERIFY by user X in March").
+     */
+    @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId "
+            + "AND al.eventTimestamp >= :fromDate AND al.eventTimestamp < :toDate AND ("
+            + "LOWER(al.entityType) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(al.action) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(al.performedBy) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(al.module) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(al.description) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + " ORDER BY al.eventTimestamp DESC")
+    List<AuditLog> searchAuditLogsWithDateRange(
+            @Param("tenantId") String tenantId, @Param("query") String query,
+            @Param("fromDate") java.time.LocalDateTime fromDate,
+            @Param("toDate") java.time.LocalDateTime toDate,
+            org.springframework.data.domain.Pageable pageable);
 }

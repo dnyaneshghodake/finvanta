@@ -91,6 +91,24 @@ public class AdminController {
         return mav;
     }
 
+    /**
+     * CBS Product Search per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
+     * Searches by product code, name, category, or lifecycle status.
+     * ADMIN-only (enforced in SecurityConfig). Tenant-scoped.
+     */
+    @GetMapping("/products/search")
+    public ModelAndView searchProducts(@RequestParam(required = false) String q) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("admin/products");
+        if (q != null && !q.isBlank() && q.trim().length() >= 2) {
+            mav.addObject("products", productRepository.searchProducts(tenantId, q.trim()));
+            mav.addObject("searchQuery", q);
+        } else {
+            mav.addObject("products", productRepository.findByTenantIdOrderByProductCode(tenantId));
+        }
+        return mav;
+    }
+
     /** View product details with active account count (GAP 5) */
     @GetMapping("/products/{id}")
     public ModelAndView viewProduct(@PathVariable Long id) {

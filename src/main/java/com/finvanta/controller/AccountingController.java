@@ -60,6 +60,33 @@ public class AccountingController {
         return mav;
     }
 
+    /**
+     * CBS GL Account Search per Finacle GLINQ / Temenos GL.ENQUIRY.
+     * Searches by GL code, GL name, or account type (ASSET/LIABILITY/INCOME/EXPENSE/EQUITY).
+     * Per RBI Inspection Manual: inspectors require instant GL lookup during on-site examination.
+     * Tenant-scoped (GL is bank-wide, no branch isolation per Finacle GL_MASTER).
+     */
+    @GetMapping("/gl/search")
+    public ModelAndView searchGLAccounts(@RequestParam(required = false) String q) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("accounting/trial-balance");
+        if (q != null && !q.isBlank() && q.trim().length() >= 2) {
+            List<GLMaster> results = glMasterRepository.searchGLAccounts(tenantId, q.trim());
+            // CBS: Build trial balance format from search results for consistent display
+            Map<String, BigDecimal[]> trialBalance = new LinkedHashMap<>();
+            for (GLMaster gl : results) {
+                trialBalance.put(
+                        gl.getGlCode() + " — " + gl.getGlName() + " [" + gl.getAccountType() + "]",
+                        new BigDecimal[] {gl.getDebitBalance(), gl.getCreditBalance()});
+            }
+            mav.addObject("trialBalance", trialBalance);
+            mav.addObject("searchQuery", q);
+        } else {
+            mav.addObject("trialBalance", accountingService.getTrialBalance());
+        }
+        return mav;
+    }
+
     @GetMapping("/journal-entries")
     public ModelAndView journalEntries(
             @RequestParam(required = false) String fromDate, @RequestParam(required = false) String toDate) {
