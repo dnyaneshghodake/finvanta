@@ -237,13 +237,181 @@ public class AdminController {
     // Charge Configuration Management (Finacle CHRG_MASTER)
     // ========================================================================
 
-    /** List all charge configurations */
+    /** List all charge configurations (active only) */
     @GetMapping("/charges")
     public ModelAndView listCharges() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("admin/charges");
         mav.addObject("charges", chargeConfigRepository.findByTenantIdAndIsActiveTrueOrderByEventTriggerAsc(tenantId));
+        mav.addObject("glAccounts", glMasterRepository.findAllPostableAccounts(tenantId));
+        mav.addObject("products", productRepository.findByTenantIdOrderByProductCode(tenantId));
         return mav;
+    }
+
+    /**
+     * CBS Charge Config Create per Finacle CHRG_MASTER / Temenos AA.CHARGE.PARAMETER.
+     * Per RBI Fair Lending Code 2023: all charges must be transparent, justified, and audited.
+     */
+    @PostMapping("/charges/create")
+    public String createCharge(
+            @RequestParam String chargeCode,
+            @RequestParam String chargeName,
+            @RequestParam String eventTrigger,
+            @RequestParam String calculationType,
+            @RequestParam(required = false) BigDecimal baseAmount,
+            @RequestParam(required = false) BigDecimal percentage,
+            @RequestParam(required = false) String slabJson,
+            @RequestParam(required = false) BigDecimal minAmount,
+            @RequestParam(required = false) BigDecimal maxAmount,
+            @RequestParam(defaultValue = "false") boolean gstApplicable,
+            @RequestParam(required = false) BigDecimal gstRate,
+            @RequestParam String glChargeIncome,
+            @RequestParam(required = false) String glGstPayable,
+            @RequestParam(defaultValue = "false") boolean waiverAllowed,
+            @RequestParam(required = false) BigDecimal maxWaiverPercent,
+            @RequestParam(required = false) String productCode,
+            RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            String user = SecurityUtil.getCurrentUsername();
+
+            // CBS Validation per Finacle CHRG_MASTER
+            if (chargeCode == null || chargeCode.isBlank())
+                throw new BusinessException("CHARGE_CODE_REQUIRED", "Charge code is mandatory.");
+            if (!chargeCode.matches("^[A-Z0-9_]{2,50}$"))
+                throw new BusinessException("INVALID_CHARGE_CODE", "Uppercase alphanumeric + underscore, 2-50 chars.");
+            if ("FLAT".equals(calculationType) && (baseAmount == null || baseAmount.signum() <= 0))
+                throw new BusinessException("BASE_AMOUNT_REQUIRED", "Base amount is mandatory for FLAT charges.");
+            if ("PERCENTAGE".equals(calculationType) && (percentage == null || percentage.signum() <= 0))
+                throw new BusinessException("PERCENTAGE_REQUIRED", "Percentage is mandatory for PERCENTAGE charges.");
+            if ("SLAB".equals(calculationType) && (slabJson == null || slabJson.isBlank()))
+                throw new BusinessException("SLAB_JSON_REQUIRED", "Slab JSON is mandatory for SLAB charges.");
+            if (gstApplicable && (gstRate == null || gstRate.signum() <= 0))
+                throw new BusinessException("GST_RATE_REQUIRED", "GST rate is mandatory when GST is applicable.");
+
+            ChargeConfig cc = new ChargeConfig();
+            cc.setTenantId(tenantId);
+            cc.setChargeCode(chargeCode.trim().toUpperCase());
+            cc.setChargeName(chargeName);
+            cc.setEventTrigger(eventTrigger);
+            cc.setCalculationType(calculationType);
+            cc.setBaseAmount(baseAmount);
+            cc.setPercentage(percentage);
+            cc.setSlabJson(slabJson);
+            cc.setMinAmount(minAmount);
+            cc.setMaxAmount(maxAmount);
+            cc.setGstApplicable(gstApplicable);
+            cc.setGstRate(gstApplicable ? gstRate : null);
+            cc.setGlChargeIncome(glChargeIncome);
+            cc.setGlGstPayable(gstApplicable ? glGstPayable : null);
+            cc.setWaiverAllowed(waiverAllowed);
+            cc.setMaxWaiverPercent(waiverAllowed ? maxWaiverPercent : null);
+            cc.setProductCode(productCode != null && !productCode.isBlank() ? productCode : null);
+            cc.setIsActive(true);
+            cc.setCreatedBy(user);
+
+            chargeConfigRepository.save(cc);
+
+            auditService.logEvent("ChargeConfig", cc.getId(), "CHARGE_CREATED", null,
+                    cc.getChargeCode(), "CHARGE_CONFIG",
+                    "Charge created: " + cc.getChargeCode() + " | " + cc.getCalculationType()
+                            + " | Trigger: " + cc.getEventTrigger() + " | By: " + user);
+
+            redirectAttributes.addFlashAttribute("success", "Charge created: " + cc.getChargeCode());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/charges";
+    }
+
+    /** CBS Charge Config Edit per Finacle CHRG_MASTER */
+    @PostMapping("/charges/{id}/edit")
+    public String updateCharge(
+            @PathVariable Long id,
+            @RequestParam String chargeName,
+            @RequestParam String eventTrigger,
+            @RequestParam String calculationType,
+            @RequestParam(required = false) BigDecimal baseAmount,
+            @RequestParam(required = false) BigDecimal percentage,
+            @RequestParam(required = false) String slabJson,
+            @RequestParam(required = false) BigDecimal minAmount,
+            @RequestParam(required = false) BigDecimal maxAmount,
+            @RequestParam(defaultValue = "false") boolean gstApplicable,
+            @RequestParam(required = false) BigDecimal gstRate,
+            @RequestParam String glChargeIncome,
+            @RequestParam(required = false) String glGstPayable,
+            @RequestParam(defaultValue = "false") boolean waiverAllowed,
+            @RequestParam(required = false) BigDecimal maxWaiverPercent,
+            @RequestParam(required = false) String productCode,
+            RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            String user = SecurityUtil.getCurrentUsername();
+
+            ChargeConfig cc = chargeConfigRepository.findById(id)
+                    .filter(c -> c.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("CHARGE_NOT_FOUND", "Charge config not found: " + id));
+
+            String before = cc.getCalculationType() + "|" + cc.getBaseAmount() + "|" + cc.getPercentage();
+
+            cc.setChargeName(chargeName);
+            cc.setEventTrigger(eventTrigger);
+            cc.setCalculationType(calculationType);
+            cc.setBaseAmount(baseAmount);
+            cc.setPercentage(percentage);
+            cc.setSlabJson(slabJson);
+            cc.setMinAmount(minAmount);
+            cc.setMaxAmount(maxAmount);
+            cc.setGstApplicable(gstApplicable);
+            cc.setGstRate(gstApplicable ? gstRate : null);
+            cc.setGlChargeIncome(glChargeIncome);
+            cc.setGlGstPayable(gstApplicable ? glGstPayable : null);
+            cc.setWaiverAllowed(waiverAllowed);
+            cc.setMaxWaiverPercent(waiverAllowed ? maxWaiverPercent : null);
+            cc.setProductCode(productCode != null && !productCode.isBlank() ? productCode : null);
+            cc.setUpdatedBy(user);
+
+            chargeConfigRepository.save(cc);
+
+            String after = cc.getCalculationType() + "|" + cc.getBaseAmount() + "|" + cc.getPercentage();
+            auditService.logEvent("ChargeConfig", cc.getId(), "CHARGE_UPDATED", before, after,
+                    "CHARGE_CONFIG", "Charge updated: " + cc.getChargeCode() + " by " + user);
+
+            redirectAttributes.addFlashAttribute("success", "Charge updated: " + cc.getChargeCode());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/charges";
+    }
+
+    /** CBS Charge Config Activate/Deactivate per Finacle CHRG_MASTER */
+    @PostMapping("/charges/{id}/toggle-active")
+    public String toggleChargeActive(@PathVariable Long id, RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            String user = SecurityUtil.getCurrentUsername();
+
+            ChargeConfig cc = chargeConfigRepository.findById(id)
+                    .filter(c -> c.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("CHARGE_NOT_FOUND", "Charge config not found: " + id));
+
+            boolean newState = !cc.getIsActive();
+            cc.setIsActive(newState);
+            cc.setUpdatedBy(user);
+            chargeConfigRepository.save(cc);
+
+            auditService.logEvent("ChargeConfig", cc.getId(),
+                    newState ? "CHARGE_ACTIVATED" : "CHARGE_DEACTIVATED",
+                    String.valueOf(!newState), String.valueOf(newState),
+                    "CHARGE_CONFIG",
+                    "Charge " + (newState ? "activated" : "deactivated") + ": " + cc.getChargeCode() + " by " + user);
+
+            redirectAttributes.addFlashAttribute("success",
+                    "Charge " + (newState ? "activated" : "deactivated") + ": " + cc.getChargeCode());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/charges";
     }
 
     // ========================================================================
