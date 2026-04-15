@@ -72,13 +72,32 @@ public class AccountingController {
         ModelAndView mav = new ModelAndView("accounting/trial-balance");
         if (q != null && !q.isBlank() && q.trim().length() >= 2) {
             List<GLMaster> results = glMasterRepository.searchGLAccounts(tenantId, q.trim());
-            // CBS: Build trial balance format from search results for consistent display
-            Map<String, BigDecimal[]> trialBalance = new LinkedHashMap<>();
+            // CBS: Build trial balance format matching AccountingService.getTrialBalance() structure
+            Map<String, Object> trialBalance = new java.util.HashMap<>();
+            Map<String, Map<String, Object>> accountBalances = new LinkedHashMap<>();
+            BigDecimal totalDebit = BigDecimal.ZERO;
+            BigDecimal totalCredit = BigDecimal.ZERO;
+
             for (GLMaster gl : results) {
-                trialBalance.put(
-                        gl.getGlCode() + " — " + gl.getGlName() + " [" + gl.getAccountType() + "]",
-                        new BigDecimal[] {gl.getDebitBalance(), gl.getCreditBalance()});
+                Map<String, Object> balance = new java.util.HashMap<>();
+                balance.put("glCode", gl.getGlCode());
+                balance.put("glName", gl.getGlName());
+                balance.put("accountType", gl.getAccountType().name());
+                balance.put("debitBalance", gl.getDebitBalance());
+                balance.put("creditBalance", gl.getCreditBalance());
+                balance.put("netBalance", gl.getNetBalance());
+
+                totalDebit = totalDebit.add(gl.getDebitBalance());
+                totalCredit = totalCredit.add(gl.getCreditBalance());
+
+                accountBalances.put(gl.getGlCode(), balance);
             }
+
+            trialBalance.put("accounts", accountBalances);
+            trialBalance.put("totalDebit", totalDebit);
+            trialBalance.put("totalCredit", totalCredit);
+            trialBalance.put("isBalanced", totalDebit.compareTo(totalCredit) == 0);
+
             mav.addObject("trialBalance", trialBalance);
             mav.addObject("searchQuery", q);
         } else {
