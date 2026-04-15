@@ -162,10 +162,18 @@ public class LoanAccountServiceImpl implements LoanAccountService {
                     "ACCOUNT_ALREADY_EXISTS", "Loan account already exists for application: " + applicationId);
         }
 
-        // CBS: Resolve product defaults from ProductMaster per Finacle PDDEF
-        // If product is configured, use product-level defaults for penal rate, currency, etc.
-        // If not configured, fall back to application-level or system defaults.
+        // CBS Tier-1 Gap #5: Product origination gating per Finacle PDDEF.
+        // Per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG: only ACTIVE products
+        // can be used for new loan/account origination. SUSPENDED/RETIRED products
+        // block new origination but allow EOD on existing accounts.
+        // A product can become SUSPENDED between application approval and account
+        // creation — this check catches that race condition.
         var product = glResolver.getProduct(application.getProductType());
+        if (product != null && !product.getProductStatus().isOriginationAllowed()) {
+            throw new BusinessException("PRODUCT_NOT_ACTIVE",
+                    "Product " + application.getProductType() + " is " + product.getProductStatus()
+                            + ". Only ACTIVE products can be used for new account origination.");
+        }
 
         LoanAccount account = new LoanAccount();
         account.setTenantId(tenantId);
@@ -580,13 +588,21 @@ public class LoanAccountServiceImpl implements LoanAccountService {
             return null;
         }
 
-        BigDecimal accruedAmount = interestRule.calculateDailyAccrual(account, fromDate, accrualDate);
+        // CBS Tier-1 Gap #6: Product-level interest calculation method enforcement.
+        // Per Finacle INTDEF / Temenos AA.INTEREST: the day-count convention is ALWAYS
+        // resolved from the product definition, not hardcoded. Different products use
+        // different conventions (ACTUAL_365 for INR loans, ACTUAL_360 for USD/EUR, etc.).
+        // The backward-compatible overload defaults to ACTUAL_365 which is correct for
+        // most Indian banking products but incorrect for multi-currency or NBFC products.
+        String productType = account.getProductType();
+        var product = glResolver.getProduct(productType);
+        String interestMethod = (product != null && product.getInterestMethod() != null)
+                ? product.getInterestMethod() : "ACTUAL_365";
+        BigDecimal accruedAmount = interestRule.calculateDailyAccrual(account, fromDate, accrualDate, interestMethod);
 
         if (accruedAmount.compareTo(BigDecimal.ZERO) <= 0) {
             return null;
         }
-
-        String productType = account.getProductType();
         List<JournalLineRequest> journalLines = List.of(
                 new JournalLineRequest(
                         glResolver.getInterestReceivableGL(productType),

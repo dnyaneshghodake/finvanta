@@ -20,6 +20,8 @@
                         <select name="productCategory" class="form-select" required>
                             <option value="TERM_LOAN" ${product.productCategory == 'TERM_LOAN' ? 'selected' : ''}>Term Loan</option>
                             <option value="DEMAND_LOAN" ${product.productCategory == 'DEMAND_LOAN' ? 'selected' : ''}>Demand Loan</option>
+                            <option value="OVERDRAFT" ${product.productCategory == 'OVERDRAFT' ? 'selected' : ''}>Overdraft (OD)</option>
+                            <option value="CASH_CREDIT" ${product.productCategory == 'CASH_CREDIT' ? 'selected' : ''}>Cash Credit (CC)</option>
                             <option value="CASA_SAVINGS" ${product.productCategory == 'CASA_SAVINGS' ? 'selected' : ''}>CASA Savings</option>
                             <option value="CASA_CURRENT" ${product.productCategory == 'CASA_CURRENT' ? 'selected' : ''}>CASA Current</option>
                             <option value="TERM_DEPOSIT" ${product.productCategory == 'TERM_DEPOSIT' ? 'selected' : ''}>Term Deposit (FD)</option>

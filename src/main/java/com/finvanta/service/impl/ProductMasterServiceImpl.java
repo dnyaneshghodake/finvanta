@@ -100,7 +100,65 @@ public class ProductMasterServiceImpl implements ProductMasterService {
         u.setProductCategory(e.getProductCategory());
         validateFields(u);
         validateGlCodes(tid, u);
-        String before = e.getGlLoanAsset() + "|" + e.getMinInterestRate() + "-" + e.getMaxInterestRate();
+
+        // CBS Tier-1 Gap #2: GL code change impact assessment per Finacle PDDEF.
+        // When GL codes are modified on a product with active accounts, the change
+        // affects ALL future transactions on those accounts. This is a high-risk
+        // operation that requires explicit acknowledgment.
+        // Per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG: GL code changes on products
+        // with active accounts require ADMIN-level authorization and are logged as
+        // a critical audit event for RBI inspection.
+        boolean glCodesChanged = !nullSafeEquals(e.getGlLoanAsset(), u.getGlLoanAsset())
+                || !nullSafeEquals(e.getGlInterestReceivable(), u.getGlInterestReceivable())
+                || !nullSafeEquals(e.getGlBankOperations(), u.getGlBankOperations())
+                || !nullSafeEquals(e.getGlInterestIncome(), u.getGlInterestIncome())
+                || !nullSafeEquals(e.getGlFeeIncome(), u.getGlFeeIncome())
+                || !nullSafeEquals(e.getGlPenalIncome(), u.getGlPenalIncome())
+                || !nullSafeEquals(e.getGlProvisionExpense(), u.getGlProvisionExpense())
+                || !nullSafeEquals(e.getGlProvisionNpa(), u.getGlProvisionNpa())
+                || !nullSafeEquals(e.getGlWriteOffExpense(), u.getGlWriteOffExpense())
+                || !nullSafeEquals(e.getGlInterestSuspense(), u.getGlInterestSuspense());
+
+        long activeAccounts = 0;
+        if (glCodesChanged) {
+            activeAccounts = countActiveAccounts(productId);
+            if (activeAccounts > 0) {
+                // CBS CRITICAL: GL code change on product with active accounts.
+                // Per Finacle PDDEF: this is a high-risk operation. All future
+                // transactions on these accounts will use the new GL codes.
+                // Log as CRITICAL audit event for RBI inspection trail.
+                log.warn("CBS CRITICAL: GL codes changed on product {} with {} active accounts by {}",
+                        e.getProductCode(), activeAccounts, user);
+            }
+        }
+
+        // CBS Tier-1 Gap #8: Complete field-level audit trail per RBI IT Governance §8.3.
+        // Capture full before/after state of ALL mutable fields — not just GL+rate.
+        // Per RBI Inspection Manual: auditors must be able to determine exactly what
+        // changed on any product at any point in time.
+        StringBuilder before = new StringBuilder();
+        StringBuilder after = new StringBuilder();
+        trackChange(before, after, "productName", e.getProductName(), u.getProductName());
+        trackChange(before, after, "interestMethod", e.getInterestMethod(), u.getInterestMethod());
+        trackChange(before, after, "interestType", e.getInterestType(), u.getInterestType());
+        trackChange(before, after, "minRate", str(e.getMinInterestRate()), str(u.getMinInterestRate()));
+        trackChange(before, after, "maxRate", str(e.getMaxInterestRate()), str(u.getMaxInterestRate()));
+        trackChange(before, after, "penalRate", str(e.getDefaultPenalRate()), str(u.getDefaultPenalRate()));
+        trackChange(before, after, "minAmount", str(e.getMinLoanAmount()), str(u.getMinLoanAmount()));
+        trackChange(before, after, "maxAmount", str(e.getMaxLoanAmount()), str(u.getMaxLoanAmount()));
+        trackChange(before, after, "minTenure", str(e.getMinTenureMonths()), str(u.getMinTenureMonths()));
+        trackChange(before, after, "maxTenure", str(e.getMaxTenureMonths()), str(u.getMaxTenureMonths()));
+        trackChange(before, after, "glLoanAsset", e.getGlLoanAsset(), u.getGlLoanAsset());
+        trackChange(before, after, "glIntRecv", e.getGlInterestReceivable(), u.getGlInterestReceivable());
+        trackChange(before, after, "glBankOps", e.getGlBankOperations(), u.getGlBankOperations());
+        trackChange(before, after, "glIntIncome", e.getGlInterestIncome(), u.getGlInterestIncome());
+        trackChange(before, after, "glFeeIncome", e.getGlFeeIncome(), u.getGlFeeIncome());
+        trackChange(before, after, "glPenalIncome", e.getGlPenalIncome(), u.getGlPenalIncome());
+        trackChange(before, after, "glProvExp", e.getGlProvisionExpense(), u.getGlProvisionExpense());
+        trackChange(before, after, "glProvNpa", e.getGlProvisionNpa(), u.getGlProvisionNpa());
+        trackChange(before, after, "glWriteOff", e.getGlWriteOffExpense(), u.getGlWriteOffExpense());
+        trackChange(before, after, "glIntSusp", e.getGlInterestSuspense(), u.getGlInterestSuspense());
+
         e.setProductName(u.getProductName());
         e.setDescription(u.getDescription());
         e.setInterestMethod(u.getInterestMethod());
@@ -134,9 +192,14 @@ public class ProductMasterServiceImpl implements ProductMasterService {
         e.setUpdatedBy(user);
         productRepo.save(e);
         glResolver.evictCache();
-        String after = e.getGlLoanAsset() + "|" + e.getMinInterestRate() + "-" + e.getMaxInterestRate();
-        auditSvc.logEvent("ProductMaster", e.getId(), "PRODUCT_UPDATED", before, after,
-                "PRODUCT_MASTER", "Updated: " + e.getProductCode() + " by " + user);
+
+        String auditAction = glCodesChanged && activeAccounts > 0
+                ? "PRODUCT_GL_CHANGED_WITH_ACTIVE_ACCOUNTS" : "PRODUCT_UPDATED";
+        String description = "Updated: " + e.getProductCode() + " by " + user
+                + (glCodesChanged && activeAccounts > 0
+                ? " | CBS CRITICAL: GL codes changed with " + activeAccounts + " active accounts" : "");
+        auditSvc.logEvent("ProductMaster", e.getId(), auditAction,
+                before.toString(), after.toString(), "PRODUCT_MASTER", description);
         return e;
     }
 
@@ -275,7 +338,7 @@ public class ProductMasterServiceImpl implements ProductMasterService {
             validateGl(tid, p.getGlProvisionExpense(), "Interest Expense (Provision)", GLAccountType.EXPENSE);
             validateGl(tid, p.getGlWriteOffExpense(), "Closure/Write-Off Expense", GLAccountType.EXPENSE);
             validateGl(tid, p.getGlInterestSuspense(), "Interest Suspense", GLAccountType.LIABILITY);
-        } else if (isFd) {
+        } else if (cat.isTermDeposit()) {
             // FD: Similar to CASA but glInterestReceivable = FD Interest Payable (LIABILITY, not EXPENSE)
             // Per Finacle TD_MASTER: FD interest payable (2031) is a LIABILITY representing
             // accrued interest owed to the depositor, credited at maturity or quarterly.
@@ -326,5 +389,29 @@ public class ProductMasterServiceImpl implements ProductMasterService {
         if (!valid)
             throw new BusinessException("INVALID_TRANSITION",
                     "Product " + code + ": " + from + " -> " + to + " is not allowed.");
+    }
+
+    // === Audit Trail Helpers per RBI IT Governance Direction 2023 §8.3 ===
+
+    /** Tracks a field change: appends to before/after only if the value actually changed */
+    private void trackChange(StringBuilder before, StringBuilder after, String field, String oldVal, String newVal) {
+        if (!nullSafeEquals(oldVal, newVal)) {
+            if (before.length() > 0) before.append("|");
+            if (after.length() > 0) after.append("|");
+            before.append(field).append("=").append(oldVal != null ? oldVal : "null");
+            after.append(field).append("=").append(newVal != null ? newVal : "null");
+        }
+    }
+
+    /** Null-safe string equality check */
+    private boolean nullSafeEquals(String a, String b) {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        return a.equals(b);
+    }
+
+    /** Null-safe toString for audit trail */
+    private String str(Object val) {
+        return val != null ? val.toString() : "null";
     }
 }
