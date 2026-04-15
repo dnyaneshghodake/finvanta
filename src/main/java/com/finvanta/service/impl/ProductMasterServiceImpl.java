@@ -85,6 +85,12 @@ public class ProductMasterServiceImpl implements ProductMasterService {
                 .orElseThrow(() -> new BusinessException("PRODUCT_NOT_FOUND", "" + productId));
         if (e.getProductStatus() == ProductStatus.RETIRED)
             throw new BusinessException("PRODUCT_RETIRED", "Retired products cannot be modified.");
+        // CBS CRITICAL: productCategory is immutable after creation. The edit form renders
+        // it as a disabled input (no name attribute), so Spring MVC does NOT bind it —
+        // u.getProductCategory() is null. Without this, validateGlCodes() always takes the
+        // LOAN branch (null != "CASA_SAVINGS"), rejecting valid CASA/FD GL codes on edit.
+        // Per Finacle PDDEF: category is set once at creation and never changes.
+        u.setProductCategory(e.getProductCategory());
         validateFields(u);
         validateGlCodes(tid, u);
         String before = e.getGlLoanAsset() + "|" + e.getMinInterestRate() + "-" + e.getMaxInterestRate();
