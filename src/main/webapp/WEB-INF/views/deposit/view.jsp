@@ -29,18 +29,35 @@
     <tr><td class="text-muted">Opened Date</td><td><c:out value="${account.openedDate}"/></td></tr>
     <tr><td class="text-muted">Last Transaction</td><td><c:out value="${account.lastTransactionDate}" default="--"/></td></tr>
     <tr><td class="text-muted">Nominee</td><td><c:out value="${account.nomineeName}" default="Not set"/><c:if test="${not empty account.nomineeRelationship}"> (<c:out value="${account.nomineeRelationship}"/>)</c:if></td></tr>
+    <c:if test="${not empty account.jointHolderMode}">
+    <tr><td class="text-muted">Joint Holder Mode</td><td><c:out value="${account.jointHolderMode}"/></td></tr>
+    </c:if>
     <c:if test="${account.savings}">
     <tr><td class="text-muted">Interest Rate</td><td><fmt:formatNumber value="${account.interestRate}" maxFractionDigits="4"/>% p.a.</td></tr>
     <tr><td class="text-muted">Accrued Interest</td><td><fmt:formatNumber value="${account.accruedInterest}" type="currency" currencyCode="INR"/></td></tr>
+    <tr><td class="text-muted">Last Interest Accrual</td><td><c:out value="${account.lastInterestAccrualDate}" default="--"/></td></tr>
+    <tr><td class="text-muted">Last Interest Credit</td><td><c:out value="${account.lastInterestCreditDate}" default="--"/></td></tr>
     <tr><td class="text-muted">YTD Interest Credited</td><td><fmt:formatNumber value="${account.ytdInterestCredited}" type="currency" currencyCode="INR"/></td></tr>
     <tr><td class="text-muted">YTD TDS Deducted</td><td><fmt:formatNumber value="${account.ytdTdsDeducted}" type="currency" currencyCode="INR"/></td></tr>
     </c:if>
     <c:if test="${account.dailyWithdrawalLimit != null && account.dailyWithdrawalLimit.signum() > 0}">
     <tr><td class="text-muted">Daily Withdrawal Limit</td><td><fmt:formatNumber value="${account.dailyWithdrawalLimit}" type="currency" currencyCode="INR"/></td></tr>
     </c:if>
+    <c:if test="${account.dailyTransferLimit != null && account.dailyTransferLimit.signum() > 0}">
+    <tr><td class="text-muted">Daily Transfer Limit</td><td><fmt:formatNumber value="${account.dailyTransferLimit}" type="currency" currencyCode="INR"/></td></tr>
+    </c:if>
+    <tr><td class="text-muted">Cheque Book</td><td><c:choose><c:when test="${account.chequeBookEnabled}"><span class="fv-badge fv-badge-active">Enabled</span></c:when><c:otherwise><span class="text-muted">No</span></c:otherwise></c:choose></td></tr>
+    <tr><td class="text-muted">Debit Card</td><td><c:choose><c:when test="${account.debitCardEnabled}"><span class="fv-badge fv-badge-active">Enabled</span></c:when><c:otherwise><span class="text-muted">No</span></c:otherwise></c:choose></td></tr>
     <c:if test="${account.frozen}">
     <tr><td class="text-muted">Freeze Type</td><td class="text-danger"><c:out value="${account.freezeType}"/></td></tr>
     <tr><td class="text-muted">Freeze Reason</td><td class="text-danger"><c:out value="${account.freezeReason}"/></td></tr>
+    </c:if>
+    <c:if test="${account.dormant}">
+    <tr><td class="text-muted">Dormant Since</td><td class="text-warning"><c:out value="${account.dormantDate}"/></td></tr>
+    </c:if>
+    <c:if test="${account.closed}">
+    <tr><td class="text-muted">Closed Date</td><td><c:out value="${account.closedDate}"/></td></tr>
+    <tr><td class="text-muted">Closure Reason</td><td><c:out value="${account.closureReason}"/></td></tr>
     </c:if>
     <tr><td class="text-muted">Opened By</td><td><c:out value="${account.createdBy}" default="--"/></td></tr>
     </table>
