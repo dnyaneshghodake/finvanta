@@ -122,11 +122,11 @@
                                 <div class="modal fade" id="editLimit_${limit.id}" tabindex="-1">
                                     <div class="modal-dialog"><div class="modal-content">
                                         <div class="modal-header"><h5 class="modal-title">Edit: <c:out value="${limit.role}"/> / <c:out value="${limit.transactionType}"/></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-                                        <form method="post" action="${pageContext.request.contextPath}/admin/limits/${limit.id}/edit">
+                                        <form method="post" action="${pageContext.request.contextPath}/admin/limits/${limit.id}/edit" class="fv-form">
                                             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
                                             <div class="modal-body">
-                                                <div class="mb-3"><label class="form-label">Per-Transaction Limit</label><input type="number" name="perTransactionLimit" class="form-control" step="0.01" min="0" value="${limit.perTransactionLimit}"/><small class="text-muted">Set to 0 to block this transaction type. Leave empty for unlimited.</small></div>
-                                                <div class="mb-3"><label class="form-label">Daily Aggregate Limit</label><input type="number" name="dailyAggregateLimit" class="form-control" step="0.01" min="0" value="${limit.dailyAggregateLimit}"/></div>
+                                                <div class="mb-3"><label class="form-label">Per-Transaction Limit</label><input type="number" name="perTransactionLimit" class="form-control" data-fv-type="amount" value="${limit.perTransactionLimit}"/><small class="text-muted">Set to 0 to block this transaction type. Leave empty for unlimited.</small></div>
+                                                <div class="mb-3"><label class="form-label">Daily Aggregate Limit</label><input type="number" name="dailyAggregateLimit" class="form-control" data-fv-type="amount" value="${limit.dailyAggregateLimit}"/></div>
                                                 <div class="mb-3"><label class="form-label">Description</label><input type="text" name="description" class="form-control" maxlength="500" value="<c:out value='${limit.description}'/>"/></div>
                                             </div>
                                             <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-fv-primary">Save Changes</button></div>
