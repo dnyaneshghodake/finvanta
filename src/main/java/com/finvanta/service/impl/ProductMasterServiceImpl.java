@@ -209,17 +209,71 @@ public class ProductMasterServiceImpl implements ProductMasterService {
             throw new BusinessException("INVALID_TENURE_RANGE", "Min tenure > max tenure.");
     }
 
+    /**
+     * CBS GL Validation per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
+     *
+     * Per Tier-1 CBS (Finacle/Temenos/BNP): loan and deposit products have
+     * fundamentally different GL semantics. Loan products use ASSET GLs for
+     * principal outstanding; deposit products use LIABILITY GLs for customer
+     * deposit balances. Applying loan GL rules to deposit products would reject
+     * every valid CASA/FD configuration.
+     *
+     * Category-aware validation:
+     *   LOAN categories (TERM_LOAN, DEMAND_LOAN, OVERDRAFT, CASH_CREDIT):
+     *     - glLoanAsset must be ASSET (principal outstanding)
+     *     - glInterestReceivable must be ASSET (accrued interest receivable)
+     *     - glProvisionNpa must be ASSET (contra-asset for loan loss)
+     *     - glInterestIncome must be INCOME (interest earned)
+     *     - glProvisionExpense must be EXPENSE (P&L charge for provisioning)
+     *     - glWriteOffExpense must be EXPENSE (P&L charge for write-off)
+     *     - glInterestSuspense must be LIABILITY (NPA interest parked)
+     *
+     *   CASA categories (CASA_SAVINGS, CASA_CURRENT):
+     *     - glLoanAsset repurposed as Deposit Liability → must be LIABILITY (2010/2020)
+     *     - glInterestReceivable repurposed as Interest Expense → must be EXPENSE (5010)
+     *     - glProvisionNpa repurposed as TDS Payable → must be LIABILITY (2500)
+     *     - glInterestIncome repurposed as Interest Expense (duplicate) → must be EXPENSE
+     *     - glProvisionExpense repurposed as Interest Expense → must be EXPENSE
+     *     - glWriteOffExpense → EXPENSE (account closure charges)
+     *     - glInterestSuspense must be LIABILITY
+     *
+     *   TERM_DEPOSIT (FD) categories:
+     *     - Same as CASA — deposit liability + interest expense semantics
+     *
+     * Common to ALL categories:
+     *     - glBankOperations must be ASSET (cash/teller GL 1100)
+     *     - glFeeIncome must be INCOME (fee/charge income)
+     *     - glPenalIncome must be INCOME (penalty charges)
+     */
     private void validateGlCodes(String tid, ProductMaster p) {
-        validateGl(tid, p.getGlLoanAsset(), "Loan Asset", GLAccountType.ASSET);
-        validateGl(tid, p.getGlInterestReceivable(), "Interest Receivable", GLAccountType.ASSET);
-        validateGl(tid, p.getGlBankOperations(), "Bank Operations", GLAccountType.ASSET);
-        validateGl(tid, p.getGlProvisionNpa(), "Provision NPA", GLAccountType.ASSET);
-        validateGl(tid, p.getGlInterestIncome(), "Interest Income", GLAccountType.INCOME);
-        validateGl(tid, p.getGlFeeIncome(), "Fee Income", GLAccountType.INCOME);
-        validateGl(tid, p.getGlPenalIncome(), "Penal Income", GLAccountType.INCOME);
-        validateGl(tid, p.getGlProvisionExpense(), "Provision Expense", GLAccountType.EXPENSE);
-        validateGl(tid, p.getGlWriteOffExpense(), "Write-Off Expense", GLAccountType.EXPENSE);
-        validateGl(tid, p.getGlInterestSuspense(), "Interest Suspense", GLAccountType.LIABILITY);
+        String cat = p.getProductCategory();
+        boolean isCasa = "CASA_SAVINGS".equals(cat) || "CASA_CURRENT".equals(cat) || "TERM_DEPOSIT".equals(cat);
+
+        if (isCasa) {
+            // CASA/FD: Deposit-specific GL type validation
+            validateGl(tid, p.getGlLoanAsset(), "Deposit Liability", GLAccountType.LIABILITY);
+            validateGl(tid, p.getGlInterestReceivable(), "Interest Expense", GLAccountType.EXPENSE);
+            validateGl(tid, p.getGlBankOperations(), "Bank Operations", GLAccountType.ASSET);
+            validateGl(tid, p.getGlProvisionNpa(), "TDS Payable", GLAccountType.LIABILITY);
+            validateGl(tid, p.getGlInterestIncome(), "Interest Expense (P&L)", GLAccountType.EXPENSE);
+            validateGl(tid, p.getGlFeeIncome(), "Fee Income", GLAccountType.INCOME);
+            validateGl(tid, p.getGlPenalIncome(), "Penalty Charges Income", GLAccountType.INCOME);
+            validateGl(tid, p.getGlProvisionExpense(), "Interest Expense (Provision)", GLAccountType.EXPENSE);
+            validateGl(tid, p.getGlWriteOffExpense(), "Closure/Write-Off Expense", GLAccountType.EXPENSE);
+            validateGl(tid, p.getGlInterestSuspense(), "Interest Suspense", GLAccountType.LIABILITY);
+        } else {
+            // LOAN: Original loan-specific GL type validation
+            validateGl(tid, p.getGlLoanAsset(), "Loan Asset", GLAccountType.ASSET);
+            validateGl(tid, p.getGlInterestReceivable(), "Interest Receivable", GLAccountType.ASSET);
+            validateGl(tid, p.getGlBankOperations(), "Bank Operations", GLAccountType.ASSET);
+            validateGl(tid, p.getGlProvisionNpa(), "Provision NPA", GLAccountType.ASSET);
+            validateGl(tid, p.getGlInterestIncome(), "Interest Income", GLAccountType.INCOME);
+            validateGl(tid, p.getGlFeeIncome(), "Fee Income", GLAccountType.INCOME);
+            validateGl(tid, p.getGlPenalIncome(), "Penal Income", GLAccountType.INCOME);
+            validateGl(tid, p.getGlProvisionExpense(), "Provision Expense", GLAccountType.EXPENSE);
+            validateGl(tid, p.getGlWriteOffExpense(), "Write-Off Expense", GLAccountType.EXPENSE);
+            validateGl(tid, p.getGlInterestSuspense(), "Interest Suspense", GLAccountType.LIABILITY);
+        }
     }
 
     private void validateGl(String tid, String glCode, String field, GLAccountType expected) {

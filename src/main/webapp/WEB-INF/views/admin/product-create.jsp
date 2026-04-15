@@ -63,14 +63,22 @@
                 </div>
 
                 <h6 class="mb-3 text-primary">GL Code Mapping (Product &rarr; GL)</h6>
-                <div class="row mb-3">
+                <p class="text-muted small mb-2">
+                    <i class="bi bi-info-circle"></i> GL labels and defaults change based on product category.
+                    <strong>Loan:</strong> Asset/Income semantics. <strong>CASA/FD:</strong> Liability/Expense semantics per Finacle PDDEF.
+                </p>
+                <%-- CBS: GL defaults are category-aware per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
+                     Loan products: glLoanAsset=1001(ASSET), glInterestReceivable=1002(ASSET), etc.
+                     CASA products: glLoanAsset→Deposit Liability=2010(LIABILITY), glInterestReceivable→Interest Expense=5010(EXPENSE), etc.
+                     JavaScript switches defaults when category dropdown changes. --%>
+                <div class="row mb-3" id="glMappingSection">
                     <c:set var="glFields" value="glLoanAsset,glInterestReceivable,glBankOperations,glInterestIncome,glFeeIncome,glPenalIncome,glProvisionExpense,glProvisionNpa,glWriteOffExpense,glInterestSuspense"/>
                     <c:set var="glLabels" value="Loan Asset,Interest Receivable,Bank Operations,Interest Income,Fee Income,Penal Income,Provision Expense,Provision NPA,Write-Off Expense,Interest Suspense"/>
                     <c:set var="glDefaults" value="1001,1002,1100,4001,4002,4003,5001,1003,5002,2100"/>
                     <c:forTokens var="field" items="${glFields}" delims="," varStatus="i">
                         <div class="col-md-4 mb-2">
-                            <label class="form-label small">${glLabels.split(',')[i.index]} *</label>
-                            <select name="${field}" class="form-select form-select-sm" required>
+                            <label class="form-label small gl-label" id="label_${field}">${glLabels.split(',')[i.index]} *</label>
+                            <select name="${field}" id="select_${field}" class="form-select form-select-sm" required>
                                 <c:forEach var="gl" items="${glAccounts}">
                                     <option value="${gl.glCode}" ${gl.glCode == glDefaults.split(',')[i.index] ? 'selected' : ''}><c:out value="${gl.glCode}"/> &mdash; <c:out value="${gl.glName}"/></option>
                                 </c:forEach>
@@ -78,6 +86,70 @@
                         </div>
                     </c:forTokens>
                 </div>
+                <script>
+                // CBS: Category-aware GL label + default switching per Finacle PDDEF.
+                // When admin selects CASA_SAVINGS/CASA_CURRENT/TERM_DEPOSIT, the GL field
+                // labels and default selections switch to deposit-appropriate values.
+                (function() {
+                    var loanLabels = {
+                        glLoanAsset: 'Loan Asset (ASSET)', glInterestReceivable: 'Interest Receivable (ASSET)',
+                        glBankOperations: 'Bank Operations (ASSET)', glInterestIncome: 'Interest Income (INCOME)',
+                        glFeeIncome: 'Fee Income (INCOME)', glPenalIncome: 'Penal Income (INCOME)',
+                        glProvisionExpense: 'Provision Expense (EXPENSE)', glProvisionNpa: 'Provision NPA (ASSET)',
+                        glWriteOffExpense: 'Write-Off Expense (EXPENSE)', glInterestSuspense: 'Interest Suspense (LIABILITY)'
+                    };
+                    var loanDefaults = {
+                        glLoanAsset:'1001', glInterestReceivable:'1002', glBankOperations:'1100',
+                        glInterestIncome:'4001', glFeeIncome:'4002', glPenalIncome:'4003',
+                        glProvisionExpense:'5001', glProvisionNpa:'1003', glWriteOffExpense:'5002', glInterestSuspense:'2100'
+                    };
+                    var casaLabels = {
+                        glLoanAsset: 'Deposit Liability (LIABILITY)', glInterestReceivable: 'Interest Expense (EXPENSE)',
+                        glBankOperations: 'Bank Operations (ASSET)', glInterestIncome: 'Interest Expense P&L (EXPENSE)',
+                        glFeeIncome: 'Fee Income (INCOME)', glPenalIncome: 'Penalty Charges (INCOME)',
+                        glProvisionExpense: 'Interest Expense (EXPENSE)', glProvisionNpa: 'TDS Payable (LIABILITY)',
+                        glWriteOffExpense: 'Closure Expense (EXPENSE)', glInterestSuspense: 'Interest Suspense (LIABILITY)'
+                    };
+                    var casaSBDefaults = {
+                        glLoanAsset:'2010', glInterestReceivable:'5010', glBankOperations:'1100',
+                        glInterestIncome:'5010', glFeeIncome:'4002', glPenalIncome:'4003',
+                        glProvisionExpense:'5010', glProvisionNpa:'2500', glWriteOffExpense:'5002', glInterestSuspense:'2100'
+                    };
+                    var casaCADefaults = {
+                        glLoanAsset:'2020', glInterestReceivable:'5010', glBankOperations:'1100',
+                        glInterestIncome:'5010', glFeeIncome:'4002', glPenalIncome:'4003',
+                        glProvisionExpense:'5010', glProvisionNpa:'2500', glWriteOffExpense:'5002', glInterestSuspense:'2100'
+                    };
+                    var fdDefaults = {
+                        glLoanAsset:'2030', glInterestReceivable:'5011', glBankOperations:'1100',
+                        glInterestIncome:'5011', glFeeIncome:'4002', glPenalIncome:'4003',
+                        glProvisionExpense:'5011', glProvisionNpa:'2500', glWriteOffExpense:'5002', glInterestSuspense:'2100'
+                    };
+                    var catSelect = document.querySelector('select[name="productCategory"]');
+                    if (catSelect) {
+                        catSelect.addEventListener('change', function() {
+                            var cat = this.value;
+                            var isCasa = (cat === 'CASA_SAVINGS' || cat === 'CASA_CURRENT' || cat === 'TERM_DEPOSIT');
+                            var labels = isCasa ? casaLabels : loanLabels;
+                            var defaults;
+                            if (cat === 'CASA_SAVINGS') defaults = casaSBDefaults;
+                            else if (cat === 'CASA_CURRENT') defaults = casaCADefaults;
+                            else if (cat === 'TERM_DEPOSIT') defaults = fdDefaults;
+                            else defaults = loanDefaults;
+                            for (var field in labels) {
+                                var lbl = document.getElementById('label_' + field);
+                                var sel = document.getElementById('select_' + field);
+                                if (lbl) lbl.textContent = labels[field] + ' *';
+                                if (sel && defaults[field]) {
+                                    for (var j = 0; j < sel.options.length; j++) {
+                                        if (sel.options[j].value === defaults[field]) { sel.selectedIndex = j; break; }
+                                    }
+                                }
+                            }
+                        });
+                    }
+                })();
+                </script>
 
                 <hr/>
                 <button type="submit" class="btn btn-fv-primary" data-confirm="Create this product? GL mapping will be used for all future transactions."><i class="bi bi-plus-circle"></i> Create Product</button>
