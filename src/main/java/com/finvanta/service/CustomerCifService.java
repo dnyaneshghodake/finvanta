@@ -23,32 +23,15 @@ import java.util.List;
 public interface CustomerCifService {
 
     /**
-     * Create a new customer with auto-generated CIF number.
-     * Per RBI KYC: validates duplicate PAN, branch existence, tenant isolation.
+     * Create a new customer from a populated entity with auto-generated CIF number.
+     * Per RBI KYC: validates all fields, duplicate PAN/Aadhaar, branch existence.
+     * Accepts full Customer entity with all CKYC/demographic fields populated.
      *
-     * @param firstName     Customer first name (mandatory)
-     * @param lastName      Customer last name (mandatory)
-     * @param dateOfBirth   Date of birth (optional)
-     * @param panNumber     PAN number (optional, but unique per tenant if provided)
-     * @param aadhaarNumber Aadhaar number (optional)
-     * @param mobileNumber  Mobile number (optional)
-     * @param email         Email address (optional)
-     * @param address       Address (optional)
-     * @param city          City (optional)
-     * @param state         State (optional)
-     * @param pinCode       PIN code (optional)
-     * @param customerType  INDIVIDUAL or CORPORATE (defaults to INDIVIDUAL)
-     * @param branchId      Branch ID for the customer (mandatory)
-     * @return Created customer entity
+     * @param customer Customer entity with all fields populated from the form
+     * @param branchId Branch ID for the customer (mandatory)
+     * @return Created customer entity with auto-generated CIF number
      */
-    Customer createCustomer(
-            String firstName, String lastName,
-            java.time.LocalDate dateOfBirth,
-            String panNumber, String aadhaarNumber,
-            String mobileNumber, String email,
-            String address, String city, String state,
-            String pinCode, String customerType,
-            Long branchId);
+    Customer createCustomerFromEntity(Customer customer, Long branchId);
 
     /**
      * Get customer by ID with branch access enforcement.
@@ -77,10 +60,33 @@ public interface CustomerCifService {
     Customer deactivateCustomer(Long customerId);
 
     /**
+     * Update mutable customer fields. PAN, Aadhaar, and customer number are
+     * IMMUTABLE after creation per RBI KYC norms.
+     *
+     * @param customerId Customer ID
+     * @param updated    Customer entity with updated mutable fields
+     * @param branchId   Branch ID (for branch transfer if applicable)
+     * @return Updated customer entity
+     */
+    Customer updateCustomer(Long customerId, Customer updated, Long branchId);
+
+    /**
      * Search customers. Branch-scoped for MAKER/CHECKER, all branches for ADMIN.
      *
-     * @param query Search query (min 2 chars)
+     * @param query Search query (min 2 chars, or empty for full list)
      * @return List of matching customers
      */
     List<Customer> searchCustomers(String query);
+
+    /**
+     * Search customers with pagination per Finacle CIF_SEARCH / Temenos ENQUIRY.
+     * Branch-scoped for MAKER/CHECKER, all branches for ADMIN.
+     * Per CBS: large customer lists must be paginated to prevent OOM and improve UX.
+     *
+     * @param query    Search query (min 2 chars, or empty for full list)
+     * @param pageable Pagination parameters (page, size, sort)
+     * @return Page of matching customers
+     */
+    org.springframework.data.domain.Page<Customer> searchCustomers(
+            String query, org.springframework.data.domain.Pageable pageable);
 }

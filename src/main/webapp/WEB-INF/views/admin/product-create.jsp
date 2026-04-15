@@ -14,27 +14,34 @@
 
                 <h6 class="mb-3 text-primary">Product Identity</h6>
                 <div class="row mb-3">
-                    <div class="col-md-2"><label class="form-label">Product Code *</label><input type="text" name="productCode" class="form-control" required maxlength="50" placeholder="e.g., VEHICLE_LOAN"/></div>
-                    <div class="col-md-3"><label class="form-label">Product Name *</label><input type="text" name="productName" class="form-control" required maxlength="200" placeholder="e.g., Vehicle Loan - Secured"/></div>
+                    <div class="col-md-2"><label class="form-label">Product Code *</label><input type="text" name="productCode" class="form-control" required maxlength="50" placeholder="e.g., VEHICLE_LOAN" value="<c:out value='${product.productCode}'/>" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase();"/></div>
+                    <div class="col-md-3"><label class="form-label">Product Name *</label><input type="text" name="productName" class="form-control" required maxlength="200" placeholder="e.g., Vehicle Loan - Secured" value="<c:out value='${product.productName}'/>"/></div>
                     <div class="col-md-2"><label class="form-label">Category *</label>
                         <select name="productCategory" class="form-select" required>
-                            <option value="TERM_LOAN">Term Loan</option>
-                            <option value="DEMAND_LOAN">Demand Loan</option>
-                            <option value="CASA_SAVINGS">CASA Savings</option>
-                            <option value="CASA_CURRENT">CASA Current</option>
+                            <option value="TERM_LOAN" ${product.productCategory == 'TERM_LOAN' ? 'selected' : ''}>Term Loan</option>
+                            <option value="DEMAND_LOAN" ${product.productCategory == 'DEMAND_LOAN' ? 'selected' : ''}>Demand Loan</option>
+                            <option value="CASA_SAVINGS" ${product.productCategory == 'CASA_SAVINGS' ? 'selected' : ''}>CASA Savings</option>
+                            <option value="CASA_CURRENT" ${product.productCategory == 'CASA_CURRENT' ? 'selected' : ''}>CASA Current</option>
+                            <option value="TERM_DEPOSIT" ${product.productCategory == 'TERM_DEPOSIT' ? 'selected' : ''}>Term Deposit (FD)</option>
                         </select>
                     </div>
-                    <div class="col-md-5"><label class="form-label">Description</label><input type="text" name="description" class="form-control" maxlength="500"/></div>
+                    <div class="col-md-2"><label class="form-label">Currency *</label><select name="currencyCode" class="form-select"><option value="INR" ${empty product.currencyCode or product.currencyCode == 'INR' ? 'selected' : ''}>INR</option><option value="USD" ${product.currencyCode == 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${product.currencyCode == 'EUR' ? 'selected' : ''}>EUR</option><option value="GBP" ${product.currencyCode == 'GBP' ? 'selected' : ''}>GBP</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Description</label><input type="text" name="description" class="form-control" maxlength="500" value="<c:out value='${product.description}'/>"/></div>
                 </div>
 
                 <h6 class="mb-3 text-primary">Interest Configuration</h6>
                 <div class="row mb-3">
-                    <div class="col-md-2"><label class="form-label">Method</label><select name="interestMethod" class="form-select"><option value="ACTUAL_365">Actual/365</option><option value="ACTUAL_360">Actual/360</option><option value="ACTUAL_ACTUAL">Actual/Actual</option><option value="THIRTY_360">30/360</option></select></div>
-                    <div class="col-md-2"><label class="form-label">Type</label><select name="interestType" class="form-select"><option value="FIXED">Fixed</option><option value="FLOATING">Floating</option></select></div>
-                    <div class="col-md-2"><label class="form-label">Min Rate % *</label><input type="number" name="minInterestRate" class="form-control" step="0.01" required value="8.00"/></div>
-                    <div class="col-md-2"><label class="form-label">Max Rate % *</label><input type="number" name="maxInterestRate" class="form-control" step="0.01" required value="24.00"/></div>
-                    <div class="col-md-2"><label class="form-label">Penal Rate %</label><input type="number" name="defaultPenalRate" class="form-control" step="0.01" value="2.00"/></div>
-                    <div class="col-md-2"><label class="form-label">Frequency</label><select name="repaymentFrequency" class="form-select"><option value="MONTHLY">Monthly</option><option value="QUARTERLY">Quarterly</option><option value="BULLET">Bullet</option></select></div>
+                    <div class="col-md-2"><label class="form-label">Method</label><select name="interestMethod" class="form-select"><option value="ACTUAL_365" ${empty product.interestMethod or product.interestMethod == 'ACTUAL_365' ? 'selected' : ''}>Actual/365</option><option value="ACTUAL_360" ${product.interestMethod == 'ACTUAL_360' ? 'selected' : ''}>Actual/360</option><option value="ACTUAL_ACTUAL" ${product.interestMethod == 'ACTUAL_ACTUAL' ? 'selected' : ''}>Actual/Actual</option><option value="THIRTY_360" ${product.interestMethod == 'THIRTY_360' ? 'selected' : ''}>30/360</option></select></div>
+                    <div class="col-md-2"><label class="form-label">Type</label><select name="interestType" class="form-select"><option value="FIXED" ${empty product.interestType or product.interestType == 'FIXED' ? 'selected' : ''}>Fixed</option><option value="FLOATING" ${product.interestType == 'FLOATING' ? 'selected' : ''}>Floating</option></select></div>
+                    <div class="col-md-2"><label class="form-label">Min Rate % *</label><input type="number" name="minInterestRate" class="form-control" step="0.01" required value="${not empty product.minInterestRate ? product.minInterestRate : '8.00'}"/></div>
+                    <div class="col-md-2"><label class="form-label">Max Rate % *</label><input type="number" name="maxInterestRate" class="form-control" step="0.01" required value="${not empty product.maxInterestRate ? product.maxInterestRate : '24.00'}"/></div>
+                    <div class="col-md-2"><label class="form-label">Penal Rate %</label><input type="number" name="defaultPenalRate" class="form-control" step="0.01" value="${not empty product.defaultPenalRate ? product.defaultPenalRate : '2.00'}"/></div>
+                    <div class="col-md-2"><label class="form-label">Frequency</label><select name="repaymentFrequency" class="form-select"><option value="MONTHLY" ${empty product.repaymentFrequency or product.repaymentFrequency == 'MONTHLY' ? 'selected' : ''}>Monthly</option><option value="QUARTERLY" ${product.repaymentFrequency == 'QUARTERLY' ? 'selected' : ''}>Quarterly</option><option value="BULLET" ${product.repaymentFrequency == 'BULLET' ? 'selected' : ''}>Bullet</option><option value="MATURITY" ${product.repaymentFrequency == 'MATURITY' ? 'selected' : ''}>Maturity</option></select></div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-3"><label class="form-label">Repayment Allocation</label><select name="repaymentAllocation" class="form-select"><option value="INTEREST_FIRST" selected>Interest First</option><option value="PRINCIPAL_FIRST">Principal First</option><option value="PRO_RATA">Pro-Rata</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Processing Fee %</label><input type="number" name="processingFeePct" class="form-control" step="0.01" min="0" value="0.00"/></div>
+                    <div class="col-md-3"><label class="form-label">Prepayment Penalty</label><div class="form-check mt-2"><input type="hidden" name="_prepaymentPenaltyApplicable" value="on" /><input type="checkbox" name="prepaymentPenaltyApplicable" value="true" class="form-check-input" id="prepayCheck"/><label class="form-check-label" for="prepayCheck">Applicable (per RBI: not for floating rate)</label></div></div>
                 </div>
 
                 <%-- CBS Sprint 1.4: Floating Rate & CASA Tiering Configuration --%>
@@ -49,10 +56,10 @@
 
                 <h6 class="mb-3 text-primary">Amount &amp; Tenure Limits</h6>
                 <div class="row mb-3">
-                    <div class="col-md-3"><label class="form-label">Min Amount *</label><input type="number" name="minLoanAmount" class="form-control" step="0.01" required value="50000"/></div>
-                    <div class="col-md-3"><label class="form-label">Max Amount *</label><input type="number" name="maxLoanAmount" class="form-control" step="0.01" required value="5000000"/></div>
-                    <div class="col-md-3"><label class="form-label">Min Tenure (months) *</label><input type="number" name="minTenureMonths" class="form-control" required value="6"/></div>
-                    <div class="col-md-3"><label class="form-label">Max Tenure (months) *</label><input type="number" name="maxTenureMonths" class="form-control" required value="84"/></div>
+                    <div class="col-md-3"><label class="form-label">Min Amount *</label><input type="number" name="minLoanAmount" class="form-control" step="0.01" required value="${not empty product.minLoanAmount ? product.minLoanAmount : '50000'}"/></div>
+                    <div class="col-md-3"><label class="form-label">Max Amount *</label><input type="number" name="maxLoanAmount" class="form-control" step="0.01" required value="${not empty product.maxLoanAmount ? product.maxLoanAmount : '5000000'}"/></div>
+                    <div class="col-md-3"><label class="form-label">Min Tenure (months) *</label><input type="number" name="minTenureMonths" class="form-control" required value="${not empty product.minTenureMonths ? product.minTenureMonths : '6'}"/></div>
+                    <div class="col-md-3"><label class="form-label">Max Tenure (months) *</label><input type="number" name="maxTenureMonths" class="form-control" required value="${not empty product.maxTenureMonths ? product.maxTenureMonths : '84'}"/></div>
                 </div>
 
                 <h6 class="mb-3 text-primary">GL Code Mapping (Product &rarr; GL)</h6>

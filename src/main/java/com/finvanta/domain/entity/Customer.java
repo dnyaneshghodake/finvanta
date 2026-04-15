@@ -1,12 +1,10 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.config.PiiEncryptionConverter;
+import com.finvanta.util.PiiHashUtil;
 
 import jakarta.persistence.*;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 
 import lombok.Getter;
@@ -50,10 +48,18 @@ import lombok.Setter;
             @Index(name = "idx_cust_tenant_custno", columnList = "tenant_id, customer_number", unique = true),
             @Index(name = "idx_cust_pan", columnList = "tenant_id, pan_number"),
             @Index(name = "idx_cust_aadhaar", columnList = "tenant_id, aadhaar_number"),
+            // CBS: NOT unique at DB level — PAN/Aadhaar are optional fields, so pan_hash/aadhaar_hash
+            // can be NULL for many customers. SQL Server treats NULL as a single distinct value in
+            // unique indexes, meaning only ONE customer per tenant could have NULL PAN/Aadhaar.
+            // Duplicate prevention is enforced at the application level via
+            // CustomerCifServiceImpl.validateCustomerFields() using existsByTenantIdAndPanHash().
+            // This is the standard Finacle CIF_MASTER approach for optional-but-unique fields.
             @Index(name = "idx_cust_pan_hash", columnList = "tenant_id, pan_hash"),
             @Index(name = "idx_cust_aadhaar_hash", columnList = "tenant_id, aadhaar_hash"),
             @Index(name = "idx_cust_kyc_expiry", columnList = "tenant_id, kyc_expiry_date"),
-            @Index(name = "idx_cust_tenant_branch", columnList = "tenant_id, branch_id")
+            @Index(name = "idx_cust_tenant_branch", columnList = "tenant_id, branch_id"),
+            @Index(name = "idx_cust_ckyc", columnList = "tenant_id, ckyc_number"),
+            @Index(name = "idx_cust_ckyc_status", columnList = "tenant_id, ckyc_status")
         })
 @Getter
 @Setter
@@ -188,7 +194,15 @@ public class Customer extends BaseEntity {
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    /**
+     * CBS: EAGER fetch for branch — branch is needed on EVERY customer screen
+     * (list, view, edit) and is a single-row @ManyToOne (not a collection).
+     * Per Finacle CIF_MASTER: customer always carries its SOL/branch context.
+     * EAGER eliminates N+1 lazy-load queries when open-in-view=false (SQL Server).
+     * With H2 in-memory, lazy vs eager is invisible. With SQL Server over TCP,
+     * each lazy load costs ~2-5ms — EAGER joins it into the initial query for free.
+     */
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
 
@@ -235,8 +249,203 @@ public class Customer extends BaseEntity {
     @Column(name = "employer_name", length = 200)
     private String employerName;
 
+    // ========================================================================
+    // CKYC / CERSAI FIELDS (per PMLA Rules 2014 / RBI KYC Direction 2016)
+    // ========================================================================
+
+    /**
+     * CKYC Identifier (KIN) — 14-digit number assigned by CERSAI.
+     * Per PMLA Rules 2014 Rule 9(1A): banks must upload KYC to CERSAI
+     * and store the returned KIN for future reference/download.
+     * Null = not yet registered with CERSAI.
+     */
+    @Column(name = "ckyc_number", length = 14)
+    private String ckycNumber;
+
+    /**
+     * CKYC registration status with CERSAI.
+     * Values: NOT_REGISTERED, PENDING_UPLOAD, UPLOADED, REGISTERED, DOWNLOAD_VERIFIED, FAILED
+     */
+    @Column(name = "ckyc_status", length = 30)
+    private String ckycStatus = "NOT_REGISTERED";
+
+    /** Date when KYC data was uploaded to CERSAI */
+    @Column(name = "ckyc_upload_date")
+    private LocalDate ckycUploadDate;
+
+    /** Date when KYC data was downloaded/verified from CERSAI */
+    @Column(name = "ckyc_download_date")
+    private LocalDate ckycDownloadDate;
+
+    /**
+     * CKYC account type per CERSAI specification.
+     * Values: INDIVIDUAL, NON_INDIVIDUAL
+     * Maps from customerType: INDIVIDUAL/JOINT/MINOR/NRI → INDIVIDUAL; rest → NON_INDIVIDUAL
+     */
+    @Column(name = "ckyc_account_type", length = 20)
+    private String ckycAccountType = "INDIVIDUAL";
+
+    // === Demographics (CKYC Mandatory Fields per CERSAI Specification v2.0) ===
+
+    /**
+     * Gender per RBI/CERSAI classification.
+     * Values: M (Male), F (Female), T (Transgender) per Supreme Court NALSA judgment 2014.
+     * CKYC mandatory field for INDIVIDUAL customers.
+     */
+    @Column(name = "gender", length = 1)
+    private String gender;
+
+    /**
+     * Father's name — CKYC mandatory for INDIVIDUAL customers.
+     * Per CERSAI: required for identity verification and CKYC record matching.
+     */
+    @Column(name = "father_name", length = 200)
+    private String fatherName;
+
+    /**
+     * Spouse name — CKYC field (mandatory if married).
+     * Per CERSAI: used for CKYC record matching and nominee validation.
+     */
+    @Column(name = "spouse_name", length = 200)
+    private String spouseName;
+
+    /**
+     * Mother's name — CKYC mandatory field.
+     * Per CERSAI: required for all INDIVIDUAL customers.
+     */
+    @Column(name = "mother_name", length = 200)
+    private String motherName;
+
+    /**
+     * Nationality per CERSAI specification.
+     * Values: INDIAN, NRI, PIO, OCI, FOREIGN
+     * Per FEMA 1999: nationality determines applicable regulatory framework.
+     */
+    @Column(name = "nationality", length = 20)
+    private String nationality = "INDIAN";
+
+    /**
+     * Marital status per CERSAI specification.
+     * Values: SINGLE, MARRIED, DIVORCED, WIDOWED, SEPARATED
+     */
+    @Column(name = "marital_status", length = 20)
+    private String maritalStatus;
+
+    /**
+     * Occupation code per RBI classification (used in CKYC upload).
+     * Values: SALARIED_PRIVATE, SALARIED_GOVT, BUSINESS, PROFESSIONAL,
+     *         SELF_EMPLOYED, RETIRED, HOUSEWIFE, STUDENT, AGRICULTURIST, OTHER
+     * Per CERSAI: mapped from employmentType but more granular.
+     */
+    @Column(name = "occupation_code", length = 30)
+    private String occupationCode;
+
+    /**
+     * Annual income band per CERSAI specification.
+     * Values: BELOW_1L, 1L_TO_5L, 5L_TO_10L, 10L_TO_25L, 25L_TO_1CR, ABOVE_1CR
+     * Per CERSAI: income is reported as bands, not exact amounts.
+     */
+    @Column(name = "annual_income_band", length = 20)
+    private String annualIncomeBand;
+
+    // === KYC Document Details (CKYC Mandatory) ===
+
+    /**
+     * KYC mode — how KYC was performed.
+     * Values: IN_PERSON, VIDEO_KYC, DIGITAL_KYC, CKYC_DOWNLOAD
+     * Per RBI: Video KYC allowed since Jan 2020 (RBI/2020-21/12).
+     */
+    @Column(name = "kyc_mode", length = 20)
+    private String kycMode;
+
+    /**
+     * Photo ID document type used for KYC.
+     * Values: PASSPORT, VOTER_ID, DRIVING_LICENSE, NREGA_CARD, PAN_CARD, AADHAAR
+     * Per RBI KYC Direction: at least one photo ID is mandatory.
+     */
+    @Column(name = "photo_id_type", length = 30)
+    private String photoIdType;
+
+    /** Photo ID document number (encrypted at rest) */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "photo_id_number", length = 100)
+    private String photoIdNumber;
+
+    /**
+     * Address proof document type used for KYC.
+     * Values: PASSPORT, VOTER_ID, DRIVING_LICENSE, UTILITY_BILL,
+     *         BANK_STATEMENT, AADHAAR, RATION_CARD, RENT_AGREEMENT
+     */
+    @Column(name = "address_proof_type", length = 30)
+    private String addressProofType;
+
+    /** Address proof document number (encrypted at rest) */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "address_proof_number", length = 100)
+    private String addressProofNumber;
+
+    /**
+     * Whether Video KYC was performed per RBI circular RBI/2020-21/12.
+     * Per RBI: V-KYC is allowed as an alternative to in-person verification
+     * for low-risk customers. The video recording must be stored for audit.
+     */
+    @Column(name = "video_kyc_done", nullable = false)
+    private boolean videoKycDone = false;
+
+    // === Permanent Address (CKYC requires separate permanent + correspondence) ===
+
+    /** Permanent address line — CKYC mandatory (separate from correspondence) */
+    @Column(name = "permanent_address", length = 500)
+    private String permanentAddress;
+
+    @Column(name = "permanent_city", length = 100)
+    private String permanentCity;
+
+    @Column(name = "permanent_state", length = 100)
+    private String permanentState;
+
+    @Column(name = "permanent_pin_code", length = 6)
+    private String permanentPinCode;
+
+    @Column(name = "permanent_country", length = 50)
+    private String permanentCountry = "INDIA";
+
+    /**
+     * Whether correspondence address is same as permanent address.
+     * Per CERSAI: if true, permanent address fields are copied to correspondence.
+     */
+    @Column(name = "address_same_as_permanent", nullable = false)
+    private boolean addressSameAsPermanent = true;
+
+    // === Nominee Details (RBI Nomination Guidelines — expanded for CKYC) ===
+
+    /** Nominee date of birth — required for minor nominees per RBI */
+    @Column(name = "nominee_dob")
+    private LocalDate nomineeDob;
+
+    /** Nominee address — required per RBI nomination guidelines */
+    @Column(name = "nominee_address", length = 500)
+    private String nomineeAddress;
+
+    /** Guardian name — required if nominee is a minor per RBI */
+    @Column(name = "nominee_guardian_name", length = 200)
+    private String nomineeGuardianName;
+
     public String getFullName() {
         return firstName + " " + lastName;
+    }
+
+    /**
+     * Computes CKYC account type from customer type.
+     * Per CERSAI: INDIVIDUAL/JOINT/MINOR/NRI → INDIVIDUAL; rest → NON_INDIVIDUAL
+     */
+    public void computeCkycAccountType() {
+        if ("INDIVIDUAL".equals(customerType) || "JOINT".equals(customerType)
+                || "MINOR".equals(customerType) || "NRI".equals(customerType)) {
+            this.ckycAccountType = "INDIVIDUAL";
+        } else {
+            this.ckycAccountType = "NON_INDIVIDUAL";
+        }
     }
 
     // === KYC Helpers ===
@@ -264,17 +473,36 @@ public class Customer extends BaseEntity {
         }
     }
 
-    /** Returns true if KYC has expired (past expiry date) */
-    public boolean isKycExpired() {
+    /**
+     * Returns true if KYC has expired (past expiry date).
+     * Per CBS standards: uses provided business date, NOT LocalDate.now().
+     * The no-arg overload is retained for JSP EL compatibility (view layer)
+     * where business date is not directly available — uses system date as
+     * approximation. Service-layer code MUST use the parameterized version.
+     */
+    public boolean isKycExpired(LocalDate businessDate) {
         if (kycExpiryDate == null) return !kycVerified;
-        return LocalDate.now().isAfter(kycExpiryDate);
+        return businessDate.isAfter(kycExpiryDate);
     }
 
-    /** Returns true if KYC is expiring within the next 90 days */
-    public boolean isKycExpiringSoon() {
+    /** JSP/view-layer convenience — uses system date as approximation. */
+    public boolean isKycExpired() {
+        return isKycExpired(LocalDate.now());
+    }
+
+    /**
+     * Returns true if KYC is expiring within the next 90 days.
+     * Per CBS standards: uses provided business date, NOT LocalDate.now().
+     */
+    public boolean isKycExpiringSoon(LocalDate businessDate) {
         if (kycExpiryDate == null) return false;
-        return LocalDate.now().isAfter(kycExpiryDate.minusDays(90))
-                && !LocalDate.now().isAfter(kycExpiryDate);
+        return businessDate.isAfter(kycExpiryDate.minusDays(90))
+                && !businessDate.isAfter(kycExpiryDate);
+    }
+
+    /** JSP/view-layer convenience — uses system date as approximation. */
+    public boolean isKycExpiringSoon() {
+        return isKycExpiringSoon(LocalDate.now());
     }
 
     // === PII Hash Helpers ===
@@ -284,7 +512,7 @@ public class Customer extends BaseEntity {
      * Called when panNumber is set during customer creation/update.
      */
     public void computePanHash() {
-        this.panHash = computeSha256(this.panNumber);
+        this.panHash = PiiHashUtil.computeSha256(this.panNumber);
     }
 
     /**
@@ -292,21 +520,6 @@ public class Customer extends BaseEntity {
      * Called when aadhaarNumber is set during customer creation/update.
      */
     public void computeAadhaarHash() {
-        this.aadhaarHash = computeSha256(this.aadhaarNumber);
-    }
-
-    private static String computeSha256(String input) {
-        if (input == null || input.isBlank()) return null;
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = digest.digest(input.trim().toUpperCase().getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hashBytes) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
-        }
+        this.aadhaarHash = PiiHashUtil.computeSha256(this.aadhaarNumber);
     }
 }

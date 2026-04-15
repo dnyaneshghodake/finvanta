@@ -36,6 +36,11 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
     @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
     List<LoanAccount> findAllActiveAccounts(@Param("tenantId") String tenantId);
 
+    /** CBS: DB-level COUNT for product active account check — avoids loading entire portfolio into memory */
+    @Query("SELECT COUNT(la) FROM LoanAccount la WHERE la.tenantId = :tenantId "
+            + "AND la.productType = :productType AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
+    long countActiveByProductType(@Param("tenantId") String tenantId, @Param("productType") String productType);
+
     @Query(
             "SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
     BigDecimal calculateTotalOutstandingPrincipal(@Param("tenantId") String tenantId);

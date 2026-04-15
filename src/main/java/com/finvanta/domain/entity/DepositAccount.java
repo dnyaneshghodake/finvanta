@@ -61,11 +61,13 @@ public class DepositAccount extends BaseEntity {
     @Column(name = "account_number", nullable = false, length = 40)
     private String accountNumber;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    /** CBS: EAGER — customer name/CIF displayed on every deposit screen */
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "customer_id", nullable = false)
     private Customer customer;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    /** CBS: EAGER — branch code displayed on every deposit screen */
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
 
