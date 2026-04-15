@@ -167,11 +167,11 @@ public interface DepositAccountService {
             String jointHolderMode,
             Boolean chequeBookEnabled,
             Boolean debitCardEnabled,
-            java.math.BigDecimal dailyWithdrawalLimit,
-            java.math.BigDecimal dailyTransferLimit,
-            java.math.BigDecimal odLimit,
-            java.math.BigDecimal interestRate,
-            java.math.BigDecimal minimumBalance);
+            BigDecimal dailyWithdrawalLimit,
+            BigDecimal dailyTransferLimit,
+            BigDecimal odLimit,
+            BigDecimal interestRate,
+            BigDecimal minimumBalance);
 
     /** Get account by number (read-only, no lock) */
     DepositAccount getAccount(String accountNumber);

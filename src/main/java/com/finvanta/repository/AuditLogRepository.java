@@ -2,9 +2,12 @@ package com.finvanta.repository;
 
 import com.finvanta.domain.entity.AuditLog;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,10 +21,10 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
 
     @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId ORDER BY al.eventTimestamp DESC")
     List<AuditLog> findRecentAuditLogsPaged(
-            @Param("tenantId") String tenantId, org.springframework.data.domain.Pageable pageable);
+            @Param("tenantId") String tenantId, Pageable pageable);
 
     default List<AuditLog> findRecentAuditLogs(String tenantId) {
-        return findRecentAuditLogsPaged(tenantId, org.springframework.data.domain.PageRequest.of(0, 500));
+        return findRecentAuditLogsPaged(tenantId, PageRequest.of(0, 500));
     }
 
     default Optional<AuditLog> findLatestByTenantId(String tenantId) {
@@ -31,10 +34,10 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
 
     @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId ORDER BY al.id DESC")
     List<AuditLog> findTopByTenantIdOrderByIdDesc(
-            @Param("tenantId") String tenantId, org.springframework.data.domain.Pageable pageable);
+            @Param("tenantId") String tenantId, Pageable pageable);
 
     default List<AuditLog> findTopByTenantIdOrderByIdDesc(String tenantId) {
-        return findTopByTenantIdOrderByIdDesc(tenantId, org.springframework.data.domain.PageRequest.of(0, 1));
+        return findTopByTenantIdOrderByIdDesc(tenantId, PageRequest.of(0, 1));
     }
 
     // === CBS AUDITINQ: Audit Trail Search per Finacle AUDIT_INQUIRY / RBI IT Governance §8.3 ===
@@ -72,7 +75,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
             + " ORDER BY al.eventTimestamp DESC")
     List<AuditLog> searchAuditLogsWithDateRange(
             @Param("tenantId") String tenantId, @Param("query") String query,
-            @Param("fromDate") java.time.LocalDateTime fromDate,
-            @Param("toDate") java.time.LocalDateTime toDate,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate,
             org.springframework.data.domain.Pageable pageable);
 }
