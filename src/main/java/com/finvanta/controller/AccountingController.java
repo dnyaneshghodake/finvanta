@@ -10,6 +10,7 @@ import com.finvanta.repository.JournalEntryRepository;
 import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
@@ -18,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -102,6 +104,52 @@ public class AccountingController {
             mav.addObject("searchQuery", q);
         } else {
             mav.addObject("trialBalance", accountingService.getTrialBalance());
+        }
+        return mav;
+    }
+
+    /** CBS: Max journal search results to prevent OOM on large journal tables */
+    private static final int MAX_JOURNAL_RESULTS = 500;
+
+    /**
+     * CBS Journal Entry Search per Finacle JRNL_INQUIRY / Temenos STMT.ENTRY.BOOK.
+     * Searches by journal ref, narration, source module, source ref, or branch code.
+     * Branch-scoped for MAKER/CHECKER per Finacle BRANCH_CONTEXT.
+     * Per RBI Inspection Manual: inspectors require instant journal lookup during on-site.
+     */
+    @GetMapping("/journal-entries/search")
+    public ModelAndView searchJournalEntries(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String fromDate,
+            @RequestParam(required = false) String toDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("accounting/journal-entries");
+
+        LocalDate currentBizDate = resolveCurrentBusinessDate();
+        LocalDate from = fromDate != null ? LocalDate.parse(fromDate) : currentBizDate.minusDays(30);
+        LocalDate to = toDate != null ? LocalDate.parse(toDate) : currentBizDate;
+        mav.addObject("fromDate", from);
+        mav.addObject("toDate", to);
+
+        if (q != null && !q.isBlank() && q.trim().length() >= 2) {
+            String trimmed = q.trim();
+            if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+                mav.addObject("entries",
+                        journalEntryRepository.searchJournalEntries(
+                                tenantId, trimmed, PageRequest.of(0, MAX_JOURNAL_RESULTS)));
+            } else {
+                Long branchId = SecurityUtil.getCurrentUserBranchId();
+                if (branchId != null) {
+                    mav.addObject("entries",
+                            journalEntryRepository.searchJournalEntriesByBranch(
+                                    tenantId, branchId, trimmed, PageRequest.of(0, MAX_JOURNAL_RESULTS)));
+                } else {
+                    mav.addObject("entries", java.util.Collections.emptyList());
+                }
+            }
+            mav.addObject("searchQuery", q);
+        } else {
+            mav.addObject("entries", journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to));
         }
         return mav;
     }

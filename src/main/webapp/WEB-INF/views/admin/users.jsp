@@ -57,6 +57,20 @@
     <div class="fv-card">
         <div class="card-header"><i class="bi bi-people"></i> All Users <span class="badge bg-secondary"><c:out value="${users.size()}"/></span></div>
         <div class="card-body">
+            <!-- CBS: User search per Finacle USER_INQUIRY / RBI IT Governance §8.2 -->
+            <form method="get" action="${pageContext.request.contextPath}/admin/users/search" class="row g-2 mb-3">
+                <div class="col-auto">
+                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by username, name, email, role, branch..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:340px;" />
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>
+                </div>
+                <c:if test="${not empty searchQuery}">
+                <div class="col-auto">
+                    <a href="${pageContext.request.contextPath}/admin/users" class="btn btn-sm btn-outline-secondary">Clear</a>
+                </div>
+                </c:if>
+            </form>
             <div class="table-responsive">
             <table class="table fv-table fv-datatable table-sm">
                 <thead><tr>

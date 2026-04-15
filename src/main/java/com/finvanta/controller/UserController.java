@@ -2,8 +2,10 @@ package com.finvanta.controller;
 
 import com.finvanta.domain.entity.AppUser;
 import com.finvanta.domain.enums.UserRole;
+import com.finvanta.repository.AppUserRepository;
 import com.finvanta.service.BranchService;
 import com.finvanta.service.UserService;
+import com.finvanta.util.TenantContext;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
@@ -31,10 +33,12 @@ public class UserController {
 
     private final UserService userService;
     private final BranchService branchService;
+    private final AppUserRepository appUserRepository;
 
-    public UserController(UserService userService, BranchService branchService) {
+    public UserController(UserService userService, BranchService branchService, AppUserRepository appUserRepository) {
         this.userService = userService;
         this.branchService = branchService;
+        this.appUserRepository = appUserRepository;
     }
 
     /** List all users for the tenant */
@@ -42,6 +46,28 @@ public class UserController {
     public ModelAndView listUsers() {
         ModelAndView mav = new ModelAndView("admin/users");
         mav.addObject("users", userService.listUsers());
+        mav.addObject("roles", UserRole.values());
+        mav.addObject("branches", branchService.listActiveBranches());
+        mav.addObject("pageTitle", "User Management");
+        return mav;
+    }
+
+    /**
+     * CBS User Search per Finacle USER_INQUIRY / RBI IT Governance §8.2.
+     * Searches by username, full name, email, role, or branch code.
+     * Per RBI IT Governance Direction 2023 §8.2: audit of user access must be searchable.
+     * ADMIN-only (enforced in SecurityConfig). Tenant-scoped.
+     */
+    @GetMapping("/search")
+    public ModelAndView searchUsers(@RequestParam(required = false) String q) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("admin/users");
+        if (q != null && !q.isBlank() && q.trim().length() >= 2) {
+            mav.addObject("users", appUserRepository.searchUsers(tenantId, q.trim()));
+            mav.addObject("searchQuery", q);
+        } else {
+            mav.addObject("users", userService.listUsers());
+        }
         mav.addObject("roles", UserRole.values());
         mav.addObject("branches", branchService.listActiveBranches());
         mav.addObject("pageTitle", "User Management");
