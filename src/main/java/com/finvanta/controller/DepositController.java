@@ -416,12 +416,15 @@ public class DepositController {
             @RequestParam(required = false) BigDecimal dailyWithdrawalLimit,
             @RequestParam(required = false) BigDecimal dailyTransferLimit,
             @RequestParam(required = false) BigDecimal odLimit,
+            @RequestParam(required = false) BigDecimal interestRate,
+            @RequestParam(required = false) BigDecimal minimumBalance,
             RedirectAttributes ra) {
         try {
             depositService.maintainAccount(
                     accountNumber, nomineeName, nomineeRelationship, jointHolderMode,
                     chequeBookEnabled, debitCardEnabled,
-                    dailyWithdrawalLimit, dailyTransferLimit, odLimit);
+                    dailyWithdrawalLimit, dailyTransferLimit, odLimit,
+                    interestRate, minimumBalance);
             ra.addFlashAttribute("success", "Account maintained: " + accountNumber);
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());

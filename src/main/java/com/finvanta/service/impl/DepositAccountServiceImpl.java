@@ -1380,6 +1380,31 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             modified = true;
         }
 
+        // Interest Rate Override (ADMIN only, savings accounts only)
+        if (interestRate != null) {
+            if (!acct.isSavings())
+                throw new BusinessException("RATE_NOT_APPLICABLE",
+                        "Interest rate override is only applicable for savings accounts. This account is " + acct.getAccountType());
+            if (interestRate.signum() < 0 || interestRate.compareTo(new BigDecimal("100")) > 0)
+                throw new BusinessException("INVALID_RATE", "Interest rate must be between 0% and 100%.");
+            beforeState.append("|rate=").append(acct.getInterestRate());
+            acct.setInterestRate(interestRate);
+            afterState.append("|rate=").append(acct.getInterestRate());
+            changes.append("InterestRate: ").append(interestRate).append("%; ");
+            modified = true;
+        }
+
+        // Minimum Balance Override/Waiver
+        if (minimumBalance != null) {
+            if (minimumBalance.signum() < 0)
+                throw new BusinessException("INVALID_AMOUNT", "Minimum balance cannot be negative.");
+            beforeState.append("|minBal=").append(acct.getMinimumBalance());
+            acct.setMinimumBalance(minimumBalance);
+            afterState.append("|minBal=").append(acct.getMinimumBalance());
+            changes.append("MinBalance: INR ").append(minimumBalance).append("; ");
+            modified = true;
+        }
+
         if (!modified) {
             throw new BusinessException("NO_CHANGES", "No modifications specified.");
         }

@@ -178,23 +178,35 @@
                 </div>
             </div>
             <div class="row mb-3">
-                <div class="col-md-3">
-                    <label class="form-label small">Daily Withdrawal Limit (INR)</label>
+                <div class="col-md-2">
+                    <label class="form-label small">Daily Withdrawal Limit</label>
                     <input type="number" name="dailyWithdrawalLimit" class="form-control form-control-sm" step="0.01" min="0" value="${account.dailyWithdrawalLimit}"/>
                     <small class="text-muted">0 = unlimited</small>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label small">Daily Transfer Limit (INR)</label>
+                <div class="col-md-2">
+                    <label class="form-label small">Daily Transfer Limit</label>
                     <input type="number" name="dailyTransferLimit" class="form-control form-control-sm" step="0.01" min="0" value="${account.dailyTransferLimit}"/>
                     <small class="text-muted">0 = unlimited</small>
                 </div>
                 <c:if test="${account.accountType == 'CURRENT_OD'}">
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label small">OD Limit (INR)</label>
                     <input type="number" name="odLimit" class="form-control form-control-sm" step="0.01" min="0" value="${account.odLimit}"/>
                 </div>
                 </c:if>
-                <div class="col-md-3 d-flex align-items-end">
+                <c:if test="${account.savings}">
+                <div class="col-md-2">
+                    <label class="form-label small">Interest Rate % p.a.</label>
+                    <input type="number" name="interestRate" class="form-control form-control-sm" step="0.0001" min="0" max="100" value="${account.interestRate}"/>
+                    <small class="text-muted">Per-account override</small>
+                </div>
+                </c:if>
+                <div class="col-md-2">
+                    <label class="form-label small">Min Balance (INR)</label>
+                    <input type="number" name="minimumBalance" class="form-control form-control-sm" step="0.01" min="0" value="${account.minimumBalance}"/>
+                    <small class="text-muted">0 = no minimum</small>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
                     <button type="submit" class="btn btn-sm btn-fv-primary" data-confirm="Save account maintenance changes? All modifications will be audited."><i class="bi bi-check-circle"></i> Save Changes</button>
                 </div>
             </div>
