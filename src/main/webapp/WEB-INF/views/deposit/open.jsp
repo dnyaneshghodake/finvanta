@@ -82,9 +82,9 @@
                 <small class="form-text text-muted">Auto from product master</small>
             </div>
             <div class="col-md-3">
-                <label for="initialDeposit" class="form-label">Initial Deposit (INR)</label>
-                <input type="number" name="initialDeposit" id="initialDeposit" class="form-control" step="0.01" min="0" placeholder="0.00"/>
-                <small class="form-text text-muted">Processed after activation</small>
+                <label class="form-label">Initial Funding</label>
+                <input type="text" class="form-control" readonly value="After activation" disabled/>
+                <small class="form-text text-muted">Per Finacle ACCTOPN: deposit via Deposit screen after checker activates the account</small>
             </div>
             <div class="col-md-3">
                 <label class="form-label">Joint Holder Mode</label>

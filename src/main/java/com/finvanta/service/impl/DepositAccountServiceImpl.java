@@ -447,8 +447,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // Per Finacle ACCTOPN / Temenos ACCOUNT.OPENING: account opening requires
         // dual authorization. MAKER submits → CHECKER approves → account activates.
         String payload = "CASA|" + accNo + "|" + accountType + "|" + cust.getCustomerNumber()
-                + "|" + branch.getBranchCode() + "|rate=" + interestRate + "|minBal=" + minimumBalance
-                + (initialDeposit != null && initialDeposit.signum() > 0 ? "|initDep=" + initialDeposit : "");
+                + "|" + branch.getBranchCode() + "|rate=" + interestRate + "|minBal=" + minimumBalance;
         try {
             workflowService.initiateApproval(
                     "DepositAccount", saved.getId(), "ACCOUNT_OPENING", "CASA account opening: " + accNo, payload);
@@ -479,12 +478,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 cust.getCustomerNumber(),
                 saved.getAccountStatus());
 
-        // CBS: Initial deposit is only processed if account is ACTIVE (auto-activated or Phase 1 mode).
-        // For PENDING_ACTIVATION accounts, the initial deposit is deferred until checker approval.
-        if (saved.isActive() && initialDeposit != null && initialDeposit.signum() > 0) {
-            deposit(accNo, initialDeposit, bizDate, "Initial deposit at account opening", null, "BRANCH");
-            saved = accountRepository.findByTenantIdAndAccountNumber(tid, accNo).orElse(saved);
-        }
+        // CBS Per Finacle ACCTOPN / Temenos ACCOUNT.OPENING:
+        // Account opening and initial funding are TWO SEPARATE transactions.
+        // The account starts in PENDING_ACTIVATION — it cannot accept credits until
+        // the checker activates it. Initial deposit is done via the standard Deposit
+        // screen after activation. This is the Tier-1 CBS pattern:
+        //   Step 1: MAKER opens account → PENDING_ACTIVATION
+        //   Step 2: CHECKER activates → ACTIVE
+        //   Step 3: MAKER/CHECKER deposits initial funds via Deposit screen
         return saved;
     }
 
