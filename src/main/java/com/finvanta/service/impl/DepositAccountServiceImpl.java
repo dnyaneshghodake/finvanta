@@ -364,6 +364,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                             + Arrays.toString(DepositAccountType.values()));
         }
 
+        // CBS CRITICAL: Resolve business date BEFORE sequence allocation.
+        // businessDateService.getCurrentBusinessDate() throws BusinessException("NO_BUSINESS_DAY_OPEN")
+        // if no day is open. This must be validated before consuming the DB-backed sequence,
+        // because REQUIRES_NEW propagation commits the sequence independently — a failed
+        // business date check after sequence allocation wastes the number.
+        // Per Finacle ACCTOPN / Temenos ACCOUNT.OPENING: validate-first, allocate-last.
+        LocalDate bizDate = businessDateService.getCurrentBusinessDate();
+
         // CBS Phase 2: Product-driven rate and minimum balance per Finacle PDDEF.
         // Interest rate and minimum balance are resolved from ProductMaster, not hardcoded.
         // Fallback to defaults if product not found (backward compatibility with Phase 1).
@@ -397,15 +405,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // Branch-scoped: each branch has its own sequence starting from 1.
         // Format: {SB|CA}-{BRANCH}-{6-digit} → SB-BR001-000001
         //
-        // CBS CRITICAL: Sequence allocation is deferred to AFTER all validations pass.
-        // Per Finacle SEQ_MASTER / Temenos EB.SEQUENCE: reference numbers use REQUIRES_NEW
-        // propagation (commits independently of caller's transaction). If allocated before
-        // validation and the validation fails, the sequence is consumed but no record is
-        // created — causing gaps (e.g., SB-BR001-000002 instead of 000001).
-        // Per RBI IT Governance / Finacle ACCTOPN: account numbers must be sequential
-        // with minimal gaps. Gaps trigger RBI gap analysis queries during inspection.
-        // Moving allocation here ensures the sequence is only consumed when the account
-        // WILL be persisted — all customer/branch/type/product validations have passed.
+        // CBS CRITICAL: Sequence allocation is the LAST step before entity construction.
+        // All throwable validations (customer, branch, account type, business date, product)
+        // are completed above. The REQUIRES_NEW propagation on the sequence generator commits
+        // independently — any failure after this point wastes the sequence number.
+        // Per Finacle SEQ_MASTER / RBI IT Governance: minimize gaps by allocating last.
         String accNo = cbsReferenceService.generateDepositAccountNumber(
                 branch.getBranchCode(), parsedAccountType.isSavings());
         DepositAccount a = new DepositAccount();
@@ -431,7 +435,6 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         a.setAccruedInterest(BigDecimal.ZERO);
         a.setYtdInterestCredited(BigDecimal.ZERO);
         a.setYtdTdsDeducted(BigDecimal.ZERO);
-        LocalDate bizDate = businessDateService.getCurrentBusinessDate();
         a.setOpenedDate(bizDate);
         a.setLastTransactionDate(bizDate);
         a.setNomineeName(nomineeName);
