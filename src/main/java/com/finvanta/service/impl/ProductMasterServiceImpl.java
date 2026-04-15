@@ -155,16 +155,20 @@ public class ProductMasterServiceImpl implements ProductMasterService {
                         tid, "ProductMaster", productId, ApprovalStatus.APPROVED);
                 if (approvedWorkflow.isPresent()
                         && "PRODUCT_GL_CHANGE".equals(approvedWorkflow.get().getActionType())) {
-                    // CHECKER has approved — consume the workflow and allow the GL change
+                    // CHECKER has approved — consume the workflow (APPROVED → CONSUMED) and allow the GL change.
+                    // CBS CRITICAL: The workflow MUST transition to CONSUMED before the GL change is applied.
+                    // Without this, the same APPROVED workflow can be replayed for unlimited GL changes,
+                    // defeating the dual authorization control per RBI Internal Controls.
+                    // Per Finacle AUTH_ENGINE: every approval token is single-use.
                     ApprovalWorkflow wf = approvedWorkflow.get();
+                    wf.setStatus(ApprovalStatus.CONSUMED);
                     wf.setCheckerRemarks((wf.getCheckerRemarks() != null ? wf.getCheckerRemarks() + " | " : "")
                             + "GL change applied by " + user);
+                    wf.setUpdatedBy(user);
                     workflowRepo.save(wf);
-                    log.info("CBS MAKER-CHECKER: GL change on product {} approved by CHECKER {}. Applying GL changes. Maker: {}",
-                            e.getProductCode(), wf.getCheckerUserId(), user);
-                    // Resolve the workflow so it can't be replayed
-                    workflowService.resolveExistingPendingWorkflow("ProductMaster", productId, user,
-                            "GL change applied after CHECKER approval");
+                    log.info("CBS MAKER-CHECKER: GL change on product {} approved by CHECKER {}. "
+                            + "Workflow {} consumed (APPROVED→CONSUMED). Maker: {}",
+                            e.getProductCode(), wf.getCheckerUserId(), wf.getId(), user);
                 } else {
                     // No approved workflow — block and create a new PENDING_APPROVAL
                     // CBS: Check if there's already a PENDING workflow to avoid duplicates

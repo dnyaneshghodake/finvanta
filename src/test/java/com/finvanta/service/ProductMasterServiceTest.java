@@ -7,6 +7,8 @@ import com.finvanta.domain.entity.ProductMaster;
 import com.finvanta.domain.enums.GLAccountType;
 import com.finvanta.domain.enums.ProductCategory;
 import com.finvanta.domain.enums.ProductStatus;
+import com.finvanta.domain.entity.ApprovalWorkflow;
+import com.finvanta.domain.enums.ApprovalStatus;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.LoanAccountRepository;
@@ -253,6 +255,54 @@ class ProductMasterServiceTest {
 
             ProductMaster result = service.updateProduct(10L, formData);
             assertEquals(ProductCategory.CASA_SAVINGS, result.getProductCategory());
+        }
+    }
+
+    @Nested
+    @DisplayName("GL Change Workflow Consumption")
+    class GlChangeWorkflowConsumption {
+
+        @Test
+        @DisplayName("Approved GL workflow is consumed (APPROVED→CONSUMED) after application")
+        void approvedWorkflow_consumedAfterApplication() {
+            mockCasaGLs();
+            ProductMaster existing = buildCasaProduct();
+            existing.setId(10L);
+            existing.setTenantId("DEFAULT");
+            existing.setProductStatus(ProductStatus.ACTIVE);
+            existing.setConfigVersion(1);
+            // Change one GL code to trigger GL change detection
+            existing.setGlLoanAsset("2010");
+
+            ProductMaster formData = buildCasaProduct();
+            formData.setProductCategory(null);
+            formData.setGlLoanAsset("2020"); // Different from existing → GL change detected
+
+            // Mock active accounts exist → maker-checker required
+            when(productRepo.findById(10L)).thenReturn(java.util.Optional.of(existing));
+            when(loanAccountRepo.countActiveByProductType(any(), any())).thenReturn(0L);
+            when(depositAccountRepo.countNonClosedByProductCode(any(), any())).thenReturn(5L);
+
+            // Mock APPROVED workflow exists
+            mockGl("2020", GLAccountType.LIABILITY);
+            ApprovalWorkflow approvedWf = new ApprovalWorkflow();
+            approvedWf.setId(99L);
+            approvedWf.setTenantId("DEFAULT");
+            approvedWf.setEntityType("ProductMaster");
+            approvedWf.setEntityId(10L);
+            approvedWf.setActionType("PRODUCT_GL_CHANGE");
+            approvedWf.setStatus(ApprovalStatus.APPROVED);
+            approvedWf.setCheckerUserId("checker1");
+            when(workflowRepo.findByTenantIdAndEntityTypeAndEntityIdAndStatus(
+                    "DEFAULT", "ProductMaster", 10L, ApprovalStatus.APPROVED))
+                    .thenReturn(java.util.Optional.of(approvedWf));
+            when(productRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.updateProduct(10L, formData);
+
+            // Verify workflow was consumed (status set to CONSUMED)
+            assertEquals(ApprovalStatus.CONSUMED, approvedWf.getStatus());
+            verify(workflowRepo).save(approvedWf);
         }
     }
 
