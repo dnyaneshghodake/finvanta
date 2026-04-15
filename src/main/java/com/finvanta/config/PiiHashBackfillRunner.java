@@ -3,6 +3,8 @@ package com.finvanta.config;
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.repository.CustomerRepository;
 
+import jakarta.persistence.EntityManager;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -40,9 +42,11 @@ public class PiiHashBackfillRunner {
     private static final Logger log = LoggerFactory.getLogger(PiiHashBackfillRunner.class);
 
     private final CustomerRepository customerRepo;
+    private final EntityManager entityManager;
 
-    public PiiHashBackfillRunner(CustomerRepository customerRepo) {
+    public PiiHashBackfillRunner(CustomerRepository customerRepo, EntityManager entityManager) {
         this.customerRepo = customerRepo;
+        this.entityManager = entityManager;
     }
 
     /**
@@ -70,8 +74,18 @@ public class PiiHashBackfillRunner {
         // CBS: Paginated processing — loads BACKFILL_PAGE_SIZE customers at a time.
         // Per Finacle DATA_INTEGRITY_CHECK / Temenos COB.VERIFY: batch operations
         // must use pagination to prevent OOM on production databases with millions
-        // of customer records. Each page is processed within the same transaction
-        // (Hibernate first-level cache is bounded by page size).
+        // of customer records.
+        //
+        // IMPORTANT: Pagination alone only bounds the JDBC ResultSet, NOT the
+        // Hibernate first-level cache (persistence context / Session). Every entity
+        // loaded via findAll() and every entity passed to save() remains attached
+        // to the Session. Without explicit clearing, the Session grows unboundedly
+        // across all pages — accumulating the entire customer table in memory.
+        //
+        // Fix: flush() + clear() after each page. flush() writes pending dirty
+        // entities to DB (within the same transaction), clear() detaches ALL
+        // managed entities from the Session, freeing heap. Previously-loaded
+        // entities become detached — safe here since we never re-access old pages.
         Page<Customer> page;
         do {
             page = customerRepo.findAll(PageRequest.of(pageNumber, BACKFILL_PAGE_SIZE));
@@ -98,6 +112,14 @@ public class PiiHashBackfillRunner {
                     customerRepo.save(c);
                 }
             }
+
+            // CBS: Flush pending UPDATEs to DB and clear the persistence context.
+            // Without this, the Hibernate Session accumulates entities from ALL pages
+            // (pagination only bounds the query, not the Session cache). For 1M
+            // customers at 500/page, the Session would hold 1M managed entities —
+            // defeating the entire purpose of pagination.
+            entityManager.flush();
+            entityManager.clear();
 
             pageNumber++;
         } while (page.hasNext());
