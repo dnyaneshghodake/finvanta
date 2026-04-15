@@ -95,10 +95,12 @@ public class CustomerController {
         // contract — callers may believe the change was applied. Fail-fast instead.
         if (req.panNumber() != null && !req.panNumber().isBlank()) {
             return ResponseEntity.badRequest().body(ApiResponse.error(
+                    "IMMUTABLE_FIELD",
                     "PAN number is immutable after creation. Cannot be changed via update."));
         }
         if (req.aadhaarNumber() != null && !req.aadhaarNumber().isBlank()) {
             return ResponseEntity.badRequest().body(ApiResponse.error(
+                    "IMMUTABLE_FIELD",
                     "Aadhaar number is immutable after creation. Cannot be changed via update."));
         }
         Customer updated = new Customer();
