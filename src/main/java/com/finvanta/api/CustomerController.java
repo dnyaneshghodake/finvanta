@@ -80,12 +80,27 @@ public class CustomerController {
     /**
      * Update mutable customer fields. MAKER/ADMIN.
      * PAN, Aadhaar, and customer number are IMMUTABLE after creation per RBI KYC norms.
+     * If panNumber or aadhaarNumber are provided in the request body, they are ignored
+     * (the service layer does not copy them to the existing entity). To prevent confusion,
+     * the API rejects requests that attempt to change these fields.
      */
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<CustomerResponse>>
             updateCustomer(@PathVariable Long id,
                     @Valid @RequestBody CreateCustomerRequest req) {
+        // CBS: Reject requests that attempt to change immutable PII fields.
+        // Per RBI KYC norms: PAN and Aadhaar are immutable after CIF creation.
+        // The service layer silently ignores them, but silent ignore is a poor API
+        // contract — callers may believe the change was applied. Fail-fast instead.
+        if (req.panNumber() != null && !req.panNumber().isBlank()) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(
+                    "PAN number is immutable after creation. Cannot be changed via update."));
+        }
+        if (req.aadhaarNumber() != null && !req.aadhaarNumber().isBlank()) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(
+                    "Aadhaar number is immutable after creation. Cannot be changed via update."));
+        }
         Customer updated = new Customer();
         populateCustomerFromRequest(updated, req);
         Customer saved = customerService

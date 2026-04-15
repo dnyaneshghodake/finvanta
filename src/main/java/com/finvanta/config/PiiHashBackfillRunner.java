@@ -3,12 +3,12 @@ package com.finvanta.config;
 import com.finvanta.domain.entity.Customer;
 import com.finvanta.repository.CustomerRepository;
 
-import java.util.List;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,38 +53,58 @@ public class PiiHashBackfillRunner {
      *
      * Idempotent: only processes customers where hash is NULL but PII value is non-null.
      */
+    /**
+     * CBS: Page size for backfill processing. Keeps JVM heap bounded even with
+     * millions of customers. Per Finacle BATCH_ENGINE: batch operations must
+     * process in configurable page sizes to prevent OOM on large datasets.
+     */
+    private static final int BACKFILL_PAGE_SIZE = 500;
+
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void backfillMissingHashes() {
-        List<Customer> allCustomers = customerRepo.findAll();
         int panBackfilled = 0;
         int aadhaarBackfilled = 0;
+        int pageNumber = 0;
 
-        for (Customer c : allCustomers) {
-            boolean updated = false;
+        // CBS: Paginated processing — loads BACKFILL_PAGE_SIZE customers at a time.
+        // Per Finacle DATA_INTEGRITY_CHECK / Temenos COB.VERIFY: batch operations
+        // must use pagination to prevent OOM on production databases with millions
+        // of customer records. Each page is processed within the same transaction
+        // (Hibernate first-level cache is bounded by page size).
+        Page<Customer> page;
+        do {
+            page = customerRepo.findAll(PageRequest.of(pageNumber, BACKFILL_PAGE_SIZE));
 
-            // Backfill PAN hash if PAN exists but hash is missing
-            if (c.getPanNumber() != null && !c.getPanNumber().isBlank() && c.getPanHash() == null) {
-                c.computePanHash();
-                updated = true;
-                panBackfilled++;
+            for (Customer c : page.getContent()) {
+                boolean updated = false;
+
+                // Backfill PAN hash if PAN exists but hash is missing
+                if (c.getPanNumber() != null && !c.getPanNumber().isBlank() && c.getPanHash() == null) {
+                    c.computePanHash();
+                    updated = true;
+                    panBackfilled++;
+                }
+
+                // Backfill Aadhaar hash if Aadhaar exists but hash is missing
+                if (c.getAadhaarNumber() != null && !c.getAadhaarNumber().isBlank()
+                        && c.getAadhaarHash() == null) {
+                    c.computeAadhaarHash();
+                    updated = true;
+                    aadhaarBackfilled++;
+                }
+
+                if (updated) {
+                    customerRepo.save(c);
+                }
             }
 
-            // Backfill Aadhaar hash if Aadhaar exists but hash is missing
-            if (c.getAadhaarNumber() != null && !c.getAadhaarNumber().isBlank() && c.getAadhaarHash() == null) {
-                c.computeAadhaarHash();
-                updated = true;
-                aadhaarBackfilled++;
-            }
-
-            if (updated) {
-                customerRepo.save(c);
-            }
-        }
+            pageNumber++;
+        } while (page.hasNext());
 
         if (panBackfilled > 0 || aadhaarBackfilled > 0) {
-            log.info("CBS PII Hash Backfill: {} PAN hashes, {} Aadhaar hashes backfilled",
-                    panBackfilled, aadhaarBackfilled);
+            log.info("CBS PII Hash Backfill: {} PAN hashes, {} Aadhaar hashes backfilled across {} page(s)",
+                    panBackfilled, aadhaarBackfilled, pageNumber);
         } else {
             log.debug("CBS PII Hash Backfill: all hashes up-to-date, no backfill needed");
         }

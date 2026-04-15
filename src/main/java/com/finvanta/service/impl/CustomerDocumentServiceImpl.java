@@ -116,16 +116,22 @@ public class CustomerDocumentServiceImpl implements CustomerDocumentService {
         doc.setVerificationStatus(DocumentVerificationStatus.UPLOADED);
         doc.setCreatedBy(user);
 
-        // CBS: Store file content via configurable backend
+        // CBS: Store file content via configurable backend.
+        // For DATABASE mode: set BLOB data and storagePath="BLOB" before first save
+        // to avoid a redundant UPDATE. For FILESYSTEM mode: first save to get the
+        // entity ID (needed for the filesystem path), then store and update path.
         if ("DATABASE".equals(storageService.getStorageType())) {
             doc.setFileData(fileData);
+            doc.setStoragePath("BLOB");
+            documentRepo.save(doc);
+        } else {
+            // FILESYSTEM: need entity ID for path generation → save first, then store
+            documentRepo.save(doc);
+            String storagePath = storageService.store(
+                    tenantId, customer.getId(), doc.getId(), safeFileName, fileData);
+            doc.setStoragePath(storagePath);
+            documentRepo.save(doc);
         }
-        documentRepo.save(doc);
-
-        String storagePath = storageService.store(
-                tenantId, customer.getId(), doc.getId(), safeFileName, fileData);
-        doc.setStoragePath(storagePath);
-        documentRepo.save(doc);
 
         auditSvc.logEvent("CustomerDocument", doc.getId(), "UPLOAD", null,
                 documentType, "CIF",
@@ -151,7 +157,14 @@ public class CustomerDocumentServiceImpl implements CustomerDocumentService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public byte[] retrieveFileContent(CustomerDocument doc) {
+        // CBS: @Transactional ensures Hibernate session is open when accessing doc.getFileData().
+        // With spring.jpa.open-in-view=false (set globally), the session from getDocument()
+        // is already closed when the controller calls this method. Currently fileData is a
+        // byte[] (eagerly loaded), but if @Basic(fetch=LAZY) is ever added for performance,
+        // accessing it on a detached entity would throw LazyInitializationException.
+        // Per Finacle/Temenos Tier-1: all data access must be within a transaction boundary.
         return storageService.retrieve(doc.getStoragePath(), doc.getFileData());
     }
 

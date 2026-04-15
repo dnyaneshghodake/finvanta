@@ -61,6 +61,11 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
     /** Accounts by product code (for product active account count) */
     List<DepositAccount> findByTenantIdAndProductCode(String tenantId, String productCode);
 
+    /** CBS: DB-level COUNT for product active account check — avoids loading entire deposit list into memory */
+    @Query("SELECT COUNT(da) FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.productCode = :productCode AND da.accountStatus <> 'CLOSED'")
+    long countNonClosedByProductCode(@Param("tenantId") String tenantId, @Param("productCode") String productCode);
+
     /** Accounts by customer */
     List<DepositAccount> findByTenantIdAndCustomerId(String tenantId, Long customerId);
 

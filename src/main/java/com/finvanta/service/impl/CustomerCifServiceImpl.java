@@ -361,6 +361,17 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         // OR if the existing entity was already non-PEP (safe to copy false).
         // Same pattern for addressSameAsPermanent (entity default=true could override false).
         if (updated.getKycRiskCategory() != null) {
+            // CBS: Validate kycRiskCategory against allowed values per RBI KYC Section 16.
+            // Without validation, arbitrary strings (e.g., "INVALID") would be persisted,
+            // causing getKycRenewalYears() to silently default to 8 years (MEDIUM) —
+            // masking data quality issues. Per Finacle CIF_MASTER: closed enumeration.
+            if (!"LOW".equals(updated.getKycRiskCategory())
+                    && !"MEDIUM".equals(updated.getKycRiskCategory())
+                    && !"HIGH".equals(updated.getKycRiskCategory())) {
+                throw new BusinessException("INVALID_KYC_RISK_CATEGORY",
+                        "KYC risk category must be LOW, MEDIUM, or HIGH. Got: "
+                                + updated.getKycRiskCategory());
+            }
             existing.setKycRiskCategory(updated.getKycRiskCategory());
             existing.computeKycExpiry();
         }

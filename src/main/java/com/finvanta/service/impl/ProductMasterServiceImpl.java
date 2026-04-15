@@ -55,10 +55,19 @@ public class ProductMasterServiceImpl implements ProductMasterService {
             throw new BusinessException("DUPLICATE_PRODUCT", "Product code exists: " + p.getProductCode());
         validateFields(p);
         validateGlCodes(tid, p);
+        // CBS CRITICAL: Mass Assignment Protection per OWASP A4 / Finacle PDDEF.
+        // Spring MVC @ModelAttribute binds ALL request parameters to entity fields,
+        // including BaseEntity fields (id, version). A malicious POST with
+        // id=<existing_id>&version=<matching> would cause JPA merge() instead of
+        // persist(), overwriting an existing product's GL codes — a financially
+        // unsafe operation that could route transactions to wrong GL accounts.
+        p.setId(null);
+        p.setVersion(null);
         p.setTenantId(tid);
         p.setProductStatus(ProductStatus.ACTIVE);
         p.setActive(true);
         p.setCreatedBy(user);
+        p.setUpdatedBy(null);
         ProductMaster saved = productRepo.save(p);
         glResolver.evictCache();
         auditSvc.logEvent("ProductMaster", saved.getId(), "PRODUCT_CREATED", null,
@@ -158,10 +167,13 @@ public class ProductMasterServiceImpl implements ProductMasterService {
     public long countActiveAccounts(Long productId) {
         String tid = TenantContext.getCurrentTenant();
         String code = getProduct(productId).getProductCode();
-        long loans = loanAccountRepo.findAllActiveAccounts(tid).stream()
-                .filter(a -> code.equals(a.getProductType())).count();
-        long deps = depositAccountRepo.findByTenantIdAndProductCode(tid, code).stream()
-                .filter(d -> !d.isClosed()).count();
+        // CBS: Use DB-level COUNT queries instead of loading entire account portfolio.
+        // Per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG: product active account count
+        // is displayed on the product detail page and edit form. Loading all accounts
+        // into JVM memory just to count matching rows is an OOM risk for banks with
+        // thousands of accounts. JPQL COUNT with WHERE clause pushes filtering to DB.
+        long loans = loanAccountRepo.countActiveByProductType(tid, code);
+        long deps = depositAccountRepo.countNonClosedByProductCode(tid, code);
         return loans + deps;
     }
 
