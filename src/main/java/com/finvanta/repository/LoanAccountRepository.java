@@ -65,6 +65,36 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
     /** CBS Branch Portfolio: all loan accounts at a specific branch */
     List<LoanAccount> findByTenantIdAndBranchId(String tenantId, Long branchId);
 
+    // === CBS LOANINQ: Loan Account Search per Finacle LOANINQ / Temenos AA.ARRANGEMENT.ENQUIRY ===
+
+    /**
+     * Search loan accounts by account number, customer name, or customer CIF.
+     * Per Finacle LOANINQ: branch staff must locate loan accounts instantly for
+     * repayment processing, NPA follow-up, and RBI inspection queries.
+     * All branches visible (ADMIN/AUDITOR). Branch-scoped variant below.
+     */
+    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId "
+            + "AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF') AND ("
+            + "la.accountNumber LIKE CONCAT('%', :query, '%') OR "
+            + "la.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "
+            + "LOWER(la.customer.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(la.customer.lastName) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + " ORDER BY la.accountNumber")
+    List<LoanAccount> searchAccounts(
+            @Param("tenantId") String tenantId, @Param("query") String query);
+
+    /** Branch-scoped loan search for MAKER/CHECKER per Finacle BRANCH_CONTEXT */
+    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId "
+            + "AND la.branch.id = :branchId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF') AND ("
+            + "la.accountNumber LIKE CONCAT('%', :query, '%') OR "
+            + "la.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "
+            + "LOWER(la.customer.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(la.customer.lastName) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + " ORDER BY la.accountNumber")
+    List<LoanAccount> searchAccountsByBranch(
+            @Param("tenantId") String tenantId, @Param("branchId") Long branchId,
+            @Param("query") String query);
+
     /** CBS Dashboard: Total NPA outstanding (Sub-Standard + Doubtful + Loss) */
     @Query(
             "SELECT COALESCE(SUM(la.outstandingPrincipal), 0) FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status IN ('NPA_SUBSTANDARD', 'NPA_DOUBTFUL', 'NPA_LOSS')")

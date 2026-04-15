@@ -106,6 +106,38 @@ public class DepositController {
     }
 
     /**
+     * CBS CASA Account Search per Finacle ACCTINQ / Temenos ACCOUNT.ENQUIRY.
+     * Searches by account number, customer CIF, or customer name.
+     * Branch-scoped for MAKER/CHECKER per Finacle BRANCH_CONTEXT.
+     * Per RBI Customer Protection Framework 2024: instant account lookup for complaints.
+     */
+    @GetMapping("/search")
+    public ModelAndView searchAccounts(@RequestParam(required = false) String q) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("deposit/accounts");
+        if (q != null && !q.isBlank() && q.trim().length() >= 2) {
+            String trimmed = q.trim();
+            if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+                mav.addObject("accounts", depositAccountRepository.searchAccounts(tenantId, trimmed));
+            } else {
+                Long branchId = SecurityUtil.getCurrentUserBranchId();
+                if (branchId != null) {
+                    mav.addObject("accounts",
+                            depositAccountRepository.searchAccountsByBranch(tenantId, branchId, trimmed));
+                } else {
+                    mav.addObject("accounts", java.util.Collections.emptyList());
+                }
+            }
+            mav.addObject("searchQuery", q);
+        } else {
+            // No query or too short — show default list
+            return listAccounts();
+        }
+        mav.addObject("pageTitle", "CASA Accounts");
+        return mav;
+    }
+
+    /**
      * CBS CASA Pipeline View per Finacle ACCTOPN workflow stages.
      * Shows accounts grouped by lifecycle stage — same pattern as /loan/applications.
      * Stage 1: Pending Activation (MAKER submitted → CHECKER to activate)

@@ -66,6 +66,40 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
             + "AND da.productCode = :productCode AND da.accountStatus <> 'CLOSED'")
     long countNonClosedByProductCode(@Param("tenantId") String tenantId, @Param("productCode") String productCode);
 
+    // === CBS ACCTINQ: CASA Account Search per Finacle ACCTINQ / Temenos ACCOUNT.ENQUIRY ===
+
+    /**
+     * Search CASA accounts by account number, customer name, or customer CIF.
+     * Per Finacle ACCTINQ: branch staff must locate accounts instantly for
+     * teller operations, customer complaints, and RBI inspection queries.
+     * All branches visible (ADMIN/AUDITOR). Branch-scoped variant below.
+     *
+     * CBS: Joins to Customer entity for name/CIF search. Account number and
+     * customer number use exact-prefix LIKE; names use case-insensitive LIKE.
+     * PAN search is NOT included — PAN is encrypted, use Customer CIF_SEARCH instead.
+     */
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.accountStatus <> 'CLOSED' AND ("
+            + "da.accountNumber LIKE CONCAT('%', :query, '%') OR "
+            + "da.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "
+            + "LOWER(da.customer.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(da.customer.lastName) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + " ORDER BY da.accountNumber")
+    List<DepositAccount> searchAccounts(
+            @Param("tenantId") String tenantId, @Param("query") String query);
+
+    /** Branch-scoped CASA search for MAKER/CHECKER per Finacle BRANCH_CONTEXT */
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.branch.id = :branchId AND da.accountStatus <> 'CLOSED' AND ("
+            + "da.accountNumber LIKE CONCAT('%', :query, '%') OR "
+            + "da.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "
+            + "LOWER(da.customer.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(da.customer.lastName) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + " ORDER BY da.accountNumber")
+    List<DepositAccount> searchAccountsByBranch(
+            @Param("tenantId") String tenantId, @Param("branchId") Long branchId,
+            @Param("query") String query);
+
     /** Accounts by customer */
     List<DepositAccount> findByTenantIdAndCustomerId(String tenantId, Long customerId);
 

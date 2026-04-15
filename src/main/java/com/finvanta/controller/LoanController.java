@@ -14,6 +14,7 @@ import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.InterestAccrualRepository;
 import com.finvanta.repository.LoanAccountRepository;
+import com.finvanta.repository.LoanApplicationRepository;
 import com.finvanta.repository.LoanDocumentRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.repository.ProductMasterRepository;
@@ -54,6 +55,7 @@ public class LoanController {
     private final LoanDocumentRepository documentRepository;
     private final LoanTransactionRepository transactionRepository;
     private final LoanAccountRepository accountRepository;
+    private final LoanApplicationRepository applicationRepository;
     private final InterestAccrualRepository accrualRepository;
     private final ProductMasterRepository productRepository;
     private final DepositAccountRepository depositAccountRepository;
@@ -73,6 +75,7 @@ public class LoanController {
             LoanDocumentRepository documentRepository,
             LoanTransactionRepository transactionRepository,
             LoanAccountRepository accountRepository,
+            LoanApplicationRepository applicationRepository,
             InterestAccrualRepository accrualRepository,
             ProductMasterRepository productRepository,
             DepositAccountRepository depositAccountRepository,
@@ -90,6 +93,7 @@ public class LoanController {
         this.documentRepository = documentRepository;
         this.transactionRepository = transactionRepository;
         this.accountRepository = accountRepository;
+        this.applicationRepository = applicationRepository;
         this.accrualRepository = accrualRepository;
         this.productRepository = productRepository;
         this.depositAccountRepository = depositAccountRepository;
@@ -147,6 +151,43 @@ public class LoanController {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
             return new ModelAndView("redirect:/loan/apply");
         }
+    }
+
+    /**
+     * CBS Loan Application Search per Finacle APPINQ / Temenos AA.ARRANGEMENT.ENQUIRY.
+     * Searches by application number, customer CIF, or customer name.
+     * Branch-scoped for MAKER/CHECKER per Finacle BRANCH_CONTEXT.
+     * Per RBI Inspection Manual: inspectors require instant application lookup.
+     */
+    @GetMapping("/applications/search")
+    public ModelAndView searchApplications(@RequestParam(required = false) String q) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("loan/applications");
+        if (q != null && !q.isBlank() && q.trim().length() >= 2) {
+            String trimmed = q.trim();
+            java.util.List<LoanApplication> results;
+            if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+                results = applicationRepository.searchApplications(tenantId, trimmed);
+            } else {
+                Long branchId = SecurityUtil.getCurrentUserBranchId();
+                if (branchId != null) {
+                    results = applicationRepository.searchApplicationsByBranch(tenantId, branchId, trimmed);
+                } else {
+                    results = java.util.Collections.emptyList();
+                }
+            }
+            // CBS: Group search results by status for the pipeline view
+            mav.addObject("applications", results.stream()
+                    .filter(a -> a.getStatus() == ApplicationStatus.SUBMITTED).toList());
+            mav.addObject("verifiedApplications", results.stream()
+                    .filter(a -> a.getStatus() == ApplicationStatus.VERIFIED).toList());
+            mav.addObject("approvedApplications", results.stream()
+                    .filter(a -> a.getStatus() == ApplicationStatus.APPROVED).toList());
+            mav.addObject("searchQuery", q);
+        } else {
+            return listApplications();
+        }
+        return mav;
     }
 
     /**
@@ -263,6 +304,36 @@ public class LoanController {
                 // Per RBI Operational Risk: no-branch users must not see all data.
                 mav.addObject("accounts", java.util.Collections.emptyList());
             }
+        }
+        return mav;
+    }
+
+    /**
+     * CBS Loan Account Search per Finacle LOANINQ / Temenos AA.ARRANGEMENT.ENQUIRY.
+     * Searches by account number, customer CIF, or customer name.
+     * Branch-scoped for MAKER/CHECKER per Finacle BRANCH_CONTEXT.
+     * Per RBI Inspection Manual: inspectors require instant loan account lookup.
+     */
+    @GetMapping("/accounts/search")
+    public ModelAndView searchAccounts(@RequestParam(required = false) String q) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("loan/accounts");
+        if (q != null && !q.isBlank() && q.trim().length() >= 2) {
+            String trimmed = q.trim();
+            if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+                mav.addObject("accounts", accountRepository.searchAccounts(tenantId, trimmed));
+            } else {
+                Long branchId = SecurityUtil.getCurrentUserBranchId();
+                if (branchId != null) {
+                    mav.addObject("accounts",
+                            accountRepository.searchAccountsByBranch(tenantId, branchId, trimmed));
+                } else {
+                    mav.addObject("accounts", java.util.Collections.emptyList());
+                }
+            }
+            mav.addObject("searchQuery", q);
+        } else {
+            return listAccounts();
         }
         return mav;
     }
