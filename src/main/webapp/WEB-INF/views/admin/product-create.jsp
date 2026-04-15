@@ -35,14 +35,14 @@
                 <div class="row mb-3">
                     <div class="col-md-2"><label class="form-label">Method</label><select name="interestMethod" class="form-select"><option value="ACTUAL_365" ${empty product.interestMethod or product.interestMethod == 'ACTUAL_365' ? 'selected' : ''}>Actual/365</option><option value="ACTUAL_360" ${product.interestMethod == 'ACTUAL_360' ? 'selected' : ''}>Actual/360</option><option value="ACTUAL_ACTUAL" ${product.interestMethod == 'ACTUAL_ACTUAL' ? 'selected' : ''}>Actual/Actual</option><option value="THIRTY_360" ${product.interestMethod == 'THIRTY_360' ? 'selected' : ''}>30/360</option></select></div>
                     <div class="col-md-2"><label class="form-label">Type</label><select name="interestType" class="form-select"><option value="FIXED" ${empty product.interestType or product.interestType == 'FIXED' ? 'selected' : ''}>Fixed</option><option value="FLOATING" ${product.interestType == 'FLOATING' ? 'selected' : ''}>Floating</option></select></div>
-                    <div class="col-md-2"><label class="form-label">Min Rate % *</label><input type="number" name="minInterestRate" class="form-control" step="0.01" min="0" max="100" required value="${not empty product.minInterestRate ? product.minInterestRate : '8.00'}"/></div>
-                    <div class="col-md-2"><label class="form-label">Max Rate % *</label><input type="number" name="maxInterestRate" class="form-control" step="0.01" min="0" max="100" required value="${not empty product.maxInterestRate ? product.maxInterestRate : '24.00'}"/></div>
-                    <div class="col-md-2"><label class="form-label">Penal Rate %</label><input type="number" name="defaultPenalRate" class="form-control" step="0.01" min="0" max="36" title="RBI usury ceiling: 36% max" value="${not empty product.defaultPenalRate ? product.defaultPenalRate : '2.00'}"/></div>
+                    <div class="col-md-2"><label class="form-label">Min Rate % *</label><input type="number" name="minInterestRate" class="form-control" required data-fv-type="rate" data-fv-max-field="maxInterestRate" data-fv-label="Min Rate" value="${not empty product.minInterestRate ? product.minInterestRate : '8.00'}"/></div>
+                    <div class="col-md-2"><label class="form-label">Max Rate % *</label><input type="number" name="maxInterestRate" class="form-control" required data-fv-type="rate" data-fv-label="Max Rate" value="${not empty product.maxInterestRate ? product.maxInterestRate : '24.00'}"/></div>
+                    <div class="col-md-2"><label class="form-label">Penal Rate %</label><input type="number" name="defaultPenalRate" class="form-control" data-fv-type="penal-rate" value="${not empty product.defaultPenalRate ? product.defaultPenalRate : '2.00'}"/></div>
                     <div class="col-md-2"><label class="form-label">Frequency</label><select name="repaymentFrequency" class="form-select"><option value="MONTHLY" ${empty product.repaymentFrequency or product.repaymentFrequency == 'MONTHLY' ? 'selected' : ''}>Monthly</option><option value="QUARTERLY" ${product.repaymentFrequency == 'QUARTERLY' ? 'selected' : ''}>Quarterly</option><option value="BULLET" ${product.repaymentFrequency == 'BULLET' ? 'selected' : ''}>Bullet</option><option value="MATURITY" ${product.repaymentFrequency == 'MATURITY' ? 'selected' : ''}>Maturity</option></select></div>
                 </div>
                 <div class="row mb-3">
                     <div class="col-md-3"><label class="form-label">Repayment Allocation</label><select name="repaymentAllocation" class="form-select"><option value="INTEREST_FIRST" selected>Interest First</option><option value="PRINCIPAL_FIRST">Principal First</option><option value="PRO_RATA">Pro-Rata</option></select></div>
-                    <div class="col-md-3"><label class="form-label">Processing Fee %</label><input type="number" name="processingFeePct" class="form-control" step="0.01" min="0" max="100" value="0.00"/></div>
+                    <div class="col-md-3"><label class="form-label">Processing Fee %</label><input type="number" name="processingFeePct" class="form-control" data-fv-type="rate" value="0.00"/></div>
                     <div class="col-md-3"><label class="form-label">Prepayment Penalty</label><div class="form-check mt-2"><input type="hidden" name="_prepaymentPenaltyApplicable" value="on" /><input type="checkbox" name="prepaymentPenaltyApplicable" value="true" class="form-check-input" id="prepayCheck"/><label class="form-check-label" for="prepayCheck">Applicable (per RBI: not for floating rate)</label></div></div>
                 </div>
 
@@ -51,17 +51,17 @@
                 <div class="row mb-3">
                     <div class="col-md-2"><label class="form-label">Benchmark</label><select name="defaultBenchmarkName" class="form-select"><option value="">-- None (Fixed) --</option><option value="EBLR">EBLR</option><option value="MCLR">MCLR</option><option value="RLLR">RLLR</option><option value="T_BILL">T-Bill</option></select></div>
                     <div class="col-md-2"><label class="form-label">Reset Frequency</label><select name="defaultRateResetFrequency" class="form-select"><option value="">-- N/A --</option><option value="QUARTERLY">Quarterly</option><option value="HALF_YEARLY">Half Yearly</option><option value="YEARLY">Yearly</option></select></div>
-                    <div class="col-md-2"><label class="form-label">Default Spread %</label><input type="number" name="defaultSpread" class="form-control" step="0.01" min="0" max="100" placeholder="e.g., 2.50"/></div>
+                    <div class="col-md-2"><label class="form-label">Default Spread %</label><input type="number" name="defaultSpread" class="form-control" data-fv-type="rate" placeholder="e.g., 2.50"/></div>
                     <div class="col-md-2"><label class="form-label">CASA Tiering</label><div class="form-check mt-2"><input type="checkbox" name="interestTieringEnabled" value="true" class="form-check-input" id="tieringCheck"/><label class="form-check-label" for="tieringCheck">Enable Balance Tiering</label></div></div>
                     <div class="col-md-4"><label class="form-label">Tiering JSON</label><input type="text" name="interestTieringJson" class="form-control" placeholder='[{"min":0,"max":100000,"rate":3.0}]'/></div>
                 </div>
 
                 <h6 class="mb-3 text-primary">Amount &amp; Tenure Limits</h6>
                 <div class="row mb-3">
-                    <div class="col-md-3"><label class="form-label">Min Amount (INR) *</label><input type="number" name="minLoanAmount" class="form-control" step="0.01" min="0" required value="${not empty product.minLoanAmount ? product.minLoanAmount : '50000'}"/></div>
-                    <div class="col-md-3"><label class="form-label">Max Amount (INR) *</label><input type="number" name="maxLoanAmount" class="form-control" step="0.01" min="0" required value="${not empty product.maxLoanAmount ? product.maxLoanAmount : '5000000'}"/></div>
-                    <div class="col-md-3"><label class="form-label">Min Tenure (months) *</label><input type="number" name="minTenureMonths" class="form-control" step="1" min="1" max="600" required value="${not empty product.minTenureMonths ? product.minTenureMonths : '6'}"/></div>
-                    <div class="col-md-3"><label class="form-label">Max Tenure (months) *</label><input type="number" name="maxTenureMonths" class="form-control" step="1" min="1" max="600" required value="${not empty product.maxTenureMonths ? product.maxTenureMonths : '84'}"/></div>
+                    <div class="col-md-3"><label class="form-label">Min Amount (INR) *</label><input type="number" name="minLoanAmount" class="form-control" required data-fv-type="amount" data-fv-max-field="maxLoanAmount" data-fv-label="Min Amount" value="${not empty product.minLoanAmount ? product.minLoanAmount : '50000'}"/></div>
+                    <div class="col-md-3"><label class="form-label">Max Amount (INR) *</label><input type="number" name="maxLoanAmount" class="form-control" required data-fv-type="amount" data-fv-label="Max Amount" value="${not empty product.maxLoanAmount ? product.maxLoanAmount : '5000000'}"/></div>
+                    <div class="col-md-3"><label class="form-label">Min Tenure (months) *</label><input type="number" name="minTenureMonths" class="form-control" required data-fv-type="tenure" data-fv-max-field="maxTenureMonths" data-fv-label="Min Tenure" value="${not empty product.minTenureMonths ? product.minTenureMonths : '6'}"/></div>
+                    <div class="col-md-3"><label class="form-label">Max Tenure (months) *</label><input type="number" name="maxTenureMonths" class="form-control" required data-fv-type="tenure" data-fv-label="Max Tenure" value="${not empty product.maxTenureMonths ? product.maxTenureMonths : '84'}"/></div>
                 </div>
 
                 <h6 class="mb-3 text-primary">GL Code Mapping (Product &rarr; GL)</h6>
@@ -166,32 +166,9 @@
                 <button type="submit" class="btn btn-fv-primary" data-confirm="Create this product? GL mapping will be used for all future transactions."><i class="bi bi-plus-circle"></i> Create Product</button>
                 <a href="${pageContext.request.contextPath}/admin/products" class="btn btn-outline-secondary ms-2">Cancel</a>
 
-                <script>
-                // CBS: Client-side cross-field validation per Finacle PDDEF.
-                // Prevents form submission when min > max for rates, amounts, or tenure.
-                // Server-side validation in ProductMasterServiceImpl.validateFields() is
-                // the authoritative check — this is defense-in-depth UX improvement.
-                (function() {
-                    var form = document.querySelector('form.fv-form');
-                    if (!form) return;
-                    form.addEventListener('submit', function(e) {
-                        var minRate = parseFloat(form.querySelector('[name="minInterestRate"]').value) || 0;
-                        var maxRate = parseFloat(form.querySelector('[name="maxInterestRate"]').value) || 0;
-                        var minAmt = parseFloat(form.querySelector('[name="minLoanAmount"]').value) || 0;
-                        var maxAmt = parseFloat(form.querySelector('[name="maxLoanAmount"]').value) || 0;
-                        var minTen = parseInt(form.querySelector('[name="minTenureMonths"]').value) || 0;
-                        var maxTen = parseInt(form.querySelector('[name="maxTenureMonths"]').value) || 0;
-                        var errors = [];
-                        if (minRate > maxRate) errors.push('Min Rate (' + minRate + '%) cannot exceed Max Rate (' + maxRate + '%).');
-                        if (minAmt > maxAmt && maxAmt > 0) errors.push('Min Amount cannot exceed Max Amount.');
-                        if (minTen > maxTen) errors.push('Min Tenure (' + minTen + ' months) cannot exceed Max Tenure (' + maxTen + ' months).');
-                        if (errors.length > 0) {
-                            e.preventDefault();
-                            alert('Validation Error:\n\n' + errors.join('\n'));
-                        }
-                    });
-                })();
-                </script>
+                <%-- CBS: Cross-field validation (min<=max) is now handled by the centralized
+                     FV.Validation library via data-fv-max-field attributes on the min fields.
+                     No inline script needed. Per Finacle FIELD_TYPE_MASTER pattern. --%>
             </form>
         </div>
     </div>
