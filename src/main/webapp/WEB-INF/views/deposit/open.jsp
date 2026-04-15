@@ -88,12 +88,8 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label">Joint Holder Mode</label>
-                <select name="jointHolderMode" class="form-select">
-                    <option value="">-- N/A --</option>
-                    <option value="EITHER_SURVIVOR">Either or Survivor</option>
-                    <option value="FORMER_SURVIVOR">Former or Survivor</option>
-                    <option value="JOINTLY">Jointly</option>
-                </select>
+                <input type="text" class="form-control" readonly value="Post-activation" disabled/>
+                <small class="form-text text-muted">Per Finacle ACCTOPN: configured via account maintenance</small>
             </div>
         </div>
 
@@ -118,8 +114,9 @@
                 </select>
             </div>
             <div class="col-md-4">
-                <label class="form-label">Cheque Book</label>
-                <select class="form-select"><option value="false">No</option><option value="true">Yes</option></select>
+                <label class="form-label">Cheque Book / Debit Card</label>
+                <input type="text" class="form-control" readonly value="Configured post-activation" disabled/>
+                <small class="form-text text-muted">Per Finacle ACCTOPN: enabled via account maintenance after activation</small>
             </div>
         </div>
 

@@ -209,7 +209,6 @@ public class DepositController {
             @RequestParam Long branchId,
             @RequestParam String accountType,
             @RequestParam(required = false) String productCode,
-            @RequestParam(required = false) BigDecimal initialDeposit,
             @RequestParam(required = false) String nomineeName,
             @RequestParam(required = false) String nomineeRelationship,
             RedirectAttributes ra) {
@@ -219,7 +218,7 @@ public class DepositController {
                     branchId,
                     accountType,
                     productCode != null ? productCode : accountType,
-                    initialDeposit,
+                    null, // initialDeposit: not used in maker-checker flow (deposit after activation)
                     nomineeName,
                     nomineeRelationship);
             ra.addFlashAttribute("success", "Account opened: " + account.getAccountNumber());
