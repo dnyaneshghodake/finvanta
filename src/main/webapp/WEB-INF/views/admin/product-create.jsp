@@ -14,8 +14,8 @@
 
                 <h6 class="mb-3 text-primary">Product Identity</h6>
                 <div class="row mb-3">
-                    <div class="col-md-2"><label class="form-label">Product Code *</label><input type="text" name="productCode" class="form-control" required minlength="2" maxlength="50" pattern="[A-Z0-9_]{2,50}" title="2-50 chars: uppercase letters, digits, underscore only" placeholder="e.g., VEHICLE_LOAN" value="<c:out value='${product.productCode}'/>" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9_]/g,'');"/></div>
-                    <div class="col-md-3"><label class="form-label">Product Name *</label><input type="text" name="productName" class="form-control" required minlength="2" maxlength="200" pattern="[A-Za-z0-9\s\-\(\)\/&amp;,.]{2,200}" title="Letters, digits, spaces, hyphens, parentheses, slashes, ampersands, commas, periods only" placeholder="e.g., Vehicle Loan - Secured" value="<c:out value='${product.productName}'/>"/></div>
+                    <div class="col-md-2"><label class="form-label">Product Code *</label><input type="text" name="productCode" class="form-control" required data-fv-type="code" placeholder="e.g., VEHICLE_LOAN" value="<c:out value='${product.productCode}'/>" style="text-transform:uppercase;"/></div>
+                    <div class="col-md-3"><label class="form-label">Product Name *</label><input type="text" name="productName" class="form-control" required data-fv-type="name" placeholder="e.g., Vehicle Loan - Secured" value="<c:out value='${product.productName}'/>"/></div>
                     <div class="col-md-2"><label class="form-label">Category *</label>
                         <select name="productCategory" class="form-select" required>
                             <option value="TERM_LOAN" ${product.productCategory == 'TERM_LOAN' ? 'selected' : ''}>Term Loan</option>
