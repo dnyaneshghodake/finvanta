@@ -3,7 +3,9 @@ package com.finvanta.controller;
 import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.audit.AuditService;
 import com.finvanta.batch.InterBranchSettlementService;
+import com.finvanta.domain.entity.ChargeConfig;
 import com.finvanta.domain.entity.ProductMaster;
+import com.finvanta.domain.entity.TransactionLimit;
 import com.finvanta.repository.AppUserRepository;
 import com.finvanta.repository.ChargeConfigRepository;
 import com.finvanta.repository.GLMasterRepository;
@@ -17,6 +19,7 @@ import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
@@ -254,7 +257,7 @@ public class AdminController {
             if (transactionType == null || transactionType.isBlank())
                 throw new BusinessException("TXN_TYPE_REQUIRED", "Transaction type is mandatory.");
 
-            com.finvanta.domain.entity.TransactionLimit tl = new com.finvanta.domain.entity.TransactionLimit();
+            TransactionLimit tl = new TransactionLimit();
             tl.setTenantId(tenantId);
             tl.setRole(role);
             tl.setTransactionType(transactionType);
@@ -292,7 +295,7 @@ public class AdminController {
             String tenantId = TenantContext.getCurrentTenant();
             String user = SecurityUtil.getCurrentUsername();
 
-            com.finvanta.domain.entity.TransactionLimit tl = limitRepository.findById(id)
+            TransactionLimit tl = limitRepository.findById(id)
                     .filter(l -> l.getTenantId().equals(tenantId))
                     .orElseThrow(() -> new BusinessException("LIMIT_NOT_FOUND", "Limit not found: " + id));
 
@@ -324,7 +327,7 @@ public class AdminController {
             String tenantId = TenantContext.getCurrentTenant();
             String user = SecurityUtil.getCurrentUsername();
 
-            com.finvanta.domain.entity.TransactionLimit tl = limitRepository.findById(id)
+            TransactionLimit tl = limitRepository.findById(id)
                     .filter(l -> l.getTenantId().equals(tenantId))
                     .orElseThrow(() -> new BusinessException("LIMIT_NOT_FOUND", "Limit not found: " + id));
 
@@ -434,8 +437,8 @@ public class AdminController {
             cc.setMaxWaiverPercent(waiverAllowed ? maxWaiverPercent : null);
             cc.setProductCode(productCode != null && !productCode.isBlank() ? productCode : null);
             cc.setChannel(channel != null && !channel.isBlank() ? channel : null);
-            cc.setValidFrom(validFrom != null && !validFrom.isBlank() ? java.time.LocalDate.parse(validFrom) : null);
-            cc.setValidTo(validTo != null && !validTo.isBlank() ? java.time.LocalDate.parse(validTo) : null);
+            cc.setValidFrom(validFrom != null && !validFrom.isBlank() ? LocalDate.parse(validFrom) : null);
+            cc.setValidTo(validTo != null && !validTo.isBlank() ? LocalDate.parse(validTo) : null);
             cc.setCustomerDescription(customerDescription != null && !customerDescription.isBlank() ? customerDescription : null);
             cc.setIsActive(true);
             cc.setCreatedBy(user);
@@ -510,8 +513,8 @@ public class AdminController {
             cc.setMaxWaiverPercent(waiverAllowed ? maxWaiverPercent : null);
             cc.setProductCode(productCode != null && !productCode.isBlank() ? productCode : null);
             cc.setChannel(channel != null && !channel.isBlank() ? channel : null);
-            cc.setValidFrom(validFrom != null && !validFrom.isBlank() ? java.time.LocalDate.parse(validFrom) : null);
-            cc.setValidTo(validTo != null && !validTo.isBlank() ? java.time.LocalDate.parse(validTo) : null);
+            cc.setValidFrom(validFrom != null && !validFrom.isBlank() ? LocalDate.parse(validFrom) : null);
+            cc.setValidTo(validTo != null && !validTo.isBlank() ? LocalDate.parse(validTo) : null);
             cc.setCustomerDescription(customerDescription != null && !customerDescription.isBlank() ? customerDescription : null);
             cc.setUpdatedBy(user);
 
