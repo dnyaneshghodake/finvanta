@@ -250,8 +250,6 @@ class ProductMasterServiceTest {
 
             when(productRepo.findById(10L)).thenReturn(Optional.of(existing));
             when(productRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
-            when(loanAccountRepo.countActiveByProductType(any(), any())).thenReturn(0L);
-            when(depositAccountRepo.countNonClosedByProductCode(any(), any())).thenReturn(0L);
 
             ProductMaster result = service.updateProduct(10L, formData);
             assertEquals(ProductCategory.CASA_SAVINGS, result.getProductCategory());
