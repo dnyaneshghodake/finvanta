@@ -372,13 +372,16 @@ public class AdminController {
     public String createCharge(
             @RequestParam String chargeCode,
             @RequestParam String chargeName,
+            @RequestParam(required = false) String chargeCategory,
             @RequestParam String eventTrigger,
             @RequestParam String calculationType,
+            @RequestParam(required = false) String frequency,
             @RequestParam(required = false) BigDecimal baseAmount,
             @RequestParam(required = false) BigDecimal percentage,
             @RequestParam(required = false) String slabJson,
             @RequestParam(required = false) BigDecimal minAmount,
             @RequestParam(required = false) BigDecimal maxAmount,
+            @RequestParam(required = false) String currencyCode,
             @RequestParam(defaultValue = "false") boolean gstApplicable,
             @RequestParam(required = false) BigDecimal gstRate,
             @RequestParam String glChargeIncome,
@@ -386,6 +389,10 @@ public class AdminController {
             @RequestParam(defaultValue = "false") boolean waiverAllowed,
             @RequestParam(required = false) BigDecimal maxWaiverPercent,
             @RequestParam(required = false) String productCode,
+            @RequestParam(required = false) String channel,
+            @RequestParam(required = false) String validFrom,
+            @RequestParam(required = false) String validTo,
+            @RequestParam(required = false) String customerDescription,
             RedirectAttributes redirectAttributes) {
         try {
             String tenantId = TenantContext.getCurrentTenant();
@@ -409,13 +416,16 @@ public class AdminController {
             cc.setTenantId(tenantId);
             cc.setChargeCode(chargeCode.trim().toUpperCase());
             cc.setChargeName(chargeName);
+            cc.setChargeCategory(chargeCategory != null && !chargeCategory.isBlank() ? chargeCategory : null);
             cc.setEventTrigger(eventTrigger);
             cc.setCalculationType(calculationType);
+            cc.setFrequency(frequency != null && !frequency.isBlank() ? frequency : null);
             cc.setBaseAmount(baseAmount);
             cc.setPercentage(percentage);
             cc.setSlabJson(slabJson);
             cc.setMinAmount(minAmount);
             cc.setMaxAmount(maxAmount);
+            cc.setCurrencyCode(currencyCode != null && !currencyCode.isBlank() ? currencyCode : "INR");
             cc.setGstApplicable(gstApplicable);
             cc.setGstRate(gstApplicable ? gstRate : null);
             cc.setGlChargeIncome(glChargeIncome);
@@ -423,6 +433,10 @@ public class AdminController {
             cc.setWaiverAllowed(waiverAllowed);
             cc.setMaxWaiverPercent(waiverAllowed ? maxWaiverPercent : null);
             cc.setProductCode(productCode != null && !productCode.isBlank() ? productCode : null);
+            cc.setChannel(channel != null && !channel.isBlank() ? channel : null);
+            cc.setValidFrom(validFrom != null && !validFrom.isBlank() ? java.time.LocalDate.parse(validFrom) : null);
+            cc.setValidTo(validTo != null && !validTo.isBlank() ? java.time.LocalDate.parse(validTo) : null);
+            cc.setCustomerDescription(customerDescription != null && !customerDescription.isBlank() ? customerDescription : null);
             cc.setIsActive(true);
             cc.setCreatedBy(user);
 
@@ -445,13 +459,16 @@ public class AdminController {
     public String updateCharge(
             @PathVariable Long id,
             @RequestParam String chargeName,
+            @RequestParam(required = false) String chargeCategory,
             @RequestParam String eventTrigger,
             @RequestParam String calculationType,
+            @RequestParam(required = false) String frequency,
             @RequestParam(required = false) BigDecimal baseAmount,
             @RequestParam(required = false) BigDecimal percentage,
             @RequestParam(required = false) String slabJson,
             @RequestParam(required = false) BigDecimal minAmount,
             @RequestParam(required = false) BigDecimal maxAmount,
+            @RequestParam(required = false) String currencyCode,
             @RequestParam(defaultValue = "false") boolean gstApplicable,
             @RequestParam(required = false) BigDecimal gstRate,
             @RequestParam String glChargeIncome,
@@ -459,6 +476,10 @@ public class AdminController {
             @RequestParam(defaultValue = "false") boolean waiverAllowed,
             @RequestParam(required = false) BigDecimal maxWaiverPercent,
             @RequestParam(required = false) String productCode,
+            @RequestParam(required = false) String channel,
+            @RequestParam(required = false) String validFrom,
+            @RequestParam(required = false) String validTo,
+            @RequestParam(required = false) String customerDescription,
             RedirectAttributes redirectAttributes) {
         try {
             String tenantId = TenantContext.getCurrentTenant();
@@ -471,13 +492,16 @@ public class AdminController {
             String before = cc.getCalculationType() + "|" + cc.getBaseAmount() + "|" + cc.getPercentage();
 
             cc.setChargeName(chargeName);
+            cc.setChargeCategory(chargeCategory != null && !chargeCategory.isBlank() ? chargeCategory : null);
             cc.setEventTrigger(eventTrigger);
             cc.setCalculationType(calculationType);
+            cc.setFrequency(frequency != null && !frequency.isBlank() ? frequency : null);
             cc.setBaseAmount(baseAmount);
             cc.setPercentage(percentage);
             cc.setSlabJson(slabJson);
             cc.setMinAmount(minAmount);
             cc.setMaxAmount(maxAmount);
+            cc.setCurrencyCode(currencyCode != null && !currencyCode.isBlank() ? currencyCode : "INR");
             cc.setGstApplicable(gstApplicable);
             cc.setGstRate(gstApplicable ? gstRate : null);
             cc.setGlChargeIncome(glChargeIncome);
@@ -485,6 +509,10 @@ public class AdminController {
             cc.setWaiverAllowed(waiverAllowed);
             cc.setMaxWaiverPercent(waiverAllowed ? maxWaiverPercent : null);
             cc.setProductCode(productCode != null && !productCode.isBlank() ? productCode : null);
+            cc.setChannel(channel != null && !channel.isBlank() ? channel : null);
+            cc.setValidFrom(validFrom != null && !validFrom.isBlank() ? java.time.LocalDate.parse(validFrom) : null);
+            cc.setValidTo(validTo != null && !validTo.isBlank() ? java.time.LocalDate.parse(validTo) : null);
+            cc.setCustomerDescription(customerDescription != null && !customerDescription.isBlank() ? customerDescription : null);
             cc.setUpdatedBy(user);
 
             chargeConfigRepository.save(cc);

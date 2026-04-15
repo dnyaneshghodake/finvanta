@@ -58,6 +58,39 @@
                     </div>
                     <div class="col-md-1 d-flex align-items-end"><button type="submit" class="btn btn-sm btn-fv-primary" data-confirm="Create this charge?"><i class="bi bi-plus-circle"></i> Create</button></div>
                 </div>
+                <div class="row mb-2">
+                    <div class="col-md-2"><label class="form-label small">Category</label>
+                        <select name="chargeCategory" class="form-select form-select-sm">
+                            <option value="">-- Select --</option>
+                            <option value="FEE">Fee</option><option value="PENALTY">Penalty</option>
+                            <option value="TAX">Tax</option><option value="SERVICE_CHARGE">Service Charge</option>
+                            <option value="INSURANCE">Insurance</option><option value="STAMP_DUTY">Stamp Duty</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2"><label class="form-label small">Frequency</label>
+                        <select name="frequency" class="form-select form-select-sm">
+                            <option value="">-- Select --</option>
+                            <option value="ONE_TIME">One-Time</option><option value="PER_OCCURRENCE">Per Occurrence</option>
+                            <option value="MONTHLY">Monthly</option><option value="QUARTERLY">Quarterly</option>
+                            <option value="ANNUAL">Annual</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1"><label class="form-label small">Channel</label>
+                        <select name="channel" class="form-select form-select-sm">
+                            <option value="">ALL</option><option value="BRANCH">Branch</option>
+                            <option value="INTERNET">Internet</option><option value="MOBILE">Mobile</option>
+                            <option value="ATM">ATM</option><option value="UPI">UPI</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1"><label class="form-label small">Currency</label>
+                        <select name="currencyCode" class="form-select form-select-sm">
+                            <option value="INR" selected>INR</option><option value="USD">USD</option><option value="EUR">EUR</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2"><label class="form-label small">Valid From</label><input type="date" name="validFrom" class="form-control form-control-sm"/></div>
+                    <div class="col-md-2"><label class="form-label small">Valid To</label><input type="date" name="validTo" class="form-control form-control-sm"/></div>
+                    <div class="col-md-2"><label class="form-label small">Customer Desc</label><input type="text" name="customerDescription" class="form-control form-control-sm" maxlength="500" placeholder="Text shown on statement"/></div>
+                </div>
                 <div class="row"><div class="col-md-6"><label class="form-label small">Slab JSON (for SLAB type)</label><input type="text" name="slabJson" class="form-control form-control-sm" placeholder='[{"min":0,"max":100000,"rate":0.10}]'/></div></div>
             </form>
         </div>
@@ -71,11 +104,13 @@
                 <thead>
                     <tr>
                         <th>Code / Name</th>
-                        <th>Trigger</th>
+                        <th>Category</th>
+                        <th>Trigger / Freq</th>
                         <th>Calculation</th>
                         <th class="text-end">Bounds</th>
                         <th>GST</th>
-                        <th>GL / Product</th>
+                        <th>GL / Product / Channel</th>
+                        <th>Validity</th>
                         <th>Status</th>
                         <th>Actions</th>
                     </tr>
@@ -84,7 +119,8 @@
                     <c:forEach var="c" items="${charges}">
                         <tr>
                             <td><span class="fw-bold"><c:out value="${c.chargeCode}" /></span><br/><small class="text-muted"><c:out value="${c.chargeName}" /></small></td>
-                            <td><c:out value="${c.eventTrigger}" /></td>
+                            <td><c:out value="${c.chargeCategory}" default="--" /></td>
+                            <td><c:out value="${c.eventTrigger}" /><c:if test="${not empty c.frequency}"><br/><small class="text-muted"><c:out value="${c.frequency}" /></small></c:if></td>
                             <td>
                                 <c:out value="${c.calculationType}" />:
                                 <span class="amount">
@@ -102,7 +138,8 @@
                                     <c:otherwise><span class="fv-badge fv-badge-closed">Exempt</span></c:otherwise>
                                 </c:choose>
                             </td>
-                            <td><span class="font-monospace"><c:out value="${c.glChargeIncome}" /></span><br/><small class="text-muted"><c:out value="${c.productCode}" default="ALL" /></small></td>
+                            <td><span class="font-monospace"><c:out value="${c.glChargeIncome}" /></span><br/><small class="text-muted"><c:out value="${c.productCode}" default="ALL" /> | <c:out value="${c.channel}" default="ALL" /></small></td>
+                            <td><c:if test="${not empty c.validFrom || not empty c.validTo}"><small><c:out value="${c.validFrom}" default="--" /> &rarr; <c:out value="${c.validTo}" default="∞" /></small></c:if><c:if test="${empty c.validFrom && empty c.validTo}"><small class="text-muted">Perpetual</small></c:if></td>
                             <td>
                                 <c:choose>
                                     <c:when test="${c.isActive}"><span class="fv-badge fv-badge-active">ACTIVE</span></c:when>
@@ -125,7 +162,7 @@
                         </tr>
                     </c:forEach>
                     <c:if test="${empty charges}">
-                        <tr><td colspan="8" class="text-center text-muted">No charge configurations found</td></tr>
+                        <tr><td colspan="10" class="text-center text-muted">No charge configurations found</td></tr>
                     </c:if>
                 </tbody>
             </table>
