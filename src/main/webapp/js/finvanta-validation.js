@@ -315,7 +315,7 @@ FV.Validation = (function() {
                 var maxEl = form.querySelector('[name="' + minEl.getAttribute('data-fv-max-field') + '"]');
                 if (!minEl.value || !maxEl || !maxEl.value) return;
                 var lo = parseFloat(minEl.value), hi = parseFloat(maxEl.value);
-                if (!isNaN(lo) && !isNaN(hi) && lo > hi && hi > 0) {
+                if (!isNaN(lo) && !isNaN(hi) && lo > hi) {
                     var ml = minEl.getAttribute('data-fv-label') || minEl.name;
                     var xl = maxEl.getAttribute('data-fv-label') || maxEl.name;
                     errs.push(ml + ' (' + lo + ') cannot exceed ' + xl + ' (' + hi + ').');
