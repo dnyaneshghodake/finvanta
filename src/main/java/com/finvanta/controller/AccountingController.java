@@ -126,8 +126,19 @@ public class AccountingController {
         ModelAndView mav = new ModelAndView("accounting/journal-entries");
 
         LocalDate currentBizDate = resolveCurrentBusinessDate();
-        LocalDate from = fromDate != null ? LocalDate.parse(fromDate) : currentBizDate.minusDays(30);
-        LocalDate to = toDate != null ? LocalDate.parse(toDate) : currentBizDate;
+        LocalDate from;
+        LocalDate to;
+        try {
+            from = (fromDate != null && !fromDate.isBlank()) ? LocalDate.parse(fromDate) : currentBizDate.minusDays(30);
+            to = (toDate != null && !toDate.isBlank()) ? LocalDate.parse(toDate) : currentBizDate;
+        } catch (Exception e) {
+            // CBS: Graceful fallback on malformed date input per Finacle JRNL_INQUIRY.
+            // Per RBI IT Governance: user input errors must not cause HTTP 500 on
+            // operational screens used during RBI on-site inspection.
+            from = currentBizDate.minusDays(30);
+            to = currentBizDate;
+            mav.addObject("error", "Invalid date format. Showing default 30-day range.");
+        }
         mav.addObject("fromDate", from);
         mav.addObject("toDate", to);
 

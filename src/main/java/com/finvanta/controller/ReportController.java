@@ -271,16 +271,23 @@ public class ReportController {
         csv.append("Account Number,Customer CIF,Customer Name,Account Type,Branch Code,");
         csv.append("Balance (INR),Last Transaction Date,Opened Date,Dormant Since,Status\n");
         for (DepositAccount da : unclaimed) {
-            csv.append(da.getAccountNumber()).append(',');
-            csv.append(da.getCustomer().getCustomerNumber()).append(',');
-            csv.append('"').append(da.getCustomer().getFullName().replace("\"", "\"\"")).append("\",");
-            csv.append(da.getAccountType()).append(',');
-            csv.append(da.getBranch().getBranchCode()).append(',');
-            csv.append(da.getLedgerBalance()).append(',');
+            // CBS: Defensive null checks on all entity associations per RBI UDGAM export.
+            // INOPERATIVE accounts are long-dormant — data integrity issues (orphaned FK,
+            // migrated records) are more likely on 10yr+ old accounts. A single NPE must
+            // NOT abort the entire regulatory CSV export. Per Finacle REPORT_ENGINE:
+            // null associations render as empty fields, never crash the report.
+            csv.append(da.getAccountNumber() != null ? da.getAccountNumber() : "").append(',');
+            csv.append(da.getCustomer() != null ? da.getCustomer().getCustomerNumber() : "").append(',');
+            String fullName = (da.getCustomer() != null && da.getCustomer().getFullName() != null)
+                    ? da.getCustomer().getFullName() : "";
+            csv.append('"').append(fullName.replace("\"", "\"\"")).append("\",");
+            csv.append(da.getAccountType() != null ? da.getAccountType() : "").append(',');
+            csv.append(da.getBranch() != null ? da.getBranch().getBranchCode() : "").append(',');
+            csv.append(da.getLedgerBalance() != null ? da.getLedgerBalance() : "0").append(',');
             csv.append(da.getLastTransactionDate() != null ? da.getLastTransactionDate() : "").append(',');
             csv.append(da.getOpenedDate() != null ? da.getOpenedDate() : "").append(',');
             csv.append(da.getDormantDate() != null ? da.getDormantDate() : "").append(',');
-            csv.append(da.getAccountStatus());
+            csv.append(da.getAccountStatus() != null ? da.getAccountStatus() : "");
             csv.append('\n');
         }
 

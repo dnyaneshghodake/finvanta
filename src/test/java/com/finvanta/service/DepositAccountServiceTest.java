@@ -744,8 +744,9 @@ class DepositAccountServiceTest {
     }
 
     @Test
-    void transfer_shouldAllowJointlyForStandingInstruction() {
-        // CBS: SI-prefixed idempotency key exempts JOINTLY check on transfer
+    void transfer_shouldAllowJointlyForSystemInitiatedTransfer() {
+        // CBS: System-initiated transfers (SYSTEM_EOD user context) exempt from JOINTLY check.
+        // Per Finacle AUTH_ENGINE: authorization uses security context, not idempotency key.
         DepositAccount src = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
         src.setJointHolderMode("JOINTLY");
         DepositAccount tgt = buildSavingsAccount("DEP002", new BigDecimal("10000.00"));
@@ -759,12 +760,39 @@ class DepositAccountServiceTest {
         when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        // SI-prefixed idempotency key should bypass JOINTLY check
+        // Set security context to SYSTEM_EOD (as StandingInstructionServiceImpl does)
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "SYSTEM_EOD", "pass", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+
+        // System-initiated transfer should bypass JOINTLY check
         DepositTransaction txn = service.transfer(
                 "DEP001", "DEP002", new BigDecimal("1000.00"),
                 LocalDate.of(2026, 4, 1), "SI auto-transfer", "SI-SIP-001");
         assertNotNull(txn);
         assertEquals("DEBIT", txn.getDebitCredit());
+    }
+
+    @Test
+    void transfer_shouldRejectJointlyEvenWithSiPrefixedIdempotencyKey() {
+        // CBS SECURITY: Idempotency key prefix must NOT bypass JOINTLY enforcement.
+        // A malicious caller crafting "SI-..." key must still be blocked.
+        DepositAccount src = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        src.setJointHolderMode("JOINTLY");
+        DepositAccount tgt = buildSavingsAccount("DEP002", new BigDecimal("10000.00"));
+        tgt.setId(2L);
+        tgt.setAccountNumber("DEP002");
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(src));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP002"))
+                .thenReturn(Optional.of(tgt));
+
+        // Regular user (maker1) with SI-prefixed key — must still be blocked
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.transfer("DEP001", "DEP002", new BigDecimal("1000.00"),
+                        LocalDate.of(2026, 4, 1), "Crafted transfer", "SI-FAKE-001"));
+        assertEquals("JOINT_AUTHORIZATION_REQUIRED", ex.getErrorCode());
     }
 
     @Test

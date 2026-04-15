@@ -759,9 +759,20 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // System-generated transfers (Standing Instructions: SIP, utility sweep, RD contribution)
         // are exempt — they execute per pre-authorized mandate signed by all joint holders.
         // Per Finacle SI_ENGINE: SI transfers are system-initiated, not user-initiated.
-        // The idempotencyKey prefix "SI-" identifies standing instruction transfers.
-        if ("JOINTLY".equals(src.getJointHolderMode())
-                && (idk == null || !idk.startsWith("SI-"))) {
+        //
+        // CBS CRITICAL: Authorization decisions MUST NOT rely on user-supplied idempotency keys.
+        // The idempotency key is a client-provided dedup token — any caller can craft a key
+        // starting with "SI-" to bypass JOINTLY multi-signatory enforcement. This would be a
+        // financial security bypass per RBI Joint Account Guidelines.
+        //
+        // Instead, we check the authenticated principal: Standing Instruction execution runs
+        // as SYSTEM_EOD (set by StandingInstructionServiceImpl). Only the system user context
+        // is trusted to bypass joint authorization — human users must always visit the branch.
+        // Per Finacle AUTH_ENGINE: authorization checks use the security context, never
+        // user-supplied request parameters.
+        String currentUser = SecurityUtil.getCurrentUsername();
+        boolean isSystemInitiated = "SYSTEM_EOD".equals(currentUser) || "SYSTEM".equals(currentUser);
+        if ("JOINTLY".equals(src.getJointHolderMode()) && !isSystemInitiated) {
             throw new BusinessException("JOINT_AUTHORIZATION_REQUIRED",
                     "Source account " + from + " is a JOINTLY-operated joint account. "
                             + "All signatories must authorize debits. Please visit the branch.");
