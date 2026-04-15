@@ -15,11 +15,13 @@ import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
@@ -470,6 +472,51 @@ public class DepositController {
             ra.addFlashAttribute("error", e.getMessage());
         }
         return "redirect:/deposit/view/" + accountNumber;
+    }
+
+    /**
+     * CBS Account Statement CSV Export per Finacle STMT_DETAIL / RBI Passbook Norms.
+     * Per RBI: customer must be able to download statement in machine-readable format.
+     * Per RBI Inspection Manual: inspectors request statements in CSV for analysis.
+     * CSV chosen over PDF: no external dependency, universally parseable, Excel-compatible.
+     */
+    @GetMapping("/statement/{accountNumber}/export")
+    public ResponseEntity<byte[]> exportStatement(
+            @PathVariable String accountNumber,
+            @RequestParam(required = false) String fromDate,
+            @RequestParam(required = false) String toDate) {
+        DepositAccount account = depositService.getAccount(accountNumber);
+        LocalDate to = (toDate != null && !toDate.isBlank()) ? LocalDate.parse(toDate)
+                : businessDateService.getCurrentBusinessDate();
+        LocalDate from = (fromDate != null && !fromDate.isBlank()) ? LocalDate.parse(fromDate)
+                : to.minusDays(30);
+        List<DepositTransaction> txns = depositService.getStatement(accountNumber, from, to);
+
+        StringBuilder csv = new StringBuilder();
+        // CBS: Header row per RBI statement format
+        csv.append("Date,Transaction Ref,Type,Channel,Narration,Debit,Credit,Balance,Voucher\n");
+        for (DepositTransaction t : txns) {
+            csv.append(t.getValueDate()).append(',');
+            csv.append('"').append(t.getTransactionRef()).append("\",");
+            csv.append(t.getTransactionType()).append(',');
+            csv.append(t.getChannel() != null ? t.getChannel() : "").append(',');
+            csv.append('"').append(t.getNarration() != null ? t.getNarration().replace("\"", "\"\"") : "").append("\",");
+            // CBS: Debit/Credit split per RBI passbook format
+            if ("DEBIT".equals(t.getDebitCredit())) {
+                csv.append(t.getAmount()).append(",,");
+            } else {
+                csv.append(',').append(t.getAmount()).append(',');
+            }
+            csv.append(t.getBalanceAfter()).append(',');
+            csv.append(t.getVoucherNumber() != null ? t.getVoucherNumber() : "");
+            csv.append('\n');
+        }
+
+        String filename = "Statement_" + accountNumber + "_" + from + "_to_" + to + ".csv";
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                .header("Content-Type", "text/csv; charset=UTF-8")
+                .body(csv.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     /**

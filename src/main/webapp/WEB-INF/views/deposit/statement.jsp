@@ -28,6 +28,11 @@
                     <label class="form-label">&nbsp;</label>
                     <button type="submit" class="btn btn-fv-primary d-block"><i class="bi bi-funnel"></i> Filter</button>
                 </div>
+                <div class="col-auto">
+                    <label class="form-label">&nbsp;</label>
+                    <a href="${pageContext.request.contextPath}/deposit/statement/${account.accountNumber}/export?fromDate=${fromDate}&toDate=${toDate}"
+                       class="btn btn-outline-success d-block"><i class="bi bi-download"></i> Download CSV</a>
+                </div>
             </div>
         </form>
     </div>
