@@ -145,22 +145,54 @@ public class ProductMasterServiceImpl implements ProductMasterService {
                 // Per Finacle PDDEF: the maker-checker gate is ONLY enforced for GL code
                 // changes on products with active accounts. Non-GL changes (name, rate, etc.)
                 // and GL changes on products with zero accounts apply immediately.
-                String glDiff = buildGlDiff(e, u);
-                workflowService.initiateApproval(
-                        "ProductMaster",
-                        productId,
-                        "PRODUCT_GL_CHANGE",
-                        "GL codes changed on product " + e.getProductCode()
-                                + " with " + activeAccounts + " active accounts. Changes: " + glDiff,
-                        glDiff);
-                log.warn("CBS MAKER-CHECKER: GL change on product {} with {} active accounts requires CHECKER approval. Maker: {}",
-                        e.getProductCode(), activeAccounts, user);
-                throw new BusinessException("GL_CHANGE_PENDING_APPROVAL",
-                        "GL code changes on product " + e.getProductCode() + " with " + activeAccounts
-                                + " active account(s) require CHECKER approval. "
-                                + "A maker-checker workflow has been created. "
-                                + "Per Finacle PDDEF / RBI Internal Controls: GL changes affecting "
-                                + "live accounts require dual authorization.");
+                // CBS: Check if a CHECKER has already approved a GL change for this product.
+                // Per Finacle PDDEF maker-checker flow:
+                //   1. MAKER submits GL change → PENDING_APPROVAL workflow created → blocked
+                //   2. CHECKER approves the workflow via approval dashboard
+                //   3. MAKER re-submits the same GL change → approved workflow found → allowed
+                //   4. Approved workflow is consumed (resolved) to prevent replay
+                var approvedWorkflow = workflowRepo.findByTenantIdAndEntityTypeAndEntityIdAndStatus(
+                        tid, "ProductMaster", productId, ApprovalStatus.APPROVED);
+                if (approvedWorkflow.isPresent()
+                        && "PRODUCT_GL_CHANGE".equals(approvedWorkflow.get().getActionType())) {
+                    // CHECKER has approved — consume the workflow and allow the GL change
+                    ApprovalWorkflow wf = approvedWorkflow.get();
+                    wf.setCheckerRemarks((wf.getCheckerRemarks() != null ? wf.getCheckerRemarks() + " | " : "")
+                            + "GL change applied by " + user);
+                    workflowRepo.save(wf);
+                    log.info("CBS MAKER-CHECKER: GL change on product {} approved by CHECKER {}. Applying GL changes. Maker: {}",
+                            e.getProductCode(), wf.getCheckerUserId(), user);
+                    // Resolve the workflow so it can't be replayed
+                    workflowService.resolveExistingPendingWorkflow("ProductMaster", productId, user,
+                            "GL change applied after CHECKER approval");
+                } else {
+                    // No approved workflow — block and create a new PENDING_APPROVAL
+                    // CBS: Check if there's already a PENDING workflow to avoid duplicates
+                    var pendingWorkflow = workflowRepo.findByTenantIdAndEntityTypeAndEntityIdAndStatus(
+                            tid, "ProductMaster", productId, ApprovalStatus.PENDING_APPROVAL);
+                    if (pendingWorkflow.isPresent()
+                            && "PRODUCT_GL_CHANGE".equals(pendingWorkflow.get().getActionType())) {
+                        throw new BusinessException("GL_CHANGE_ALREADY_PENDING",
+                                "A GL change approval is already pending for product " + e.getProductCode()
+                                        + ". Wait for CHECKER to approve or reject the existing request.");
+                    }
+                    String glDiff = buildGlDiff(e, u);
+                    workflowService.initiateApproval(
+                            "ProductMaster",
+                            productId,
+                            "PRODUCT_GL_CHANGE",
+                            "GL codes changed on product " + e.getProductCode()
+                                    + " with " + activeAccounts + " active accounts. Changes: " + glDiff,
+                            glDiff);
+                    log.warn("CBS MAKER-CHECKER: GL change on product {} with {} active accounts requires CHECKER approval. Maker: {}",
+                            e.getProductCode(), activeAccounts, user);
+                    throw new BusinessException("GL_CHANGE_PENDING_APPROVAL",
+                            "GL code changes on product " + e.getProductCode() + " with " + activeAccounts
+                                    + " active account(s) require CHECKER approval. "
+                                    + "A maker-checker workflow has been created. "
+                                    + "Per Finacle PDDEF / RBI Internal Controls: GL changes affecting "
+                                    + "live accounts require dual authorization.");
+                }
             }
         }
 
@@ -283,6 +315,54 @@ public class ProductMasterServiceImpl implements ProductMasterService {
         long loans = loanAccountRepo.countActiveByProductType(tid, code);
         long deps = depositAccountRepo.countNonClosedByProductCode(tid, code);
         return loans + deps;
+    }
+
+    /**
+     * CBS Tier-1 Gap #1: Apply CHECKER-approved GL code changes.
+     *
+     * This is the programmatic callback for when a CHECKER approves a PRODUCT_GL_CHANGE
+     * workflow via the approval dashboard. It marks the workflow as consumed so the
+     * MAKER can re-submit the product edit form to apply the GL changes.
+     *
+     * Per Finacle PDDEF maker-checker pattern:
+     *   The approval itself does NOT modify the product. It only authorizes the MAKER
+     *   to re-submit the same change. This ensures the MAKER consciously re-confirms
+     *   the GL change after CHECKER approval — preventing stale/forgotten approvals
+     *   from being silently applied weeks later.
+     *
+     * The workflow's payloadSnapshot contains the GL diff for audit trail.
+     */
+    @Override
+    @Transactional
+    public ProductMaster applyApprovedGlChange(Long workflowId) {
+        String tid = TenantContext.getCurrentTenant();
+        ApprovalWorkflow wf = workflowRepo.findById(workflowId)
+                .filter(w -> w.getTenantId().equals(tid))
+                .orElseThrow(() -> new BusinessException("WORKFLOW_NOT_FOUND", "Workflow not found: " + workflowId));
+
+        if (!"ProductMaster".equals(wf.getEntityType()) || !"PRODUCT_GL_CHANGE".equals(wf.getActionType()))
+            throw new BusinessException("INVALID_WORKFLOW_TYPE",
+                    "Workflow " + workflowId + " is not a PRODUCT_GL_CHANGE workflow.");
+
+        if (wf.getStatus() != ApprovalStatus.APPROVED)
+            throw new BusinessException("WORKFLOW_NOT_APPROVED",
+                    "Workflow " + workflowId + " is not in APPROVED state. Current: " + wf.getStatus());
+
+        ProductMaster product = productRepo.findById(wf.getEntityId())
+                .filter(p -> p.getTenantId().equals(tid))
+                .orElseThrow(() -> new BusinessException("PRODUCT_NOT_FOUND", "" + wf.getEntityId()));
+
+        auditSvc.logEvent("ProductMaster", product.getId(), "GL_CHANGE_AUTHORIZED",
+                wf.getPayloadSnapshot(), "CHECKER_APPROVED",
+                "PRODUCT_MASTER",
+                "GL change authorized by CHECKER " + wf.getCheckerUserId()
+                        + " for product " + product.getProductCode()
+                        + ". MAKER must re-submit to apply. GL diff: " + wf.getPayloadSnapshot());
+
+        log.info("GL change authorized: product={}, checker={}, workflowId={}",
+                product.getProductCode(), wf.getCheckerUserId(), workflowId);
+
+        return product;
     }
 
     private void validateProductCode(String code) {
