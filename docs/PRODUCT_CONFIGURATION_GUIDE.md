@@ -416,17 +416,26 @@ system resolves GL codes from the account's product via `ProductGLResolver`:
 
 ```
 1. Read account.productCode (e.g., "SAVINGS")
-2. ProductGLResolver.getLoanAssetGL("SAVINGS") → looks up product_master cache
-3. Returns product's glLoanAsset (e.g., "2010" = SB Deposits LIABILITY)
-4. If product not found → falls back to GLConstants (hardcoded default)
+2. ProductGLResolver.getProduct("SAVINGS") → checks cached product_master
+3. If product EXISTS → use product.glLoanAsset directly (e.g., "2010")
+4. If product NOT FOUND → fall back to type-based GL (SB=2010, CA=2020)
 ```
+
+**Type-safe resolution:** The system checks whether the product *exists*, not whether a
+returned GL code matches a magic constant. This avoids the fragile sentinel-value pattern
+where comparing against a default GL code (e.g., "1001") could break if a product
+legitimately used that code during migration.
 
 **Impact:** Changing a GL code on a CASA product immediately affects all future transactions
 on every account using that product. This is the core value of product-driven GL architecture.
 
-**Fallback chain:** If `ProductGLResolver` returns the loan-module default (GL 1001 = Loan Asset),
-the system detects this is wrong for CASA and falls back to type-based hardcoded GLs
-(2010 for Savings, 2020 for Current).
+**Fallback:** Only triggered when `ProductGLResolver.getProduct()` returns `null` (product
+not in product_master). Falls back to type-based hardcoded GLs: 2010 for Savings, 2020 for
+Current. This path is only hit for accounts created before ProductMaster was populated.
+
+**Interest expense GL:** The same type-safe pattern applies to interest expense resolution
+in quarterly interest credit. The system reads `product.glInterestReceivable` directly if
+the product exists, or falls back to `GLConstants.INTEREST_EXPENSE_DEPOSITS` (5010) if not.
 
 ---
 
