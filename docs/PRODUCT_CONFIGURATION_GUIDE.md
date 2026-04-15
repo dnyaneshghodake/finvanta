@@ -106,19 +106,56 @@ Only for CASA Savings products with balance-based slab rates.
 ### 4.7 GL Code Mapping (10 mandatory fields)
 
 Each GL code is validated against `gl_master` for existence, active status, and correct account type.
+**GL type rules are category-aware** — CASA/FD products use LIABILITY/EXPENSE GLs where loan products use ASSET/INCOME.
 
-| GL Field | Expected Type | Loan | CASA Savings | CASA Current |
-|----------|:---:|:---:|:---:|:---:|
-| Loan Asset | ASSET | 1001 | 2010 | 2020 |
-| Interest Receivable | ASSET | 1002 | 2010 | 2020 |
-| Bank Operations | ASSET | 1100 | 1100 | 1100 |
-| Interest Income | INCOME | 4001 | 4010 | 4010 |
-| Fee Income | INCOME | 4002 | 4002 | 4002 |
-| Penal Income | INCOME | 4003 | 4003 | 4003 |
-| Provision Expense | EXPENSE | 5001 | 5010 | 5010 |
-| Provision NPA | ASSET | 1003 | 2010 | 2020 |
-| Write-Off Expense | EXPENSE | 5002 | 5002 | 5002 |
-| Interest Suspense | LIABILITY | 2100 | 2100 | 2100 |
+#### Loan Products (TERM_LOAN, DEMAND_LOAN)
+
+| GL Field | Label | Expected Type | Default GL |
+|----------|-------|:---:|:---:|
+| glLoanAsset | Loan Asset | ASSET | 1001 |
+| glInterestReceivable | Interest Receivable | ASSET | 1002 |
+| glBankOperations | Bank Operations | ASSET | 1100 |
+| glInterestIncome | Interest Income | INCOME | 4001 |
+| glFeeIncome | Fee Income | INCOME | 4002 |
+| glPenalIncome | Penal Income | INCOME | 4003 |
+| glProvisionExpense | Provision Expense | EXPENSE | 5001 |
+| glProvisionNpa | Provision NPA | ASSET | 1003 |
+| glWriteOffExpense | Write-Off Expense | EXPENSE | 5002 |
+| glInterestSuspense | Interest Suspense | LIABILITY | 2100 |
+
+#### CASA Products (CASA_SAVINGS, CASA_CURRENT)
+
+| GL Field | Label | Expected Type | Savings (SB) | Current (CA) |
+|----------|-------|:---:|:---:|:---:|
+| glLoanAsset | Deposit Liability | LIABILITY | 2010 | 2020 |
+| glInterestReceivable | Interest Expense | EXPENSE | 5010 | 5010 |
+| glBankOperations | Bank Operations | ASSET | 1100 | 1100 |
+| glInterestIncome | Interest Expense (P&L) | EXPENSE | 5010 | 5010 |
+| glFeeIncome | Fee Income | INCOME | 4002 | 4002 |
+| glPenalIncome | Penalty Charges | INCOME | 4003 | 4003 |
+| glProvisionExpense | Interest Expense (Provision) | EXPENSE | 5010 | 5010 |
+| glProvisionNpa | TDS Payable | LIABILITY | 2500 | 2500 |
+| glWriteOffExpense | Closure/Write-Off Expense | EXPENSE | 5002 | 5002 |
+| glInterestSuspense | Interest Suspense | LIABILITY | 2100 | 2100 |
+
+#### Term Deposit Products (TERM_DEPOSIT)
+
+| GL Field | Label | Expected Type | Default GL |
+|----------|-------|:---:|:---:|
+| glLoanAsset | FD Deposit Liability | LIABILITY | 2030 |
+| glInterestReceivable | FD Interest Payable | LIABILITY | 2031 |
+| glBankOperations | Bank Operations | ASSET | 1100 |
+| glInterestIncome | FD Interest Expense (P&L) | EXPENSE | 5011 |
+| glFeeIncome | Fee Income | INCOME | 4002 |
+| glPenalIncome | Premature Penalty Income | INCOME | 4003 |
+| glProvisionExpense | FD Interest Expense | EXPENSE | 5011 |
+| glProvisionNpa | TDS Payable | LIABILITY | 2500 |
+| glWriteOffExpense | Closure/Write-Off Expense | EXPENSE | 5002 |
+| glInterestSuspense | Interest Suspense | LIABILITY | 2100 |
+
+> **Key Difference:** Loan products use ASSET GLs for principal (bank owns the asset).
+> Deposit products use LIABILITY GLs for principal (bank owes the depositor).
+> The product-create form auto-switches labels and defaults when you change the category dropdown.
 
 ---
 
@@ -191,7 +228,7 @@ Min Amount:       5,000 (minimum balance)
 Max Amount:       0 (unlimited)
 Min Tenure:       0
 Max Tenure:       0
-GL Mapping:       2010 / 2010 / 1100 / 4010 / 4002 / 4003 / 5010 / 2010 / 5002 / 2100
+GL Mapping:       2010 / 5010 / 1100 / 5010 / 4002 / 4003 / 5010 / 2500 / 5002 / 2100
 ```
 
 ### 5.4 CASA — PMJDY Zero-Balance Savings
@@ -226,7 +263,7 @@ Min Rate:         0.00% (zero interest per RBI)
 Max Rate:         0.00%
 Frequency:        Monthly (required field, not used)
 Min Amount:       10,000
-GL Mapping:       2020 / 2020 / 1100 / 4010 / 4002 / 4003 / 5010 / 2020 / 5002 / 2100
+GL Mapping:       2020 / 5010 / 1100 / 5010 / 4002 / 4003 / 5010 / 2500 / 5002 / 2100
 ```
 
 ### 5.7 CASA — Premium Savings with Balance Tiering
@@ -310,8 +347,15 @@ The following validations run on both Create and Edit operations:
 | Tenure Range | min tenure <= max tenure |
 | GL Existence | Each GL code must exist in gl_master |
 | GL Active | Each GL code must be active and not a header account |
-| GL Type Match | Each GL code must match expected account type (ASSET/INCOME/EXPENSE/LIABILITY) |
+| GL Type Match | **Category-aware** — see Section 4.7 for type rules per category |
 | Retired Block | RETIRED products cannot be edited |
+| Category Immutable | Product category cannot be changed after creation |
+
+**Category-aware GL validation:** The expected GL account type for each field depends on the
+product category. For example, `glLoanAsset` must be ASSET for loan products but LIABILITY for
+CASA/FD products. The product-create form auto-switches labels and defaults when the category
+dropdown changes. On edit, the category is immutable and the correct validation rules are
+applied automatically based on the existing product's category.
 
 ---
 
@@ -331,3 +375,13 @@ The following validations run on both Create and Edit operations:
 
 5. **Floating Rate per RBI:** Since October 2019, all new floating rate retail loans must be
    linked to an external benchmark (EBLR). Prepayment penalty is prohibited on floating rate loans.
+
+6. **Category-Aware GL Labels:** The product-create form dynamically switches GL field labels
+   and default selections when the category dropdown changes. Loan products show "Loan Asset",
+   "Interest Receivable", etc. CASA/FD products show "Deposit Liability", "Interest Expense",
+   "TDS Payable", etc. This prevents GL misconfiguration.
+
+7. **FD vs CASA GL Difference:** FD products use `glInterestReceivable` = FD Interest Payable
+   (GL 2031, LIABILITY) representing accrued interest owed to the depositor. CASA products use
+   `glInterestReceivable` = Interest Expense (GL 5010, EXPENSE) representing the P&L charge.
+   This distinction is enforced by separate validation branches for CASA vs FD categories.
