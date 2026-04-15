@@ -39,7 +39,7 @@ public interface ProductMasterRepository extends JpaRepository<ProductMaster, Lo
     @Query("SELECT p FROM ProductMaster p WHERE p.tenantId = :tenantId AND ("
             + "LOWER(p.productCode) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(p.productName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
-            + "LOWER(p.productCategory) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(CAST(p.productCategory AS string)) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(CAST(p.productStatus AS string)) LIKE LOWER(CONCAT('%', :query, '%')))"
             + " ORDER BY p.productCode")
     List<ProductMaster> searchProducts(

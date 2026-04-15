@@ -728,6 +728,46 @@ class DepositAccountServiceTest {
     }
 
     @Test
+    void dormancy_shouldClassifyInoperativeAccounts() {
+        // CBS: DORMANT accounts with 10yr+ no txn → INOPERATIVE per RBI UDGAM Direction 2024
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        acct.setAccountStatus(DepositAccountStatus.DORMANT);
+        acct.setLastTransactionDate(LocalDate.of(2016, 1, 1)); // 10+ years ago
+        when(accountRepository.findDormancyCandidates(eq("DEFAULT"), any())).thenReturn(List.of());
+        when(accountRepository.findInoperativeCandidates(eq("DEFAULT"), any())).thenReturn(List.of(acct));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        int count = service.markDormantAccounts(LocalDate.of(2026, 4, 1));
+
+        assertEquals(1, count);
+        assertEquals(DepositAccountStatus.INOPERATIVE, acct.getAccountStatus());
+    }
+
+    @Test
+    void transfer_shouldAllowJointlyForStandingInstruction() {
+        // CBS: SI-prefixed idempotency key exempts JOINTLY check on transfer
+        DepositAccount src = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        src.setJointHolderMode("JOINTLY");
+        DepositAccount tgt = buildSavingsAccount("DEP002", new BigDecimal("10000.00"));
+        tgt.setId(2L);
+        tgt.setAccountNumber("DEP002");
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(src));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP002"))
+                .thenReturn(Optional.of(tgt));
+        when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // SI-prefixed idempotency key should bypass JOINTLY check
+        DepositTransaction txn = service.transfer(
+                "DEP001", "DEP002", new BigDecimal("1000.00"),
+                LocalDate.of(2026, 4, 1), "SI auto-transfer", "SI-SIP-001");
+        assertNotNull(txn);
+        assertEquals("DEBIT", txn.getDebitCredit());
+    }
+
+    @Test
     void accrueInterest_shouldResetYtdOnFinancialYearBoundary() {
         // CBS: YTD counters must reset on April 1 (Indian FY start)
         // Per IT Act Section 194A: TDS threshold is per financial year

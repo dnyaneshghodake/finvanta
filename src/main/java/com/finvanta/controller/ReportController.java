@@ -273,7 +273,7 @@ public class ReportController {
         for (DepositAccount da : unclaimed) {
             csv.append(da.getAccountNumber()).append(',');
             csv.append(da.getCustomer().getCustomerNumber()).append(',');
-            csv.append('"').append(da.getCustomer().getFullName()).append("\",");
+            csv.append('"').append(da.getCustomer().getFullName().replace("\"", "\"\"")).append("\",");
             csv.append(da.getAccountType()).append(',');
             csv.append(da.getBranch().getBranchCode()).append(',');
             csv.append(da.getLedgerBalance()).append(',');

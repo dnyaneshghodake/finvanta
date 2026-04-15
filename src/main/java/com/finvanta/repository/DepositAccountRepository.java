@@ -117,6 +117,17 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
     List<DepositAccount> findDormancyCandidates(
             @Param("tenantId") String tenantId, @Param("cutoffDate") LocalDate cutoffDate);
 
+    /**
+     * INOPERATIVE candidates: DORMANT accounts with no transaction for 10+ years.
+     * Per RBI Unclaimed Deposits Direction 2024: DORMANT (2yr) → INOPERATIVE (10yr).
+     * This query correctly filters for accountStatus = 'DORMANT' (not 'ACTIVE'),
+     * unlike findDormancyCandidates which only returns ACTIVE accounts.
+     */
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.accountStatus = 'DORMANT' AND da.lastTransactionDate < :cutoffDate")
+    List<DepositAccount> findInoperativeCandidates(
+            @Param("tenantId") String tenantId, @Param("cutoffDate") LocalDate cutoffDate);
+
     /** Total deposit balance for dashboard */
     @Query("SELECT COALESCE(SUM(da.ledgerBalance), 0) FROM DepositAccount da "
             + "WHERE da.tenantId = :tenantId AND da.accountStatus NOT IN ('CLOSED')")

@@ -750,8 +750,13 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         var tgt = fromFirst ? secondAcct : firstAcct;
         if (!src.isDebitAllowed())
             throw new BusinessException("SOURCE_NOT_DEBITABLE", "Source " + src.getAccountStatus());
-        // CBS: Multi-signatory enforcement on transfer source (same as withdrawal)
-        if ("JOINTLY".equals(src.getJointHolderMode())) {
+        // CBS: Multi-signatory enforcement on transfer source (same as withdrawal).
+        // System-generated transfers (Standing Instructions: SIP, utility sweep, RD contribution)
+        // are exempt — they execute per pre-authorized mandate signed by all joint holders.
+        // Per Finacle SI_ENGINE: SI transfers are system-initiated, not user-initiated.
+        // The idempotencyKey prefix "SI-" identifies standing instruction transfers.
+        if ("JOINTLY".equals(src.getJointHolderMode())
+                && (idk == null || !idk.startsWith("SI-"))) {
             throw new BusinessException("JOINT_AUTHORIZATION_REQUIRED",
                     "Source account " + from + " is a JOINTLY-operated joint account. "
                             + "All signatories must authorize debits. Please visit the branch.");
@@ -1264,12 +1269,9 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // approval to reactivate and must be reported to RBI UDGAM portal.
         // Per RBI: DORMANT (2yr) → INOPERATIVE (10yr) → Unclaimed (reported to UDGAM)
         LocalDate inoperativeCutoff = businessDate.minusMonths(INOPERATIVE_MONTHS);
-        var inoperativeCandidates = accountRepository.findDormancyCandidates(tid, inoperativeCutoff).stream()
-                .filter(a -> a.getAccountStatus() == DepositAccountStatus.DORMANT)
-                .toList();
+        var inoperativeCandidates = accountRepository.findInoperativeCandidates(tid, inoperativeCutoff);
         int inoperativeCount = 0;
         for (var acct : inoperativeCandidates) {
-            // Only classify as INOPERATIVE if already DORMANT and last txn > 10 years
             if (acct.getLastTransactionDate() != null
                     && acct.getLastTransactionDate().isBefore(inoperativeCutoff)) {
                 acct.setAccountStatus(DepositAccountStatus.INOPERATIVE);
@@ -1337,31 +1339,44 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         boolean modified = false;
 
         // Nominee (RBI Deposit Insurance)
+        // CBS: Only record as changed if the new value ACTUALLY differs from current.
+        // The HTML form always submits all fields — without this check, every maintenance
+        // operation would record all fields as "changed" even when untouched, creating
+        // noisy audit trails that obscure real changes during RBI inspection.
         if (nomineeName != null) {
-            beforeState.append("nominee=").append(acct.getNomineeName());
-            acct.setNomineeName(nomineeName.isBlank() ? null : nomineeName);
-            afterState.append("nominee=").append(acct.getNomineeName());
-            changes.append("Nominee: ").append(acct.getNomineeName()).append("; ");
-            modified = true;
+            String newNominee = nomineeName.isBlank() ? null : nomineeName;
+            if (!java.util.Objects.equals(newNominee, acct.getNomineeName())) {
+                beforeState.append("nominee=").append(acct.getNomineeName());
+                acct.setNomineeName(newNominee);
+                afterState.append("nominee=").append(acct.getNomineeName());
+                changes.append("Nominee: ").append(acct.getNomineeName()).append("; ");
+                modified = true;
+            }
         }
         if (nomineeRelationship != null) {
-            beforeState.append("|rel=").append(acct.getNomineeRelationship());
-            acct.setNomineeRelationship(nomineeRelationship.isBlank() ? null : nomineeRelationship);
-            afterState.append("|rel=").append(acct.getNomineeRelationship());
-            modified = true;
+            String newRel = nomineeRelationship.isBlank() ? null : nomineeRelationship;
+            if (!java.util.Objects.equals(newRel, acct.getNomineeRelationship())) {
+                beforeState.append("|rel=").append(acct.getNomineeRelationship());
+                acct.setNomineeRelationship(newRel);
+                afterState.append("|rel=").append(acct.getNomineeRelationship());
+                modified = true;
+            }
         }
 
         // Joint Holder Mode
         if (jointHolderMode != null) {
-            beforeState.append("|joint=").append(acct.getJointHolderMode());
-            acct.setJointHolderMode(jointHolderMode.isBlank() ? null : jointHolderMode);
-            afterState.append("|joint=").append(acct.getJointHolderMode());
-            changes.append("JointMode: ").append(acct.getJointHolderMode()).append("; ");
-            modified = true;
+            String newJoint = jointHolderMode.isBlank() ? null : jointHolderMode;
+            if (!java.util.Objects.equals(newJoint, acct.getJointHolderMode())) {
+                beforeState.append("|joint=").append(acct.getJointHolderMode());
+                acct.setJointHolderMode(newJoint);
+                afterState.append("|joint=").append(acct.getJointHolderMode());
+                changes.append("JointMode: ").append(acct.getJointHolderMode()).append("; ");
+                modified = true;
+            }
         }
 
         // Cheque Book
-        if (chequeBookEnabled != null) {
+        if (chequeBookEnabled != null && chequeBookEnabled != acct.isChequeBookEnabled()) {
             beforeState.append("|cheque=").append(acct.isChequeBookEnabled());
             acct.setChequeBookEnabled(chequeBookEnabled);
             afterState.append("|cheque=").append(acct.isChequeBookEnabled());
@@ -1370,7 +1385,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         }
 
         // Debit Card
-        if (debitCardEnabled != null) {
+        if (debitCardEnabled != null && debitCardEnabled != acct.isDebitCardEnabled()) {
             beforeState.append("|debit=").append(acct.isDebitCardEnabled());
             acct.setDebitCardEnabled(debitCardEnabled);
             afterState.append("|debit=").append(acct.isDebitCardEnabled());

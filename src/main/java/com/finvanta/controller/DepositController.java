@@ -486,10 +486,17 @@ public class DepositController {
             @RequestParam(required = false) String fromDate,
             @RequestParam(required = false) String toDate) {
         DepositAccount account = depositService.getAccount(accountNumber);
-        LocalDate to = (toDate != null && !toDate.isBlank()) ? LocalDate.parse(toDate)
-                : businessDateService.getCurrentBusinessDate();
-        LocalDate from = (fromDate != null && !fromDate.isBlank()) ? LocalDate.parse(fromDate)
-                : to.minusDays(30);
+        LocalDate to;
+        LocalDate from;
+        try {
+            to = (toDate != null && !toDate.isBlank()) ? LocalDate.parse(toDate)
+                    : businessDateService.getCurrentBusinessDate();
+            from = (fromDate != null && !fromDate.isBlank()) ? LocalDate.parse(fromDate)
+                    : to.minusDays(30);
+        } catch (Exception e) {
+            to = businessDateService.getCurrentBusinessDate();
+            from = to.minusDays(30);
+        }
         List<DepositTransaction> txns = depositService.getStatement(accountNumber, from, to);
 
         StringBuilder csv = new StringBuilder();
@@ -497,7 +504,7 @@ public class DepositController {
         csv.append("Date,Transaction Ref,Type,Channel,Narration,Debit,Credit,Balance,Voucher\n");
         for (DepositTransaction t : txns) {
             csv.append(t.getValueDate()).append(',');
-            csv.append('"').append(t.getTransactionRef()).append("\",");
+            csv.append('"').append(t.getTransactionRef() != null ? t.getTransactionRef().replace("\"", "\"\"") : "").append("\",");
             csv.append(t.getTransactionType()).append(',');
             csv.append(t.getChannel() != null ? t.getChannel() : "").append(',');
             csv.append('"').append(t.getNarration() != null ? t.getNarration().replace("\"", "\"\"") : "").append("\",");
