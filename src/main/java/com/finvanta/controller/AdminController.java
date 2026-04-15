@@ -492,6 +492,16 @@ public class AdminController {
                     .filter(c -> c.getTenantId().equals(tenantId))
                     .orElseThrow(() -> new BusinessException("CHARGE_NOT_FOUND", "Charge config not found: " + id));
 
+            // CBS Validation per Finacle CHRG_MASTER (same rules as createCharge)
+            if ("FLAT".equals(calculationType) && (baseAmount == null || baseAmount.signum() <= 0))
+                throw new BusinessException("BASE_AMOUNT_REQUIRED", "Base amount is mandatory for FLAT charges.");
+            if ("PERCENTAGE".equals(calculationType) && (percentage == null || percentage.signum() <= 0))
+                throw new BusinessException("PERCENTAGE_REQUIRED", "Percentage is mandatory for PERCENTAGE charges.");
+            if ("SLAB".equals(calculationType) && (slabJson == null || slabJson.isBlank()))
+                throw new BusinessException("SLAB_JSON_REQUIRED", "Slab JSON is mandatory for SLAB charges.");
+            if (gstApplicable && (gstRate == null || gstRate.signum() <= 0))
+                throw new BusinessException("GST_RATE_REQUIRED", "GST rate is mandatory when GST is applicable.");
+
             String before = cc.getCalculationType() + "|" + cc.getBaseAmount() + "|" + cc.getPercentage();
 
             cc.setChargeName(chargeName);

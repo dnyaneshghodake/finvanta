@@ -206,7 +206,10 @@ public class TransactionEngine {
 
         // ================================================================
         // STEP 3: Day Status Validation
-        // Only DAY_OPEN allows postings; system-generated EOD postings exempt
+        // Only DAY_OPEN allows postings; system-generated EOD postings exempt.
+        // Per Finacle DAYCTRL: after EOD completes (eodComplete=true), user
+        // transactions are blocked even though dayStatus is DAY_OPEN. The day
+        // must be closed and a new day opened before transactions resume.
         // ================================================================
         if (!request.isSystemGenerated()) {
             if (!calendar.getDayStatus().isTransactionAllowed()) {
@@ -214,6 +217,12 @@ public class TransactionEngine {
                         "DAY_NOT_OPEN",
                         "Business date " + request.getValueDate() + " is in " + calendar.getDayStatus()
                                 + " state. Transactions not allowed.");
+            }
+            if (calendar.isEodComplete()) {
+                throw new BusinessException(
+                        "EOD_ALREADY_COMPLETE",
+                        "Transactions not allowed after EOD completion for " + request.getValueDate()
+                                + ". Day must be closed and a new day opened.");
             }
         } else {
             // System-generated: allowed during DAY_OPEN and EOD_RUNNING

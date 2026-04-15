@@ -66,11 +66,13 @@
                 <%-- CBS: Category-aware GL labels per Finacle PDDEF.
                      CASA/FD products show deposit-specific labels (Deposit Liability, Interest Expense, TDS Payable).
                      Loan products show loan-specific labels (Loan Asset, Interest Receivable, Provision NPA). --%>
-                <c:set var="isCasaProduct" value="${product.productCategory == 'CASA_SAVINGS' || product.productCategory == 'CASA_CURRENT' || product.productCategory == 'TERM_DEPOSIT'}" />
                 <c:set var="glFields" value="glLoanAsset,glInterestReceivable,glBankOperations,glInterestIncome,glFeeIncome,glPenalIncome,glProvisionExpense,glProvisionNpa,glWriteOffExpense,glInterestSuspense"/>
                 <c:choose>
-                    <c:when test="${isCasaProduct}">
+                    <c:when test="${product.productCategory == 'CASA_SAVINGS' || product.productCategory == 'CASA_CURRENT'}">
                         <c:set var="glLabels" value="Deposit Liability,Interest Expense,Bank Operations,Interest Expense (P&L),Fee Income,Penalty Charges,Interest Expense (Provision),TDS Payable,Closure/Write-Off Expense,Interest Suspense"/>
+                    </c:when>
+                    <c:when test="${product.productCategory == 'TERM_DEPOSIT'}">
+                        <c:set var="glLabels" value="FD Deposit Liability,FD Interest Payable,Bank Operations,FD Interest Expense (P&L),Fee Income,Premature Penalty Income,FD Interest Expense,TDS Payable,Closure/Write-Off Expense,Interest Suspense"/>
                     </c:when>
                     <c:otherwise>
                         <c:set var="glLabels" value="Loan Asset,Interest Receivable,Bank Operations,Interest Income,Fee Income,Penal Income,Provision Expense,Provision NPA,Write-Off Expense,Interest Suspense"/>

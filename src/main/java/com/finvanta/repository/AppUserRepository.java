@@ -72,12 +72,12 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
      * RBI inspection queries (e.g., "show all CHECKER users at branch BR003").
      * Tenant-scoped. ADMIN-only (enforced in SecurityConfig).
      */
-    @Query("SELECT u FROM AppUser u LEFT JOIN FETCH u.branch WHERE u.tenantId = :tenantId AND ("
+    @Query("SELECT u FROM AppUser u LEFT JOIN FETCH u.branch b WHERE u.tenantId = :tenantId AND ("
             + "LOWER(u.username) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(u.fullName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(CAST(u.role AS string)) LIKE LOWER(CONCAT('%', :query, '%')) OR "
-            + "LOWER(u.branch.branchCode) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + "LOWER(b.branchCode) LIKE LOWER(CONCAT('%', :query, '%')))"
             + " ORDER BY u.role ASC, u.username ASC")
     List<AppUser> searchUsers(
             @Param("tenantId") String tenantId, @Param("query") String query);

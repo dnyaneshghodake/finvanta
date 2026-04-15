@@ -110,6 +110,13 @@
                         glProvisionExpense: 'Interest Expense (EXPENSE)', glProvisionNpa: 'TDS Payable (LIABILITY)',
                         glWriteOffExpense: 'Closure Expense (EXPENSE)', glInterestSuspense: 'Interest Suspense (LIABILITY)'
                     };
+                    var fdLabels = {
+                        glLoanAsset: 'FD Deposit Liability (LIABILITY)', glInterestReceivable: 'FD Interest Payable (LIABILITY)',
+                        glBankOperations: 'Bank Operations (ASSET)', glInterestIncome: 'FD Interest Expense P&L (EXPENSE)',
+                        glFeeIncome: 'Fee Income (INCOME)', glPenalIncome: 'Premature Penalty Income (INCOME)',
+                        glProvisionExpense: 'FD Interest Expense (EXPENSE)', glProvisionNpa: 'TDS Payable (LIABILITY)',
+                        glWriteOffExpense: 'Closure Expense (EXPENSE)', glInterestSuspense: 'Interest Suspense (LIABILITY)'
+                    };
                     var casaSBDefaults = {
                         glLoanAsset:'2010', glInterestReceivable:'5010', glBankOperations:'1100',
                         glInterestIncome:'5010', glFeeIncome:'4002', glPenalIncome:'4003',
@@ -121,7 +128,7 @@
                         glProvisionExpense:'5010', glProvisionNpa:'2500', glWriteOffExpense:'5002', glInterestSuspense:'2100'
                     };
                     var fdDefaults = {
-                        glLoanAsset:'2030', glInterestReceivable:'5011', glBankOperations:'1100',
+                        glLoanAsset:'2030', glInterestReceivable:'2031', glBankOperations:'1100',
                         glInterestIncome:'5011', glFeeIncome:'4002', glPenalIncome:'4003',
                         glProvisionExpense:'5011', glProvisionNpa:'2500', glWriteOffExpense:'5002', glInterestSuspense:'2100'
                     };
@@ -129,8 +136,10 @@
                     if (catSelect) {
                         catSelect.addEventListener('change', function() {
                             var cat = this.value;
-                            var isCasa = (cat === 'CASA_SAVINGS' || cat === 'CASA_CURRENT' || cat === 'TERM_DEPOSIT');
-                            var labels = isCasa ? casaLabels : loanLabels;
+                            var labels;
+                            if (cat === 'CASA_SAVINGS' || cat === 'CASA_CURRENT') labels = casaLabels;
+                            else if (cat === 'TERM_DEPOSIT') labels = fdLabels;
+                            else labels = loanLabels;
                             var defaults;
                             if (cat === 'CASA_SAVINGS') defaults = casaSBDefaults;
                             else if (cat === 'CASA_CURRENT') defaults = casaCADefaults;
