@@ -57,7 +57,7 @@
                     </div>
                     <div class="col-md-6">
                         <label for="requestedAmount" class="form-label">Requested Amount (INR) *</label>
-                        <input type="number" name="requestedAmount" id="requestedAmount" class="form-control" min="10000" max="50000000" step="1000" required placeholder="e.g., 1000000" />
+                        <input type="number" name="requestedAmount" id="requestedAmount" class="form-control" data-fv-type="amount" min="10000" max="50000000" required placeholder="e.g., 1000000" />
                         <small id="amountHint" class="form-text text-muted"></small>
                     </div>
                 </div>

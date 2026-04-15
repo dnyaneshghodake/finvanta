@@ -18,7 +18,7 @@
         <div class="row mb-3">
         <div class="col-md-6">
             <label class="form-label">Amount (INR) <span class="text-danger">*</span></label>
-            <input type="number" name="amount" class="form-control" step="0.01" min="0.01" required autofocus/>
+            <input type="number" name="amount" class="form-control" data-fv-type="amount" min="0.01" required autofocus/>
         </div>
         <div class="col-md-6">
             <label class="form-label">Narration</label>

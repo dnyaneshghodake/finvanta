@@ -140,7 +140,7 @@
             <div class="row mb-3">
                 <div class="col-md-3">
                     <label class="form-label small">Nominee Name</label>
-                    <input type="text" name="nomineeName" class="form-control form-control-sm" value="<c:out value='${account.nomineeName}'/>" maxlength="200"/>
+                    <input type="text" name="nomineeName" class="form-control form-control-sm" data-fv-type="name" value="<c:out value='${account.nomineeName}'/>" maxlength="200"/>
                 </div>
                 <div class="col-md-2">
                     <label class="form-label small">Nominee Relationship</label>
@@ -180,30 +180,30 @@
             <div class="row mb-3">
                 <div class="col-md-2">
                     <label class="form-label small">Daily Withdrawal Limit</label>
-                    <input type="number" name="dailyWithdrawalLimit" class="form-control form-control-sm" step="0.01" min="0" value="${account.dailyWithdrawalLimit}"/>
+                    <input type="number" name="dailyWithdrawalLimit" class="form-control form-control-sm" data-fv-type="amount" value="${account.dailyWithdrawalLimit}"/>
                     <small class="text-muted">0 = unlimited</small>
                 </div>
                 <div class="col-md-2">
                     <label class="form-label small">Daily Transfer Limit</label>
-                    <input type="number" name="dailyTransferLimit" class="form-control form-control-sm" step="0.01" min="0" value="${account.dailyTransferLimit}"/>
+                    <input type="number" name="dailyTransferLimit" class="form-control form-control-sm" data-fv-type="amount" value="${account.dailyTransferLimit}"/>
                     <small class="text-muted">0 = unlimited</small>
                 </div>
                 <c:if test="${account.accountType == 'CURRENT_OD'}">
                 <div class="col-md-2">
                     <label class="form-label small">OD Limit (INR)</label>
-                    <input type="number" name="odLimit" class="form-control form-control-sm" step="0.01" min="0" value="${account.odLimit}"/>
+                    <input type="number" name="odLimit" class="form-control form-control-sm" data-fv-type="amount" value="${account.odLimit}"/>
                 </div>
                 </c:if>
                 <c:if test="${account.savings}">
                 <div class="col-md-2">
                     <label class="form-label small">Interest Rate % p.a.</label>
-                    <input type="number" name="interestRate" class="form-control form-control-sm" step="0.0001" min="0" max="100" value="${account.interestRate}"/>
+                    <input type="number" name="interestRate" class="form-control form-control-sm" data-fv-type="rate" step="0.0001" value="${account.interestRate}"/>
                     <small class="text-muted">Per-account override</small>
                 </div>
                 </c:if>
                 <div class="col-md-2">
                     <label class="form-label small">Min Balance (INR)</label>
-                    <input type="number" name="minimumBalance" class="form-control form-control-sm" step="0.01" min="0" value="${account.minimumBalance}"/>
+                    <input type="number" name="minimumBalance" class="form-control form-control-sm" data-fv-type="amount" value="${account.minimumBalance}"/>
                     <small class="text-muted">0 = no minimum</small>
                 </div>
                 <div class="col-md-2 d-flex align-items-end">
@@ -285,7 +285,7 @@
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Amount (INR) *</label>
-                    <input type="number" name="amount" class="form-control" step="0.01" min="1" required/>
+                    <input type="number" name="amount" class="form-control" data-fv-type="amount" min="1" required/>
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Frequency *</label>
