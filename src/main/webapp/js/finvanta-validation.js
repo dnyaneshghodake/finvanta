@@ -125,12 +125,42 @@ FV.Validation = (function() {
      * INIT — Auto-discover all data-fv-type fields on DOMContentLoaded
      * ================================================================ */
     function init() {
+        injectSpinnerCSS();
         document.querySelectorAll('[data-fv-type]').forEach(function(el) {
             bindField(el);
         });
         document.querySelectorAll('form.fv-form, form[data-fv-validate]').forEach(function(form) {
             bindForm(form);
         });
+    }
+
+    /* ================================================================
+     * CSS INJECTION — Hide number field spinner arrows globally
+     * Per Finacle FIELD_TYPE_MASTER / Temenos EB.VALIDATION:
+     * Financial amount fields must NOT have spinner arrows because:
+     *   1. Spinners can decrement below zero (negative amounts)
+     *   2. Spinners increment by 'step' which may not match business logic
+     *   3. Accidental scroll/click on spinner changes financial values silently
+     *   4. Tier-1 CBS UX standard: amounts are typed, never spun
+     *
+     * Applied to all inputs with class 'fv-no-spinner' (added by bindField
+     * for positive-only number types: amount, rate, penal-rate, tenure, numeric).
+     * ================================================================ */
+    function injectSpinnerCSS() {
+        if (document.getElementById('fv-spinner-css')) return;
+        var style = document.createElement('style');
+        style.id = 'fv-spinner-css';
+        style.textContent =
+            '/* CBS: Hide number spinners on financial fields per Finacle FIELD_TYPE_MASTER */\n' +
+            'input.fv-no-spinner::-webkit-outer-spin-button,\n' +
+            'input.fv-no-spinner::-webkit-inner-spin-button {\n' +
+            '    -webkit-appearance: none;\n' +
+            '    margin: 0;\n' +
+            '}\n' +
+            'input.fv-no-spinner[type="number"] {\n' +
+            '    -moz-appearance: textfield;\n' +
+            '}\n';
+        document.head.appendChild(style);
     }
 
     /* ================================================================
@@ -176,10 +206,70 @@ FV.Validation = (function() {
             });
         }
 
-        // Number fields: block negative on keydown
-        if (t.numType === 'number' || el.type === 'number') {
+        // === CBS CRITICAL: Positive-only number field enforcement ===
+        // Per Finacle FIELD_TYPE_MASTER / Temenos EB.VALIDATION:
+        // Financial amount fields must NEVER accept negative values.
+        // In banking, a negative amount is a different transaction type
+        // (debit vs credit), not a negative number in the same field.
+        //
+        // Attack vectors blocked:
+        //   1. Keyboard: '-', 'e', 'E' keys blocked on keydown
+        //   2. Spinner arrows: CSS hides them (see injectSpinnerCSS below)
+        //   3. Paste/autofill: 'input' event clamps value to min bound
+        //   4. Mouse wheel: 'wheel' event prevented on focused number fields
+        //   5. Form submit: final negative check in bindForm validation
+        var isPositiveNum = (t.numType === 'number' || el.type === 'number')
+            && t.a && t.a.min !== undefined && t.a.min >= 0;
+
+        if (isPositiveNum) {
+            // Mark for CSS spinner removal
+            el.classList.add('fv-no-spinner');
+
+            // 1. Block negative/scientific keys
             el.addEventListener('keydown', function(e) {
                 if (e.key === '-' || e.key === 'e' || e.key === 'E') {
+                    e.preventDefault();
+                }
+            });
+
+            // 2. Clamp on input (catches paste, autofill, spinner overshoot)
+            el.addEventListener('input', function() {
+                if (this.value === '') return;
+                var val = parseFloat(this.value);
+                if (isNaN(val)) return;
+                var minVal = parseFloat(this.getAttribute('min'));
+                var maxVal = parseFloat(this.getAttribute('max'));
+                if (!isNaN(minVal) && val < minVal) {
+                    this.value = minVal;
+                }
+                if (!isNaN(maxVal) && val > maxVal) {
+                    this.value = maxVal;
+                }
+            });
+
+            // 3. Block mouse wheel on focused number fields
+            el.addEventListener('wheel', function(e) {
+                if (document.activeElement === this) {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+
+            // 4. Clamp on blur (final safety net)
+            el.addEventListener('blur', function() {
+                if (this.value === '') return;
+                var val = parseFloat(this.value);
+                if (isNaN(val)) return;
+                var minVal = parseFloat(this.getAttribute('min'));
+                if (!isNaN(minVal) && val < minVal) {
+                    this.value = minVal;
+                    this.classList.add('is-invalid');
+                    ensureFeedback(this, t.msg || 'Value cannot be negative');
+                }
+            });
+        } else if (t.numType === 'number' || el.type === 'number') {
+            // Non-positive number fields (rare in CBS) — still block 'e'
+            el.addEventListener('keydown', function(e) {
+                if (e.key === 'e' || e.key === 'E') {
                     e.preventDefault();
                 }
             });
@@ -202,6 +292,21 @@ FV.Validation = (function() {
                         || labelFor(el) || el.name;
                     errs.push(lbl + ': ' + t.msg);
                     el.classList.add('is-invalid');
+                }
+            });
+
+            // Negative value check — final safety net for all positive-only fields
+            // Catches any negative that slipped through keydown/input/blur guards
+            form.querySelectorAll('.fv-no-spinner').forEach(function(el) {
+                if (el.value === '') return;
+                var val = parseFloat(el.value);
+                var minVal = parseFloat(el.getAttribute('min'));
+                if (!isNaN(val) && !isNaN(minVal) && val < minVal) {
+                    var lbl = el.getAttribute('data-fv-label')
+                        || labelFor(el) || el.name;
+                    errs.push(lbl + ' cannot be less than ' + minVal + '. Current value: ' + val);
+                    el.classList.add('is-invalid');
+                    el.value = minVal;
                 }
             });
 
