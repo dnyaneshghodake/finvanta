@@ -161,23 +161,28 @@ public class DepositAccountServiceImpl implements DepositAccountService {
      * For CASA products, the product's glLoanAsset field stores the deposit liability GL
      * (e.g., 2010 for SB, 2020 for CA) per the category-aware GL mapping.
      *
-     * Fallback chain:
-     *   1. ProductGLResolver.getLoanAssetGL(productCode) — reads from product_master cache
-     *   2. If product not configured → GLConstants.SB_DEPOSITS / CA_DEPOSITS (hardcoded fallback)
+     * Resolution strategy (type-safe, no sentinel values):
+     *   1. Check if product exists in ProductGLResolver cache
+     *   2. If product found → use product's glLoanAsset directly (already validated at creation)
+     *   3. If product NOT found → fall back to type-based hardcoded GL
      *
-     * This ensures that changing GL codes on a CASA product in Product Master immediately
-     * affects all future transaction postings for accounts using that product — the core
-     * value proposition of product-driven GL architecture per Finacle PDDEF.
+     * This avoids the fragile sentinel-value pattern (comparing against GLConstants.LOAN_ASSET)
+     * which would break if a CASA product legitimately used GL 1001 in a migration scenario.
+     * Per Finacle PDDEF: product existence is the authoritative signal, not GL code values.
      */
     private String glForAccount(DepositAccount a) {
-        String productGl = glResolver.getLoanAssetGL(a.getProductCode());
-        // CBS: If ProductGLResolver returns the loan-module default (1001), it means
-        // the product is not configured or the fallback kicked in. For CASA accounts,
-        // 1001 (Loan Asset) is WRONG — use the type-based hardcoded fallback instead.
-        if (GLConstants.LOAN_ASSET.equals(productGl)) {
-            return a.isSavings() ? GLConstants.SB_DEPOSITS : GLConstants.CA_DEPOSITS;
+        // CBS: Type-safe product existence check — no sentinel value comparison.
+        // ProductGLResolver.getProduct() returns the cached ProductMaster or null.
+        // If the product exists, its GL codes were validated at creation/edit time
+        // by ProductMasterServiceImpl.validateGlCodes() — safe to use directly.
+        var product = glResolver.getProduct(a.getProductCode());
+        if (product != null && product.getGlLoanAsset() != null) {
+            return product.getGlLoanAsset();
         }
-        return productGl;
+        // Product not configured — fall back to type-based hardcoded GL.
+        // This path is only hit for accounts created before ProductMaster was populated,
+        // or if the product was deleted/retired without migration.
+        return a.isSavings() ? GLConstants.SB_DEPOSITS : GLConstants.CA_DEPOSITS;
     }
 
     /**
@@ -1016,10 +1021,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         String gl = glForAccount(acct);
         // CBS Tier-1: Resolve interest expense GL from ProductMaster via ProductGLResolver.
         // For CASA products, glInterestReceivable stores the interest expense GL (5010).
-        // Fallback to GLConstants.INTEREST_EXPENSE_DEPOSITS if product not configured.
-        String interestExpenseGl = glResolver.getInterestReceivableGL(acct.getProductCode());
-        if (GLConstants.INTEREST_RECEIVABLE.equals(interestExpenseGl)) {
-            // ProductGLResolver returned loan-module default (1002) — wrong for CASA.
+        // Uses type-safe product existence check — no sentinel value comparison.
+        String interestExpenseGl;
+        var interestProduct = glResolver.getProduct(acct.getProductCode());
+        if (interestProduct != null && interestProduct.getGlInterestReceivable() != null) {
+            interestExpenseGl = interestProduct.getGlInterestReceivable();
+        } else {
             interestExpenseGl = GLConstants.INTEREST_EXPENSE_DEPOSITS;
         }
         TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
