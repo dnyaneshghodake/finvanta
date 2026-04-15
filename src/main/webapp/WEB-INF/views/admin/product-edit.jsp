@@ -63,9 +63,20 @@
                 </div>
 
                 <h6 class="mb-3 text-primary">GL Code Mapping (Product &rarr; GL)</h6>
+                <%-- CBS: Category-aware GL labels per Finacle PDDEF.
+                     CASA/FD products show deposit-specific labels (Deposit Liability, Interest Expense, TDS Payable).
+                     Loan products show loan-specific labels (Loan Asset, Interest Receivable, Provision NPA). --%>
+                <c:set var="isCasaProduct" value="${product.productCategory == 'CASA_SAVINGS' || product.productCategory == 'CASA_CURRENT' || product.productCategory == 'TERM_DEPOSIT'}" />
+                <c:set var="glFields" value="glLoanAsset,glInterestReceivable,glBankOperations,glInterestIncome,glFeeIncome,glPenalIncome,glProvisionExpense,glProvisionNpa,glWriteOffExpense,glInterestSuspense"/>
+                <c:choose>
+                    <c:when test="${isCasaProduct}">
+                        <c:set var="glLabels" value="Deposit Liability,Interest Expense,Bank Operations,Interest Expense (P&L),Fee Income,Penalty Charges,Interest Expense (Provision),TDS Payable,Closure/Write-Off Expense,Interest Suspense"/>
+                    </c:when>
+                    <c:otherwise>
+                        <c:set var="glLabels" value="Loan Asset,Interest Receivable,Bank Operations,Interest Income,Fee Income,Penal Income,Provision Expense,Provision NPA,Write-Off Expense,Interest Suspense"/>
+                    </c:otherwise>
+                </c:choose>
                 <div class="row mb-3">
-                    <c:set var="glFields" value="glLoanAsset,glInterestReceivable,glBankOperations,glInterestIncome,glFeeIncome,glPenalIncome,glProvisionExpense,glProvisionNpa,glWriteOffExpense,glInterestSuspense"/>
-                    <c:set var="glLabels" value="Loan Asset,Interest Receivable,Bank Operations,Interest Income,Fee Income,Penal Income,Provision Expense,Provision NPA,Write-Off Expense,Interest Suspense"/>
                     <c:forTokens var="field" items="${glFields}" delims="," varStatus="i">
                         <div class="col-md-4 mb-2">
                             <label class="form-label small">${glLabels.split(',')[i.index]} *</label>
