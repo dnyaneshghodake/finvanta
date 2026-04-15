@@ -401,6 +401,35 @@ public class DepositController {
     }
 
     /**
+     * CBS Account Maintenance per Finacle ACCTMOD / Temenos ACCOUNT.MODIFY.
+     * Modifies operational parameters on an existing ACTIVE account.
+     * CHECKER/ADMIN only. All changes audited with before/after state.
+     */
+    @PostMapping("/maintain/{accountNumber}")
+    public String maintainAccount(
+            @PathVariable String accountNumber,
+            @RequestParam(required = false) String nomineeName,
+            @RequestParam(required = false) String nomineeRelationship,
+            @RequestParam(required = false) String jointHolderMode,
+            @RequestParam(required = false) Boolean chequeBookEnabled,
+            @RequestParam(required = false) Boolean debitCardEnabled,
+            @RequestParam(required = false) BigDecimal dailyWithdrawalLimit,
+            @RequestParam(required = false) BigDecimal dailyTransferLimit,
+            @RequestParam(required = false) BigDecimal odLimit,
+            RedirectAttributes ra) {
+        try {
+            depositService.maintainAccount(
+                    accountNumber, nomineeName, nomineeRelationship, jointHolderMode,
+                    chequeBookEnabled, debitCardEnabled,
+                    dailyWithdrawalLimit, dailyTransferLimit, odLimit);
+            ra.addFlashAttribute("success", "Account maintained: " + accountNumber);
+        } catch (Exception e) {
+            ra.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/deposit/view/" + accountNumber;
+    }
+
+    /**
      * CBS Account Activation — CHECKER/ADMIN only.
      * Per Finacle ACCTOPN: activates a PENDING_ACTIVATION account after maker-checker approval.
      * Transitions the account from PENDING_ACTIVATION → ACTIVE.

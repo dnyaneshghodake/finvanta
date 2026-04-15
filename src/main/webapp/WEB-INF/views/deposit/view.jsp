@@ -129,6 +129,80 @@
 </c:if>
 </div></div>
 
+<!-- CBS Account Maintenance per Finacle ACCTMOD -->
+<c:if test="${account.active && (pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN'))}">
+<div class="fv-card mt-3">
+    <div class="card-header"><i class="bi bi-gear"></i> Account Maintenance (Finacle ACCTMOD)</div>
+    <div class="card-body">
+        <p class="text-muted small">Modify operational parameters on this ACTIVE account. All changes are audited per RBI IT Governance §8.3.</p>
+        <form method="post" action="${pageContext.request.contextPath}/deposit/maintain/${account.accountNumber}" class="fv-form">
+            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <label class="form-label small">Nominee Name</label>
+                    <input type="text" name="nomineeName" class="form-control form-control-sm" value="<c:out value='${account.nomineeName}'/>" maxlength="200"/>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Nominee Relationship</label>
+                    <select name="nomineeRelationship" class="form-select form-select-sm">
+                        <option value="">-- None --</option>
+                        <option value="SPOUSE" ${account.nomineeRelationship == 'SPOUSE' ? 'selected' : ''}>Spouse</option>
+                        <option value="CHILD" ${account.nomineeRelationship == 'CHILD' ? 'selected' : ''}>Child</option>
+                        <option value="PARENT" ${account.nomineeRelationship == 'PARENT' ? 'selected' : ''}>Parent</option>
+                        <option value="SIBLING" ${account.nomineeRelationship == 'SIBLING' ? 'selected' : ''}>Sibling</option>
+                        <option value="OTHER" ${account.nomineeRelationship == 'OTHER' ? 'selected' : ''}>Other</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Joint Holder Mode</label>
+                    <select name="jointHolderMode" class="form-select form-select-sm">
+                        <option value="">-- N/A --</option>
+                        <option value="EITHER_SURVIVOR" ${account.jointHolderMode == 'EITHER_SURVIVOR' ? 'selected' : ''}>Either/Survivor</option>
+                        <option value="FORMER_SURVIVOR" ${account.jointHolderMode == 'FORMER_SURVIVOR' ? 'selected' : ''}>Former/Survivor</option>
+                        <option value="JOINTLY" ${account.jointHolderMode == 'JOINTLY' ? 'selected' : ''}>Jointly</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Cheque Book</label>
+                    <select name="chequeBookEnabled" class="form-select form-select-sm">
+                        <option value="false" ${!account.chequeBookEnabled ? 'selected' : ''}>Disabled</option>
+                        <option value="true" ${account.chequeBookEnabled ? 'selected' : ''}>Enabled</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Debit Card</label>
+                    <select name="debitCardEnabled" class="form-select form-select-sm">
+                        <option value="false" ${!account.debitCardEnabled ? 'selected' : ''}>Disabled</option>
+                        <option value="true" ${account.debitCardEnabled ? 'selected' : ''}>Enabled</option>
+                    </select>
+                </div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <label class="form-label small">Daily Withdrawal Limit (INR)</label>
+                    <input type="number" name="dailyWithdrawalLimit" class="form-control form-control-sm" step="0.01" min="0" value="${account.dailyWithdrawalLimit}"/>
+                    <small class="text-muted">0 = unlimited</small>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Daily Transfer Limit (INR)</label>
+                    <input type="number" name="dailyTransferLimit" class="form-control form-control-sm" step="0.01" min="0" value="${account.dailyTransferLimit}"/>
+                    <small class="text-muted">0 = unlimited</small>
+                </div>
+                <c:if test="${account.accountType == 'CURRENT_OD'}">
+                <div class="col-md-3">
+                    <label class="form-label small">OD Limit (INR)</label>
+                    <input type="number" name="odLimit" class="form-control form-control-sm" step="0.01" min="0" value="${account.odLimit}"/>
+                </div>
+                </c:if>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-sm btn-fv-primary" data-confirm="Save account maintenance changes? All modifications will be audited."><i class="bi bi-check-circle"></i> Save Changes</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+</c:if>
+
 <!-- CBS Standing Instructions on this CASA Account -->
 <c:if test="${not empty standingInstructions}">
 <div class="fv-card mt-3">

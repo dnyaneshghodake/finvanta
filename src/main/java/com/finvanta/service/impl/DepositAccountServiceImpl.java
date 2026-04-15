@@ -1181,6 +1181,142 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         return count;
     }
 
+    // === Account Maintenance (Finacle ACCTMOD / Temenos ACCOUNT.MODIFY) ===
+    @Override
+    @Transactional
+    public DepositAccount maintainAccount(
+            String acn,
+            String nomineeName,
+            String nomineeRelationship,
+            String jointHolderMode,
+            Boolean chequeBookEnabled,
+            Boolean debitCardEnabled,
+            BigDecimal dailyWithdrawalLimit,
+            BigDecimal dailyTransferLimit,
+            BigDecimal odLimit) {
+        String tid = TenantContext.getCurrentTenant();
+        String user = SecurityUtil.getCurrentUsername();
+        DepositAccount acct = lockAccount(tid, acn);
+
+        // CBS: Only ACTIVE accounts can be modified per Finacle ACCTMOD.
+        // PENDING_ACTIVATION: not yet operational — complete activation first.
+        // FROZEN: under regulatory hold — modifications blocked per PMLA.
+        // DORMANT: requires reactivation via deposit first.
+        // CLOSED: terminal — no modifications allowed.
+        if (!acct.isActive()) {
+            throw new BusinessException("ACCOUNT_NOT_ACTIVE",
+                    "Account maintenance requires ACTIVE status. Current: " + acct.getAccountStatus()
+                            + ". " + (acct.isDormant() ? "Make a deposit to reactivate first."
+                            : acct.getAccountStatus() == DepositAccountStatus.PENDING_ACTIVATION
+                            ? "Activate the account first." : ""));
+        }
+
+        // CBS: Capture before-state for audit trail per RBI IT Governance §8.3.
+        // Every field modification must be traceable with before/after values.
+        StringBuilder beforeState = new StringBuilder();
+        StringBuilder afterState = new StringBuilder();
+        StringBuilder changes = new StringBuilder();
+        boolean modified = false;
+
+        // Nominee (RBI Deposit Insurance)
+        if (nomineeName != null) {
+            beforeState.append("nominee=").append(acct.getNomineeName());
+            acct.setNomineeName(nomineeName.isBlank() ? null : nomineeName);
+            afterState.append("nominee=").append(acct.getNomineeName());
+            changes.append("Nominee: ").append(acct.getNomineeName()).append("; ");
+            modified = true;
+        }
+        if (nomineeRelationship != null) {
+            beforeState.append("|rel=").append(acct.getNomineeRelationship());
+            acct.setNomineeRelationship(nomineeRelationship.isBlank() ? null : nomineeRelationship);
+            afterState.append("|rel=").append(acct.getNomineeRelationship());
+            modified = true;
+        }
+
+        // Joint Holder Mode
+        if (jointHolderMode != null) {
+            beforeState.append("|joint=").append(acct.getJointHolderMode());
+            acct.setJointHolderMode(jointHolderMode.isBlank() ? null : jointHolderMode);
+            afterState.append("|joint=").append(acct.getJointHolderMode());
+            changes.append("JointMode: ").append(acct.getJointHolderMode()).append("; ");
+            modified = true;
+        }
+
+        // Cheque Book
+        if (chequeBookEnabled != null) {
+            beforeState.append("|cheque=").append(acct.isChequeBookEnabled());
+            acct.setChequeBookEnabled(chequeBookEnabled);
+            afterState.append("|cheque=").append(acct.isChequeBookEnabled());
+            changes.append("ChequeBook: ").append(chequeBookEnabled ? "ENABLED" : "DISABLED").append("; ");
+            modified = true;
+        }
+
+        // Debit Card
+        if (debitCardEnabled != null) {
+            beforeState.append("|debit=").append(acct.isDebitCardEnabled());
+            acct.setDebitCardEnabled(debitCardEnabled);
+            afterState.append("|debit=").append(acct.isDebitCardEnabled());
+            changes.append("DebitCard: ").append(debitCardEnabled ? "ENABLED" : "DISABLED").append("; ");
+            modified = true;
+        }
+
+        // Daily Withdrawal Limit
+        if (dailyWithdrawalLimit != null) {
+            if (dailyWithdrawalLimit.signum() < 0)
+                throw new BusinessException("INVALID_LIMIT", "Daily withdrawal limit cannot be negative.");
+            beforeState.append("|wdlLimit=").append(acct.getDailyWithdrawalLimit());
+            acct.setDailyWithdrawalLimit(dailyWithdrawalLimit);
+            afterState.append("|wdlLimit=").append(acct.getDailyWithdrawalLimit());
+            changes.append("WithdrawalLimit: INR ").append(dailyWithdrawalLimit).append("; ");
+            modified = true;
+        }
+
+        // Daily Transfer Limit
+        if (dailyTransferLimit != null) {
+            if (dailyTransferLimit.signum() < 0)
+                throw new BusinessException("INVALID_LIMIT", "Daily transfer limit cannot be negative.");
+            beforeState.append("|xfrLimit=").append(acct.getDailyTransferLimit());
+            acct.setDailyTransferLimit(dailyTransferLimit);
+            afterState.append("|xfrLimit=").append(acct.getDailyTransferLimit());
+            changes.append("TransferLimit: INR ").append(dailyTransferLimit).append("; ");
+            modified = true;
+        }
+
+        // OD Limit (CURRENT_OD accounts only)
+        if (odLimit != null) {
+            if (!acct.getAccountType().name().contains("CURRENT_OD"))
+                throw new BusinessException("OD_NOT_APPLICABLE",
+                        "OD limit is only applicable for CURRENT_OD accounts. This account is " + acct.getAccountType());
+            if (odLimit.signum() < 0)
+                throw new BusinessException("INVALID_LIMIT", "OD limit cannot be negative.");
+            beforeState.append("|od=").append(acct.getOdLimit());
+            acct.setOdLimit(odLimit);
+            recomputeAvailable(acct);
+            afterState.append("|od=").append(acct.getOdLimit());
+            changes.append("ODLimit: INR ").append(odLimit).append("; ");
+            modified = true;
+        }
+
+        if (!modified) {
+            throw new BusinessException("NO_CHANGES", "No modifications specified.");
+        }
+
+        acct.setUpdatedBy(user);
+        DepositAccount saved = accountRepository.save(acct);
+
+        auditService.logEvent(
+                "DepositAccount",
+                saved.getId(),
+                "ACCOUNT_MAINTAINED",
+                beforeState.toString(),
+                afterState.toString(),
+                "DEPOSIT",
+                "Account maintained: " + acn + " | " + changes + " | By: " + user);
+
+        log.info("Account maintained: acn={}, changes={}, user={}", acn, changes, user);
+        return saved;
+    }
+
     // === Read Operations ===
     @Override
     public DepositAccount getAccount(String acn) {
