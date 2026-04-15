@@ -455,7 +455,7 @@
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Extend Tenure (months)</label>
-                            <input type="number" name="additionalMonths" class="form-control" min="0" max="120" value="0" />
+                            <input type="number" name="additionalMonths" class="form-control" data-fv-type="numeric" min="0" max="120" value="0" />
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Reason (mandatory) *</label>
@@ -472,7 +472,7 @@
                     <div class="row mb-3">
                         <div class="col-md-3">
                             <label class="form-label">Moratorium Period (months) *</label>
-                            <input type="number" name="moratoriumMonths" class="form-control" min="1" max="24" required value="3" />
+                            <input type="number" name="moratoriumMonths" class="form-control" data-fv-type="numeric" min="1" max="24" required value="3" />
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Reason (mandatory) *</label>

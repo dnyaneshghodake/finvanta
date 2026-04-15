@@ -298,7 +298,7 @@
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Exec Day (1-28) *</label>
-                    <input type="number" name="executionDay" class="form-control" min="1" max="28" value="5" required/>
+                    <input type="number" name="executionDay" class="form-control" data-fv-type="numeric" min="1" max="28" value="5" required/>
                 </div>
             </div>
             <div class="row mb-3">
