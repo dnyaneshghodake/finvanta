@@ -15,6 +15,10 @@ import com.finvanta.service.ProductMasterService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
+import com.finvanta.domain.entity.ApprovalWorkflow;
+import com.finvanta.domain.enums.ApprovalStatus;
+import com.finvanta.repository.ApprovalWorkflowRepository;
+import com.finvanta.workflow.ApprovalWorkflowService;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -34,16 +38,21 @@ public class ProductMasterServiceImpl implements ProductMasterService {
     private final DepositAccountRepository depositAccountRepo;
     private final ProductGLResolver glResolver;
     private final AuditService auditSvc;
+    private final ApprovalWorkflowService workflowService;
+    private final ApprovalWorkflowRepository workflowRepo;
 
     public ProductMasterServiceImpl(ProductMasterRepository productRepo, GLMasterRepository glRepo,
             LoanAccountRepository loanAccountRepo, DepositAccountRepository depositAccountRepo,
-            ProductGLResolver glResolver, AuditService auditSvc) {
+            ProductGLResolver glResolver, AuditService auditSvc,
+            ApprovalWorkflowService workflowService, ApprovalWorkflowRepository workflowRepo) {
         this.productRepo = productRepo;
         this.glRepo = glRepo;
         this.loanAccountRepo = loanAccountRepo;
         this.depositAccountRepo = depositAccountRepo;
         this.glResolver = glResolver;
         this.auditSvc = auditSvc;
+        this.workflowService = workflowService;
+        this.workflowRepo = workflowRepo;
     }
 
     @Override
@@ -123,12 +132,35 @@ public class ProductMasterServiceImpl implements ProductMasterService {
         if (glCodesChanged) {
             activeAccounts = countActiveAccounts(productId);
             if (activeAccounts > 0) {
-                // CBS CRITICAL: GL code change on product with active accounts.
-                // Per Finacle PDDEF: this is a high-risk operation. All future
-                // transactions on these accounts will use the new GL codes.
-                // Log as CRITICAL audit event for RBI inspection trail.
-                log.warn("CBS CRITICAL: GL codes changed on product {} with {} active accounts by {}",
+                // CBS Tier-1 Gap #1: Maker-Checker on GL code changes with active accounts.
+                // Per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG: GL code changes on products
+                // with active accounts are HIGH-RISK — they affect ALL future transactions.
+                // This requires dual authorization (maker-checker) per RBI Internal Controls.
+                //
+                // Design: MAKER submits the change → PENDING_APPROVAL workflow created →
+                // CHECKER reviews the GL diff and approves/rejects. The product is NOT
+                // modified until the CHECKER approves. The proposed GL changes are serialized
+                // in the workflow's payloadSnapshot for the CHECKER to review.
+                //
+                // Per Finacle PDDEF: the maker-checker gate is ONLY enforced for GL code
+                // changes on products with active accounts. Non-GL changes (name, rate, etc.)
+                // and GL changes on products with zero accounts apply immediately.
+                String glDiff = buildGlDiff(e, u);
+                workflowService.initiateApproval(
+                        "ProductMaster",
+                        productId,
+                        "PRODUCT_GL_CHANGE",
+                        "GL codes changed on product " + e.getProductCode()
+                                + " with " + activeAccounts + " active accounts. Changes: " + glDiff,
+                        glDiff);
+                log.warn("CBS MAKER-CHECKER: GL change on product {} with {} active accounts requires CHECKER approval. Maker: {}",
                         e.getProductCode(), activeAccounts, user);
+                throw new BusinessException("GL_CHANGE_PENDING_APPROVAL",
+                        "GL code changes on product " + e.getProductCode() + " with " + activeAccounts
+                                + " active account(s) require CHECKER approval. "
+                                + "A maker-checker workflow has been created. "
+                                + "Per Finacle PDDEF / RBI Internal Controls: GL changes affecting "
+                                + "live accounts require dual authorization.");
             }
         }
 
@@ -389,6 +421,31 @@ public class ProductMasterServiceImpl implements ProductMasterService {
         if (!valid)
             throw new BusinessException("INVALID_TRANSITION",
                     "Product " + code + ": " + from + " -> " + to + " is not allowed.");
+    }
+
+    // === GL Diff Builder for Maker-Checker Workflow ===
+
+    /** Builds a human-readable GL code diff for the approval workflow payload */
+    private String buildGlDiff(ProductMaster existing, ProductMaster proposed) {
+        StringBuilder diff = new StringBuilder();
+        appendGlDiff(diff, "glLoanAsset", existing.getGlLoanAsset(), proposed.getGlLoanAsset());
+        appendGlDiff(diff, "glInterestReceivable", existing.getGlInterestReceivable(), proposed.getGlInterestReceivable());
+        appendGlDiff(diff, "glBankOperations", existing.getGlBankOperations(), proposed.getGlBankOperations());
+        appendGlDiff(diff, "glInterestIncome", existing.getGlInterestIncome(), proposed.getGlInterestIncome());
+        appendGlDiff(diff, "glFeeIncome", existing.getGlFeeIncome(), proposed.getGlFeeIncome());
+        appendGlDiff(diff, "glPenalIncome", existing.getGlPenalIncome(), proposed.getGlPenalIncome());
+        appendGlDiff(diff, "glProvisionExpense", existing.getGlProvisionExpense(), proposed.getGlProvisionExpense());
+        appendGlDiff(diff, "glProvisionNpa", existing.getGlProvisionNpa(), proposed.getGlProvisionNpa());
+        appendGlDiff(diff, "glWriteOffExpense", existing.getGlWriteOffExpense(), proposed.getGlWriteOffExpense());
+        appendGlDiff(diff, "glInterestSuspense", existing.getGlInterestSuspense(), proposed.getGlInterestSuspense());
+        return diff.toString();
+    }
+
+    private void appendGlDiff(StringBuilder diff, String field, String oldVal, String newVal) {
+        if (!nullSafeEquals(oldVal, newVal)) {
+            if (diff.length() > 0) diff.append("; ");
+            diff.append(field).append(": ").append(oldVal).append(" → ").append(newVal);
+        }
     }
 
     // === Audit Trail Helpers per RBI IT Governance Direction 2023 §8.3 ===

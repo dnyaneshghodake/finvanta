@@ -65,4 +65,21 @@ public interface ProductMasterService {
 
     /** Count non-terminal loan accounts using this product */
     long countActiveAccounts(Long productId);
+
+    /**
+     * CBS Tier-1 Gap #1: Apply CHECKER-approved GL code changes.
+     *
+     * Per Finacle PDDEF / RBI Internal Controls: when GL codes are modified on a
+     * product with active accounts, the change requires maker-checker approval.
+     * The MAKER submits the change (which creates a PENDING_APPROVAL workflow),
+     * and the CHECKER calls this method to apply the approved GL codes.
+     *
+     * This method is called by the approval workflow callback after the CHECKER
+     * approves the PRODUCT_GL_CHANGE workflow. It re-reads the proposed GL codes
+     * from the workflow's payloadSnapshot and applies them to the product.
+     *
+     * @param workflowId The approved workflow ID containing the GL diff
+     * @return Updated product with new GL codes applied
+     */
+    ProductMaster applyApprovedGlChange(Long workflowId);
 }
