@@ -6,6 +6,7 @@ import com.finvanta.domain.entity.AppUser;
 import com.finvanta.domain.entity.RevokedRefreshToken;
 import com.finvanta.repository.AppUserRepository;
 import com.finvanta.repository.RevokedRefreshTokenRepository;
+import com.finvanta.service.auth.RefreshTokenRotationService;
 import com.finvanta.util.TenantContext;
 
 import io.jsonwebtoken.Claims;
@@ -23,7 +24,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -57,6 +57,7 @@ public class AuthController {
     private final AppUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final RevokedRefreshTokenRepository revokedRefreshTokenRepository;
+    private final RefreshTokenRotationService refreshTokenRotationService;
     private final AuditService auditService;
 
     public AuthController(
@@ -64,11 +65,13 @@ public class AuthController {
             AppUserRepository userRepository,
             PasswordEncoder passwordEncoder,
             RevokedRefreshTokenRepository revokedRefreshTokenRepository,
+            RefreshTokenRotationService refreshTokenRotationService,
             AuditService auditService) {
         this.jwtTokenService = jwtTokenService;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.revokedRefreshTokenRepository = revokedRefreshTokenRepository;
+        this.refreshTokenRotationService = refreshTokenRotationService;
         this.auditService = auditService;
     }
 
@@ -209,7 +212,6 @@ public class AuthController {
      * defence-in-depth safety net for the residual race window.
      */
     @PostMapping("/refresh")
-    @Transactional
     public ResponseEntity<ApiResponse<TokenResponse>>
             refresh(
                     @Valid @RequestBody RefreshRequest req) {
@@ -265,8 +267,8 @@ public class AuthController {
                                     + "Please re-authenticate via /api/v1/auth/token."));
         }
 
-        if (revokedRefreshTokenRepository
-                .existsByTenantIdAndJti(tenantId, oldJti)) {
+        if (refreshTokenRotationService
+                .isAlreadyRevoked(tenantId, oldJti)) {
             auditService.logEvent(
                     "REFRESH_TOKEN",
                     0L,
@@ -320,8 +322,15 @@ public class AuthController {
                 ? LocalDateTime.ofInstant(oldExpiresAt, ZoneId.systemDefault())
                 : LocalDateTime.now().plusDays(1));
         revoked.setReason("ROTATION");
+        // CBS: Invoke the dedicated service so its @Transactional boundary is
+        // inside the call, not around this controller method. A concurrent
+        // rotation surfaces as DataIntegrityViolationException out of the
+        // service boundary, and the catch below runs OUTSIDE any rollback-only
+        // transaction scope -- producing a clean HTTP 401 instead of the
+        // UnexpectedRollbackException -> HTTP 500 that would result from
+        // catching the exception inside the same @Transactional method.
         try {
-            revokedRefreshTokenRepository.saveAndFlush(revoked);
+            refreshTokenRotationService.revoke(revoked);
         } catch (DataIntegrityViolationException dup) {
             // CBS defence-in-depth: the unique constraint uq_revoked_tenant_jti
             // caught a concurrent rotation of the same jti. The other caller has
