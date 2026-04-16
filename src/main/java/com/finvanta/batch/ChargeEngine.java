@@ -313,10 +313,24 @@ public class ChargeEngine {
                         "ACCOUNT_NOT_FOUND",
                         "Loan account not found: " + accountNumber));
 
-        // Resolve GLs identically to applyCharge() so the reversal uses the same
-        // heads. Falls back to the same product-GL / default-GST GLs.
-        String glChargeIncome = glResolver.getFeeIncomeGL(account.getProductType());
-        String glGstPayable = "2200";
+        // CBS: Resolve GLs identically to applyCharge() so the reversal contra
+        // posts to the EXACT same heads as the original levy. Any divergence
+        // would leave the two GL accounts unbalanced on the trial balance and
+        // violate the mirror-image requirement per RBI FPC 2023 §5.7.
+        //
+        // Resolution order (must match applyCharge / calculateCharge):
+        //   1. ChargeConfig.glChargeIncome / glGstPayable for the (tenant, chargeCode, product) triple
+        //   2. ProductGLResolver.getFeeIncomeGL(productType) for the income head
+        //   3. "2200" default CGST Payable for the GST head
+        ChargeConfig config = configRepository
+                .findByTenantAndChargeCodeAndProduct(tenantId, chargeCode, account.getProductType())
+                .orElse(null);
+        String glChargeIncome = (config != null && config.getGlChargeIncome() != null)
+                ? config.getGlChargeIncome()
+                : glResolver.getFeeIncomeGL(account.getProductType());
+        String glGstPayable = (config != null && config.getGlGstPayable() != null)
+                ? config.getGlGstPayable()
+                : "2200";
 
         List<JournalLineRequest> lines = new ArrayList<>();
         lines.add(new JournalLineRequest(

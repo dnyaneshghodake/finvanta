@@ -124,8 +124,13 @@ public class ChargeController {
                         c.getId(),
                         c.getEventType().name(),
                         c.getBaseFee(),
-                        c.getCgstAmount().add(
-                                c.getSgstAmount()),
+                        // CBS: Total GST = CGST + SGST + IGST. Intra-state supplies carry
+                        // CGST/SGST and IGST=0; inter-state supplies carry IGST only (per
+                        // GST Act 2017 §8 / §12). Summing all three is the only way to get
+                        // the correct total regardless of intra-/inter-state split.
+                        nz(c.getCgstAmount())
+                                .add(nz(c.getSgstAmount()))
+                                .add(nz(c.getIgstAmount())),
                         c.getTotalDebit(),
                         c.isWaived(),
                         c.getValueDate().toString(),
@@ -202,4 +207,9 @@ public class ChargeController {
             String valueDate,
             String sourceModule,
             String sourceRef) {}
+
+    /** Null-safe BigDecimal accessor -- treats null as ZERO for GST aggregation. */
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
+    }
 }
