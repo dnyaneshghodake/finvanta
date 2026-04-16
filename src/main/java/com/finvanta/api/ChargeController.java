@@ -123,6 +123,7 @@ public class ChargeController {
                 .map(c -> new ChargeHistoryItem(
                         c.getId(),
                         c.getEventType().name(),
+                        c.getStatus().name(),
                         c.getBaseFee(),
                         // CBS: Total GST = CGST + SGST + IGST. Intra-state supplies carry
                         // CGST/SGST and IGST=0; inter-state supplies carry IGST only (per
@@ -200,9 +201,12 @@ public class ChargeController {
 
     public record ChargeHistoryItem(
             Long id, String eventType,
+            /** Lifecycle status: LEVIED, WAIVED, or REVERSED per ChargeTransactionStatus. */
+            String status,
             BigDecimal baseFee,
             BigDecimal gstAmount,
             BigDecimal totalDebit,
+            /** @deprecated Use {@code status} instead. Kept for backward compat with existing consumers. */
             boolean waived,
             String valueDate,
             String sourceModule,

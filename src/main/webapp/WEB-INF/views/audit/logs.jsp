@@ -9,8 +9,24 @@
         <div class="col-auto">
             <div class="fv-stat-card ${chainIntegrity ? 'stat-success' : 'stat-danger'}">
                 <div class="stat-value"><c:choose><c:when test="${chainIntegrity}">INTACT</c:when><c:otherwise>VIOLATED</c:otherwise></c:choose></div>
-                <div class="stat-label">Chain Integrity</div>
+                <div class="stat-label">
+                    <c:choose>
+                        <c:when test="${fullChainVerified}">Full Chain Verified</c:when>
+                        <c:otherwise>Recent Window (500)</c:otherwise>
+                    </c:choose>
+                </div>
             </div>
+        </div>
+        <div class="col-auto d-flex align-items-center">
+            <c:if test="${empty fullChainVerified}">
+                <a href="${pageContext.request.contextPath}/audit/verify" class="btn btn-sm btn-outline-primary"
+                   onclick="return confirm('Run full O(N) chain verification? This may take several minutes on large audit tables.');">
+                    <i class="bi bi-shield-check"></i> Verify Full Chain
+                </a>
+            </c:if>
+            <c:if test="${fullChainVerified}">
+                <span class="badge bg-success"><i class="bi bi-shield-fill-check"></i> Full chain walk completed</span>
+            </c:if>
         </div>
     </div>
 
