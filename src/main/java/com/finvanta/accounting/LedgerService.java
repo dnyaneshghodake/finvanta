@@ -19,6 +19,7 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -187,8 +188,22 @@ public class LedgerService {
             return existing.get();
         }
         // REQUIRES_NEW: a PK collision here rolls back ONLY the nested
-        // sentinel-insert transaction, not our posting transaction.
-        ledgerStateBootstrap.insertIfAbsent(tenantId);
+        // sentinel-insert transaction, not our posting transaction. The
+        // DataIntegrityViolationException MUST be caught here (the caller
+        // side of the REQUIRES_NEW boundary) -- catching it inside
+        // insertIfAbsent would cause Spring to attempt a commit on an
+        // already-rollback-only inner TX and throw
+        // UnexpectedRollbackException, which WOULD poison this outer
+        // transaction. See TenantLedgerStateBootstrap javadoc.
+        try {
+            ledgerStateBootstrap.insertIfAbsent(tenantId);
+        } catch (DataIntegrityViolationException concurrent) {
+            // Another thread won the race -- the inner REQUIRES_NEW TX
+            // rolled back cleanly; we re-lock the now-present sentinel.
+            log.debug(
+                    "Tenant ledger sentinel race resolved by PK: tenant={}",
+                    tenantId);
+        }
         return ledgerStateRepository.findAndLock(tenantId)
                 .orElseThrow(() -> new IllegalStateException(
                         "tenant_ledger_state row disappeared for tenant=" + tenantId));

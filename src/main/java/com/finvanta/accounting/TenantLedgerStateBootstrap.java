@@ -34,6 +34,23 @@ import org.springframework.transaction.annotation.Transactional;
  * posting transaction intact. The caller then re-locks the sentinel (now
  * seeded by the winning thread) and proceeds.
  *
+ * <p><b>Why no try/catch inside the method body:</b> if we caught
+ * {@link DataIntegrityViolationException} here, the saveAndFlush would have
+ * already marked THIS inner REQUIRES_NEW transaction as rollback-only (JPA
+ * spec §3.3.2: a failed flush marks the active {@code EntityTransaction}
+ * rollback-only). Catching then returning normally causes Spring's
+ * {@code TransactionInterceptor} to attempt a commit on the inner TX, which
+ * in turn throws {@link org.springframework.transaction.UnexpectedRollbackException}.
+ * That exception propagates uncaught to the outer posting transaction and
+ * rolls it back -- the very failure this bootstrap was designed to avoid.
+ *
+ * <p>Instead, we allow the {@code DataIntegrityViolationException} to escape.
+ * Spring rolls back the inner REQUIRES_NEW transaction (standard rollback,
+ * not an "unexpected" one), re-throws the original DIVE, and the caller
+ * ({@code LedgerService.ensureAndLockSentinel}) catches it. The outer
+ * posting transaction is never touched. Same pattern as
+ * {@code RefreshTokenRotationService} which documents this pitfall.
+ *
  * <p>Per Finacle LEDGER_STATE / Temenos EB.LEDGER: tenant provisioning is the
  * preferred place to seed the sentinel, but this bootstrap is the defence
  * against legacy tenants that predate the sentinel table.
@@ -57,21 +74,17 @@ public class TenantLedgerStateBootstrap {
      * <p>The caller is expected to invoke this only when
      * {@code findAndLock(tenantId)} returned empty. A concurrent insert by
      * another thread surfaces as {@link DataIntegrityViolationException};
-     * swallow it quietly and let the caller re-lock.
+     * the exception is allowed to propagate so Spring rolls back the inner
+     * REQUIRES_NEW transaction cleanly. The caller must catch it -- catching
+     * here would cause {@code UnexpectedRollbackException} on the inner
+     * commit (JPA spec §3.3.2).
      *
      * @param tenantId tenant to seed
+     * @throws DataIntegrityViolationException if another thread inserts first
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void insertIfAbsent(String tenantId) {
-        try {
-            repository.saveAndFlush(new TenantLedgerState(tenantId));
-        } catch (DataIntegrityViolationException concurrent) {
-            // Another thread inserted the sentinel first -- the nested
-            // transaction alone is rolled back; the caller's outer
-            // posting transaction is unaffected.
-            log.debug(
-                    "Tenant ledger sentinel race resolved by PK in REQUIRES_NEW: tenant={}",
-                    tenantId);
-        }
+        repository.saveAndFlush(new TenantLedgerState(tenantId));
+        log.debug("Tenant ledger sentinel bootstrapped: tenant={}", tenantId);
     }
 }
