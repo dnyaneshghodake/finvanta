@@ -8,12 +8,14 @@ import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.repository.JournalEntryRepository;
 import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.repository.LoanTransactionRepository;
+import com.finvanta.service.Transaction360Service;
 import com.finvanta.util.TenantContext;
 
 import java.util.List;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.ModelAndView;
@@ -21,19 +23,29 @@ import org.springframework.web.servlet.ModelAndView;
 /**
  * CBS Transaction 360 Controller per Finacle TRAN_INQUIRY / Temenos STMT.ENTRY.
  *
- * Provides a unified transaction lifecycle view by searching across ALL modules
- * (CASA Deposit + Loan) and all reference types:
- *   - Transaction Ref (TXN...) — subledger transaction reference
- *   - Voucher Number (VCH/...) — GL voucher for reconciliation
- *   - Journal Ref (JRN...)     — double-entry journal reference
+ * <p>Single unified controller for ALL transaction inquiry paths under
+ * {@code /txn360/**}. Per Finacle/Temenos Tier-1 standards, inquiry endpoints
+ * must be served by ONE controller to avoid ambiguous Spring MVC mappings and
+ * to simplify cross-module traceability.
  *
- * Per Finacle TRAN_INQUIRY: a single search box resolves any CBS reference to the
- * complete transaction lifecycle — subledger entry, GL journal, ledger postings,
- * and audit trail. This is essential for branch operations, customer dispute
- * resolution, and regulatory inspection.
+ * <p>Mapped endpoints (all GET, authenticated, read-only):
+ * <ul>
+ *   <li>{@code GET /txn360/search?q=...}     -- Unified cross-module search (Deposit + Loan + Journal)</li>
+ *   <li>{@code GET /txn360/voucher/**}       -- By voucher number (VCH/branch/YYYYMMDD/seq)</li>
+ *   <li>{@code GET /txn360/journal/{ref}}    -- By journal reference (JRN...)</li>
+ *   <li>{@code GET /txn360/{ref}}            -- Loan-specific transaction-ref lookup (catch-all, declared last)</li>
+ * </ul>
  *
- * Per RBI IT Governance Direction 2023 Section 7.4:
- * Every financial transaction must be fully traceable from subledger → GL → ledger.
+ * <p>Per RBI IT Governance Direction 2023 Section 7.4: every financial transaction
+ * must be fully traceable subledger -> GL -> ledger. This controller is the
+ * single entry point for that end-to-end traceability view.
+ *
+ * <p><b>CBS design note:</b> the {@code /{ref}} catch-all path variable MUST be
+ * declared AFTER the more specific {@code /search}, {@code /voucher/**}, and
+ * {@code /journal/{ref}} paths so Spring MVC's RequestMapping resolver picks the
+ * specific mapping first. Consolidating the previously-split
+ * {@code Transaction360Controller} lookup paths into this class eliminates the
+ * ambiguous-mapping surface.
  */
 @Controller
 @RequestMapping("/txn360")
@@ -43,16 +55,19 @@ public class Txn360Controller {
     private final LoanTransactionRepository loanTxnRepository;
     private final JournalEntryRepository journalEntryRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
+    private final Transaction360Service transaction360Service;
 
     public Txn360Controller(
             DepositTransactionRepository depositTxnRepository,
             LoanTransactionRepository loanTxnRepository,
             JournalEntryRepository journalEntryRepository,
-            LedgerEntryRepository ledgerEntryRepository) {
+            LedgerEntryRepository ledgerEntryRepository,
+            Transaction360Service transaction360Service) {
         this.depositTxnRepository = depositTxnRepository;
         this.loanTxnRepository = loanTxnRepository;
         this.journalEntryRepository = journalEntryRepository;
         this.ledgerEntryRepository = ledgerEntryRepository;
+        this.transaction360Service = transaction360Service;
     }
 
     /**

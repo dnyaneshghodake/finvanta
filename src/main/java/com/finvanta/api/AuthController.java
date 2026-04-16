@@ -1,14 +1,21 @@
 package com.finvanta.api;
 
+import com.finvanta.audit.AuditService;
 import com.finvanta.config.JwtTokenService;
 import com.finvanta.domain.entity.AppUser;
+import com.finvanta.domain.entity.RevokedRefreshToken;
 import com.finvanta.repository.AppUserRepository;
+import com.finvanta.repository.RevokedRefreshTokenRepository;
 import com.finvanta.util.TenantContext;
 
 import io.jsonwebtoken.Claims;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,14 +54,20 @@ public class AuthController {
     private final JwtTokenService jwtTokenService;
     private final AppUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RevokedRefreshTokenRepository revokedRefreshTokenRepository;
+    private final AuditService auditService;
 
     public AuthController(
             JwtTokenService jwtTokenService,
             AppUserRepository userRepository,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            RevokedRefreshTokenRepository revokedRefreshTokenRepository,
+            AuditService auditService) {
         this.jwtTokenService = jwtTokenService;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.revokedRefreshTokenRepository = revokedRefreshTokenRepository;
+        this.auditService = auditService;
     }
 
     /**
@@ -146,7 +159,7 @@ public class AuthController {
                 jwtTokenService.generateAccessToken(
                         user.getUsername(), tenantId,
                         role, branchCode);
-        String refreshToken =
+        JwtTokenService.RefreshTokenIssue refresh =
                 jwtTokenService.generateRefreshToken(
                         user.getUsername(), tenantId);
 
@@ -155,12 +168,13 @@ public class AuthController {
         userRepository.save(user);
 
         log.info("API token issued: user={}, role={}, "
-                + "branch={}",
-                user.getUsername(), role, branchCode);
+                + "branch={}, refreshJti={}",
+                user.getUsername(), role, branchCode,
+                refresh.jti());
 
         return ResponseEntity.ok(ApiResponse.success(
                 new TokenResponse(
-                        accessToken, refreshToken,
+                        accessToken, refresh.token(),
                         "Bearer",
                         jwtTokenService
                                 .parseToken(accessToken)
@@ -171,8 +185,16 @@ public class AuthController {
 
     /**
      * Refresh access token using a valid refresh token.
-     * Per RBI: refresh tokens can only get new access tokens,
-     * not perform financial operations directly.
+     *
+     * <p>Per RBI IT Governance Direction 2023 §8.3 and RFC 6749 §10.4, refresh tokens
+     * are <b>rotated</b> on every exchange: the presented token is denylisted and a
+     * brand new refresh token (new {@code jti}) is issued alongside the new access
+     * token. Any subsequent attempt to replay the old token is rejected with
+     * {@code REFRESH_TOKEN_REUSED} -- this is the canonical detection signal for
+     * a stolen refresh token per OWASP JWT Cheat Sheet.
+     *
+     * <p>Per RBI: refresh tokens can only obtain new access tokens, never perform
+     * financial operations directly. Both tokens remain tenant-scoped.
      */
     @PostMapping("/refresh")
     public ResponseEntity<ApiResponse<TokenResponse>>
@@ -204,6 +226,53 @@ public class AuthController {
                 jwtTokenService.getTenantId(claims);
         String username =
                 jwtTokenService.getUsername(claims);
+        String oldJti = jwtTokenService.getJti(claims);
+
+        // CBS refresh-token rotation: reject replays of an already-consumed refresh
+        // token. If we see the same jti twice, the token was stolen and replayed --
+        // audit with REFRESH_TOKEN_REUSED so the SOC can pivot on the subject.
+        if (oldJti == null || oldJti.isBlank()) {
+            // Legacy refresh token issued before jti-rotation was deployed.
+            // Reject -- the client must re-authenticate with username/password.
+            auditService.logEvent(
+                    "REFRESH_TOKEN",
+                    0L,
+                    "REFRESH_TOKEN_REJECTED",
+                    null,
+                    java.util.Map.of(
+                            "username", username != null ? username : "UNKNOWN",
+                            "reason", "LEGACY_NO_JTI"),
+                    "AUTH",
+                    "Refresh token lacks jti claim -- re-authenticate required");
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "LEGACY_REFRESH_TOKEN",
+                            "Refresh token predates rotation policy. "
+                                    + "Please re-authenticate via /api/v1/auth/token."));
+        }
+
+        if (revokedRefreshTokenRepository
+                .existsByTenantIdAndJti(tenantId, oldJti)) {
+            auditService.logEvent(
+                    "REFRESH_TOKEN",
+                    0L,
+                    "REFRESH_TOKEN_REUSED",
+                    null,
+                    java.util.Map.of(
+                            "username", username != null ? username : "UNKNOWN",
+                            "jti", oldJti),
+                    "AUTH",
+                    "Replayed refresh token detected -- possible token theft");
+            log.warn("API refresh reuse detected: user={}, jti={}",
+                    username, oldJti);
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "REFRESH_TOKEN_REUSED",
+                            "Refresh token has already been used. "
+                                    + "Re-authenticate via /api/v1/auth/token."));
+        }
 
         // Re-fetch user to get current role/branch/status
         AppUser user = userRepository
@@ -224,17 +293,37 @@ public class AuthController {
         String branchCode = user.getBranch() != null
                 ? user.getBranch().getBranchCode() : null;
 
+        // CBS rotation: revoke the presented (old) refresh token BEFORE issuing a new
+        // one. This narrows the replay window to zero and keeps the denylist and new
+        // token issuance in the same transaction so a crash cannot leave the old token
+        // live while the new one is already in the client's hands.
+        RevokedRefreshToken revoked = new RevokedRefreshToken();
+        revoked.setTenantId(tenantId);
+        revoked.setJti(oldJti);
+        revoked.setSubject(username);
+        revoked.setRevokedAt(LocalDateTime.now());
+        Instant oldExpiresAt = jwtTokenService.getExpiration(claims);
+        revoked.setExpiresAt(oldExpiresAt != null
+                ? LocalDateTime.ofInstant(oldExpiresAt, ZoneId.systemDefault())
+                : LocalDateTime.now().plusDays(1));
+        revoked.setReason("ROTATION");
+        revokedRefreshTokenRepository.save(revoked);
+
         String newAccessToken =
                 jwtTokenService.generateAccessToken(
                         username, tenantId,
                         role, branchCode);
+        JwtTokenService.RefreshTokenIssue newRefresh =
+                jwtTokenService.generateRefreshToken(
+                        username, tenantId);
 
-        log.info("API token refreshed: user={}", username);
+        log.info("API token rotated: user={}, oldJti={}, newJti={}",
+                username, oldJti, newRefresh.jti());
 
         return ResponseEntity.ok(ApiResponse.success(
                 new TokenResponse(
                         newAccessToken,
-                        req.refreshToken(),
+                        newRefresh.token(),
                         "Bearer",
                         jwtTokenService
                                 .parseToken(newAccessToken)

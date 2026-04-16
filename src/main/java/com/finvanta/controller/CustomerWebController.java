@@ -34,7 +34,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
  */
 @Controller
 @RequestMapping("/customer")
-public class CustomerController {
+public class CustomerWebController {
 
     private final CustomerCifService customerService;
     private final CustomerDocumentService documentService;
@@ -43,7 +43,7 @@ public class CustomerController {
     private final LoanAccountRepository accountRepository;
     private final DepositAccountRepository depositAccountRepository;
 
-    public CustomerController(
+    public CustomerWebController(
             CustomerCifService customerService,
             CustomerDocumentService documentService,
             BranchRepository branchRepository,

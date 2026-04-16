@@ -1,7 +1,10 @@
-package com.finvanta.batch;
+package com.finvanta.legacy;
 
+import com.finvanta.batch.ClearingEngine;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.util.TenantContext;
+
+import jakarta.annotation.PostConstruct;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -12,7 +15,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * CBS Clearing/Settlement Service per Finacle CLG_MASTER.
+ * LEGACY: CBS Clearing/Settlement Service per Finacle CLG_MASTER.
+ *
+ * <p>Moved to {@code com.finvanta.legacy} per Finacle/Temenos Tier-1 hygiene: all
+ * deprecated @Service beans live in a single visible package so accidental
+ * injections are obvious during code review.
  *
  * @deprecated This service is fully replaced by {@link ClearingEngine} which provides:
  * - Rail-specific suspense GLs (NEFT/RTGS/IMPS/UPI inward + outward)
@@ -35,7 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
  * New code must use {@link ClearingEngine#validateAllSuspenseBalances(LocalDate)}
  * or {@link ClearingEngine#reconcileSuspensePerRail(LocalDate)}.
  */
-@Deprecated(forRemoval = true)
+@Deprecated(forRemoval = true, since = "2026-04")
 @Service
 public class ClearingService {
 
@@ -45,6 +52,17 @@ public class ClearingService {
 
     public ClearingService(GLMasterRepository glRepository) {
         this.glRepository = glRepository;
+    }
+
+    /**
+     * Emits a visible startup warning so operators notice this legacy bean is still
+     * wired. Per Tier-1 migration hygiene: deprecated financial subsystems MUST
+     * announce themselves at startup to force explicit retirement planning.
+     */
+    @PostConstruct
+    void announceLegacy() {
+        log.warn("LEGACY bean active: com.finvanta.legacy.ClearingService. "
+                + "Migrate callers to ClearingEngine -- this class will be removed.");
     }
 
     /**

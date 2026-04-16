@@ -1,4 +1,4 @@
-package com.finvanta.batch;
+package com.finvanta.legacy;
 
 import com.finvanta.domain.entity.ClearingTransaction;
 import com.finvanta.domain.enums.ClearingDirection;
