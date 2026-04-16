@@ -981,10 +981,17 @@ public class EodOrchestrator {
             calendarRepository
                     .findAndLockByTenantIdAndBranchIdAndDate(tenantId, branch.getId(), businessDate)
                     .ifPresent(calendar -> {
-                        // CBS Day Control: Only COMPLETED EOD marks eodComplete=true.
-                        // FAILED/PARTIALLY_COMPLETED restore DAY_OPEN for retry.
+                        // CBS Day Control per Finacle DAYCTRL / Temenos COB:
+                        // COMPLETED: dayStatus → DAY_OPEN + eodComplete=true + unlocked.
+                        //   Day is "open but EOD-complete" — admin must explicitly close.
+                        //   Transactions are blocked by TransactionEngine checking eodComplete.
+                        //   This is the standard Finacle post-EOD state before Day Close.
+                        // FAILED/PARTIALLY_COMPLETED: dayStatus → DAY_OPEN + eodComplete=false.
+                        //   Day is restored for retry. Admin investigates errors and re-runs EOD.
                         if (eodJob.getStatus() == BatchStatus.COMPLETED) {
+                            calendar.setDayStatus(DayStatus.DAY_OPEN);
                             calendar.setEodComplete(true);
+                            calendar.setLocked(false);
                         } else {
                             calendar.setDayStatus(DayStatus.DAY_OPEN);
                             calendar.setLocked(false);

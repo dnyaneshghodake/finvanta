@@ -2,6 +2,7 @@ package com.finvanta.controller;
 
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.enums.BranchType;
+import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.BranchService;
@@ -26,14 +27,17 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 public class BranchController {
 
     private final BranchService branchService;
+    private final BranchRepository branchRepository;
     private final CustomerRepository customerRepository;
     private final LoanAccountRepository accountRepository;
 
     public BranchController(
             BranchService branchService,
+            BranchRepository branchRepository,
             CustomerRepository customerRepository,
             LoanAccountRepository accountRepository) {
         this.branchService = branchService;
+        this.branchRepository = branchRepository;
         this.customerRepository = customerRepository;
         this.accountRepository = accountRepository;
     }
@@ -42,6 +46,25 @@ public class BranchController {
     public ModelAndView listBranches() {
         ModelAndView mav = new ModelAndView("branch/list");
         mav.addObject("branches", branchService.listActiveBranches());
+        return mav;
+    }
+
+    /**
+     * CBS Branch Search per Finacle BRNINQ / Temenos COMPANY.ENQUIRY.
+     * Searches by branch code, name, IFSC, city, zone, region, or type.
+     * Per RBI Inspection Manual: inspectors request data by IFSC or region.
+     * ADMIN-only (enforced in SecurityConfig). Tenant-scoped.
+     */
+    @GetMapping("/search")
+    public ModelAndView searchBranches(@RequestParam(required = false) String q) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("branch/list");
+        if (q != null && !q.isBlank() && q.trim().length() >= 2) {
+            mav.addObject("branches", branchRepository.searchBranches(tenantId, q.trim()));
+            mav.addObject("searchQuery", q);
+        } else {
+            mav.addObject("branches", branchService.listActiveBranches());
+        }
         return mav;
     }
 

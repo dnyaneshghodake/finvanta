@@ -10,6 +10,7 @@ import com.finvanta.repository.JournalEntryRepository;
 import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
@@ -18,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -60,6 +62,109 @@ public class AccountingController {
         return mav;
     }
 
+    /**
+     * CBS GL Account Search per Finacle GLINQ / Temenos GL.ENQUIRY.
+     * Searches by GL code, GL name, or account type (ASSET/LIABILITY/INCOME/EXPENSE/EQUITY).
+     * Per RBI Inspection Manual: inspectors require instant GL lookup during on-site examination.
+     * Tenant-scoped (GL is bank-wide, no branch isolation per Finacle GL_MASTER).
+     */
+    @GetMapping("/gl/search")
+    public ModelAndView searchGLAccounts(@RequestParam(required = false) String q) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("accounting/trial-balance");
+        if (q != null && !q.isBlank() && q.trim().length() >= 2) {
+            List<GLMaster> results = glMasterRepository.searchGLAccounts(tenantId, q.trim());
+            // CBS: Build trial balance format matching AccountingService.getTrialBalance() structure
+            Map<String, Object> trialBalance = new java.util.HashMap<>();
+            Map<String, Map<String, Object>> accountBalances = new LinkedHashMap<>();
+            BigDecimal totalDebit = BigDecimal.ZERO;
+            BigDecimal totalCredit = BigDecimal.ZERO;
+
+            for (GLMaster gl : results) {
+                Map<String, Object> balance = new java.util.HashMap<>();
+                balance.put("glCode", gl.getGlCode());
+                balance.put("glName", gl.getGlName());
+                balance.put("accountType", gl.getAccountType().name());
+                balance.put("debitBalance", gl.getDebitBalance());
+                balance.put("creditBalance", gl.getCreditBalance());
+                balance.put("netBalance", gl.getNetBalance());
+
+                totalDebit = totalDebit.add(gl.getDebitBalance());
+                totalCredit = totalCredit.add(gl.getCreditBalance());
+
+                accountBalances.put(gl.getGlCode(), balance);
+            }
+
+            trialBalance.put("accounts", accountBalances);
+            trialBalance.put("totalDebit", totalDebit);
+            trialBalance.put("totalCredit", totalCredit);
+            trialBalance.put("isBalanced", totalDebit.compareTo(totalCredit) == 0);
+
+            mav.addObject("trialBalance", trialBalance);
+            mav.addObject("searchQuery", q);
+        } else {
+            mav.addObject("trialBalance", accountingService.getTrialBalance());
+        }
+        return mav;
+    }
+
+    /** CBS: Max journal search results to prevent OOM on large journal tables */
+    private static final int MAX_JOURNAL_RESULTS = 500;
+
+    /**
+     * CBS Journal Entry Search per Finacle JRNL_INQUIRY / Temenos STMT.ENTRY.BOOK.
+     * Searches by journal ref, narration, source module, source ref, or branch code.
+     * Branch-scoped for MAKER/CHECKER per Finacle BRANCH_CONTEXT.
+     * Per RBI Inspection Manual: inspectors require instant journal lookup during on-site.
+     */
+    @GetMapping("/journal-entries/search")
+    public ModelAndView searchJournalEntries(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String fromDate,
+            @RequestParam(required = false) String toDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("accounting/journal-entries");
+
+        LocalDate currentBizDate = resolveCurrentBusinessDate();
+        LocalDate from;
+        LocalDate to;
+        try {
+            from = (fromDate != null && !fromDate.isBlank()) ? LocalDate.parse(fromDate) : currentBizDate.minusDays(30);
+            to = (toDate != null && !toDate.isBlank()) ? LocalDate.parse(toDate) : currentBizDate;
+        } catch (Exception e) {
+            // CBS: Graceful fallback on malformed date input per Finacle JRNL_INQUIRY.
+            // Per RBI IT Governance: user input errors must not cause HTTP 500 on
+            // operational screens used during RBI on-site inspection.
+            from = currentBizDate.minusDays(30);
+            to = currentBizDate;
+            mav.addObject("error", "Invalid date format. Showing default 30-day range.");
+        }
+        mav.addObject("fromDate", from);
+        mav.addObject("toDate", to);
+
+        if (q != null && !q.isBlank() && q.trim().length() >= 2) {
+            String trimmed = q.trim();
+            if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+                mav.addObject("entries",
+                        journalEntryRepository.searchJournalEntries(
+                                tenantId, trimmed, PageRequest.of(0, MAX_JOURNAL_RESULTS)));
+            } else {
+                Long branchId = SecurityUtil.getCurrentUserBranchId();
+                if (branchId != null) {
+                    mav.addObject("entries",
+                            journalEntryRepository.searchJournalEntriesByBranch(
+                                    tenantId, branchId, trimmed, PageRequest.of(0, MAX_JOURNAL_RESULTS)));
+                } else {
+                    mav.addObject("entries", java.util.Collections.emptyList());
+                }
+            }
+            mav.addObject("searchQuery", q);
+        } else {
+            mav.addObject("entries", journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to));
+        }
+        return mav;
+    }
+
     @GetMapping("/journal-entries")
     public ModelAndView journalEntries(
             @RequestParam(required = false) String fromDate, @RequestParam(required = false) String toDate) {
@@ -72,8 +177,16 @@ public class AccountingController {
         // because journal postings are sparse — the user must manually expand the range.
         // 30 days matches the standard CBS monthly journal register view.
         LocalDate currentBizDate = resolveCurrentBusinessDate();
-        LocalDate from = fromDate != null ? LocalDate.parse(fromDate) : currentBizDate.minusDays(30);
-        LocalDate to = toDate != null ? LocalDate.parse(toDate) : currentBizDate;
+        LocalDate from;
+        LocalDate to;
+        try {
+            from = (fromDate != null && !fromDate.isBlank()) ? LocalDate.parse(fromDate) : currentBizDate.minusDays(30);
+            to = (toDate != null && !toDate.isBlank()) ? LocalDate.parse(toDate) : currentBizDate;
+        } catch (Exception e) {
+            from = currentBizDate.minusDays(30);
+            to = currentBizDate;
+            mav.addObject("error", "Invalid date format. Showing default 30-day range.");
+        }
 
         mav.addObject("entries", journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to));
         mav.addObject("fromDate", from);
@@ -185,9 +298,15 @@ public class AccountingController {
 
         // CBS: Default to current business date (DAY_OPEN), not system date.
         // Per Finacle VCHREGISTER: voucher register is a daily report for the business date.
-        LocalDate date = (businessDate != null && !businessDate.isBlank())
-                ? LocalDate.parse(businessDate)
-                : resolveCurrentBusinessDate();
+        LocalDate date;
+        try {
+            date = (businessDate != null && !businessDate.isBlank())
+                    ? LocalDate.parse(businessDate)
+                    : resolveCurrentBusinessDate();
+        } catch (Exception e) {
+            date = resolveCurrentBusinessDate();
+            mav.addObject("error", "Invalid date format. Showing current business date.");
+        }
 
         // Ledger entries for the date (all vouchers)
         mav.addObject(

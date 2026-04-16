@@ -57,7 +57,7 @@
                     </div>
                     <div class="col-md-6">
                         <label for="requestedAmount" class="form-label">Requested Amount (INR) *</label>
-                        <input type="number" name="requestedAmount" id="requestedAmount" class="form-control" min="10000" max="50000000" step="1000" required placeholder="e.g., 1000000" />
+                        <input type="number" name="requestedAmount" id="requestedAmount" class="form-control" data-fv-type="amount" min="10000" max="50000000" required placeholder="e.g., 1000000" />
                         <small id="amountHint" class="form-text text-muted"></small>
                     </div>
                 </div>
@@ -65,12 +65,12 @@
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <label for="interestRate" class="form-label">Interest Rate (% p.a.) *</label>
-                        <input type="number" name="interestRate" id="interestRate" class="form-control" min="1" max="36" step="0.25" required placeholder="Auto-populated from product" />
+                        <input type="number" name="interestRate" id="interestRate" class="form-control" data-fv-type="rate" step="0.25" required placeholder="Auto-populated from product" />
                         <small id="rateHint" class="form-text text-muted"></small>
                     </div>
                     <div class="col-md-6">
                         <label for="tenureMonths" class="form-label">Tenure (Months) *</label>
-                        <input type="number" name="tenureMonths" id="tenureMonths" class="form-control" min="3" max="360" required placeholder="e.g., 120" />
+                        <input type="number" name="tenureMonths" id="tenureMonths" class="form-control" data-fv-type="tenure" required placeholder="e.g., 120" />
                         <small id="tenureHint" class="form-text text-muted"></small>
                     </div>
                 </div>
@@ -78,7 +78,7 @@
                 <div class="row mb-3">
                     <div class="col-md-4">
                         <label for="penalRate" class="form-label">Penal Rate (% p.a.)</label>
-                        <input type="number" name="penalRate" id="penalRate" class="form-control" min="0" max="24" step="0.25" placeholder="Auto from product" />
+                        <input type="number" name="penalRate" id="penalRate" class="form-control" data-fv-type="penal-rate" step="0.25" placeholder="Auto from product" />
                     </div>
                     <div class="col-md-4">
                         <label for="riskCategory" class="form-label">Risk Category</label>

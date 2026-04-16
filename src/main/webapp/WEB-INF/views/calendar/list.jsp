@@ -137,7 +137,9 @@
                             </td>
                             <td>
                                 <c:choose>
-                                    <c:when test="${cal.dayStatus == 'DAY_OPEN'}"><span class="fv-badge fv-badge-approved">DAY OPEN</span></c:when>
+                                    <c:when test="${cal.dayStatus == 'DAY_OPEN' and not cal.eodComplete}"><span class="fv-badge fv-badge-approved">DAY OPEN</span></c:when>
+                                    <c:when test="${cal.dayStatus == 'DAY_OPEN' and cal.eodComplete}"><span class="fv-badge fv-badge-active">EOD COMPLETE</span></c:when>
+                                    <c:when test="${cal.dayStatus == 'EOD_RUNNING' and cal.eodComplete}"><span class="fv-badge fv-badge-active">EOD COMPLETE</span></c:when>
                                     <c:when test="${cal.dayStatus == 'EOD_RUNNING'}"><span class="fv-badge fv-badge-pending">EOD RUNNING</span></c:when>
                                     <c:when test="${cal.dayStatus == 'DAY_CLOSED'}"><span class="fv-badge fv-badge-active">DAY CLOSED</span></c:when>
                                     <c:otherwise><span class="fv-badge">NOT OPENED</span></c:otherwise>
@@ -160,7 +162,11 @@
                                         <button type="submit" class="btn btn-sm btn-success" data-confirm="Open business day ${cal.businessDate}?">Open Day</button>
                                     </form>
                                 </c:if>
-                                <c:if test="${cal.dayStatus == 'DAY_OPEN' and cal.eodComplete}">
+                                <%-- CBS: Close Day button appears when EOD is complete, regardless of whether
+                                     dayStatus is DAY_OPEN or EOD_RUNNING. Per Finacle DAYCTRL: successful EOD
+                                     sets eodComplete=true. DayStatus.canClose() allows closing from both states.
+                                     Per Temenos COB: day close is an explicit admin action after EOD. --%>
+                                <c:if test="${cal.eodComplete and (cal.dayStatus == 'DAY_OPEN' or cal.dayStatus == 'EOD_RUNNING')}">
                                     <form method="post" action="${pageContext.request.contextPath}/calendar/day-close" class="d-inline">
                                         <input type="hidden" name="businessDate" value="${cal.businessDate}" />
                                         <input type="hidden" name="branchId" value="${currentBranchId}" />

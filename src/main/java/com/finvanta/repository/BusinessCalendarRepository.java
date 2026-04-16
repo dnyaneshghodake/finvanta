@@ -148,6 +148,17 @@ public interface BusinessCalendarRepository extends JpaRepository<BusinessCalend
             @Param("fromDate") LocalDate fromDate,
             @Param("toDate") LocalDate toDate);
 
+    /**
+     * CBS Startup Recovery: Find calendar entries stuck in EOD_RUNNING with eodComplete=true.
+     * Per Finacle DAYCTRL / Temenos COB: this inconsistent state occurs when the JVM crashes
+     * or restarts between EOD completion and the finalizeEod() calendar update, or from a
+     * code bug that sets eodComplete without transitioning dayStatus. The startup recovery
+     * corrects these to DAY_OPEN + eodComplete=true (the proper post-EOD state).
+     */
+    @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId "
+            + "AND bc.dayStatus = 'EOD_RUNNING' AND bc.eodComplete = true")
+    List<BusinessCalendar> findStuckEodRunningWithComplete(@Param("tenantId") String tenantId);
+
     // ================================================================
     // LEGACY TENANT-WIDE QUERIES (backward compatibility — migrate away)
     // ================================================================

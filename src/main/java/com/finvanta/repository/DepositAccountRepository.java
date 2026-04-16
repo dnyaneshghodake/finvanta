@@ -66,6 +66,51 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
             + "AND da.productCode = :productCode AND da.accountStatus <> 'CLOSED'")
     long countNonClosedByProductCode(@Param("tenantId") String tenantId, @Param("productCode") String productCode);
 
+    // === CBS ACCTINQ: CASA Account Search per Finacle ACCTINQ / Temenos ACCOUNT.ENQUIRY ===
+
+    /**
+     * Search CASA accounts by account number, customer name, or customer CIF.
+     * Per Finacle ACCTINQ: branch staff must locate accounts instantly for
+     * teller operations, customer complaints, and RBI inspection queries.
+     * All branches visible (ADMIN/AUDITOR). Branch-scoped variant below.
+     *
+     * CBS: Joins to Customer entity for name/CIF search. Account number and
+     * customer number use exact-prefix LIKE; names use case-insensitive LIKE.
+     * PAN search is NOT included — PAN is encrypted, use Customer CIF_SEARCH instead.
+     */
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.accountStatus <> 'CLOSED' AND ("
+            + "da.accountNumber LIKE CONCAT('%', :query, '%') OR "
+            + "da.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "
+            + "LOWER(da.customer.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(da.customer.lastName) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + " ORDER BY da.accountNumber")
+    List<DepositAccount> searchAccounts(
+            @Param("tenantId") String tenantId, @Param("query") String query,
+            org.springframework.data.domain.Pageable pageable);
+
+    /** Convenience overload — default max 500 results to prevent OOM at scale */
+    default List<DepositAccount> searchAccounts(String tenantId, String query) {
+        return searchAccounts(tenantId, query, org.springframework.data.domain.PageRequest.of(0, 500));
+    }
+
+    /** Branch-scoped CASA search for MAKER/CHECKER per Finacle BRANCH_CONTEXT */
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.branch.id = :branchId AND da.accountStatus <> 'CLOSED' AND ("
+            + "da.accountNumber LIKE CONCAT('%', :query, '%') OR "
+            + "da.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "
+            + "LOWER(da.customer.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(da.customer.lastName) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + " ORDER BY da.accountNumber")
+    List<DepositAccount> searchAccountsByBranch(
+            @Param("tenantId") String tenantId, @Param("branchId") Long branchId,
+            @Param("query") String query, org.springframework.data.domain.Pageable pageable);
+
+    /** Convenience overload — default max 500 results */
+    default List<DepositAccount> searchAccountsByBranch(String tenantId, Long branchId, String query) {
+        return searchAccountsByBranch(tenantId, branchId, query, org.springframework.data.domain.PageRequest.of(0, 500));
+    }
+
     /** Accounts by customer */
     List<DepositAccount> findByTenantIdAndCustomerId(String tenantId, Long customerId);
 
@@ -81,6 +126,17 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
     @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
             + "AND da.accountStatus = 'ACTIVE' AND da.lastTransactionDate < :cutoffDate")
     List<DepositAccount> findDormancyCandidates(
+            @Param("tenantId") String tenantId, @Param("cutoffDate") LocalDate cutoffDate);
+
+    /**
+     * INOPERATIVE candidates: DORMANT accounts with no transaction for 10+ years.
+     * Per RBI Unclaimed Deposits Direction 2024: DORMANT (2yr) → INOPERATIVE (10yr).
+     * This query correctly filters for accountStatus = 'DORMANT' (not 'ACTIVE'),
+     * unlike findDormancyCandidates which only returns ACTIVE accounts.
+     */
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.accountStatus = 'DORMANT' AND da.lastTransactionDate < :cutoffDate")
+    List<DepositAccount> findInoperativeCandidates(
             @Param("tenantId") String tenantId, @Param("cutoffDate") LocalDate cutoffDate);
 
     /** Total deposit balance for dashboard */
@@ -112,4 +168,25 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
             "SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
                     + "AND da.accountStatus IN ('DORMANT', 'FROZEN', 'INOPERATIVE') ORDER BY da.accountStatus, da.accountNumber")
     List<DepositAccount> findAttentionRequired(@Param("tenantId") String tenantId);
+
+    // === CBS UDGAM: Unclaimed Deposits Reporting per RBI Direction 2024 ===
+
+    /**
+     * Find INOPERATIVE accounts for RBI UDGAM unclaimed deposits reporting.
+     * Per RBI Unclaimed Deposits Direction 2024: accounts with no customer-initiated
+     * transaction for 10+ years must be reported to the UDGAM portal.
+     * Returns accounts with non-zero balance (zero-balance INOPERATIVE accounts
+     * are not reportable — no funds to claim).
+     */
+    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+            + "AND da.accountStatus = 'INOPERATIVE' AND da.ledgerBalance > 0 "
+            + "ORDER BY da.lastTransactionDate ASC")
+    List<DepositAccount> findUnclaimedDeposits(@Param("tenantId") String tenantId);
+
+    /**
+     * Summary: total unclaimed deposit amount for regulatory reporting.
+     */
+    @Query("SELECT COALESCE(SUM(da.ledgerBalance), 0) FROM DepositAccount da "
+            + "WHERE da.tenantId = :tenantId AND da.accountStatus = 'INOPERATIVE' AND da.ledgerBalance > 0")
+    java.math.BigDecimal sumUnclaimedDepositBalance(@Param("tenantId") String tenantId);
 }

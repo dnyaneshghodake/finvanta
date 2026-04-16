@@ -70,6 +70,9 @@ class DepositAccountServiceTest {
     private com.finvanta.repository.ProductMasterRepository productMasterRepository;
 
     @Mock
+    private com.finvanta.accounting.ProductGLResolver glResolver;
+
+    @Mock
     private TransactionEngine transactionEngine;
 
     @Mock
@@ -106,6 +109,7 @@ class DepositAccountServiceTest {
                 branchRepository,
                 accrualRepository,
                 productMasterRepository,
+                glResolver,
                 transactionEngine,
                 businessDateService,
                 auditService,
@@ -570,6 +574,225 @@ class DepositAccountServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.activateAccount("DEP001"));
         assertEquals("INVALID_STATE", ex.getErrorCode());
+    }
+
+    // === CBS PR #22: JOINTLY Joint Account Enforcement Tests ===
+
+    @Test
+    void withdraw_shouldRejectJointlyAccountFromBranch() {
+        // CBS Gap #10: JOINTLY mode requires all signatories — block self-service debits
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        acct.setJointHolderMode("JOINTLY");
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(acct));
+
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.withdraw(
+                        "DEP001", new BigDecimal("1000.00"), LocalDate.of(2026, 4, 1),
+                        "Cash withdrawal", null, "BRANCH"));
+        assertEquals("JOINT_AUTHORIZATION_REQUIRED", ex.getErrorCode());
+    }
+
+    @Test
+    void withdraw_shouldAllowJointlyAccountForSystemChannel() {
+        // CBS: System-generated debits (SI, EMI, TDS) are exempt from JOINTLY check
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        acct.setJointHolderMode("JOINTLY");
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(acct));
+        when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // STANDING_INSTRUCTION channel should bypass JOINTLY check
+        DepositTransaction txn = service.withdraw(
+                "DEP001", new BigDecimal("5000.00"), LocalDate.of(2026, 4, 1),
+                "EMI auto-debit", null, "STANDING_INSTRUCTION");
+        assertNotNull(txn);
+        assertEquals("DEBIT", txn.getDebitCredit());
+    }
+
+    @Test
+    void transfer_shouldRejectJointlySourceAccount() {
+        // CBS: Transfer from JOINTLY account requires all signatories
+        DepositAccount src = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        src.setJointHolderMode("JOINTLY");
+        DepositAccount tgt = buildSavingsAccount("DEP002", new BigDecimal("10000.00"));
+        tgt.setId(2L);
+        tgt.setAccountNumber("DEP002");
+        // Lock order: DEP001 < DEP002 → DEP001 locked first
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(src));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP002"))
+                .thenReturn(Optional.of(tgt));
+
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.transfer("DEP001", "DEP002", new BigDecimal("1000.00"),
+                        LocalDate.of(2026, 4, 1), "Transfer", null));
+        assertEquals("JOINT_AUTHORIZATION_REQUIRED", ex.getErrorCode());
+    }
+
+    @Test
+    void closeAccount_shouldRejectJointlyAccount() {
+        // CBS: JOINTLY account closure requires all signatories
+        DepositAccount acct = buildSavingsAccount("DEP001", BigDecimal.ZERO);
+        acct.setLedgerBalance(BigDecimal.ZERO);
+        acct.setJointHolderMode("JOINTLY");
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(acct));
+
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.closeAccount("DEP001", "Customer request"));
+        assertEquals("JOINT_AUTHORIZATION_REQUIRED", ex.getErrorCode());
+    }
+
+    @Test
+    void withdraw_shouldAllowEitherSurvivorJointAccount() {
+        // CBS: EITHER_SURVIVOR mode allows single-signatory debits
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        acct.setJointHolderMode("EITHER_SURVIVOR");
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(acct));
+        when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        DepositTransaction txn = service.withdraw(
+                "DEP001", new BigDecimal("1000.00"), LocalDate.of(2026, 4, 1),
+                "Cash withdrawal", null, "BRANCH");
+        assertNotNull(txn);
+    }
+
+    // === CBS PR #22: Account Maintenance Tests ===
+
+    @Test
+    void maintainAccount_shouldUpdateNomineeAndLimits() {
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(acct));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        DepositAccount result = service.maintainAccount(
+                "DEP001", "Jane Doe", "SPOUSE", null, true, null,
+                new BigDecimal("100000.00"), null, null, null, null);
+
+        assertEquals("Jane Doe", result.getNomineeName());
+        assertEquals("SPOUSE", result.getNomineeRelationship());
+        assertTrue(result.isChequeBookEnabled());
+        assertEquals(new BigDecimal("100000.00"), result.getDailyWithdrawalLimit());
+    }
+
+    @Test
+    void maintainAccount_shouldRejectNonActiveAccount() {
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        acct.setAccountStatus(DepositAccountStatus.FROZEN);
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(acct));
+
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.maintainAccount("DEP001", "Jane", null, null,
+                        null, null, null, null, null, null, null));
+        assertEquals("ACCOUNT_NOT_ACTIVE", ex.getErrorCode());
+    }
+
+    @Test
+    void maintainAccount_shouldRejectNegativeLimit() {
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(acct));
+
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.maintainAccount("DEP001", null, null, null,
+                        null, null, new BigDecimal("-1000"), null, null, null, null));
+        assertEquals("INVALID_LIMIT", ex.getErrorCode());
+    }
+
+    @Test
+    void maintainAccount_shouldRejectRateOnCurrentAccount() {
+        // CBS: Interest rate override only for savings accounts
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        acct.setAccountType(DepositAccountType.CURRENT);
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(acct));
+
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.maintainAccount("DEP001", null, null, null,
+                        null, null, null, null, null, new BigDecimal("5.0"), null));
+        assertEquals("RATE_NOT_APPLICABLE", ex.getErrorCode());
+    }
+
+    @Test
+    void dormancy_shouldClassifyInoperativeAccounts() {
+        // CBS: DORMANT accounts with 10yr+ no txn → INOPERATIVE per RBI UDGAM Direction 2024
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        acct.setAccountStatus(DepositAccountStatus.DORMANT);
+        acct.setLastTransactionDate(LocalDate.of(2016, 1, 1)); // 10+ years ago
+        when(accountRepository.findDormancyCandidates(eq("DEFAULT"), any())).thenReturn(List.of());
+        when(accountRepository.findInoperativeCandidates(eq("DEFAULT"), any())).thenReturn(List.of(acct));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        int count = service.markDormantAccounts(LocalDate.of(2026, 4, 1));
+
+        assertEquals(1, count);
+        assertEquals(DepositAccountStatus.INOPERATIVE, acct.getAccountStatus());
+    }
+
+    @Test
+    void transfer_shouldAllowJointlyForSystemInitiatedTransfer() {
+        // CBS: System-initiated transfers (SYSTEM_EOD user context) exempt from JOINTLY check.
+        // Per Finacle AUTH_ENGINE: authorization uses security context, not idempotency key.
+        DepositAccount src = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        src.setJointHolderMode("JOINTLY");
+        DepositAccount tgt = buildSavingsAccount("DEP002", new BigDecimal("10000.00"));
+        tgt.setId(2L);
+        tgt.setAccountNumber("DEP002");
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(src));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP002"))
+                .thenReturn(Optional.of(tgt));
+        when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Set security context to SYSTEM_EOD (as StandingInstructionServiceImpl does)
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "SYSTEM_EOD", "pass", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+
+        // System-initiated transfer should bypass JOINTLY check
+        DepositTransaction txn = service.transfer(
+                "DEP001", "DEP002", new BigDecimal("1000.00"),
+                LocalDate.of(2026, 4, 1), "SI auto-transfer", "SI-SIP-001");
+        assertNotNull(txn);
+        assertEquals("DEBIT", txn.getDebitCredit());
+    }
+
+    @Test
+    void transfer_shouldRejectJointlyEvenWithSiPrefixedIdempotencyKey() {
+        // CBS SECURITY: Idempotency key prefix must NOT bypass JOINTLY enforcement.
+        // A malicious caller crafting "SI-..." key must still be blocked.
+        DepositAccount src = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        src.setJointHolderMode("JOINTLY");
+        DepositAccount tgt = buildSavingsAccount("DEP002", new BigDecimal("10000.00"));
+        tgt.setId(2L);
+        tgt.setAccountNumber("DEP002");
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP001"))
+                .thenReturn(Optional.of(src));
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber("DEFAULT", "DEP002"))
+                .thenReturn(Optional.of(tgt));
+
+        // Regular user (maker1) with SI-prefixed key — must still be blocked
+        BusinessException ex = assertThrows(
+                BusinessException.class,
+                () -> service.transfer("DEP001", "DEP002", new BigDecimal("1000.00"),
+                        LocalDate.of(2026, 4, 1), "Crafted transfer", "SI-FAKE-001"));
+        assertEquals("JOINT_AUTHORIZATION_REQUIRED", ex.getErrorCode());
     }
 
     @Test

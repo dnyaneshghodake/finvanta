@@ -17,6 +17,26 @@
     <div class="fv-card">
         <div class="card-header">Audit Trail</div>
         <div class="card-body">
+            <!-- CBS: Audit Trail search per RBI IT Governance Direction 2023 §8.3 -->
+            <form method="get" action="${pageContext.request.contextPath}/audit/search" class="row g-2 mb-3">
+                <div class="col-auto">
+                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by entity, action, user, module..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:320px;" />
+                </div>
+                <div class="col-auto">
+                    <input type="date" name="fromDate" class="form-control form-control-sm" value="<c:out value='${fromDate}'/>" title="From date" style="width:150px;" />
+                </div>
+                <div class="col-auto">
+                    <input type="date" name="toDate" class="form-control form-control-sm" value="<c:out value='${toDate}'/>" title="To date" style="width:150px;" />
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>
+                </div>
+                <c:if test="${not empty searchQuery}">
+                <div class="col-auto">
+                    <a href="${pageContext.request.contextPath}/audit/logs" class="btn btn-sm btn-outline-secondary">Clear</a>
+                </div>
+                </c:if>
+            </form>
             <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>

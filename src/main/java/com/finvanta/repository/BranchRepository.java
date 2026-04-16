@@ -60,4 +60,25 @@ public interface BranchRepository extends JpaRepository<Branch, Long> {
     @Query("SELECT COUNT(b) FROM Branch b WHERE b.tenantId = :tenantId "
             + "AND b.branchType = 'BRANCH' AND b.active = true")
     long countOperationalBranches(@Param("tenantId") String tenantId);
+
+    // === CBS BRNINQ: Branch Search per Finacle BRNINQ / Temenos COMPANY.ENQUIRY ===
+
+    /**
+     * Search branches by code, name, IFSC, city, zone, region, or branch type.
+     * Per Finacle BRNINQ: ADMIN must locate branches instantly for branch management,
+     * RBI inspection queries, and regulatory reporting (OSMOS).
+     * Per RBI Inspection Manual: inspectors request data by IFSC or region.
+     * Tenant-scoped. ADMIN-only (enforced in SecurityConfig).
+     */
+    @Query("SELECT b FROM Branch b WHERE b.tenantId = :tenantId AND b.active = true AND ("
+            + "LOWER(b.branchCode) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(b.branchName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(b.ifscCode) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(b.city) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(b.zoneCode) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(b.regionCode) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(CAST(b.branchType AS string)) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + " ORDER BY b.branchCode")
+    List<Branch> searchBranches(
+            @Param("tenantId") String tenantId, @Param("query") String query);
 }

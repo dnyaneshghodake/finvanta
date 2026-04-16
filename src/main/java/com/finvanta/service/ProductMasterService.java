@@ -65,4 +65,43 @@ public interface ProductMasterService {
 
     /** Count non-terminal loan accounts using this product */
     long countActiveAccounts(Long productId);
+
+    /**
+     * CBS Tier-1 Gap #1: Apply CHECKER-approved GL code changes.
+     *
+     * Per Finacle PDDEF / RBI Internal Controls: when GL codes are modified on a
+     * product with active accounts, the change requires maker-checker approval.
+     * The MAKER submits the change (which creates a PENDING_APPROVAL workflow),
+     * and the CHECKER calls this method to apply the approved GL codes.
+     *
+     * This method is called by the approval workflow callback after the CHECKER
+     * approves the PRODUCT_GL_CHANGE workflow. It re-reads the proposed GL codes
+     * from the workflow's payloadSnapshot and applies them to the product.
+     *
+     * @param workflowId The approved workflow ID containing the GL diff
+     * @return Updated product with new GL codes applied
+     */
+    ProductMaster applyApprovedGlChange(Long workflowId);
+
+    /**
+     * CBS Tier-1 Gap #7: Clone an existing product to create a variant per Finacle PDDEF.
+     *
+     * Per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG: product cloning is a standard
+     * operation for creating product variants (e.g., clone TERM_LOAN_SECURED to create
+     * TERM_LOAN_GOLD with different GL codes and rate ranges). The clone:
+     *   - Copies ALL parameters from the source product (GL codes, rates, limits, etc.)
+     *   - Requires a NEW unique product code (immutable after creation)
+     *   - Starts in ACTIVE status (same as createProduct)
+     *   - configVersion starts at 1 (independent version history)
+     *   - Full audit trail linking clone to source product
+     *
+     * Per RBI Fair Practices Code 2023: product variants must be independently
+     * documented and auditable. The clone link provides traceability.
+     *
+     * @param sourceProductId The product to clone from
+     * @param newProductCode  Unique code for the new product (validated same as createProduct)
+     * @param newProductName  Name for the new product
+     * @return The newly created cloned product
+     */
+    ProductMaster cloneProduct(Long sourceProductId, String newProductCode, String newProductName);
 }

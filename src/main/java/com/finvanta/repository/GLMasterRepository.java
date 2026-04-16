@@ -36,6 +36,23 @@ public interface GLMasterRepository extends JpaRepository<GLMaster, Long> {
     @Query("SELECT gl FROM GLMaster gl WHERE gl.tenantId = :tenantId AND gl.active = true ORDER BY gl.glCode")
     List<GLMaster> findAllActiveOrderByCode(@Param("tenantId") String tenantId);
 
+    // === CBS GLINQ: GL Account Search per Finacle GLINQ / Temenos GL.ENQUIRY ===
+
+    /**
+     * Search GL accounts by code, name, or account type.
+     * Per Finacle GLINQ: operations/audit staff must locate GL accounts instantly
+     * for reconciliation, RBI inspection, and financial statement drill-down.
+     * Per RBI Inspection Manual: inspectors require instant GL lookup during on-site.
+     * Tenant-scoped (no branch isolation — GL is bank-wide per Finacle GL_MASTER).
+     */
+    @Query("SELECT gl FROM GLMaster gl WHERE gl.tenantId = :tenantId AND gl.active = true AND ("
+            + "gl.glCode LIKE CONCAT('%', :query, '%') OR "
+            + "LOWER(gl.glName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(CAST(gl.accountType AS string)) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + " ORDER BY gl.glCode")
+    List<GLMaster> searchGLAccounts(
+            @Param("tenantId") String tenantId, @Param("query") String query);
+
     /** Child GL accounts under a parent header (for GL hierarchy traversal) */
     @Query(
             "SELECT gl FROM GLMaster gl WHERE gl.tenantId = :tenantId AND gl.parentGlCode = :parentCode AND gl.active = true ORDER BY gl.glCode")

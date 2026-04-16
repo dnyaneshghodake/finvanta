@@ -15,6 +15,21 @@
     </c:if>
 </div>
 
+<!-- CBS: CASA Account search per Finacle ACCTINQ -->
+<form method="get" action="${pageContext.request.contextPath}/deposit/search" class="row g-2 mb-3">
+    <div class="col-auto">
+        <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by account no, CIF, customer name..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:320px;" />
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>
+    </div>
+    <c:if test="${not empty searchQuery}">
+    <div class="col-auto">
+        <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-sm btn-outline-secondary">Clear</a>
+    </div>
+    </c:if>
+</form>
+
 <div class="table-responsive">
 <table class="table fv-table fv-datatable table-sm">
 <thead><tr>

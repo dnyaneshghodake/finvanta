@@ -1,5 +1,6 @@
 package com.finvanta.domain.entity;
 
+import com.finvanta.domain.enums.ProductCategory;
 import com.finvanta.domain.enums.ProductStatus;
 
 import jakarta.persistence.*;
@@ -57,9 +58,18 @@ public class ProductMaster extends BaseEntity {
     @Column(name = "product_name", nullable = false, length = 200)
     private String productName;
 
-    /** Product category: TERM_LOAN, OVERDRAFT, CASH_CREDIT, DEMAND_LOAN */
+    /**
+     * Product category per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
+     * Determines GL accounting semantics (loan=ASSET vs deposit=LIABILITY).
+     * IMMUTABLE after creation — changing category would corrupt GL postings
+     * for all existing accounts under this product.
+     *
+     * Stored as VARCHAR via @Enumerated(EnumType.STRING) for readability and
+     * backward compatibility with existing seed data (e.g., 'TERM_LOAN').
+     */
+    @Enumerated(EnumType.STRING)
     @Column(name = "product_category", nullable = false, length = 50)
-    private String productCategory;
+    private ProductCategory productCategory;
 
     @Column(name = "description", length = 500)
     private String description;
@@ -177,6 +187,26 @@ public class ProductMaster extends BaseEntity {
     /** Repayment allocation priority: INTEREST_FIRST, PRINCIPAL_FIRST, PRO_RATA */
     @Column(name = "repayment_allocation", nullable = false, length = 30)
     private String repaymentAllocation = "INTEREST_FIRST";
+
+    /**
+     * CBS Tier-1 Gap #3: Product configuration version counter per Finacle PDDEF.
+     *
+     * Incremented on every product update (parameter or GL change). This provides:
+     *   1. Deterministic version tracking — auditors can query "what was version N?"
+     *      by correlating configVersion with the audit_log before/after state
+     *   2. Optimistic concurrency beyond JPA @Version — configVersion is business-visible
+     *      and included in the audit trail, while JPA version is infrastructure-only
+     *   3. Account-level traceability — LoanAccount/DepositAccount can store the
+     *      configVersion at origination time to answer "which product version was this
+     *      account opened under?" for RBI inspection queries
+     *
+     * Per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG: every product modification
+     * increments the configuration version. The audit_log entry for that version
+     * contains the complete before/after field-level diff (Gap #8).
+     * Together, configVersion + audit_log = full version history without a separate table.
+     */
+    @Column(name = "config_version", nullable = false)
+    private int configVersion = 1;
 
     /** Whether prepayment penalty applies (false for floating rate per RBI) */
     @Column(name = "prepayment_penalty_applicable", nullable = false)

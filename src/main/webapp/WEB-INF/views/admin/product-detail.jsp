@@ -91,11 +91,38 @@
             </div>
 
             <h6 class="mt-4 mb-3">GL Code Mapping (Product &rarr; GL)</h6>
+            <%-- CBS: Category-aware GL labels per Finacle PDDEF --%>
             <table class="table fv-table table-bordered">
                 <thead class="table-light">
                     <tr><th>Transaction Type</th><th>GL Code</th><th>Description</th></tr>
                 </thead>
                 <tbody>
+                <c:choose>
+                    <c:when test="${product.productCategory == 'CASA_SAVINGS' || product.productCategory == 'CASA_CURRENT'}">
+                <tr><td>Deposit Liability</td><td class="fw-bold"><c:out value="${product.glLoanAsset}" /></td><td>Customer deposit balance (LIABILITY)</td></tr>
+                <tr><td>Interest Expense</td><td class="fw-bold"><c:out value="${product.glInterestReceivable}" /></td><td>Interest expense on deposits (EXPENSE)</td></tr>
+                <tr><td>Bank Operations</td><td class="fw-bold"><c:out value="${product.glBankOperations}" /></td><td>Cash / teller operations</td></tr>
+                <tr><td>Interest Expense (P&L)</td><td class="fw-bold"><c:out value="${product.glInterestIncome}" /></td><td>Interest expense on deposits (EXPENSE)</td></tr>
+                <tr><td>Fee Income</td><td class="fw-bold"><c:out value="${product.glFeeIncome}" /></td><td>Service charges, fees</td></tr>
+                <tr><td>Penalty Charges</td><td class="fw-bold"><c:out value="${product.glPenalIncome}" /></td><td>Penalty charges income</td></tr>
+                <tr><td>Interest Expense (Provision)</td><td class="fw-bold"><c:out value="${product.glProvisionExpense}" /></td><td>Interest expense on deposits (EXPENSE)</td></tr>
+                <tr><td>TDS Payable</td><td class="fw-bold"><c:out value="${product.glProvisionNpa}" /></td><td>TDS payable u/s 194A (LIABILITY)</td></tr>
+                <tr><td>Closure/Write-Off Expense</td><td class="fw-bold"><c:out value="${product.glWriteOffExpense}" /></td><td>Account closure charges (EXPENSE)</td></tr>
+                <tr><td>Interest Suspense</td><td class="fw-bold"><c:out value="${product.glInterestSuspense}" /></td><td>Interest suspense (LIABILITY)</td></tr>
+                    </c:when>
+                    <c:when test="${product.productCategory == 'TERM_DEPOSIT'}">
+                <tr><td>FD Deposit Liability</td><td class="fw-bold"><c:out value="${product.glLoanAsset}" /></td><td>FD deposit balance (LIABILITY)</td></tr>
+                <tr><td>FD Interest Payable</td><td class="fw-bold"><c:out value="${product.glInterestReceivable}" /></td><td>Accrued interest owed to depositor (LIABILITY)</td></tr>
+                <tr><td>Bank Operations</td><td class="fw-bold"><c:out value="${product.glBankOperations}" /></td><td>Cash / teller operations</td></tr>
+                <tr><td>FD Interest Expense (P&L)</td><td class="fw-bold"><c:out value="${product.glInterestIncome}" /></td><td>FD interest expense (EXPENSE)</td></tr>
+                <tr><td>Fee Income</td><td class="fw-bold"><c:out value="${product.glFeeIncome}" /></td><td>Service charges, fees</td></tr>
+                <tr><td>Premature Penalty Income</td><td class="fw-bold"><c:out value="${product.glPenalIncome}" /></td><td>Premature withdrawal penalty (INCOME)</td></tr>
+                <tr><td>FD Interest Expense</td><td class="fw-bold"><c:out value="${product.glProvisionExpense}" /></td><td>FD interest expense (EXPENSE)</td></tr>
+                <tr><td>TDS Payable</td><td class="fw-bold"><c:out value="${product.glProvisionNpa}" /></td><td>TDS payable u/s 194A (LIABILITY)</td></tr>
+                <tr><td>Closure/Write-Off Expense</td><td class="fw-bold"><c:out value="${product.glWriteOffExpense}" /></td><td>Account closure charges (EXPENSE)</td></tr>
+                <tr><td>Interest Suspense</td><td class="fw-bold"><c:out value="${product.glInterestSuspense}" /></td><td>Interest suspense (LIABILITY)</td></tr>
+                    </c:when>
+                    <c:otherwise>
                 <tr><td>Loan Asset</td><td class="fw-bold"><c:out value="${product.glLoanAsset}" /></td><td>Outstanding principal</td></tr>
                 <tr><td>Interest Receivable</td><td class="fw-bold"><c:out value="${product.glInterestReceivable}" /></td><td>Accrued interest not yet collected</td></tr>
                 <tr><td>Bank Operations</td><td class="fw-bold"><c:out value="${product.glBankOperations}" /></td><td>Disbursement / collection</td></tr>
@@ -106,6 +133,8 @@
                 <tr><td>Provision for NPA</td><td class="fw-bold"><c:out value="${product.glProvisionNpa}" /></td><td>Contra-asset for loan loss</td></tr>
                 <tr><td>Write-Off Expense</td><td class="fw-bold"><c:out value="${product.glWriteOffExpense}" /></td><td>NPA write-off expense</td></tr>
                 <tr><td>Interest Suspense</td><td class="fw-bold"><c:out value="${product.glInterestSuspense}" /></td><td>NPA interest parking</td></tr>
+                    </c:otherwise>
+                </c:choose>
                 </tbody>
             </table>
         </div>

@@ -33,6 +33,20 @@
     <div class="fv-card">
         <div class="card-header">GL Account Balances</div>
         <div class="card-body">
+            <!-- CBS: GL Account search per Finacle GLINQ -->
+            <form method="get" action="${pageContext.request.contextPath}/accounting/gl/search" class="row g-2 mb-3">
+                <div class="col-auto">
+                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by GL code, name, type (ASSET/LIABILITY)..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:360px;" />
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>
+                </div>
+                <c:if test="${not empty searchQuery}">
+                <div class="col-auto">
+                    <a href="${pageContext.request.contextPath}/accounting/trial-balance" class="btn btn-sm btn-outline-secondary">Clear</a>
+                </div>
+                </c:if>
+            </form>
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
