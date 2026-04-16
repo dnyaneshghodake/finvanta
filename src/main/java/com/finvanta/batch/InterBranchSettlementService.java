@@ -1,6 +1,7 @@
 package com.finvanta.batch;
 
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
+import com.finvanta.accounting.GLConstants;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.InterBranchTransaction;
 import com.finvanta.domain.enums.DebitCredit;
@@ -112,9 +113,11 @@ public class InterBranchSettlementService {
         // Source branch: DR Customer / CR Inter-Branch Payable
         List<JournalLineRequest> sourceLines = List.of(
                 new JournalLineRequest(
-                        "1100", DebitCredit.DEBIT, amount, "Inter-branch transfer from branch " + sourceCode),
+                        GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, amount,
+                        "Inter-branch transfer from branch " + sourceCode),
                 new JournalLineRequest(
-                        "2300", DebitCredit.CREDIT, amount, "Inter-branch payable to branch " + targetCode));
+                        GLConstants.INTER_BRANCH_PAYABLE, DebitCredit.CREDIT, amount,
+                        "Inter-branch payable to branch " + targetCode));
 
         TransactionResult sourceResult = transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("INTER_BRANCH")
@@ -134,9 +137,10 @@ public class InterBranchSettlementService {
         // Target branch: DR Inter-Branch Receivable / CR Customer
         List<JournalLineRequest> targetLines = List.of(
                 new JournalLineRequest(
-                        "1300", DebitCredit.DEBIT, amount, "Inter-branch receivable from branch " + sourceCode),
+                        GLConstants.INTER_BRANCH_RECEIVABLE, DebitCredit.DEBIT, amount,
+                        "Inter-branch receivable from branch " + sourceCode),
                 new JournalLineRequest(
-                        "1100",
+                        GLConstants.BANK_OPERATIONS,
                         DebitCredit.CREDIT,
                         amount,
                         "Inter-branch transfer received from branch " + sourceCode));
