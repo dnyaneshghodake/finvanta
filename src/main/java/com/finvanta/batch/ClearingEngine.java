@@ -26,7 +26,7 @@ import com.finvanta.service.DepositAccountService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
-import com.finvanta.charge.ChargeEngine;
+import com.finvanta.charge.ChargeKernel;
 import com.finvanta.domain.enums.ChargeEventType;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
@@ -81,7 +81,7 @@ public class ClearingEngine {
     private final BusinessDateService bizDateSvc;
     private final AuditService auditSvc;
     private final ApprovalWorkflowService workflowSvc;
-    private final ChargeEngine chargeEngine;
+    private final ChargeKernel chargeKernel;
     private final ClearingStateManager stateMgr;
 
     public ClearingEngine(
@@ -96,7 +96,7 @@ public class ClearingEngine {
             BusinessDateService bizDateSvc,
             AuditService auditSvc,
             ApprovalWorkflowService workflowSvc,
-            ChargeEngine chargeEngine,
+            ChargeKernel chargeKernel,
             ClearingStateManager stateMgr) {
         this.clrRepo = clrRepo;
         this.cycleRepo = cycleRepo;
@@ -109,7 +109,7 @@ public class ClearingEngine {
         this.bizDateSvc = bizDateSvc;
         this.auditSvc = auditSvc;
         this.workflowSvc = workflowSvc;
-        this.chargeEngine = chargeEngine;
+        this.chargeKernel = chargeKernel;
         this.stateMgr = stateMgr;
     }
 
@@ -242,7 +242,7 @@ public class ClearingEngine {
                 case IMPS -> ChargeEventType.IMPS_OUTWARD;
                 case UPI -> ChargeEventType.UPI_OUTWARD;
             };
-            chargeEngine.levyCharge(chargeEvent, custAcct,
+            chargeKernel.levyCharge(chargeEvent, custAcct,
                     GLConstants.SB_DEPOSITS, amt, null,
                     "CLEARING", extRef, br.getBranchCode());
         } catch (Exception e) {

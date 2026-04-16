@@ -39,10 +39,18 @@ public final class GLConstants {
     public static final String SB_DEPOSITS = "2010";
     /** Current Account Deposits — Liability GL for CASA Current accounts */
     public static final String CA_DEPOSITS = "2020";
-    /** CGST Payable — GST liability on service charges (18%) */
+    /** CGST Payable — Central GST liability on service charges (9% intra-state) */
     public static final String CGST_PAYABLE = "2200";
-    /** SGST Payable — State GST liability on service charges (9%) */
+    /** SGST Payable — State GST liability on service charges (9% intra-state) */
     public static final String SGST_PAYABLE = "2201";
+    /**
+     * IGST Payable -- Integrated GST liability on inter-state service charges (18%).
+     * Per GST Act 2017 §5 &amp; §8: when the place of supply (customer state) differs
+     * from the supplier state (branch state), the entire 18% flows to IGST instead
+     * of being split CGST/SGST. RBI Fair Practices Code 2023 requires accurate
+     * state-of-supply determination for all fee postings.
+     */
+    public static final String IGST_PAYABLE = "2202";
     /** Inter-Branch Payable — Settlement payable to other branches */
     public static final String INTER_BRANCH_PAYABLE = "2300";
     // --- CLEARING SUSPENSE GL Codes (per Finacle CLG_MASTER / RBI Payment Systems) ---
