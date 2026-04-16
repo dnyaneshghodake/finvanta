@@ -48,7 +48,32 @@ public class AuditController {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("audit/logs");
         mav.addObject("auditLogs", auditLogRepository.findRecentAuditLogs(tenantId));
+        // CBS: page-load indicator uses the bounded recent-window check
+        // (sub-100ms). Full O(N) chain walk is gated behind /audit/verify
+        // per Finacle/Temenos Tier-1 audit UX -- a synchronous multi-minute
+        // walk on every audit page view would make the UI unusable on any
+        // production-sized audit table.
+        mav.addObject("chainIntegrity",
+                auditService.verifyRecentChainIntegrity(tenantId));
+        return mav;
+    }
+
+    /**
+     * CBS full audit chain verification endpoint per RBI IT Governance Direction 2023 §8.3.
+     *
+     * <p>Triggers the O(N) walk of every audit record. Intentionally kept OFF the
+     * default page-load path (see {@link #auditLogs()}) because it can take minutes
+     * on a production-sized audit table. This endpoint exists so operations /
+     * compliance staff can trigger a full verification on demand during RBI
+     * inspection prep.
+     */
+    @GetMapping("/verify")
+    public ModelAndView verifyFullChain() {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("audit/logs");
+        mav.addObject("auditLogs", auditLogRepository.findRecentAuditLogs(tenantId));
         mav.addObject("chainIntegrity", auditService.verifyChainIntegrity(tenantId));
+        mav.addObject("fullChainVerified", true);
         return mav;
     }
 
@@ -105,7 +130,8 @@ public class AuditController {
             mav.addObject("auditLogs", auditLogRepository.findRecentAuditLogs(tenantId));
         }
 
-        mav.addObject("chainIntegrity", auditService.verifyChainIntegrity(tenantId));
+        mav.addObject("chainIntegrity",
+                auditService.verifyRecentChainIntegrity(tenantId));
         return mav;
     }
 }

@@ -75,7 +75,8 @@ public class SecurityConfig {
     @Order(1)
     public SecurityFilterChain apiSecurityFilterChain(
             HttpSecurity http,
-            JwtAuthenticationFilter jwtFilter)
+            JwtAuthenticationFilter jwtFilter,
+            AuthRateLimitFilter authRateLimitFilter)
             throws Exception {
         http.securityMatcher("/api/v1/**")
                 .authorizeHttpRequests(auth -> auth
@@ -104,6 +105,10 @@ public class SecurityConfig {
                                             + "required. Provide "
                                             + "Bearer token.\"}");
                                 }))
+                // CBS: rate limit auth endpoints BEFORE JWT auth so token issuance
+                // cannot be brute-forced. Per RBI Cyber Security Framework 2024 §6.2.
+                .addFilterBefore(authRateLimitFilter,
+                        UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtFilter,
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();

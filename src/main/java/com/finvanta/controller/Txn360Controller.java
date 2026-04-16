@@ -9,6 +9,8 @@ import com.finvanta.repository.JournalEntryRepository;
 import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.service.Transaction360Service;
+import com.finvanta.service.txn360.TxnRefResolver;
+import com.finvanta.service.txn360.TxnRefResolverRegistry;
 import com.finvanta.util.TenantContext;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -48,6 +50,12 @@ import org.springframework.web.servlet.ModelAndView;
  * specific mapping first. Consolidating the previously-split
  * {@code Transaction360Controller} lookup paths into this class eliminates the
  * ambiguous-mapping surface.
+ *
+ * <p>Reference-type dispatch on the unified {@code /search} endpoint is delegated
+ * to a {@link TxnRefResolverRegistry} -- each {@link TxnRefResolver} claims a
+ * prefix (VCH/TXN/JRN/fallback) and returns a resolution, so adding a new
+ * reference family (e.g. CLR for clearing, IB for inter-branch) is a pure
+ * additive change with no controller edit.
  */
 @Controller
 @RequestMapping("/txn360")
@@ -57,6 +65,7 @@ public class Txn360Controller {
     private final LoanTransactionRepository loanTxnRepository;
     private final JournalEntryRepository journalEntryRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
+    private final TxnRefResolverRegistry txnRefResolverRegistry;
     private final Transaction360Service transaction360Service;
 
     public Txn360Controller(
@@ -64,17 +73,19 @@ public class Txn360Controller {
             LoanTransactionRepository loanTxnRepository,
             JournalEntryRepository journalEntryRepository,
             LedgerEntryRepository ledgerEntryRepository,
+            TxnRefResolverRegistry txnRefResolverRegistry,
             Transaction360Service transaction360Service) {
         this.depositTxnRepository = depositTxnRepository;
         this.loanTxnRepository = loanTxnRepository;
         this.journalEntryRepository = journalEntryRepository;
         this.ledgerEntryRepository = ledgerEntryRepository;
+        this.txnRefResolverRegistry = txnRefResolverRegistry;
         this.transaction360Service = transaction360Service;
     }
 
     /**
-     * Unified transaction search — resolves TXN ref, VCH number, or JRN ref
-     * to the complete transaction lifecycle across CASA and Loan modules.
+     * Unified transaction search -- resolves TXN ref, VCH number, or JRN ref to
+     * the complete transaction lifecycle across CASA and Loan modules.
      */
     @GetMapping("/search")
     public ModelAndView search(@RequestParam(required = false) String q) {
@@ -88,68 +99,29 @@ public class Txn360Controller {
         String tenantId = TenantContext.getCurrentTenant();
         String ref = q.trim();
 
-        // CBS: Detect reference type by prefix and search the appropriate field.
-        // Per Finacle TRAN_INQUIRY: the system auto-detects the reference type
-        // and searches across ALL modules (Deposit + Loan).
-        DepositTransaction depositTxn = null;
-        LoanTransaction loanTxn = null;
-        JournalEntry journalEntry = null;
-        List<LedgerEntry> ledgerEntries = List.of();
+        // CBS: Delegate reference-type detection to the strategy registry. Each
+        // TxnRefResolver claims a prefix (VCH/TXN/JRN/fallback) and returns a
+        // resolution that the controller assembles into the view model. Adding
+        // a new reference family (e.g. CLR for clearing, IB for inter-branch)
+        // is a pure additive change -- publish a new TxnRefResolver bean, no
+        // controller edit required. Per Finacle TRAN_INQUIRY dispatcher pattern.
+        TxnRefResolver.TxnRefResolution resolution =
+                txnRefResolverRegistry.resolve(tenantId, ref);
 
-        if (ref.startsWith("VCH")) {
-            // CBS: Voucher lookup returns List because fund transfers create two subledger
-            // entries (TRANSFER_DEBIT + TRANSFER_CREDIT) sharing the same voucher number.
-            // Per Finacle TRAN_INQUIRY: show the first match; the full lifecycle is visible
-            // via the shared journal entry which links to both legs.
-            var depositVchResults = depositTxnRepository
-                    .findByTenantIdAndVoucherNumber(tenantId, ref);
-            depositTxn = depositVchResults.isEmpty() ? null : depositVchResults.get(0);
-            if (depositTxn == null) {
-                loanTxn = loanTxnRepository
-                        .findByTenantIdAndVoucherNumber(tenantId, ref).orElse(null);
-            }
-        } else if (ref.startsWith("TXN")) {
-            depositTxn = depositTxnRepository
-                    .findByTenantIdAndTransactionRef(tenantId, ref).orElse(null);
-            if (depositTxn == null) {
-                loanTxn = loanTxnRepository
-                        .findByTenantIdAndTransactionRef(tenantId, ref).orElse(null);
-            }
-        } else if (ref.startsWith("JRN")) {
-            journalEntry = journalEntryRepository
-                    .findByTenantIdAndJournalRef(tenantId, ref).orElse(null);
-        } else {
-            // Unknown prefix — try all in order: deposit → loan → journal
-            depositTxn = depositTxnRepository
-                    .findByTenantIdAndTransactionRef(tenantId, ref).orElse(null);
-            if (depositTxn == null) {
-                loanTxn = loanTxnRepository
-                        .findByTenantIdAndTransactionRef(tenantId, ref).orElse(null);
-            }
-            if (depositTxn == null && loanTxn == null) {
-                var depVchFallback = depositTxnRepository
-                        .findByTenantIdAndVoucherNumber(tenantId, ref);
-                depositTxn = depVchFallback.isEmpty() ? null : depVchFallback.get(0);
-            }
-            if (depositTxn == null && loanTxn == null) {
-                loanTxn = loanTxnRepository
-                        .findByTenantIdAndVoucherNumber(tenantId, ref).orElse(null);
-            }
-            if (depositTxn == null && loanTxn == null) {
-                journalEntry = journalEntryRepository
-                        .findByTenantIdAndJournalRef(tenantId, ref).orElse(null);
-            }
-        }
+        DepositTransaction depositTxn = resolution.depositTxn();
+        LoanTransaction loanTxn = resolution.loanTxn();
+        JournalEntry journalEntry = resolution.journalEntry();
+        List<LedgerEntry> ledgerEntries = List.of();
 
         // Resolve journal entry from subledger transaction
         Long journalEntryId = null;
         if (depositTxn != null) {
             mav.addObject("depositTxn", depositTxn);
-            mav.addObject("sourceModule", "DEPOSIT");
+            mav.addObject("sourceModule", resolution.sourceModule());
             journalEntryId = depositTxn.getJournalEntryId();
         } else if (loanTxn != null) {
             mav.addObject("loanTxn", loanTxn);
-            mav.addObject("sourceModule", "LOAN");
+            mav.addObject("sourceModule", resolution.sourceModule());
             journalEntryId = loanTxn.getJournalEntryId();
         }
 
@@ -169,8 +141,7 @@ public class Txn360Controller {
             mav.addObject("ledgerEntries", ledgerEntries);
         }
 
-        // If nothing found at all
-        if (depositTxn == null && loanTxn == null && journalEntry == null) {
+        if (resolution.isEmpty()) {
             mav.addObject("error", "No transaction found for reference: " + ref);
         }
 
@@ -180,8 +151,8 @@ public class Txn360Controller {
     /**
      * Transaction 360 by voucher number.
      *
-     * <p>Voucher format contains slashes: {@code VCH/{branchCode}/{YYYYMMDD}/{seq}}. Spring MVC
-     * treats '/' as a path delimiter, so we use {@code /voucher/**} and extract the full
+     * <p>Voucher format contains slashes: {@code VCH/{branchCode}/{YYYYMMDD}/{seq}}. Spring
+     * MVC treats '/' as a path delimiter, so we use {@code /voucher/**} and extract the full
      * voucher from the request URI after the {@code /txn360/voucher/} prefix.
      *
      * <p>Per Finacle VCH_INQUIRY: the voucher register is the branch-level daily book of
