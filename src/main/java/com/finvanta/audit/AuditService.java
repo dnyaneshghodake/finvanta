@@ -176,23 +176,28 @@ public class AuditService {
                 return false;
             }
         }
-        // If the recent window is smaller than the page limit, we have the
-        // entire chain in memory -- verify the GENESIS link too.
-        if (recent.size() < RECENT_VERIFICATION_WINDOW) {
-            AuditLog oldest = recent.get(recent.size() - 1);
-            if (!"GENESIS".equals(oldest.getPreviousHash())) {
-                log.error(
-                        "AUDIT TAMPER: oldest record id={} does not link to GENESIS",
-                        oldest.getId());
-                return false;
-            }
-            String recomputedOldest = computeHash(oldest, oldest.getPreviousHash());
-            if (!recomputedOldest.equals(oldest.getHash())) {
-                log.error(
-                        "AUDIT TAMPER: hash mismatch on oldest record id={}",
-                        oldest.getId());
-                return false;
-            }
+        // The loop above validated indices [0 .. size-2]; the oldest entry
+        // (index size-1) has NOT been hash-recomputed yet -- the chain-link
+        // check at i=size-2 only validated current.previousHash against the
+        // *stored* hash of the oldest, not the oldest's own payload.
+        // Recompute it here so a payload tamper on the 500th-most-recent
+        // record is still detected even when the window is exactly full.
+        AuditLog oldest = recent.get(recent.size() - 1);
+        String recomputedOldest = computeHash(oldest, oldest.getPreviousHash());
+        if (!recomputedOldest.equals(oldest.getHash())) {
+            log.error(
+                    "AUDIT TAMPER (recent window): hash mismatch on oldest record id={}",
+                    oldest.getId());
+            return false;
+        }
+        // If the recent window is smaller than the page limit we have the
+        // entire chain in memory -- the oldest record MUST link to GENESIS.
+        if (recent.size() < RECENT_VERIFICATION_WINDOW
+                && !"GENESIS".equals(oldest.getPreviousHash())) {
+            log.error(
+                    "AUDIT TAMPER: oldest record id={} does not link to GENESIS",
+                    oldest.getId());
+            return false;
         }
         return true;
     }
