@@ -4,9 +4,13 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -67,11 +71,9 @@ class CbsArchitectureTest {
                 .resideOutsideOfPackage("com.finvanta.accounting..")
                 .and()
                 .doNotHaveSimpleName("TransactionEngine")
-                .should()
-                .callMethod(
+                .should(callMethodByName(
                         "com.finvanta.accounting.AccountingService",
-                        "postJournalEntry",
-                        com.finvanta.accounting.JournalPostingRequest.class)
+                        "postJournalEntry"))
                 .because(
                         "CBS: only TransactionEngine may post to the GL -- every other "
                                 + "posting must route through TransactionEngine.execute(). "
@@ -93,14 +95,42 @@ class CbsArchitectureTest {
                 .resideOutsideOfPackage("com.finvanta.accounting..")
                 .and()
                 .doNotHaveSimpleName("TransactionEngine")
-                .should()
-                .callMethod("com.finvanta.accounting.AccountingService", "generateEngineToken")
-                .orShould()
-                .callMethod("com.finvanta.accounting.AccountingService", "clearEngineToken")
+                .should(callMethodByName(
+                        "com.finvanta.accounting.AccountingService", "generateEngineToken"))
+                .orShould(callMethodByName(
+                        "com.finvanta.accounting.AccountingService", "clearEngineToken"))
                 .because(
                         "CBS: ENGINE_TOKEN helpers are internal to the TransactionEngine "
                                 + "posting spine. Calling them from a service bypasses the engine.");
         rule.check(classes);
+    }
+
+    /**
+     * ArchUnit {@link ArchCondition} that matches any method call to a given
+     * owner class + method name, irrespective of parameter types. This is the
+     * Tier-1 pattern for enforcing "nobody outside X may invoke Y.z(...)"
+     * across overloaded signatures without having to enumerate every overload
+     * and without depending on internal parameter-record types (which refactor
+     * naturally between phases).
+     */
+    private static ArchCondition<com.tngtech.archunit.core.domain.JavaClass>
+            callMethodByName(String ownerFqn, String methodName) {
+        return new ArchCondition<>(
+                "call " + ownerFqn + "." + methodName + "(..)") {
+            @Override
+            public void check(
+                    com.tngtech.archunit.core.domain.JavaClass item,
+                    ConditionEvents events) {
+                for (JavaMethodCall call : item.getMethodCallsFromSelf()) {
+                    if (call.getTargetOwner().getFullName().equals(ownerFqn)
+                            && call.getTarget().getName().equals(methodName)) {
+                        events.add(SimpleConditionEvent.violated(
+                                call,
+                                call.getDescription()));
+                    }
+                }
+            }
+        };
     }
 
     /**
