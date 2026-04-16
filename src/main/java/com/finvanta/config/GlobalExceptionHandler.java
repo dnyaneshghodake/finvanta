@@ -61,6 +61,21 @@ public class GlobalExceptionHandler {
         return "";
     }
 
+    /**
+     * CBS: Client-abort is a client-side event (browser navigated away, connection
+     * dropped, proxy timeout) — NOT a server error. Logging at ERROR creates false
+     * alerts in production monitoring. Per Finacle/Temenos Tier-1 ops standards:
+     * client disconnects are operational noise, not actionable incidents.
+     */
+    @ExceptionHandler(org.apache.catalina.connector.ClientAbortException.class)
+    public ModelAndView handleClientAbort(
+            org.apache.catalina.connector.ClientAbortException ex) {
+        log.debug("Client aborted connection: {}", ex.getMessage());
+        // Return null — the client is gone, there's nobody to send a response to.
+        // Spring MVC handles null ModelAndView by completing the response as-is.
+        return null;
+    }
+
     @ExceptionHandler(Exception.class)
     public ModelAndView handleGenericException(Exception ex) {
         log.error("Unexpected error: {}", ex.getMessage(), ex);
