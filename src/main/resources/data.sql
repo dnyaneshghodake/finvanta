@@ -167,6 +167,11 @@ INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance,
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '1300', 'Inter-Branch Receivable', 'ASSET', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2200', 'CGST Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2201', 'SGST Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+-- IGST Payable (GL 2202) -- inter-state GST head per GST Act 2017 sections 5 and 8.
+-- AccountingService.postJournalEntry validates every GL against gl_master; without
+-- this row ChargeKernel.levyCharge would fail with ACCOUNTING_GL_NOT_FOUND on every
+-- inter-state levy, breaking the IGST feature introduced in Phase 2.
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2202', 'IGST Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2300', 'Inter-Branch Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Clearing Suspense GL (legacy — deprecated, use rail-specific GLs below)

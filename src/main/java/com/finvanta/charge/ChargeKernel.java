@@ -200,17 +200,30 @@ public class ChargeKernel {
         lines.add(new JournalLineRequest(
                 def.getGlFeeIncome(), DebitCredit.CREDIT, baseFee,
                 def.getChargeName()));
+        // CBS: GST credit legs must be posted independently for CGST and SGST so
+        // that a paisa-rounding asymmetry (e.g. baseFee INR 0.03 where totalGst
+        // rounds up to 0.01 but cgst = 0.03 * 9% = 0.0027 rounds to 0.00) does
+        // not silently drop the SGST credit leg. If the SGST leg were gated by
+        // cgst > 0, the totalDebit (which includes gst.sgst()) would exceed the
+        // sum of emitted credits and TransactionEngine's balance check would
+        // reject the posting with ACCOUNTING_UNBALANCED. Per Finacle CHG_ENGINE
+        // / Temenos FT.COMMISSION: every non-zero GST component must map to its
+        // own CR line, irrespective of the sibling component's rounded value.
         if (gst.igst().signum() > 0) {
             lines.add(new JournalLineRequest(
                     GLConstants.IGST_PAYABLE, DebitCredit.CREDIT, gst.igst(),
                     "IGST on " + def.getChargeName()));
-        } else if (gst.cgst().signum() > 0) {
-            lines.add(new JournalLineRequest(
-                    GLConstants.CGST_PAYABLE, DebitCredit.CREDIT, gst.cgst(),
-                    "CGST on " + def.getChargeName()));
-            lines.add(new JournalLineRequest(
-                    GLConstants.SGST_PAYABLE, DebitCredit.CREDIT, gst.sgst(),
-                    "SGST on " + def.getChargeName()));
+        } else {
+            if (gst.cgst().signum() > 0) {
+                lines.add(new JournalLineRequest(
+                        GLConstants.CGST_PAYABLE, DebitCredit.CREDIT, gst.cgst(),
+                        "CGST on " + def.getChargeName()));
+            }
+            if (gst.sgst().signum() > 0) {
+                lines.add(new JournalLineRequest(
+                        GLConstants.SGST_PAYABLE, DebitCredit.CREDIT, gst.sgst(),
+                        "SGST on " + def.getChargeName()));
+            }
         }
 
         TransactionResult result = txnEngine.execute(
