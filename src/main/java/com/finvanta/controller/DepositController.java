@@ -273,7 +273,19 @@ public class DepositController {
             if (amount == null || amount.signum() <= 0) {
                 throw new BusinessException("INVALID_AMOUNT", "Deposit amount must be positive");
             }
-            LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+            // CBS: Resolve business date from the ACCOUNT's branch, not the user's branch.
+            // Per Finacle TRAN_POSTING: the transaction is posted at the account's branch,
+            // so the business date must come from that branch's calendar. An ADMIN at HQ
+            // (HEAD_OFFICE — administrative, no calendar) must be able to post deposits
+            // to operational branch accounts without switching branches first.
+            DepositAccount account = depositService.getAccount(accountNumber);
+            Long accountBranchId = account.getBranch() != null ? account.getBranch().getId() : null;
+            LocalDate businessDate;
+            if (accountBranchId != null) {
+                businessDate = businessDateService.getCurrentBusinessDate(accountBranchId);
+            } else {
+                businessDate = businessDateService.getCurrentBusinessDate();
+            }
             DepositTransaction txn =
                     depositService.deposit(accountNumber, amount, businessDate, narration, null, "BRANCH");
             ra.addFlashAttribute("success", "Deposit of INR " + amount + " posted. Voucher: " + txn.getVoucherNumber());
@@ -302,7 +314,15 @@ public class DepositController {
             if (amount == null || amount.signum() <= 0) {
                 throw new BusinessException("INVALID_AMOUNT", "Withdrawal amount must be positive");
             }
-            LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+            // CBS: Resolve business date from the ACCOUNT's branch (same pattern as deposit).
+            DepositAccount account = depositService.getAccount(accountNumber);
+            Long accountBranchId = account.getBranch() != null ? account.getBranch().getId() : null;
+            LocalDate businessDate;
+            if (accountBranchId != null) {
+                businessDate = businessDateService.getCurrentBusinessDate(accountBranchId);
+            } else {
+                businessDate = businessDateService.getCurrentBusinessDate();
+            }
             DepositTransaction txn =
                     depositService.withdraw(accountNumber, amount, businessDate, narration, null, "BRANCH");
             ra.addFlashAttribute(
@@ -351,7 +371,18 @@ public class DepositController {
             if (fromAccount == null || fromAccount.isBlank() || toAccount == null || toAccount.isBlank()) {
                 throw new BusinessException("MISSING_ACCOUNT", "Both source and target accounts are required");
             }
-            LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+            // CBS: Resolve business date from the SOURCE account's branch.
+            // Per Finacle TRAN_POSTING: inter-branch transfers use the source branch's
+            // business date. The target branch may be on a different date (per-branch
+            // day control), but the debit leg is authoritative for the transaction date.
+            DepositAccount sourceAccount = depositService.getAccount(fromAccount);
+            Long sourceBranchId = sourceAccount.getBranch() != null ? sourceAccount.getBranch().getId() : null;
+            LocalDate businessDate;
+            if (sourceBranchId != null) {
+                businessDate = businessDateService.getCurrentBusinessDate(sourceBranchId);
+            } else {
+                businessDate = businessDateService.getCurrentBusinessDate();
+            }
             DepositTransaction txn =
                     depositService.transfer(fromAccount, toAccount, amount, businessDate, narration, null);
             ra.addFlashAttribute(
@@ -466,7 +497,15 @@ public class DepositController {
             if (reason == null || reason.isBlank()) {
                 throw new BusinessException("REASON_REQUIRED", "Reversal reason is mandatory");
             }
-            LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+            // CBS: Resolve business date from the account's branch (same pattern as deposit/withdraw).
+            DepositAccount account = depositService.getAccount(accountNumber);
+            Long accountBranchId = account.getBranch() != null ? account.getBranch().getId() : null;
+            LocalDate businessDate;
+            if (accountBranchId != null) {
+                businessDate = businessDateService.getCurrentBusinessDate(accountBranchId);
+            } else {
+                businessDate = businessDateService.getCurrentBusinessDate();
+            }
             depositService.reverseTransaction(transactionRef, reason, businessDate);
             ra.addFlashAttribute("success", "Transaction reversed: " + transactionRef);
         } catch (Exception e) {
