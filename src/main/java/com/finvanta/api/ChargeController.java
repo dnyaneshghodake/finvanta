@@ -168,17 +168,33 @@ public class ChargeController {
 
     public record ChargeResponse(
             Long chargeDefinitionId,
+            /** Persisted ChargeTransaction ID -- required for subsequent waiver/reversal calls. */
+            Long chargeTransactionId,
             BigDecimal baseFee,
+            /** CGST component (intra-state 9%, else zero). */
+            BigDecimal cgstAmount,
+            /** SGST component (intra-state 9%, else zero). */
+            BigDecimal sgstAmount,
+            /** IGST component (inter-state 18%, else zero). */
+            BigDecimal igstAmount,
+            /** Total GST (CGST + SGST + IGST). Kept for backward-compat with consumers that read a single GST field. */
             BigDecimal gstAmount,
             BigDecimal totalDebit,
+            /** {@code true} if this charge was classified as inter-state (IGST only) per GST Act 2017 §5. */
+            boolean interState,
             Long journalEntryId,
             String voucherNumber) {
         static ChargeResponse from(ChargeResult r) {
             return new ChargeResponse(
                     r.chargeDefinitionId(),
+                    r.chargeTransactionId(),
                     r.baseFee(),
+                    r.cgstAmount(),
+                    r.sgstAmount(),
+                    r.igstAmount(),
                     r.totalGst(),
                     r.totalDebit(),
+                    r.isInterState(),
                     r.journalEntryId(),
                     r.voucherNumber());
         }
