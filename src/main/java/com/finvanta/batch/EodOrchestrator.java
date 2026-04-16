@@ -49,17 +49,13 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * CBS End-of-Day Batch Orchestrator (Phase 2) per Finacle EOD / Temenos COB.
  *
- * <b>IMPORTANT: This is the Phase 2 EOD orchestrator with inter-branch settlement
- * and clearing validation. The currently active EOD entry point used by
- * {@link com.finvanta.controller.BatchController} is
- * {@link com.finvanta.legacy.BatchService#runEodBatch(java.time.LocalDate)}.
- * Do NOT wire both into the same controller/scheduler.</b>
+ * <p>This is the <b>active</b> EOD entry point. {@link com.finvanta.controller.BatchController}
+ * calls {@link #executeEod(LocalDate)} directly at {@code POST /batch/eod/apply}.
+ * The legacy {@code com.finvanta.legacy.BatchService} is no longer wired into any
+ * controller and is retained only for batch-history queries via
+ * {@link BatchHistoryService}. It will be deleted in a future release.
  *
- * <p>When Phase 2 migration is complete (inter-branch and clearing modules validated),
- * switch {@code BatchController} to call {@code EodOrchestrator.executeEod()} and
- * delete the legacy {@code com.finvanta.legacy.BatchService}.
- *
- * <p>Differences from legacy BatchService:
+ * <p>Differences from the legacy BatchService:
  * <ul>
  *   <li>Adds Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)</li>
  *   <li>Adds Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)</li>
