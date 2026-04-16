@@ -66,8 +66,15 @@ public class AuditService {
         String beforeJson = serializeToJson(beforeState);
         String afterJson = serializeToJson(afterState);
 
+        // CBS: Use pessimistic lock (SELECT ... FOR UPDATE) on the latest audit
+        // record to serialize concurrent inserts and prevent hash-chain breaks.
+        // Without this lock, two concurrent REQUIRES_NEW audit events (e.g., dual
+        // LOGOUT events during a single logout action) both see the same "latest"
+        // record, both set previousHash to its hash, and both save — creating two
+        // records pointing to the same predecessor instead of forming a chain.
+        // The lock ensures the second thread blocks until the first commits.
         String previousHash = auditLogRepository
-                .findLatestByTenantId(tenantId)
+                .findAndLockLatestByTenantId(tenantId)
                 .map(AuditLog::getHash)
                 .orElse("GENESIS");
 

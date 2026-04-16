@@ -6,9 +6,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import jakarta.persistence.LockModeType;
+
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -52,6 +55,34 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
         List<AuditLog> logs = findTopByTenantIdOrderByIdDesc(tenantId);
         return logs.isEmpty() ? Optional.empty() : Optional.of(logs.get(0));
     }
+
+    /**
+     * Fetch the latest audit record with a pessimistic write lock (SELECT ... FOR UPDATE).
+     * Used by {@code AuditService.logEvent()} to serialize concurrent audit inserts
+     * and prevent hash-chain breaks.
+     *
+     * <p><b>Why this is needed:</b> {@code logEvent()} uses {@code REQUIRES_NEW}
+     * propagation, so two concurrent audit events (e.g., dual LOGOUT events fired
+     * simultaneously during a single logout action) each run in their own transaction.
+     * Without a lock, both threads call {@code findLatestByTenantId()} and see the
+     * same "latest" record, both set {@code previousHash} to that record's hash,
+     * and both save — resulting in two records pointing to the same predecessor
+     * instead of forming a chain. The second record's {@code previousHash} should
+     * point to the first record, not to their shared predecessor.
+     *
+     * <p>The pessimistic lock on the latest record ensures the second thread blocks
+     * until the first thread's REQUIRES_NEW transaction commits, at which point the
+     * second thread sees the first thread's newly-inserted record as the latest.
+     */
+    default Optional<AuditLog> findAndLockLatestByTenantId(String tenantId) {
+        List<AuditLog> logs = findTopByTenantIdForUpdate(tenantId, PageRequest.of(0, 1));
+        return logs.isEmpty() ? Optional.empty() : Optional.of(logs.get(0));
+    }
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId ORDER BY al.id DESC")
+    List<AuditLog> findTopByTenantIdForUpdate(
+            @Param("tenantId") String tenantId, Pageable pageable);
 
     @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId ORDER BY al.id DESC")
     List<AuditLog> findTopByTenantIdOrderByIdDesc(
