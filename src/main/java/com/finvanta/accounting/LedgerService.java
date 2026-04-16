@@ -204,9 +204,46 @@ public class LedgerService {
                     "Tenant ledger sentinel race resolved by PK: tenant={}",
                     tenantId);
         }
-        return ledgerStateRepository.findAndLock(tenantId)
+        TenantLedgerState state = ledgerStateRepository.findAndLock(tenantId)
                 .orElseThrow(() -> new IllegalStateException(
                         "tenant_ledger_state row disappeared for tenant=" + tenantId));
+
+        // CBS LEGACY TENANT SEEDING per Finacle LEDGER_STATE bootstrap:
+        // a freshly bootstrapped sentinel starts at (lastSequence=0,
+        // lastHash=GENESIS). If ledger_entries already contains rows for
+        // this tenant (e.g. the tenant predates the sentinel table), the
+        // next posting would compute sequence=1 and collide with the
+        // existing seq=1 on uq_ledger_tenant_seq, rolling back the outer
+        // posting transaction while the sentinel (committed in its own
+        // REQUIRES_NEW TX) remains stuck at lastSequence=0. Every
+        // subsequent posting would repeat the failure -- a permanent
+        // broken state for the tenant.
+        //
+        // We resolve this by re-seeding a fresh sentinel from the actual
+        // ledger tail whenever we detect the fresh marker. Safe under
+        // concurrency because:
+        //   (1) we already hold PESSIMISTIC_WRITE on the sentinel row, so
+        //       no peer can be posting for this tenant right now;
+        //   (2) the re-seed save persists inside the OUTER posting TX --
+        //       if anything below fails, the rollback unwinds the seed
+        //       too and the next caller repeats it idempotently.
+        if (state.getLastSequence() == 0 && "GENESIS".equals(state.getLastHash())) {
+            java.util.Optional<LedgerEntry> tail =
+                    ledgerRepository.findLatestByTenantId(tenantId);
+            if (tail.isPresent()) {
+                LedgerEntry latest = tail.get();
+                state.setLastSequence(latest.getLedgerSequence());
+                state.setLastHash(latest.getHashValue());
+                state.setUpdatedAt(LocalDateTime.now());
+                ledgerStateRepository.save(state);
+                log.info(
+                        "Legacy tenant sentinel seeded from ledger tail: "
+                                + "tenant={}, lastSequence={}",
+                        tenantId,
+                        latest.getLedgerSequence());
+            }
+        }
+        return state;
     }
 
     /**
