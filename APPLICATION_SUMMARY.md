@@ -1111,8 +1111,10 @@ Impact:
 ### VII.1 Current Limitations (v0.0.1-SNAPSHOT)
 
 1. **Single JVM Deployment** - No distributed ledger sequencing
-   - First-posting race on empty ledger: UNIQUE constraint safety net
-   - Production: Use DB sequence or sentinel row per tenant
+   - Ledger sequence serialization uses TenantLedgerState sentinel row
+     (SELECT ... FOR UPDATE) — safe for single-node; distributed deployments
+     need Redis/DB-sequence coordination
+   - ~~First-posting race~~ resolved via sentinel bootstrap (Phase 2)
 
 2. **H2 In-Memory Database** - Development only
    - Data lost on restart
@@ -1122,12 +1124,14 @@ Impact:
    - Cannot modify EMI, tenure post-approval
 
 4. **Manual EOD Trigger** - Not scheduled
-   - Admin must call EodOrchestrator.executeEod() manually
+   - Admin triggers via POST /batch/eod/apply (BatchController → EodOrchestrator)
    - Future: Quartz scheduler integration
 
-5. **Single Tenant Focus** - Demo mode
-   - TenantFilter hardcodes DEFAULT if no header
-   - Production: API gateway enforces X-Tenant-Id
+5. **Multi-Tenant API Enforcement** - Partial
+   - API requests (/api/v1/**) now fail-fast with HTTP 400 if X-Tenant-Id
+     header is missing or malformed (TenantFilter API chain)
+   - UI requests still fall back to DEFAULT for login/static pages
+   - Production: API gateway should enforce X-Tenant-Id upstream
 
 ### VII.2 Production Enhancements Required
 
