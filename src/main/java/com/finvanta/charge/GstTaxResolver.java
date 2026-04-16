@@ -88,7 +88,12 @@ public class GstTaxResolver {
         BigDecimal cgst = baseFee
                 .multiply(CGST_RATE)
                 .divide(HUNDRED, 2, RoundingMode.HALF_UP);
-        BigDecimal sgst = totalGst.subtract(cgst);
+        // CBS: SGST is derived as (totalGst - CGST) so CGST + SGST == totalGst exactly.
+        // Guard against the theoretical edge case where independent HALF_UP rounding of
+        // CGST exceeds totalGst (e.g. baseFee = INR 0.01 in a future sub-paisa regime),
+        // which would produce a negative SGST and violate GST Act 2017 / double-entry
+        // accounting principles. max(0) is the banking-safe floor.
+        BigDecimal sgst = totalGst.subtract(cgst).max(BigDecimal.ZERO);
         return new GstSplit(cgst, sgst, BigDecimal.ZERO);
     }
 

@@ -180,7 +180,14 @@ public class ChargeKernel {
         Branch branch = branchRepo
                 .findByTenantIdAndBranchCode(tid, branchCode)
                 .orElse(null);
-        String branchStateCode = branch != null ? branch.getState() : null;
+        // CBS: Use regionCode (2-letter ISO-like code, e.g. "MH", "KA", "DL") for
+        // GST place-of-supply comparison, NOT state (full name, e.g. "Maharashtra").
+        // GstTaxResolver.resolve() compares branchStateCode with customerStateCode via
+        // equalsIgnoreCase(); using the full state name would always mismatch against
+        // the 2-letter customerStateCode, causing every charge to be incorrectly
+        // classified as inter-state (IGST) instead of intra-state (CGST+SGST) --
+        // a GST Act 2017 compliance violation and ITC mismatch at the customer's end.
+        String branchStateCode = branch != null ? branch.getRegionCode() : null;
 
         GstSplit gst = gstResolver.resolve(
                 baseFee, def.isGstApplicable(), branchStateCode, customerStateCode);

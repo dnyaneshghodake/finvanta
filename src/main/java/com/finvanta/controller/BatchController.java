@@ -1,7 +1,7 @@
 package com.finvanta.controller;
 
+import com.finvanta.batch.BatchHistoryService;
 import com.finvanta.batch.EodOrchestrator;
-import com.finvanta.legacy.BatchService;
 import com.finvanta.batch.EodTrialService;
 import com.finvanta.batch.EodTrialService.EodCheckResult;
 import com.finvanta.service.BusinessDateService;
@@ -35,19 +35,19 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 public class BatchController {
 
     private final EodOrchestrator eodOrchestrator;
-    private final BatchService batchService;
+    private final BatchHistoryService batchHistoryService;
     private final EodTrialService eodTrialService;
     private final TransactionBatchService transactionBatchService;
     private final BusinessDateService businessDateService;
 
     public BatchController(
             EodOrchestrator eodOrchestrator,
-            BatchService batchService,
+            BatchHistoryService batchHistoryService,
             EodTrialService eodTrialService,
             TransactionBatchService transactionBatchService,
             BusinessDateService businessDateService) {
         this.eodOrchestrator = eodOrchestrator;
-        this.batchService = batchService;
+        this.batchHistoryService = batchHistoryService;
         this.eodTrialService = eodTrialService;
         this.transactionBatchService = transactionBatchService;
         this.businessDateService = businessDateService;
@@ -57,7 +57,7 @@ public class BatchController {
     @GetMapping("/eod")
     public ModelAndView eodPage() {
         ModelAndView mav = new ModelAndView("batch/eod");
-        mav.addObject("batchHistory", batchService.getBatchHistory());
+        mav.addObject("batchHistory", batchHistoryService.getBatchHistory());
         // CBS: Use getOpenDayOrNull() which returns the DAY_OPEN calendar entry.
         // The deprecated findCurrentBusinessDate() returned the MAX non-holiday date
         // where EOD is not complete — which could be April 30 instead of April 1.
@@ -77,7 +77,7 @@ public class BatchController {
             boolean trialClean = eodTrialService.isTrialClean(trialResults);
 
             ModelAndView mav = new ModelAndView("batch/eod");
-            mav.addObject("batchHistory", batchService.getBatchHistory());
+            mav.addObject("batchHistory", batchHistoryService.getBatchHistory());
             mav.addObject("currentBusinessDate", businessDateService.getOpenDayOrNull());
             mav.addObject("trialResults", trialResults);
             mav.addObject("trialClean", trialClean);
