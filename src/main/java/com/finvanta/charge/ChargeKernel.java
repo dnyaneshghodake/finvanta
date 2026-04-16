@@ -213,10 +213,6 @@ public class ChargeKernel {
             lines.add(new JournalLineRequest(
                     GLConstants.IGST_PAYABLE, DebitCredit.CREDIT, gst.igst(),
                     "IGST on " + def.getChargeName()));
-        if (gst.igst().signum() > 0) {
-            lines.add(new JournalLineRequest(
-                    GLConstants.IGST_PAYABLE, DebitCredit.CREDIT, gst.igst(),
-                    "IGST on " + def.getChargeName()));
         } else {
             if (gst.cgst().signum() > 0) {
                 lines.add(new JournalLineRequest(
