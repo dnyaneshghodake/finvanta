@@ -31,26 +31,36 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * CBS Loan Charges Engine per Finacle CHRG_MASTER / Temenos AA.CHARGE.
  *
- * Loan-specific charge calculation and GL posting engine.
- * Handles processing fees, stamp duty, documentation charges, and late payment fees
- * with slab-based tiering and GST support via the TransactionEngine.
+ * <p><b>Legacy loan-specific fee engine.</b> Retained only for the existing
+ * loan fee posting path (processing fee, stamp duty, documentation, late-payment
+ * fees) which uses the {@code ChargeConfig} slab-based model.
  *
- * Charge Types:
- * - FLAT: Fixed amount (e.g., INR 500)
- * - PERCENTAGE: % of base (e.g., 1% of loan amount)
- * - SLAB: Tiered rates (e.g., STAMP_DUTY varies by loan amount)
+ * <p>For cross-cutting charges (Clearing, CASA, and the unified charge API),
+ * use {@link com.finvanta.charge.ChargeKernel} which consolidates levy / waive /
+ * <b>symmetric reverse</b> with proper CGST/SGST/IGST split per GST Act 2017 §8.
+ * The loan path will migrate to the kernel model once {@code ChargeConfig} is
+ * folded into {@code ChargeDefinition}; until then this engine adds its own
+ * {@link #reverseCharge} for symmetric RBI FPC 2023 §5.7 compliance so that no
+ * loan fee posting lacks a reversal primitive (audit finding H6).
  *
- * GST Handling (per RBI Integrated GST guidelines):
- * If charge is GST applicable, a 3-leg journal is posted:
+ * <p>Charge Types:
+ * <ul>
+ *   <li>FLAT       -- Fixed amount (e.g., INR 500)</li>
+ *   <li>PERCENTAGE -- % of base (e.g., 1% of loan amount)</li>
+ *   <li>SLAB       -- Tiered rates (e.g., STAMP_DUTY varies by loan amount)</li>
+ * </ul>
+ *
+ * <p>GST Handling (per RBI Integrated GST guidelines, loan path):
+ * if charge is GST applicable, a 3-leg journal is posted:
+ * <pre>
  *   DR Customer/Bank Ops (1100)
  *   CR Charge Income (product-specific or global GL code)
- *   CR GST Payable (2200/2201 CGST/SGST)
- *
- * Per RBI Fair Lending Code 2023: All charges are transparent, justified, and reversible.
- * Per Finacle CHRG_MASTER: Charge application deferred until explicit applyCharge() call.
- *
- * For cross-cutting charges (Clearing/CASA), see {@link com.finvanta.charge.ChargeEngine}.
+ *   CR GST Payable (2200 default, single head)
+ * </pre>
+ * The kernel model {@link com.finvanta.charge.ChargeKernel} supersedes this with
+ * the full CGST/SGST/IGST split.
  */
+@Deprecated(since = "2026-04", forRemoval = false)
 @Service
 public class ChargeEngine {
 
@@ -241,6 +251,137 @@ public class ChargeEngine {
                 txnResult.getVoucherNumber());
 
         return result;
+    }
+
+    /**
+     * Reverse a previously applied loan charge (symmetric mirror-image contra).
+     *
+     * <p>Per RBI Fair Practices Code 2023 §5.7 / Finacle CHRG_MASTER: every
+     * charge posting must have a reversal primitive. Prior to this method the
+     * loan charge flow was levy-only, which violated the symmetry requirement
+     * (audit finding H6). The cross-module flow already has
+     * {@link com.finvanta.charge.ChargeKernel#reverseCharge} against persisted
+     * {@code ChargeTransaction} rows; the loan flow does not persist a
+     * {@code ChargeTransaction} (only a LoanTransaction + GL journal), so the
+     * caller must provide the original amount breakdown.
+     *
+     * <p>The contra journal is the exact mirror image of {@link #applyCharge}:
+     * <pre>
+     *   DR Charge Income (glChargeIncome)   chargeAmount
+     *   DR GST Payable   (glGstPayable)     gstAmount   (if non-zero)
+     *   CR Bank Operations (1100)           totalAmount
+     * </pre>
+     * This guarantees the reversed net GL impact is zero and the trial balance
+     * remains clean per double-entry accounting principles.
+     *
+     * @param accountNumber     loan account of the original charge
+     * @param chargeCode        charge config identifier (used to resolve fallback GLs)
+     * @param chargeAmount      original base fee amount (before GST)
+     * @param gstAmount         original GST amount (0 if not GST-applicable)
+     * @param originalJournalRef journal ref of the original levy (for audit linkage)
+     * @param reason            operational reason -- mandatory per RBI FPC 2023
+     * @param businessDate      CBS business date for the reversal posting
+     * @return {@link TransactionResult} for the contra journal posting
+     */
+    @Transactional
+    public TransactionResult reverseCharge(
+            String accountNumber,
+            String chargeCode,
+            BigDecimal chargeAmount,
+            BigDecimal gstAmount,
+            String originalJournalRef,
+            String reason,
+            LocalDate businessDate) {
+        String tenantId = TenantContext.getCurrentTenant();
+
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException(
+                    "REASON_REQUIRED",
+                    "Reversal reason mandatory per RBI Fair Practices Code 2023");
+        }
+        if (chargeAmount == null || chargeAmount.signum() <= 0) {
+            throw new BusinessException(
+                    "INVALID_CHARGE_AMOUNT",
+                    "Original charge amount must be positive for reversal");
+        }
+        BigDecimal gst = gstAmount != null ? gstAmount : BigDecimal.ZERO;
+        BigDecimal totalAmount = chargeAmount.add(gst);
+
+        LoanAccount account = accountRepository
+                .findByTenantIdAndAccountNumber(tenantId, accountNumber)
+                .orElseThrow(() -> new BusinessException(
+                        "ACCOUNT_NOT_FOUND",
+                        "Loan account not found: " + accountNumber));
+
+        // Resolve GLs identically to applyCharge() so the reversal uses the same
+        // heads. Falls back to the same product-GL / default-GST GLs.
+        String glChargeIncome = glResolver.getFeeIncomeGL(account.getProductType());
+        String glGstPayable = "2200";
+
+        List<JournalLineRequest> lines = new ArrayList<>();
+        lines.add(new JournalLineRequest(
+                glChargeIncome,
+                DebitCredit.DEBIT,
+                chargeAmount,
+                "Reversal of " + chargeCode));
+        if (gst.signum() > 0) {
+            lines.add(new JournalLineRequest(
+                    glGstPayable,
+                    DebitCredit.DEBIT,
+                    gst,
+                    "GST reversal for " + chargeCode));
+        }
+        lines.add(new JournalLineRequest(
+                "1100",
+                DebitCredit.CREDIT,
+                totalAmount,
+                "Charge reversal credit: " + chargeCode));
+
+        TransactionResult txnResult = transactionEngine.execute(
+                TransactionRequest.builder()
+                        .sourceModule("CHARGES")
+                        .transactionType("CHARGE_REVERSAL_" + chargeCode)
+                        .accountReference(accountNumber)
+                        .amount(totalAmount)
+                        .valueDate(businessDate)
+                        .branchCode(
+                                account.getBranch() != null
+                                        ? account.getBranch().getBranchCode()
+                                        : null)
+                        .productType(account.getProductType())
+                        .narration(
+                                "Reversal: " + chargeCode
+                                        + " on " + accountNumber
+                                        + " -- " + reason)
+                        .journalLines(lines)
+                        .systemGenerated(false)
+                        .initiatedBy("SYSTEM")
+                        .build());
+
+        auditService.logEvent(
+                "LoanAccount",
+                account.getId(),
+                "CHARGE_REVERSED",
+                chargeCode + " | " + totalAmount,
+                "REVERSED",
+                "CHARGES",
+                "Charge reversed: " + chargeCode
+                        + " (INR " + totalAmount + "), originalRef="
+                        + originalJournalRef
+                        + ", reversalJournal=" + txnResult.getJournalRef()
+                        + ", reason=" + reason);
+
+        log.info(
+                "Loan charge reversed: account={}, chargeCode={}, amount={},"
+                        + " originalRef={}, reversalJournal={}, voucher={}",
+                accountNumber,
+                chargeCode,
+                totalAmount,
+                originalJournalRef,
+                txnResult.getJournalRef(),
+                txnResult.getVoucherNumber());
+
+        return txnResult;
     }
 
     /**
