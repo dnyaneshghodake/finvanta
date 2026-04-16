@@ -369,7 +369,7 @@ public class ChargeEngine {
                                         + " -- " + reason)
                         .journalLines(lines)
                         .systemGenerated(false)
-                        .initiatedBy("SYSTEM")
+                        .initiatedBy(com.finvanta.util.SecurityUtil.getCurrentUsername())
                         .build());
 
         auditService.logEvent(
