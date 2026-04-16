@@ -19,9 +19,11 @@ import java.time.ZoneId;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -195,8 +197,19 @@ public class AuthController {
      *
      * <p>Per RBI: refresh tokens can only obtain new access tokens, never perform
      * financial operations directly. Both tokens remain tenant-scoped.
+     *
+     * <p><b>CBS atomicity:</b> the denylist check ({@code existsByTenantIdAndJti})
+     * and the denylist insert ({@code save(revoked)}) MUST run in the same
+     * transaction so that two concurrent refresh requests presenting the same
+     * jti see a consistent snapshot. Without {@code @Transactional} each repo
+     * call auto-commits and both callers can pass the existence check before
+     * either writes -- turning the {@code uq_revoked_tenant_jti} unique
+     * constraint into a HTTP 500 instead of a clean {@code REFRESH_TOKEN_REUSED}
+     * 401. The {@code DataIntegrityViolationException} catch below is the
+     * defence-in-depth safety net for the residual race window.
      */
     @PostMapping("/refresh")
+    @Transactional
     public ResponseEntity<ApiResponse<TokenResponse>>
             refresh(
                     @Valid @RequestBody RefreshRequest req) {
@@ -307,7 +320,33 @@ public class AuthController {
                 ? LocalDateTime.ofInstant(oldExpiresAt, ZoneId.systemDefault())
                 : LocalDateTime.now().plusDays(1));
         revoked.setReason("ROTATION");
-        revokedRefreshTokenRepository.save(revoked);
+        try {
+            revokedRefreshTokenRepository.saveAndFlush(revoked);
+        } catch (DataIntegrityViolationException dup) {
+            // CBS defence-in-depth: the unique constraint uq_revoked_tenant_jti
+            // caught a concurrent rotation of the same jti. The other caller has
+            // already consumed this refresh token -- treat the current request as
+            // a replay per OWASP JWT Cheat Sheet and RFC 6749 §10.4.
+            auditService.logEvent(
+                    "REFRESH_TOKEN",
+                    0L,
+                    "REFRESH_TOKEN_REUSED",
+                    null,
+                    java.util.Map.of(
+                            "username", username,
+                            "jti", oldJti,
+                            "detection", "UNIQUE_CONSTRAINT"),
+                    "AUTH",
+                    "Concurrent refresh rotation -- unique constraint tripped");
+            log.warn("API refresh race detected: user={}, jti={}",
+                    username, oldJti);
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "REFRESH_TOKEN_REUSED",
+                            "Refresh token has already been used. "
+                                    + "Re-authenticate via /api/v1/auth/token."));
+        }
 
         String newAccessToken =
                 jwtTokenService.generateAccessToken(

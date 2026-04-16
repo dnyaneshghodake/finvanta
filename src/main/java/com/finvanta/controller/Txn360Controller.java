@@ -11,6 +11,8 @@ import com.finvanta.repository.LoanTransactionRepository;
 import com.finvanta.service.Transaction360Service;
 import com.finvanta.util.TenantContext;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import java.util.List;
 
 import org.springframework.stereotype.Controller;
@@ -172,6 +174,69 @@ public class Txn360Controller {
             mav.addObject("error", "No transaction found for reference: " + ref);
         }
 
+        return mav;
+    }
+
+    /**
+     * Transaction 360 by voucher number.
+     *
+     * <p>Voucher format contains slashes: {@code VCH/{branchCode}/{YYYYMMDD}/{seq}}. Spring MVC
+     * treats '/' as a path delimiter, so we use {@code /voucher/**} and extract the full
+     * voucher from the request URI after the {@code /txn360/voucher/} prefix.
+     *
+     * <p>Per Finacle VCH_INQUIRY: the voucher register is the branch-level daily book of
+     * record; every fund transfer creates two subledger legs under one voucher number.
+     */
+    @GetMapping("/voucher/**")
+    public ModelAndView viewByVoucher(HttpServletRequest request) {
+        String fullPath = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        String voucherNumber = fullPath.substring(
+                (contextPath + "/txn360/voucher/").length());
+
+        // CBS: Validate extracted voucher number to prevent path traversal.
+        // Voucher format: VCH/{branchCode}/{YYYYMMDD}/{sequence}
+        // Only alphanumeric, forward slashes, hyphens, and underscores are valid.
+        ModelAndView mav = new ModelAndView("txn360/view");
+        if (voucherNumber.isEmpty()
+                || !voucherNumber.matches("[A-Za-z0-9/_-]+")
+                || voucherNumber.contains("..")) {
+            mav.addObject("lookupType", "Voucher");
+            mav.addObject("lookupValue", "");
+            return mav;
+        }
+        mav.addAllObjects(transaction360Service.getByVoucher(voucherNumber));
+        mav.addObject("lookupType", "Voucher");
+        mav.addObject("lookupValue", voucherNumber);
+        return mav;
+    }
+
+    /**
+     * Transaction 360 by journal reference (JRN...).
+     * Per Finacle GL_INQUIRY: looks up a GL journal entry and resolves the linked subledger.
+     */
+    @GetMapping("/journal/{journalRef}")
+    public ModelAndView viewByJournal(@PathVariable String journalRef) {
+        ModelAndView mav = new ModelAndView("txn360/view");
+        mav.addAllObjects(transaction360Service.getByJournalRef(journalRef));
+        mav.addObject("lookupType", "Journal Ref");
+        mav.addObject("lookupValue", journalRef);
+        return mav;
+    }
+
+    /**
+     * Transaction 360 by loan transaction reference.
+     *
+     * <p><b>CBS: this catch-all mapping MUST be declared LAST</b> so Spring MVC's
+     * RequestMapping resolver picks the more specific {@code /search},
+     * {@code /voucher/**}, and {@code /journal/{ref}} mappings first.
+     */
+    @GetMapping("/{transactionRef}")
+    public ModelAndView viewByTransactionRef(@PathVariable String transactionRef) {
+        ModelAndView mav = new ModelAndView("txn360/view");
+        mav.addAllObjects(transaction360Service.getTransaction360(transactionRef));
+        mav.addObject("lookupType", "Transaction Ref");
+        mav.addObject("lookupValue", transactionRef);
         return mav;
     }
 }
