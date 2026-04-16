@@ -144,6 +144,8 @@ public class ChargeController {
 
     // === Request DTOs ===
 
+    // CBS: customerStateCode is optional — null/blank falls back to intra-state
+    // (CGST + SGST) per GST Act 2017 §12 conservative default.
     public record LevyRequest(
             @NotBlank String eventType,
             @NotBlank String accountNumber,
@@ -153,7 +155,6 @@ public class ChargeController {
             @NotBlank String sourceModule,
             @NotBlank String sourceRef,
             @NotBlank String branchCode,
-            /** Customer state code for GST intra/inter-state split per GST Act 2017 §12. Optional. */
             String customerStateCode) {}
 
     public record WaiverRequest(
@@ -166,21 +167,22 @@ public class ChargeController {
 
     // === Response DTOs ===
 
+    /**
+     * Levy response with full GST breakdown per GST Act 2017 §5/§8.
+     *
+     * <p>Fields: chargeTransactionId (for waiver/reversal), cgstAmount (intra-state 9%),
+     * sgstAmount (intra-state 9%), igstAmount (inter-state 18%), gstAmount (total GST
+     * for backward-compat), interState flag, journalEntryId, voucherNumber.
+     */
     public record ChargeResponse(
             Long chargeDefinitionId,
-            /** Persisted ChargeTransaction ID -- required for subsequent waiver/reversal calls. */
             Long chargeTransactionId,
             BigDecimal baseFee,
-            /** CGST component (intra-state 9%, else zero). */
             BigDecimal cgstAmount,
-            /** SGST component (intra-state 9%, else zero). */
             BigDecimal sgstAmount,
-            /** IGST component (inter-state 18%, else zero). */
             BigDecimal igstAmount,
-            /** Total GST (CGST + SGST + IGST). Kept for backward-compat with consumers that read a single GST field. */
             BigDecimal gstAmount,
             BigDecimal totalDebit,
-            /** {@code true} if this charge was classified as inter-state (IGST only) per GST Act 2017 §5. */
             boolean interState,
             Long journalEntryId,
             String voucherNumber) {
@@ -215,14 +217,14 @@ public class ChargeController {
             String reason,
             String reversalVoucherNumber) {}
 
+    // CBS: status = LEVIED | WAIVED | REVERSED per ChargeTransactionStatus.
+    // waived is deprecated — use status instead. Kept for backward compat.
     public record ChargeHistoryItem(
             Long id, String eventType,
-            /** Lifecycle status: LEVIED, WAIVED, or REVERSED per ChargeTransactionStatus. */
             String status,
             BigDecimal baseFee,
             BigDecimal gstAmount,
             BigDecimal totalDebit,
-            /** @deprecated Use {@code status} instead. Kept for backward compat with existing consumers. */
             boolean waived,
             String valueDate,
             String sourceModule,
