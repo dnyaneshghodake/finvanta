@@ -104,7 +104,21 @@ public class AuditService {
         auditLog.setAfterSnapshot(afterJson);
         auditLog.setPerformedBy(performedBy);
         auditLog.setIpAddress(ipAddress);
-        auditLog.setEventTimestamp(LocalDateTime.now());
+        // CBS: Truncate to microsecond precision (6 fractional digits) BEFORE
+        // computing the hash. Java's LocalDateTime.now() produces nanosecond
+        // precision (9 digits), but SQL Server datetime2(7) stores only 7 digits
+        // and H2 may also truncate. When the record is read back from the DB,
+        // the truncated timestamp produces a different toString() than the
+        // original in-memory value, causing computeHash() to return a different
+        // hash — a false tamper detection on every single record.
+        //
+        // Microsecond (6 digits) is the safe floor: it's within the precision of
+        // both H2 and SQL Server datetime2(7), and LocalDateTime.toString()
+        // renders it deterministically (e.g., ".910846" not ".9108460").
+        // Per Finacle AUDIT_TRAIL: the hash must be reproducible from the
+        // persisted fields — any precision loss in the DB round-trip breaks this.
+        LocalDateTime now = LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        auditLog.setEventTimestamp(now);
         auditLog.setPreviousHash(previousHash);
         auditLog.setModule(module);
         auditLog.setDescription(description);
