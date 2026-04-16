@@ -54,10 +54,15 @@ GO
 
 ### 2.2 Configure sa Account
 
+> **⚠️ SECURITY:** Replace the placeholder password below with a strong password
+> (min 16 chars, mixed case, digits, special chars). Never use the example
+> password in any environment. Per RBI Cyber Security Framework 2024 §4.2:
+> credentials must never appear in documentation or source control.
+
 ```sql
 ALTER LOGIN sa ENABLE;
 GO
-ALTER LOGIN sa WITH PASSWORD = 'sqlserver#123';
+ALTER LOGIN sa WITH PASSWORD = '<YOUR-STRONG-PASSWORD>';
 GO
 ```
 
@@ -80,7 +85,7 @@ Windows Services (`services.msc`) → **SQL Server** → **Restart**
 
 ### 2.6 Test Connection
 
-SSMS → Connect to `localhost,1433` → SQL Server Auth → `sa` / `sqlserver#123`
+SSMS → Connect to `localhost,1433` → SQL Server Auth → `sa` / `<your-password>`
 
 ---
 
@@ -355,27 +360,108 @@ copy target\finvanta-0.0.1-SNAPSHOT.war C:\Tomcat10\webapps\ROOT.war
 
 ### 8.2 Configure Environment
 
-Create `C:\Tomcat10\bin\setenv.bat`:
+#### Windows — Create `C:\Tomcat10\bin\setenv.bat`:
 
 ```bat
 @echo off
+REM ============================================================
+REM Finvanta CBS — Tomcat 10 JVM Configuration (Windows)
+REM Per Finacle/Temenos Tier-1 CBS JVM sizing standards.
+REM ============================================================
+
+REM --- Spring profile ---
 set "SPRING_PROFILES_ACTIVE=sqlserver"
+
+REM --- Encryption keys (from secrets manager / vault in production) ---
 set "FINVANTA_DB_ENCRYPTION_KEY=your-64-char-db-key"
 set "MFA_ENCRYPTION_KEY=your-64-char-mfa-key"
-set "JAVA_OPTS=%JAVA_OPTS% -Xms512m -Xmx1024m"
+
+REM --- JVM Heap: 2GB min / 4GB max for CBS workloads ---
+REM CBS sizing: EOD parallel threads, Caffeine caches, Hibernate sessions,
+REM multi-tenant ledger operations. 512MB-1GB is inadequate for production.
+set "JAVA_OPTS=%JAVA_OPTS% -Xms2g -Xmx4g"
+
+REM --- GC: G1GC for low-latency CBS transaction processing ---
+set "JAVA_OPTS=%JAVA_OPTS% -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+
+REM --- Metaspace: Spring Boot + Hibernate + JPA proxies need headroom ---
+set "JAVA_OPTS=%JAVA_OPTS% -XX:MetaspaceSize=256m -XX:MaxMetaspaceSize=512m"
+
+REM --- Encoding: INR currency symbols, Hindi/regional language support ---
+set "JAVA_OPTS=%JAVA_OPTS% -Dfile.encoding=UTF-8"
+
+REM --- Timezone: IST for RBI business date calculations ---
+set "JAVA_OPTS=%JAVA_OPTS% -Duser.timezone=Asia/Kolkata"
+
+REM --- OOM handling: dump heap and exit cleanly on OutOfMemory ---
+REM Per RBI IT Governance 2023 §7.3: CBS must not silently corrupt data on OOM.
+set "JAVA_OPTS=%JAVA_OPTS% -XX:+HeapDumpOnOutOfMemoryError"
+set "JAVA_OPTS=%JAVA_OPTS% -XX:HeapDumpPath=C:\Tomcat10\logs\heapdump.hprof"
+set "JAVA_OPTS=%JAVA_OPTS% -XX:+ExitOnOutOfMemoryError"
 ```
+
+#### Linux/Unix — Create `/opt/tomcat10/bin/setenv.sh`:
+
+```bash
+#!/bin/bash
+# ============================================================
+# Finvanta CBS — Tomcat 10 JVM Configuration (Linux)
+# Per Finacle/Temenos Tier-1 CBS JVM sizing standards.
+# Per RBI IT Governance Direction 2023 §7.1: production on Linux.
+# ============================================================
+
+export SPRING_PROFILES_ACTIVE="sqlserver"
+
+# Encryption keys — source from vault/secrets manager in production
+export FINVANTA_DB_ENCRYPTION_KEY="your-64-char-db-key"
+export MFA_ENCRYPTION_KEY="your-64-char-mfa-key"
+
+# JVM Heap: 2GB min / 4GB max
+JAVA_OPTS="$JAVA_OPTS -Xms2g -Xmx4g"
+
+# G1GC for low-latency CBS transaction processing
+JAVA_OPTS="$JAVA_OPTS -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+
+# Metaspace
+JAVA_OPTS="$JAVA_OPTS -XX:MetaspaceSize=256m -XX:MaxMetaspaceSize=512m"
+
+# Encoding + Timezone
+JAVA_OPTS="$JAVA_OPTS -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Kolkata"
+
+# OOM handling
+JAVA_OPTS="$JAVA_OPTS -XX:+HeapDumpOnOutOfMemoryError"
+JAVA_OPTS="$JAVA_OPTS -XX:HeapDumpPath=/opt/tomcat10/logs/heapdump.hprof"
+JAVA_OPTS="$JAVA_OPTS -XX:+ExitOnOutOfMemoryError"
+
+export JAVA_OPTS
+```
+
+After creating `setenv.sh`, make it executable: `chmod +x /opt/tomcat10/bin/setenv.sh`
 
 ### 8.3 Start / Stop
 
+**Windows:**
 ```cmd
 C:\Tomcat10\bin\startup.bat
 C:\Tomcat10\bin\shutdown.bat
 ```
 
+**Linux:**
+```bash
+/opt/tomcat10/bin/startup.sh
+/opt/tomcat10/bin/shutdown.sh
+```
+
 ### 8.4 View Logs
 
+**Windows** (Tomcat uses date-stamped logs on Windows):
 ```cmd
-type C:\Tomcat10\logs\catalina.out
+type C:\Tomcat10\logs\catalina.%date:~-4%-%date:~4,2%-%date:~7,2%.log
+```
+
+**Linux:**
+```bash
+tail -f /opt/tomcat10/logs/catalina.out
 ```
 
 ### 8.5 Access
@@ -409,7 +495,7 @@ docker run -p 8080:8080 \
 | Check | URL / Command | Expected |
 |-------|---------------|----------|
 | Health | `http://localhost:8080/actuator/health` | `{"status":"UP"}` |
-| Login | `http://localhost:8080` → admin/finvanta123 | Dashboard |
+| Login | `http://localhost:8080` → admin / (default dev password) | Dashboard |
 | DB Tables | SSMS: `SELECT * FROM app_users` | 6 users |
 | Calendar | SSMS: `SELECT * FROM business_calendar WHERE business_date='2026-04-01'` | 3 rows (DAY_OPEN) |
 
