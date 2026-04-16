@@ -19,7 +19,15 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     List<AuditLog> findByTenantIdAndEntityTypeAndEntityIdOrderByEventTimestampDesc(
             String tenantId, String entityType, Long entityId);
 
-    @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId ORDER BY al.eventTimestamp DESC")
+    // CBS: ORDER BY id DESC (not eventTimestamp DESC) so the verification walk
+    // sees records in the same order the hash chain was built. The chain is
+    // constructed by logEvent() which calls findLatestByTenantId() — that uses
+    // ORDER BY id DESC. If we order by eventTimestamp instead, records with
+    // identical timestamps (common when multiple events fire in the same
+    // millisecond — login + password change + session) can be returned in
+    // arbitrary order, causing verifyRecentChainIntegrity() to report a false
+    // VIOLATED even though the chain is intact.
+    @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId ORDER BY al.id DESC")
     List<AuditLog> findRecentAuditLogsPaged(
             @Param("tenantId") String tenantId, Pageable pageable);
 
@@ -68,7 +76,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
             + "LOWER(al.performedBy) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(al.module) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(al.description) LIKE LOWER(CONCAT('%', :query, '%')))"
-            + " ORDER BY al.eventTimestamp DESC")
+            + " ORDER BY al.id DESC")
     List<AuditLog> searchAuditLogsPaged(
             @Param("tenantId") String tenantId, @Param("query") String query,
             org.springframework.data.domain.Pageable pageable);
@@ -85,7 +93,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
             + "LOWER(al.performedBy) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(al.module) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(al.description) LIKE LOWER(CONCAT('%', :query, '%')))"
-            + " ORDER BY al.eventTimestamp DESC")
+            + " ORDER BY al.id DESC")
     List<AuditLog> searchAuditLogsWithDateRange(
             @Param("tenantId") String tenantId, @Param("query") String query,
             @Param("fromDate") LocalDateTime fromDate,
