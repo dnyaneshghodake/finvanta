@@ -35,11 +35,11 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController("customerCifApiController")
 @RequestMapping("/api/v1/customers")
-public class CustomerController {
+public class CustomerApiController {
 
     private final CustomerCifService customerService;
 
-    public CustomerController(
+    public CustomerApiController(
             CustomerCifService customerService) {
         this.customerService = customerService;
     }

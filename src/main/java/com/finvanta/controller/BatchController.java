@@ -1,7 +1,7 @@
 package com.finvanta.controller;
 
-import com.finvanta.batch.BatchService;
 import com.finvanta.batch.EodOrchestrator;
+import com.finvanta.legacy.BatchService;
 import com.finvanta.batch.EodTrialService;
 import com.finvanta.batch.EodTrialService.EodCheckResult;
 import com.finvanta.service.BusinessDateService;
