@@ -76,8 +76,13 @@ FV.Validation = (function() {
             a: { min: 0, max: 36, step: 0.01 }, numType: 'number'
         },
         'tenure': {
-            msg: 'Tenure in months (1-600)',
-            a: { min: 1, max: 600, step: 1 }, numType: 'number'
+            // CBS: min=0 because CASA Savings/Current products are perpetual (no
+            // fixed tenure). Tenure=0 means "demand deposit / no maturity" per
+            // Finacle PDDEF / Temenos AA.PRODUCT.CATALOG. Loan products default
+            // to 6 months in the JSP form, so the UX for loans is unaffected.
+            // FD products use min_tenure_months=0 for sub-month (7-day) FDs.
+            msg: 'Tenure in months (0-600)',
+            a: { min: 0, max: 600, step: 1 }, numType: 'number'
         },
         'pan': {
             re: /^[A-Z]{5}[0-9]{4}[A-Z]$/,
