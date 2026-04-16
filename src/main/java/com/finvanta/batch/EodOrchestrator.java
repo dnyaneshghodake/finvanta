@@ -51,14 +51,15 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <b>IMPORTANT: This is the Phase 2 EOD orchestrator with inter-branch settlement
  * and clearing validation. The currently active EOD entry point used by
- * {@link com.finvanta.controller.BatchController} is {@link BatchService#runEodBatch(java.time.LocalDate)}.
+ * {@link com.finvanta.controller.BatchController} is
+ * {@link com.finvanta.legacy.BatchService#runEodBatch(java.time.LocalDate)}.
  * Do NOT wire both into the same controller/scheduler.</b>
  *
  * <p>When Phase 2 migration is complete (inter-branch and clearing modules validated),
  * switch {@code BatchController} to call {@code EodOrchestrator.executeEod()} and
- * deprecate {@code BatchService.runEodBatch()}.
+ * delete the legacy {@code com.finvanta.legacy.BatchService}.
  *
- * <p>Differences from BatchService:
+ * <p>Differences from legacy BatchService:
  * <ul>
  *   <li>Adds Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)</li>
  *   <li>Adds Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)</li>
@@ -981,10 +982,17 @@ public class EodOrchestrator {
             calendarRepository
                     .findAndLockByTenantIdAndBranchIdAndDate(tenantId, branch.getId(), businessDate)
                     .ifPresent(calendar -> {
-                        // CBS Day Control: Only COMPLETED EOD marks eodComplete=true.
-                        // FAILED/PARTIALLY_COMPLETED restore DAY_OPEN for retry.
+                        // CBS Day Control per Finacle DAYCTRL / Temenos COB:
+                        // COMPLETED: dayStatus → DAY_OPEN + eodComplete=true + unlocked.
+                        //   Day is "open but EOD-complete" — admin must explicitly close.
+                        //   Transactions are blocked by TransactionEngine checking eodComplete.
+                        //   This is the standard Finacle post-EOD state before Day Close.
+                        // FAILED/PARTIALLY_COMPLETED: dayStatus → DAY_OPEN + eodComplete=false.
+                        //   Day is restored for retry. Admin investigates errors and re-runs EOD.
                         if (eodJob.getStatus() == BatchStatus.COMPLETED) {
+                            calendar.setDayStatus(DayStatus.DAY_OPEN);
                             calendar.setEodComplete(true);
+                            calendar.setLocked(false);
                         } else {
                             calendar.setDayStatus(DayStatus.DAY_OPEN);
                             calendar.setLocked(false);

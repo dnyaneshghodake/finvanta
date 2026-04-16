@@ -82,18 +82,14 @@
                 <small class="form-text text-muted">Auto from product master</small>
             </div>
             <div class="col-md-3">
-                <label for="initialDeposit" class="form-label">Initial Deposit (INR)</label>
-                <input type="number" name="initialDeposit" id="initialDeposit" class="form-control" step="0.01" min="0" placeholder="0.00"/>
-                <small class="form-text text-muted">Processed after activation</small>
+                <label class="form-label">Initial Funding</label>
+                <input type="text" class="form-control" readonly value="After activation" disabled/>
+                <small class="form-text text-muted">Per Finacle ACCTOPN: deposit via Deposit screen after checker activates the account</small>
             </div>
             <div class="col-md-3">
                 <label class="form-label">Joint Holder Mode</label>
-                <select name="jointHolderMode" class="form-select">
-                    <option value="">-- N/A --</option>
-                    <option value="EITHER_SURVIVOR">Either or Survivor</option>
-                    <option value="FORMER_SURVIVOR">Former or Survivor</option>
-                    <option value="JOINTLY">Jointly</option>
-                </select>
+                <input type="text" class="form-control" readonly value="Post-activation" disabled/>
+                <small class="form-text text-muted">Per Finacle ACCTOPN: configured via account maintenance</small>
             </div>
         </div>
 
@@ -118,8 +114,9 @@
                 </select>
             </div>
             <div class="col-md-4">
-                <label class="form-label">Cheque Book</label>
-                <select class="form-select"><option value="false">No</option><option value="true">Yes</option></select>
+                <label class="form-label">Cheque Book / Debit Card</label>
+                <input type="text" class="form-control" readonly value="Configured post-activation" disabled/>
+                <small class="form-text text-muted">Per Finacle ACCTOPN: enabled via account maintenance after activation</small>
             </div>
         </div>
 

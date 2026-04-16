@@ -75,7 +75,8 @@ public class SecurityConfig {
     @Order(1)
     public SecurityFilterChain apiSecurityFilterChain(
             HttpSecurity http,
-            JwtAuthenticationFilter jwtFilter)
+            JwtAuthenticationFilter jwtFilter,
+            AuthRateLimitFilter authRateLimitFilter)
             throws Exception {
         http.securityMatcher("/api/v1/**")
                 .authorizeHttpRequests(auth -> auth
@@ -104,6 +105,10 @@ public class SecurityConfig {
                                             + "required. Provide "
                                             + "Bearer token.\"}");
                                 }))
+                // CBS: rate limit auth endpoints BEFORE JWT auth so token issuance
+                // cannot be brute-forced. Per RBI Cyber Security Framework 2024 §6.2.
+                .addFilterBefore(authRateLimitFilter,
+                        UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtFilter,
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();
@@ -136,7 +141,15 @@ public class SecurityConfig {
                     if (isDevProfile()) {
                         auth.requestMatchers("/h2-console/**").permitAll();
                     }
-                    auth.requestMatchers("/admin/**")
+                    // CBS: Explicit rule for branch-switching admin endpoint per Finacle
+                    // BRANCH_CONTEXT / Temenos BRANCH.SWITCH. Declared BEFORE /admin/**
+                    // so it is resolved first and survives any future reordering of the
+                    // /admin/** wildcard. The wildcard already guards it, but per Tier-1
+                    // CBS security review: every mutable admin endpoint must have an
+                    // explicit RBAC rule for auditability and defence in depth.
+                    auth.requestMatchers("/admin/switch-branch")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/admin/**")
                             .hasRole("ADMIN")
                             .requestMatchers("/batch/**")
                             .hasRole("ADMIN")
@@ -150,6 +163,16 @@ public class SecurityConfig {
                             .hasRole("ADMIN")
                             .requestMatchers("/customer/verify-kyc/**")
                             .hasAnyRole("CHECKER", "ADMIN")
+                            // CBS Document Management: role restrictions per Finacle DOC_MASTER
+                            // MAKER uploads documents, CHECKER verifies/rejects, both can download.
+                            // Without these rules, document endpoints fall to .anyRequest().authenticated()
+                            // allowing any authenticated user (including AUDITOR) to upload/verify.
+                            .requestMatchers("/customer/document/upload/**")
+                            .hasAnyRole("MAKER", "ADMIN")
+                            .requestMatchers("/customer/document/verify/**")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/customer/document/download/**")
+                            .hasAnyRole("MAKER", "CHECKER", "ADMIN")
                             .requestMatchers("/branch/edit/**")
                             .hasRole("ADMIN")
                             .requestMatchers("/calendar/**")

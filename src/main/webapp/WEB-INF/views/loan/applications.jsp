@@ -12,6 +12,21 @@
         <div class="fv-alert alert alert-danger"><c:out value="${error}" /></div>
     </c:if>
 
+    <!-- CBS: Loan Application search per Finacle APPINQ -->
+    <form method="get" action="${pageContext.request.contextPath}/loan/applications/search" class="row g-2 mb-3">
+        <div class="col-auto">
+            <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by app no, CIF, customer name..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:320px;" />
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>
+        </div>
+        <c:if test="${not empty searchQuery}">
+        <div class="col-auto">
+            <a href="${pageContext.request.contextPath}/loan/applications" class="btn btn-sm btn-outline-secondary">Clear</a>
+        </div>
+        </c:if>
+    </form>
+
     <div class="fv-card">
         <div class="card-header">Submitted Applications (Pending Verification)</div>
         <div class="card-body">

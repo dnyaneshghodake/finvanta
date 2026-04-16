@@ -1,4 +1,4 @@
-package com.finvanta.batch;
+package com.finvanta.legacy;
 
 import com.finvanta.accounting.AccountingReconciliationEngine;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
@@ -31,30 +31,56 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
+import jakarta.annotation.PostConstruct;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * CBS End-of-Day (EOD) Batch Processing Service.
+ * LEGACY: CBS End-of-Day (EOD) Batch Processing Service -- Phase 1.
  *
- * Per Finacle/Temenos EOD framework, the batch runs the following steps sequentially:
+ * <p><b>DEPRECATED IN FAVOUR OF {@link com.finvanta.batch.EodOrchestrator}.</b>
+ * This class is retained only for backward compatibility with
+ * {@link com.finvanta.controller.BatchController#eodPage()} which displays batch
+ * history via {@link #getBatchHistory()}. All new code MUST call
+ * {@code EodOrchestrator.executeEod(LocalDate)} which adds inter-branch
+ * settlement, clearing suspense validation, CASA interest accrual, SI execution,
+ * dormancy classification, and parallel per-account processing.
+ *
+ * <p>Moved to {@code com.finvanta.legacy} per Finacle/Temenos Tier-1 hygiene: all
+ * deprecated @Service beans live in a single visible package so accidental
+ * injections are obvious during code review and dependency graph analysis.
+ *
+ * <p>Per Finacle/Temenos EOD framework, the Phase 1 batch runs the following steps:
  *   1. Business date validation and calendar locking
  *   2. Interest accrual (Actual/365 per RBI circular)
  *   3. DPD (Days Past Due) calculation
- *   4. NPA classification (RBI IRAC: SMA-0/1/2 → NPA Sub-Standard/Doubtful/Loss)
- *   5. Provisioning calculation (RBI IRAC: 0.40% Standard → 100% Loss)
+ *   4. NPA classification (RBI IRAC: SMA-0/1/2 -> NPA Sub-Standard/Doubtful/Loss)
+ *   5. Provisioning calculation (RBI IRAC: 0.40% Standard -> 100% Loss)
  *   6. GL balance validation (trial balance integrity check)
  *   7. Day close and calendar unlock
  *
- * Each account is processed in its own transaction for failure isolation.
+ * <p>Each account is processed in its own transaction for failure isolation.
  * Per-account failures do not roll back other accounts (PARTIALLY_COMPLETED status).
  */
+@Deprecated(forRemoval = true, since = "2026-04")
 @Service
 public class BatchService {
 
     private static final Logger log = LoggerFactory.getLogger(BatchService.class);
+
+    /**
+     * Emits a visible startup warning so operators notice this legacy bean is still
+     * wired. Per Tier-1 migration hygiene: deprecated financial subsystems MUST
+     * announce themselves at startup to force explicit retirement planning.
+     */
+    @PostConstruct
+    void announceLegacy() {
+        log.warn("LEGACY bean active: com.finvanta.legacy.BatchService. "
+                + "Migrate callers to EodOrchestrator.executeEod() -- this class will be removed.");
+    }
 
     private final BatchJobRepository batchJobRepository;
     private final BusinessCalendarRepository calendarRepository;

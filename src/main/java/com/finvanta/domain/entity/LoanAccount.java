@@ -29,20 +29,41 @@ public class LoanAccount extends BaseEntity {
     @Column(name = "account_number", nullable = false, length = 40)
     private String accountNumber;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "application_id", nullable = false)
     private LoanApplication application;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    /** CBS: EAGER — customer name/CIF displayed on every loan screen */
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "customer_id", nullable = false)
     private Customer customer;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    /** CBS: EAGER — branch code displayed on every loan screen */
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
 
     @Column(name = "product_type", nullable = false, length = 50)
     private String productType;
+
+    /**
+     * CBS Tier-1 Gap #3: Product configuration version at account origination.
+     *
+     * Captures the ProductMaster.configVersion at the time this account was created.
+     * This answers the RBI inspection question: "which product version was this
+     * account opened under?" — critical when product GL codes or rate ranges have
+     * been modified since origination.
+     *
+     * Per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG: accounts are originated under
+     * a specific product configuration. If the product is later modified, the
+     * origination version provides audit traceability. Combined with the audit_log
+     * entries for that configVersion, inspectors can reconstruct the exact product
+     * parameters that were in effect when this account was opened.
+     *
+     * Null for accounts created before configVersion was introduced (backward compatible).
+     */
+    @Column(name = "product_config_version")
+    private Integer productConfigVersion;
 
     /**
      * ISO 4217 currency code for all monetary amounts on this account.

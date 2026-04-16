@@ -3,8 +3,10 @@ package com.finvanta.accounting;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.domain.entity.JournalEntryLine;
 import com.finvanta.domain.entity.LedgerEntry;
+import com.finvanta.domain.entity.TenantLedgerState;
 import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.repository.LedgerEntryRepository;
+import com.finvanta.repository.TenantLedgerStateRepository;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
@@ -17,6 +19,7 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,9 +49,16 @@ public class LedgerService {
     private static final Logger log = LoggerFactory.getLogger(LedgerService.class);
 
     private final LedgerEntryRepository ledgerRepository;
+    private final TenantLedgerStateRepository ledgerStateRepository;
+    private final TenantLedgerStateBootstrap ledgerStateBootstrap;
 
-    public LedgerService(LedgerEntryRepository ledgerRepository) {
+    public LedgerService(
+            LedgerEntryRepository ledgerRepository,
+            TenantLedgerStateRepository ledgerStateRepository,
+            TenantLedgerStateBootstrap ledgerStateBootstrap) {
         this.ledgerRepository = ledgerRepository;
+        this.ledgerStateRepository = ledgerStateRepository;
+        this.ledgerStateBootstrap = ledgerStateBootstrap;
     }
 
     /**
@@ -60,24 +70,21 @@ public class LedgerService {
      * - SHA-256 hash chain
      * - Source journal traceability
      *
-     * <h3>CBS Ledger Sequence Serialization Strategy:</h3>
-     * The pessimistic lock on the latest ledger entry serializes concurrent postings
-     * when at least one entry exists. For the very first posting (empty ledger),
-     * no row exists to lock, so two concurrent first-postings could both get
-     * sequence=1. The UNIQUE constraint (uq_ledger_tenant_seq) is the DB-level
-     * safety net — one will succeed, the other will get a ConstraintViolationException
-     * which propagates up and rolls back the entire transaction (including GL updates).
+     * <h3>CBS Ledger Sequence Serialization Strategy (Finacle LEDGER_STATE):</h3>
+     * Every tenant has exactly one {@link TenantLedgerState} sentinel row keyed by
+     * {@code tenant_id}. Before computing the next sequence, {@code postToLedger}
+     * acquires a {@code SELECT ... FOR UPDATE} on that row. The row is seeded
+     * lazily on the very first posting via {@link #ensureAndLockSentinel(String)},
+     * so even the first-ever posting on an empty ledger serializes behind the same
+     * lock -- closing the first-posting race where two concurrent postings could
+     * both receive sequence=1 and rely solely on {@code uq_ledger_tenant_seq} as
+     * the tie-breaker. The sentinel row also caches the last sequence and last
+     * hash so we can skip a second {@code findAndLockLatestByTenantId} round-trip.
      *
-     * This is acceptable because:
-     * <ol>
-     *   <li>First-posting race is extremely rare (only on tenant initialization)</li>
-     *   <li>The retry at the caller level (BatchService per-account try/catch) handles it</li>
-     *   <li>GL updates and ledger are in the same @Transactional — both roll back atomically</li>
-     * </ol>
-     *
-     * <b>Production enhancement:</b> Use a DB sequence (CREATE SEQUENCE ledger_seq_tenant)
-     * or a dedicated tenant_ledger_state table with a sentinel row per tenant that
-     * is always locked before sequence allocation.
+     * <p>The {@code LedgerEntry} table remains the authoritative record; the
+     * sentinel is purely a serialization primitive. If the sentinel drifts from
+     * the entries table (e.g. after a restore), the unique constraint still
+     * catches duplicate sequences and rolls back the entire transaction.
      *
      * @param journalEntry The posted journal entry
      * @return List of created ledger entries
@@ -86,14 +93,11 @@ public class LedgerService {
     public List<LedgerEntry> postToLedger(JournalEntry journalEntry) {
         String tenantId = TenantContext.getCurrentTenant();
 
-        // Get current max sequence and previous hash for chain.
-        // Uses pessimistic lock to serialize concurrent postings and prevent
-        // duplicate sequences or broken hash chains.
-        // NOTE: For the first-ever posting (empty ledger), no lock is acquired.
-        // The UNIQUE constraint (uq_ledger_tenant_seq) is the safety net — see Javadoc above.
-        java.util.Optional<LedgerEntry> latestEntry = ledgerRepository.findAndLockLatestByTenantId(tenantId);
-        long currentSequence = latestEntry.map(LedgerEntry::getLedgerSequence).orElse(0L);
-        String previousHash = latestEntry.map(LedgerEntry::getHashValue).orElse("GENESIS");
+        // CBS LEDGER_STATE: lock the per-tenant sentinel row to serialize ALL
+        // concurrent postings -- including the first ever on an empty ledger.
+        TenantLedgerState state = ensureAndLockSentinel(tenantId);
+        long currentSequence = state.getLastSequence();
+        String previousHash = state.getLastHash();
 
         List<LedgerEntry> entries = new ArrayList<>();
 
@@ -137,15 +141,109 @@ public class LedgerService {
         List<LedgerEntry> saved = ledgerRepository.saveAll(entries);
 
         if (!saved.isEmpty()) {
+            // CBS LEDGER_STATE: advance the sentinel to the last posted entry so the
+            // next posting picks up where this one left off without re-querying
+            // ledger_entries. Persisted inside the same @Transactional so a rollback
+            // of the posting also rolls back the sentinel advance.
+            LedgerEntry last = saved.get(saved.size() - 1);
+            state.setLastSequence(last.getLedgerSequence());
+            state.setLastHash(last.getHashValue());
+            state.setUpdatedAt(LocalDateTime.now());
+            ledgerStateRepository.save(state);
+
             log.debug(
                     "Ledger posted: journalRef={}, entries={}, sequences={}-{}",
                     journalEntry.getJournalRef(),
                     saved.size(),
                     saved.get(0).getLedgerSequence(),
-                    saved.get(saved.size() - 1).getLedgerSequence());
+                    last.getLedgerSequence());
         }
 
         return saved;
+    }
+
+    /**
+     * Returns the per-tenant sentinel row with a pessimistic write lock.
+     * Creates the row on the very first posting (lazy bootstrap). The insert
+     * races are resolved by the {@code tenant_ledger_state} primary key.
+     *
+     * <p><b>Why the INSERT runs in a separate transaction:</b> if the insert
+     * executed inside THIS (outer) transaction via
+     * {@code repository.saveAndFlush(...)} and a concurrent posting won the
+     * PK race, Spring's repository-proxy {@code TransactionInterceptor} would
+     * mark the enclosing transaction {@code rollback-only} BEFORE the
+     * {@code DataIntegrityViolationException} surfaces here. Even catching it
+     * cleanly would leave the outer posting doomed -- the subsequent GL balance
+     * update and ledger write would all be rolled back on commit with
+     * {@code UnexpectedRollbackException}. Delegating the INSERT to
+     * {@link TenantLedgerStateBootstrap#insertIfAbsent} (which uses
+     * {@link org.springframework.transaction.annotation.Propagation#REQUIRES_NEW
+     * REQUIRES_NEW}) isolates the nested transaction so the rollback is scoped
+     * to just that INSERT; the caller's posting transaction is untouched.
+     */
+    private TenantLedgerState ensureAndLockSentinel(String tenantId) {
+        java.util.Optional<TenantLedgerState> existing =
+                ledgerStateRepository.findAndLock(tenantId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        // REQUIRES_NEW: a PK collision here rolls back ONLY the nested
+        // sentinel-insert transaction, not our posting transaction. The
+        // DataIntegrityViolationException MUST be caught here (the caller
+        // side of the REQUIRES_NEW boundary) -- catching it inside
+        // insertIfAbsent would cause Spring to attempt a commit on an
+        // already-rollback-only inner TX and throw
+        // UnexpectedRollbackException, which WOULD poison this outer
+        // transaction. See TenantLedgerStateBootstrap javadoc.
+        try {
+            ledgerStateBootstrap.insertIfAbsent(tenantId);
+        } catch (DataIntegrityViolationException concurrent) {
+            // Another thread won the race -- the inner REQUIRES_NEW TX
+            // rolled back cleanly; we re-lock the now-present sentinel.
+            log.debug(
+                    "Tenant ledger sentinel race resolved by PK: tenant={}",
+                    tenantId);
+        }
+        TenantLedgerState state = ledgerStateRepository.findAndLock(tenantId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "tenant_ledger_state row disappeared for tenant=" + tenantId));
+
+        // CBS LEGACY TENANT SEEDING per Finacle LEDGER_STATE bootstrap:
+        // a freshly bootstrapped sentinel starts at (lastSequence=0,
+        // lastHash=GENESIS). If ledger_entries already contains rows for
+        // this tenant (e.g. the tenant predates the sentinel table), the
+        // next posting would compute sequence=1 and collide with the
+        // existing seq=1 on uq_ledger_tenant_seq, rolling back the outer
+        // posting transaction while the sentinel (committed in its own
+        // REQUIRES_NEW TX) remains stuck at lastSequence=0. Every
+        // subsequent posting would repeat the failure -- a permanent
+        // broken state for the tenant.
+        //
+        // We resolve this by re-seeding a fresh sentinel from the actual
+        // ledger tail whenever we detect the fresh marker. Safe under
+        // concurrency because:
+        //   (1) we already hold PESSIMISTIC_WRITE on the sentinel row, so
+        //       no peer can be posting for this tenant right now;
+        //   (2) the re-seed save persists inside the OUTER posting TX --
+        //       if anything below fails, the rollback unwinds the seed
+        //       too and the next caller repeats it idempotently.
+        if (state.getLastSequence() == 0 && "GENESIS".equals(state.getLastHash())) {
+            java.util.Optional<LedgerEntry> tail =
+                    ledgerRepository.findLatestByTenantId(tenantId);
+            if (tail.isPresent()) {
+                LedgerEntry latest = tail.get();
+                state.setLastSequence(latest.getLedgerSequence());
+                state.setLastHash(latest.getHashValue());
+                state.setUpdatedAt(LocalDateTime.now());
+                ledgerStateRepository.save(state);
+                log.info(
+                        "Legacy tenant sentinel seeded from ledger tail: "
+                                + "tenant={}, lastSequence={}",
+                        tenantId,
+                        latest.getLedgerSequence());
+            }
+        }
+        return state;
     }
 
     /**
@@ -159,8 +257,18 @@ public class LedgerService {
      * For a ledger with 10M entries at pageSize=5000: ~2000 DB queries, each returning
      * 5000 rows. Total wall time depends on DB latency but is typically < 5 minutes.
      *
+     * <p><b>Transaction semantics:</b> marked {@code readOnly=true} so Hibernate
+     * skips dirty-check and flushes, and {@code REPEATABLE_READ} so concurrent
+     * ledger appends cannot change already-seen entries mid-walk (prevents false
+     * tamper detection). Per Finacle/Temenos Tier-1: chain verification is a
+     * read-only operation and must never hold write locks or cause accidental
+     * updates via snapshot drift.
+     *
      * @return true if the entire chain is intact, false if any tamper detected
      */
+    @Transactional(
+            readOnly = true,
+            isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public boolean verifyChainIntegrity() {
         String tenantId = TenantContext.getCurrentTenant();
         log.info("Ledger chain integrity verification started for tenant={}", tenantId);

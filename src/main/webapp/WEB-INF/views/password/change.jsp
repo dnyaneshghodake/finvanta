@@ -103,7 +103,7 @@
                 <div class="text-center mt-3">
                     <form method="post" action="${pageContext.request.contextPath}/logout" class="d-inline">
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                        <button type="submit" class="btn btn-link" style="color:#94a3b8;font-size:0.8rem;text-decoration:none;">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm" style="color:#e2e8f0;border-color:#475569;font-size:0.85rem;">
                             <i class="bi bi-box-arrow-left"></i> Logout
                         </button>
                     </form>

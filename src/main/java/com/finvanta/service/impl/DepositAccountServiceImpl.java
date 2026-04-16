@@ -2,6 +2,7 @@ package com.finvanta.service.impl;
 
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
+import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
@@ -69,6 +70,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
 
     /** RBI Master Direction on KYC 2016, Section 38: 24 months no customer-initiated txn = DORMANT */
     private static final long DORMANCY_MONTHS = 24;
+    /** RBI Unclaimed Deposits Direction 2024: 10 years no txn = INOPERATIVE (unclaimed deposit) */
+    private static final long INOPERATIVE_MONTHS = 120;
     /** IT Act Section 194A: TDS threshold for non-senior citizens (INR 40,000 per FY) */
     private static final BigDecimal TDS_THRESHOLD_REGULAR = new BigDecimal("40000.00");
     /** IT Act Section 194A: TDS threshold for senior citizens age >= 60 (INR 50,000 per FY) */
@@ -84,6 +87,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     private final BranchRepository branchRepository;
     private final InterestAccrualRepository accrualRepository;
     private final ProductMasterRepository productMasterRepository;
+    private final ProductGLResolver glResolver;
     private final TransactionEngine transactionEngine;
     private final BusinessDateService businessDateService;
     private final AuditService auditService;
@@ -100,6 +104,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             BranchRepository branchRepository,
             InterestAccrualRepository accrualRepository,
             ProductMasterRepository productMasterRepository,
+            ProductGLResolver glResolver,
             TransactionEngine transactionEngine,
             BusinessDateService businessDateService,
             AuditService auditService,
@@ -114,6 +119,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         this.branchRepository = branchRepository;
         this.accrualRepository = accrualRepository;
         this.productMasterRepository = productMasterRepository;
+        this.glResolver = glResolver;
         this.transactionEngine = transactionEngine;
         this.businessDateService = businessDateService;
         this.auditService = auditService;
@@ -148,7 +154,34 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 acct.getLedgerBalance().subtract(acct.getHoldAmount()).subtract(acct.getUnclearedAmount()));
     }
 
+    /**
+     * CBS Tier-1: Product-driven GL resolution for CASA accounts per Finacle PDDEF.
+     *
+     * Resolves the deposit liability GL code from ProductMaster via ProductGLResolver.
+     * For CASA products, the product's glLoanAsset field stores the deposit liability GL
+     * (e.g., 2010 for SB, 2020 for CA) per the category-aware GL mapping.
+     *
+     * Resolution strategy (type-safe, no sentinel values):
+     *   1. Check if product exists in ProductGLResolver cache
+     *   2. If product found → use product's glLoanAsset directly (already validated at creation)
+     *   3. If product NOT found → fall back to type-based hardcoded GL
+     *
+     * This avoids the fragile sentinel-value pattern (comparing against GLConstants.LOAN_ASSET)
+     * which would break if a CASA product legitimately used GL 1001 in a migration scenario.
+     * Per Finacle PDDEF: product existence is the authoritative signal, not GL code values.
+     */
     private String glForAccount(DepositAccount a) {
+        // CBS: Type-safe product existence check — no sentinel value comparison.
+        // ProductGLResolver.getProduct() returns the cached ProductMaster or null.
+        // If the product exists, its GL codes were validated at creation/edit time
+        // by ProductMasterServiceImpl.validateGlCodes() — safe to use directly.
+        var product = glResolver.getProduct(a.getProductCode());
+        if (product != null && product.getGlLoanAsset() != null) {
+            return product.getGlLoanAsset();
+        }
+        // Product not configured — fall back to type-based hardcoded GL.
+        // This path is only hit for accounts created before ProductMaster was populated,
+        // or if the product was deleted/retired without migration.
         return a.isSavings() ? GLConstants.SB_DEPOSITS : GLConstants.CA_DEPOSITS;
     }
 
@@ -364,6 +397,30 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                             + Arrays.toString(DepositAccountType.values()));
         }
 
+        // CBS Gap #3: Duplicate CIF+Type+Branch check per Finacle ACCTOPN.
+        // Per Finacle: one account per CIF per account type per branch (configurable).
+        // Prevents a customer from having two SAVINGS accounts at the same branch.
+        // Uses non-closed accounts only — closed accounts don't count as duplicates.
+        long existingCount = accountRepository.findByTenantIdAndCustomerId(tid, customerId).stream()
+                .filter(existing -> existing.getAccountType() == parsedAccountType
+                        && existing.getBranch().getId().equals(branchId)
+                        && !existing.isClosed())
+                .count();
+        if (existingCount > 0) {
+            throw new BusinessException("DUPLICATE_ACCOUNT",
+                    "Customer " + cust.getCustomerNumber() + " already has an active "
+                            + parsedAccountType + " account at branch " + branch.getBranchCode()
+                            + ". Per Finacle ACCTOPN: one account per CIF per type per branch.");
+        }
+
+        // CBS CRITICAL: Resolve business date BEFORE sequence allocation.
+        // businessDateService.getCurrentBusinessDate() throws BusinessException("NO_BUSINESS_DAY_OPEN")
+        // if no day is open. This must be validated before consuming the DB-backed sequence,
+        // because REQUIRES_NEW propagation commits the sequence independently — a failed
+        // business date check after sequence allocation wastes the number.
+        // Per Finacle ACCTOPN / Temenos ACCOUNT.OPENING: validate-first, allocate-last.
+        LocalDate bizDate = businessDateService.getCurrentBusinessDate();
+
         // CBS Phase 2: Product-driven rate and minimum balance per Finacle PDDEF.
         // Interest rate and minimum balance are resolved from ProductMaster, not hardcoded.
         // Fallback to defaults if product not found (backward compatibility with Phase 1).
@@ -396,6 +453,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // Produces sequential, deterministic account numbers that survive JVM restarts.
         // Branch-scoped: each branch has its own sequence starting from 1.
         // Format: {SB|CA}-{BRANCH}-{6-digit} → SB-BR001-000001
+        //
+        // CBS CRITICAL: Sequence allocation is the LAST step before entity construction.
+        // All throwable validations (customer, branch, account type, business date, product)
+        // are completed above. The REQUIRES_NEW propagation on the sequence generator commits
+        // independently — any failure after this point wastes the sequence number.
+        // Per Finacle SEQ_MASTER / RBI IT Governance: minimize gaps by allocating last.
         String accNo = cbsReferenceService.generateDepositAccountNumber(
                 branch.getBranchCode(), parsedAccountType.isSavings());
         DepositAccount a = new DepositAccount();
@@ -421,7 +484,6 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         a.setAccruedInterest(BigDecimal.ZERO);
         a.setYtdInterestCredited(BigDecimal.ZERO);
         a.setYtdTdsDeducted(BigDecimal.ZERO);
-        LocalDate bizDate = businessDateService.getCurrentBusinessDate();
         a.setOpenedDate(bizDate);
         a.setLastTransactionDate(bizDate);
         a.setNomineeName(nomineeName);
@@ -434,8 +496,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         // Per Finacle ACCTOPN / Temenos ACCOUNT.OPENING: account opening requires
         // dual authorization. MAKER submits → CHECKER approves → account activates.
         String payload = "CASA|" + accNo + "|" + accountType + "|" + cust.getCustomerNumber()
-                + "|" + branch.getBranchCode() + "|rate=" + interestRate + "|minBal=" + minimumBalance
-                + (initialDeposit != null && initialDeposit.signum() > 0 ? "|initDep=" + initialDeposit : "");
+                + "|" + branch.getBranchCode() + "|rate=" + interestRate + "|minBal=" + minimumBalance;
         try {
             workflowService.initiateApproval(
                     "DepositAccount", saved.getId(), "ACCOUNT_OPENING", "CASA account opening: " + accNo, payload);
@@ -466,12 +527,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 cust.getCustomerNumber(),
                 saved.getAccountStatus());
 
-        // CBS: Initial deposit is only processed if account is ACTIVE (auto-activated or Phase 1 mode).
-        // For PENDING_ACTIVATION accounts, the initial deposit is deferred until checker approval.
-        if (saved.isActive() && initialDeposit != null && initialDeposit.signum() > 0) {
-            deposit(accNo, initialDeposit, bizDate, "Initial deposit at account opening", null, "BRANCH");
-            saved = accountRepository.findByTenantIdAndAccountNumber(tid, accNo).orElse(saved);
-        }
+        // CBS Per Finacle ACCTOPN / Temenos ACCOUNT.OPENING:
+        // Account opening and initial funding are TWO SEPARATE transactions.
+        // The account starts in PENDING_ACTIVATION — it cannot accept credits until
+        // the checker activates it. Initial deposit is done via the standard Deposit
+        // screen after activation. This is the Tier-1 CBS pattern:
+        //   Step 1: MAKER opens account → PENDING_ACTIVATION
+        //   Step 2: CHECKER activates → ACTIVE
+        //   Step 3: MAKER/CHECKER deposits initial funds via Deposit screen
         return saved;
     }
 
@@ -590,6 +653,21 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         }
         if (!acct.isDebitAllowed())
             throw new BusinessException("ACCOUNT_NOT_DEBITABLE", "Status " + acct.getAccountStatus());
+        // CBS Gap #10: Multi-signatory enforcement for JOINTLY-mode joint accounts.
+        // Per Finacle ACCTOPN / RBI Joint Account Guidelines:
+        // When jointHolderMode = "JOINTLY", ALL signatories must authorize debits.
+        // Phase 1: Block self-service debits with clear message — require branch visit.
+        // Phase 2: Digital multi-signatory workflow with pending authorization queue.
+        // System-generated debits (SI, EMI, TDS) are exempt — they execute per mandate.
+        if ("JOINTLY".equals(acct.getJointHolderMode())
+                && !"STANDING_INSTRUCTION".equals(channel)
+                && !"SYSTEM".equals(channel)
+                && !"LOAN_EMI_DEBIT".equals(channel)) {
+            throw new BusinessException("JOINT_AUTHORIZATION_REQUIRED",
+                    "Account " + acn + " is a JOINTLY-operated joint account. "
+                            + "All signatories must authorize debits. Please visit the branch "
+                            + "with all account holders for joint authorization.");
+        }
         if (!acct.hasSufficientFunds(amount))
             throw new BusinessException(
                     "INSUFFICIENT_BALANCE", "Withdrawal " + amount + " > available " + acct.getEffectiveAvailable());
@@ -677,6 +755,28 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         var tgt = fromFirst ? secondAcct : firstAcct;
         if (!src.isDebitAllowed())
             throw new BusinessException("SOURCE_NOT_DEBITABLE", "Source " + src.getAccountStatus());
+        // CBS: Multi-signatory enforcement on transfer source (same as withdrawal).
+        // System-generated transfers (Standing Instructions: SIP, utility sweep, RD contribution)
+        // are exempt — they execute per pre-authorized mandate signed by all joint holders.
+        // Per Finacle SI_ENGINE: SI transfers are system-initiated, not user-initiated.
+        //
+        // CBS CRITICAL: Authorization decisions MUST NOT rely on user-supplied idempotency keys.
+        // The idempotency key is a client-provided dedup token — any caller can craft a key
+        // starting with "SI-" to bypass JOINTLY multi-signatory enforcement. This would be a
+        // financial security bypass per RBI Joint Account Guidelines.
+        //
+        // Instead, we check the authenticated principal: Standing Instruction execution runs
+        // as SYSTEM_EOD (set by StandingInstructionServiceImpl). Only the system user context
+        // is trusted to bypass joint authorization — human users must always visit the branch.
+        // Per Finacle AUTH_ENGINE: authorization checks use the security context, never
+        // user-supplied request parameters.
+        String currentUser = SecurityUtil.getCurrentUsername();
+        boolean isSystemInitiated = "SYSTEM_EOD".equals(currentUser) || "SYSTEM".equals(currentUser);
+        if ("JOINTLY".equals(src.getJointHolderMode()) && !isSystemInitiated) {
+            throw new BusinessException("JOINT_AUTHORIZATION_REQUIRED",
+                    "Source account " + from + " is a JOINTLY-operated joint account. "
+                            + "All signatories must authorize debits. Please visit the branch.");
+        }
         if (!tgt.isCreditAllowed())
             throw new BusinessException("TARGET_NOT_CREDITABLE", "Target " + tgt.getAccountStatus());
         if (!src.hasSufficientFunds(amount))
@@ -930,6 +1030,16 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         }
 
         String gl = glForAccount(acct);
+        // CBS Tier-1: Resolve interest expense GL from ProductMaster via ProductGLResolver.
+        // For CASA products, glInterestReceivable stores the interest expense GL (5010).
+        // Uses type-safe product existence check — no sentinel value comparison.
+        String interestExpenseGl;
+        var interestProduct = glResolver.getProduct(acct.getProductCode());
+        if (interestProduct != null && interestProduct.getGlInterestReceivable() != null) {
+            interestExpenseGl = interestProduct.getGlInterestReceivable();
+        } else {
+            interestExpenseGl = GLConstants.INTEREST_EXPENSE_DEPOSITS;
+        }
         TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("DEPOSIT")
                 .transactionType("INTEREST_CREDIT")
@@ -941,7 +1051,7 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 .systemGenerated(true)
                 .journalLines(List.of(
                         new JournalLineRequest(
-                                GLConstants.INTEREST_EXPENSE_DEPOSITS, DebitCredit.DEBIT, interest, "Interest expense"),
+                                interestExpenseGl, DebitCredit.DEBIT, interest, "Interest expense"),
                         new JournalLineRequest(gl, DebitCredit.CREDIT, interest, "Interest credit " + acn)))
                 .build());
         acct.setLedgerBalance(acct.getLedgerBalance().add(interest));
@@ -1095,6 +1205,12 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     public DepositAccount closeAccount(String acn, String reason) {
         var acct = lockAccount(TenantContext.getCurrentTenant(), acn);
         if (acct.isClosed()) throw new BusinessException("ALREADY_CLOSED", "Already closed");
+        // CBS: Multi-signatory enforcement on account closure
+        if ("JOINTLY".equals(acct.getJointHolderMode())) {
+            throw new BusinessException("JOINT_AUTHORIZATION_REQUIRED",
+                    "Account " + acn + " is a JOINTLY-operated joint account. "
+                            + "All signatories must authorize closure. Please visit the branch.");
+        }
         if (acct.getAccruedInterest() != null && acct.getAccruedInterest().signum() > 0)
             throw new BusinessException(
                     "PENDING_INTEREST",
@@ -1164,7 +1280,227 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             count++;
         }
         if (count > 0) log.info("Marked {} accounts as DORMANT (cutoff={})", count, cutoff);
-        return count;
+
+        // CBS Gap #2: INOPERATIVE classification per RBI Unclaimed Deposits Direction 2024.
+        // Accounts DORMANT for 10+ years (no customer-initiated txn for 120+ months total)
+        // must transition to INOPERATIVE. INOPERATIVE accounts require senior management
+        // approval to reactivate and must be reported to RBI UDGAM portal.
+        // Per RBI: DORMANT (2yr) → INOPERATIVE (10yr) → Unclaimed (reported to UDGAM)
+        LocalDate inoperativeCutoff = businessDate.minusMonths(INOPERATIVE_MONTHS);
+        var inoperativeCandidates = accountRepository.findInoperativeCandidates(tid, inoperativeCutoff);
+        int inoperativeCount = 0;
+        for (var acct : inoperativeCandidates) {
+            if (acct.getLastTransactionDate() != null
+                    && acct.getLastTransactionDate().isBefore(inoperativeCutoff)) {
+                acct.setAccountStatus(DepositAccountStatus.INOPERATIVE);
+                acct.setUpdatedBy("SYSTEM_EOD");
+                accountRepository.save(acct);
+
+                auditService.logEvent(
+                        "DepositAccount",
+                        acct.getId(),
+                        "INOPERATIVE_CLASSIFIED",
+                        "DORMANT",
+                        "INOPERATIVE",
+                        "DEPOSIT",
+                        "Account marked INOPERATIVE (10yr+): " + acct.getAccountNumber()
+                                + " | Last txn: " + acct.getLastTransactionDate()
+                                + " | Balance: INR " + acct.getLedgerBalance()
+                                + " | Per RBI Unclaimed Deposits Direction 2024");
+                inoperativeCount++;
+            }
+        }
+        if (inoperativeCount > 0) {
+            log.info("Marked {} accounts as INOPERATIVE (10yr+ no txn)", inoperativeCount);
+        }
+
+        return count + inoperativeCount;
+    }
+
+    // === Account Maintenance (Finacle ACCTMOD / Temenos ACCOUNT.MODIFY) ===
+    @Override
+    @Transactional
+    public DepositAccount maintainAccount(
+            String acn,
+            String nomineeName,
+            String nomineeRelationship,
+            String jointHolderMode,
+            Boolean chequeBookEnabled,
+            Boolean debitCardEnabled,
+            BigDecimal dailyWithdrawalLimit,
+            BigDecimal dailyTransferLimit,
+            BigDecimal odLimit,
+            BigDecimal interestRate,
+            BigDecimal minimumBalance) {
+        String tid = TenantContext.getCurrentTenant();
+        String user = SecurityUtil.getCurrentUsername();
+        DepositAccount acct = lockAccount(tid, acn);
+
+        // CBS: Only ACTIVE accounts can be modified per Finacle ACCTMOD.
+        // PENDING_ACTIVATION: not yet operational — complete activation first.
+        // FROZEN: under regulatory hold — modifications blocked per PMLA.
+        // DORMANT: requires reactivation via deposit first.
+        // CLOSED: terminal — no modifications allowed.
+        if (!acct.isActive()) {
+            throw new BusinessException("ACCOUNT_NOT_ACTIVE",
+                    "Account maintenance requires ACTIVE status. Current: " + acct.getAccountStatus()
+                            + ". " + (acct.isDormant() ? "Make a deposit to reactivate first."
+                            : acct.getAccountStatus() == DepositAccountStatus.PENDING_ACTIVATION
+                            ? "Activate the account first." : ""));
+        }
+
+        // CBS: Capture before-state for audit trail per RBI IT Governance §8.3.
+        // Every field modification must be traceable with before/after values.
+        StringBuilder beforeState = new StringBuilder();
+        StringBuilder afterState = new StringBuilder();
+        StringBuilder changes = new StringBuilder();
+        boolean modified = false;
+
+        // Nominee (RBI Deposit Insurance)
+        // CBS: Only record as changed if the new value ACTUALLY differs from current.
+        // The HTML form always submits all fields — without this check, every maintenance
+        // operation would record all fields as "changed" even when untouched, creating
+        // noisy audit trails that obscure real changes during RBI inspection.
+        if (nomineeName != null) {
+            String newNominee = nomineeName.isBlank() ? null : nomineeName;
+            if (!java.util.Objects.equals(newNominee, acct.getNomineeName())) {
+                beforeState.append("nominee=").append(acct.getNomineeName());
+                acct.setNomineeName(newNominee);
+                afterState.append("nominee=").append(acct.getNomineeName());
+                changes.append("Nominee: ").append(acct.getNomineeName()).append("; ");
+                modified = true;
+            }
+        }
+        if (nomineeRelationship != null) {
+            String newRel = nomineeRelationship.isBlank() ? null : nomineeRelationship;
+            if (!java.util.Objects.equals(newRel, acct.getNomineeRelationship())) {
+                beforeState.append("|rel=").append(acct.getNomineeRelationship());
+                acct.setNomineeRelationship(newRel);
+                afterState.append("|rel=").append(acct.getNomineeRelationship());
+                modified = true;
+            }
+        }
+
+        // Joint Holder Mode
+        if (jointHolderMode != null) {
+            String newJoint = jointHolderMode.isBlank() ? null : jointHolderMode;
+            if (!java.util.Objects.equals(newJoint, acct.getJointHolderMode())) {
+                beforeState.append("|joint=").append(acct.getJointHolderMode());
+                acct.setJointHolderMode(newJoint);
+                afterState.append("|joint=").append(acct.getJointHolderMode());
+                changes.append("JointMode: ").append(acct.getJointHolderMode()).append("; ");
+                modified = true;
+            }
+        }
+
+        // Cheque Book
+        if (chequeBookEnabled != null && chequeBookEnabled != acct.isChequeBookEnabled()) {
+            beforeState.append("|cheque=").append(acct.isChequeBookEnabled());
+            acct.setChequeBookEnabled(chequeBookEnabled);
+            afterState.append("|cheque=").append(acct.isChequeBookEnabled());
+            changes.append("ChequeBook: ").append(chequeBookEnabled ? "ENABLED" : "DISABLED").append("; ");
+            modified = true;
+        }
+
+        // Debit Card
+        if (debitCardEnabled != null && debitCardEnabled != acct.isDebitCardEnabled()) {
+            beforeState.append("|debit=").append(acct.isDebitCardEnabled());
+            acct.setDebitCardEnabled(debitCardEnabled);
+            afterState.append("|debit=").append(acct.isDebitCardEnabled());
+            changes.append("DebitCard: ").append(debitCardEnabled ? "ENABLED" : "DISABLED").append("; ");
+            modified = true;
+        }
+
+        // Daily Withdrawal Limit
+        if (dailyWithdrawalLimit != null) {
+            if (dailyWithdrawalLimit.signum() < 0)
+                throw new BusinessException("INVALID_LIMIT", "Daily withdrawal limit cannot be negative.");
+            if (acct.getDailyWithdrawalLimit() == null || dailyWithdrawalLimit.compareTo(acct.getDailyWithdrawalLimit()) != 0) {
+                beforeState.append("|wdlLimit=").append(acct.getDailyWithdrawalLimit());
+                acct.setDailyWithdrawalLimit(dailyWithdrawalLimit);
+                afterState.append("|wdlLimit=").append(acct.getDailyWithdrawalLimit());
+                changes.append("WithdrawalLimit: INR ").append(dailyWithdrawalLimit).append("; ");
+                modified = true;
+            }
+        }
+
+        // Daily Transfer Limit
+        if (dailyTransferLimit != null) {
+            if (dailyTransferLimit.signum() < 0)
+                throw new BusinessException("INVALID_LIMIT", "Daily transfer limit cannot be negative.");
+            if (acct.getDailyTransferLimit() == null || dailyTransferLimit.compareTo(acct.getDailyTransferLimit()) != 0) {
+                beforeState.append("|xfrLimit=").append(acct.getDailyTransferLimit());
+                acct.setDailyTransferLimit(dailyTransferLimit);
+                afterState.append("|xfrLimit=").append(acct.getDailyTransferLimit());
+                changes.append("TransferLimit: INR ").append(dailyTransferLimit).append("; ");
+                modified = true;
+            }
+        }
+
+        // OD Limit (CURRENT_OD accounts only)
+        if (odLimit != null) {
+            if (!acct.getAccountType().name().contains("CURRENT_OD"))
+                throw new BusinessException("OD_NOT_APPLICABLE",
+                        "OD limit is only applicable for CURRENT_OD accounts. This account is " + acct.getAccountType());
+            if (odLimit.signum() < 0)
+                throw new BusinessException("INVALID_LIMIT", "OD limit cannot be negative.");
+            if (acct.getOdLimit() == null || odLimit.compareTo(acct.getOdLimit()) != 0) {
+                beforeState.append("|od=").append(acct.getOdLimit());
+                acct.setOdLimit(odLimit);
+                recomputeAvailable(acct);
+                afterState.append("|od=").append(acct.getOdLimit());
+                changes.append("ODLimit: INR ").append(odLimit).append("; ");
+                modified = true;
+            }
+        }
+
+        // Interest Rate Override (ADMIN only, savings accounts only)
+        if (interestRate != null) {
+            if (!acct.isSavings())
+                throw new BusinessException("RATE_NOT_APPLICABLE",
+                        "Interest rate override is only applicable for savings accounts. This account is " + acct.getAccountType());
+            if (interestRate.signum() < 0 || interestRate.compareTo(new BigDecimal("100")) > 0)
+                throw new BusinessException("INVALID_RATE", "Interest rate must be between 0% and 100%.");
+            if (acct.getInterestRate() == null || interestRate.compareTo(acct.getInterestRate()) != 0) {
+                beforeState.append("|rate=").append(acct.getInterestRate());
+                acct.setInterestRate(interestRate);
+                afterState.append("|rate=").append(acct.getInterestRate());
+                changes.append("InterestRate: ").append(interestRate).append("%; ");
+                modified = true;
+            }
+        }
+
+        // Minimum Balance Override/Waiver
+        if (minimumBalance != null) {
+            if (minimumBalance.signum() < 0)
+                throw new BusinessException("INVALID_AMOUNT", "Minimum balance cannot be negative.");
+            if (acct.getMinimumBalance() == null || minimumBalance.compareTo(acct.getMinimumBalance()) != 0) {
+                beforeState.append("|minBal=").append(acct.getMinimumBalance());
+                acct.setMinimumBalance(minimumBalance);
+                afterState.append("|minBal=").append(acct.getMinimumBalance());
+                changes.append("MinBalance: INR ").append(minimumBalance).append("; ");
+                modified = true;
+            }
+        }
+
+        if (!modified) {
+            throw new BusinessException("NO_CHANGES", "No modifications specified.");
+        }
+
+        acct.setUpdatedBy(user);
+        DepositAccount saved = accountRepository.save(acct);
+
+        auditService.logEvent(
+                "DepositAccount",
+                saved.getId(),
+                "ACCOUNT_MAINTAINED",
+                beforeState.toString(),
+                afterState.toString(),
+                "DEPOSIT",
+                "Account maintained: " + acn + " | " + changes + " | By: " + user);
+
+        log.info("Account maintained: acn={}, changes={}, user={}", acn, changes, user);
+        return saved;
     }
 
     // === Read Operations ===

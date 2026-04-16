@@ -1,6 +1,6 @@
 package com.finvanta.api;
 
-import com.finvanta.charge.ChargeEngine;
+import com.finvanta.charge.ChargeKernel;
 import com.finvanta.charge.ChargeResult;
 import com.finvanta.domain.entity.ChargeTransaction;
 import com.finvanta.domain.enums.ChargeEventType;
@@ -23,25 +23,27 @@ import org.springframework.web.bind.annotation.*;
 /**
  * CBS Charge/Fee REST API per Finacle CHG_API / Temenos FT.COMMISSION.
  *
- * Thin orchestration layer over ChargeEngine.
+ * <p>Thin orchestration layer over {@link ChargeKernel}.
  * Per Finacle API standards: request DTOs, response DTOs, role-based access.
  *
- * CBS Role Matrix for Charges:
- *   MAKER   → levy charge (via clearing/loan module — not direct)
- *   CHECKER → waive charge
- *   ADMIN   → all operations + charge definition management
+ * <p>CBS Role Matrix for Charges:
+ * <ul>
+ *   <li>MAKER   -> levy charge (via clearing/loan module -- not direct)</li>
+ *   <li>CHECKER -> waive or reverse charge</li>
+ *   <li>ADMIN   -> all operations + charge definition management</li>
+ * </ul>
  */
 @RestController
 @RequestMapping("/api/v1/charges")
 public class ChargeController {
 
-    private final ChargeEngine chargeEngine;
+    private final ChargeKernel chargeKernel;
     private final ChargeTransactionRepository chargeTxnRepo;
 
     public ChargeController(
-            ChargeEngine chargeEngine,
+            ChargeKernel chargeKernel,
             ChargeTransactionRepository chargeTxnRepo) {
-        this.chargeEngine = chargeEngine;
+        this.chargeKernel = chargeKernel;
         this.chargeTxnRepo = chargeTxnRepo;
     }
 
@@ -50,7 +52,7 @@ public class ChargeController {
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<ChargeResponse>>
             levyCharge(@Valid @RequestBody LevyRequest req) {
-        ChargeResult result = chargeEngine.levyCharge(
+        ChargeResult result = chargeKernel.levyCharge(
                 ChargeEventType.valueOf(req.eventType()),
                 req.accountNumber(),
                 req.customerGlCode(),
@@ -58,7 +60,8 @@ public class ChargeController {
                 req.productCode(),
                 req.sourceModule(),
                 req.sourceRef(),
-                req.branchCode());
+                req.branchCode(),
+                req.customerStateCode());
         if (result == null) {
             return ResponseEntity.ok(ApiResponse.success(
                     null, "No charge applicable"));
@@ -67,12 +70,12 @@ public class ChargeController {
                 ChargeResponse.from(result)));
     }
 
-    /** Waive a previously levied charge. */
+    /** Waive a previously levied charge (policy-driven income giveup). */
     @PostMapping("/waive")
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<WaiverResponse>>
             waiveCharge(@Valid @RequestBody WaiverRequest req) {
-        ChargeTransaction ct = chargeEngine.waiveCharge(
+        ChargeTransaction ct = chargeKernel.waiveCharge(
                 req.chargeTransactionId(), req.reason());
         return ResponseEntity.ok(ApiResponse.success(
                 new WaiverResponse(ct.getId(),
@@ -80,6 +83,26 @@ public class ChargeController {
                         ct.getTotalDebit(),
                         ct.getWaivedBy(),
                         ct.getWaiverReason())));
+    }
+
+    /**
+     * Reverse a previously levied charge (operational rollback).
+     * Posts a symmetric contra journal per RBI Fair Practices Code 2023 §5.7.
+     */
+    @PostMapping("/reverse")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<ReversalResponse>>
+            reverseCharge(@Valid @RequestBody ReversalRequest req) {
+        ChargeTransaction ct = chargeKernel.reverseCharge(
+                req.chargeTransactionId(), req.reason());
+        return ResponseEntity.ok(ApiResponse.success(
+                new ReversalResponse(
+                        ct.getId(),
+                        ct.getEventType().name(),
+                        ct.getTotalDebit(),
+                        ct.getReversedBy(),
+                        ct.getReversalReason(),
+                        ct.getReversalVoucherNumber())));
     }
 
     /** Get charge history for an account. */
@@ -101,8 +124,13 @@ public class ChargeController {
                         c.getId(),
                         c.getEventType().name(),
                         c.getBaseFee(),
-                        c.getCgstAmount().add(
-                                c.getSgstAmount()),
+                        // CBS: Total GST = CGST + SGST + IGST. Intra-state supplies carry
+                        // CGST/SGST and IGST=0; inter-state supplies carry IGST only (per
+                        // GST Act 2017 §8 / §12). Summing all three is the only way to get
+                        // the correct total regardless of intra-/inter-state split.
+                        nz(c.getCgstAmount())
+                                .add(nz(c.getSgstAmount()))
+                                .add(nz(c.getIgstAmount())),
                         c.getTotalDebit(),
                         c.isWaived(),
                         c.getValueDate().toString(),
@@ -123,9 +151,15 @@ public class ChargeController {
             String productCode,
             @NotBlank String sourceModule,
             @NotBlank String sourceRef,
-            @NotBlank String branchCode) {}
+            @NotBlank String branchCode,
+            /** Customer state code for GST intra/inter-state split per GST Act 2017 §12. Optional. */
+            String customerStateCode) {}
 
     public record WaiverRequest(
+            @NotNull Long chargeTransactionId,
+            @NotBlank String reason) {}
+
+    public record ReversalRequest(
             @NotNull Long chargeTransactionId,
             @NotBlank String reason) {}
 
@@ -156,6 +190,14 @@ public class ChargeController {
             String waivedBy,
             String reason) {}
 
+    public record ReversalResponse(
+            Long chargeTransactionId,
+            String eventType,
+            BigDecimal totalReversed,
+            String reversedBy,
+            String reason,
+            String reversalVoucherNumber) {}
+
     public record ChargeHistoryItem(
             Long id, String eventType,
             BigDecimal baseFee,
@@ -165,4 +207,9 @@ public class ChargeController {
             String valueDate,
             String sourceModule,
             String sourceRef) {}
+
+    /** Null-safe BigDecimal accessor -- treats null as ZERO for GST aggregation. */
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
+    }
 }

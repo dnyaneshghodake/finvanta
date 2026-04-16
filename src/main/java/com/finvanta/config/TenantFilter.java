@@ -4,6 +4,7 @@ import com.finvanta.util.TenantContext;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 
 import java.io.IOException;
@@ -97,14 +98,22 @@ public class TenantFilter implements Filter {
             throws IOException, ServletException {
         try {
             HttpServletRequest httpRequest = (HttpServletRequest) request;
+            HttpServletResponse httpResponse = (HttpServletResponse) response;
+            String path = httpRequest.getRequestURI();
+            String contextPath = httpRequest.getContextPath();
+            boolean isApiRequest = contextPath != null
+                    && path != null
+                    && path.startsWith(contextPath + "/api/v1/");
 
             // === Resolve Tenant ID ===
-            // Priority: X-Tenant-Id header → session → DEFAULT fallback.
+            // Priority: X-Tenant-Id header → session → DEFAULT fallback (UI chain only).
             // Per Finacle BANK_MASTER: tenant ID is resolved once at login and
             // stored in session. The header is for API/service-to-service calls.
-            String tenantId = httpRequest.getHeader("X-Tenant-Id");
+            String rawHeader = httpRequest.getHeader("X-Tenant-Id");
+            boolean headerProvided = rawHeader != null && !rawHeader.isBlank();
+            String tenantId = headerProvided ? rawHeader : null;
 
-            if (tenantId == null || tenantId.isBlank()) {
+            if (tenantId == null) {
                 HttpSession session = httpRequest.getSession(false);
                 if (session != null) {
                     Object sessionTenant = session.getAttribute(TENANT_SESSION_KEY);
@@ -114,16 +123,37 @@ public class TenantFilter implements Filter {
                 }
             }
 
-            if (tenantId == null || tenantId.isBlank()) {
-                tenantId = DEFAULT_TENANT;
-            }
-
             // CBS Security: Validate tenant ID format to prevent injection attacks.
             // Per RBI IT Governance Direction 2023 §8.1: all external input must be
             // validated against expected format before use. An attacker could send
             // X-Tenant-Id with SQL/JPQL special characters to manipulate queries.
             // Only alphanumeric + underscore, max 20 chars (matches DB column length).
-            if (!TENANT_ID_PATTERN.matcher(tenantId).matches()) {
+            boolean tenantIsMalformed = tenantId != null
+                    && !TENANT_ID_PATTERN.matcher(tenantId).matches();
+
+            // CBS API chain: a malformed or missing header on /api/v1/** must fail-fast
+            // with HTTP 400. Silent fallback to DEFAULT for machine-to-machine traffic
+            // would cause cross-tenant data leaks for any client that mistyped the
+            // header name. Per Finacle Connect / Temenos IRIS API standards.
+            if (isApiRequest && (tenantIsMalformed || !headerProvided)) {
+                String errorCode = tenantIsMalformed ? "INVALID_TENANT_ID" : "MISSING_TENANT_ID";
+                String message = tenantIsMalformed
+                        ? "X-Tenant-Id header is malformed. Must match [A-Za-z0-9_]{1,20}."
+                        : "X-Tenant-Id header is required for /api/v1/** requests.";
+                httpResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                httpResponse.setContentType("application/json");
+                httpResponse.getWriter().write(
+                        "{\"status\":\"ERROR\",\"errorCode\":\""
+                                + errorCode
+                                + "\",\"message\":\""
+                                + message
+                                + "\"}");
+                return;
+            }
+
+            // UI chain retains lenient fallback: a malformed or missing header is
+            // tolerated (returns DEFAULT) so that login/static/error pages still work.
+            if (tenantIsMalformed || tenantId == null || tenantId.isBlank()) {
                 tenantId = DEFAULT_TENANT;
             }
 

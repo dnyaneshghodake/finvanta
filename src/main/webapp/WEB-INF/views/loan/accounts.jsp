@@ -12,6 +12,20 @@
     <div class="fv-card">
         <div class="card-header">Active Loan Accounts</div>
         <div class="card-body">
+            <!-- CBS: Loan Account search per Finacle LOANINQ -->
+            <form method="get" action="${pageContext.request.contextPath}/loan/accounts/search" class="row g-2 mb-3">
+                <div class="col-auto">
+                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by account no, CIF, customer name..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:320px;" />
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>
+                </div>
+                <c:if test="${not empty searchQuery}">
+                <div class="col-auto">
+                    <a href="${pageContext.request.contextPath}/loan/accounts" class="btn btn-sm btn-outline-secondary">Clear</a>
+                </div>
+                </c:if>
+            </form>
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>

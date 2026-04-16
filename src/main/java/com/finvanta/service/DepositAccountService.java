@@ -125,6 +125,54 @@ public interface DepositAccountService {
      */
     int markDormantAccounts(LocalDate businessDate);
 
+    /**
+     * CBS Account Maintenance per Finacle ACCTMOD / Temenos ACCOUNT.MODIFY.
+     *
+     * Modifies operational parameters on an existing ACTIVE account.
+     * Per Tier-1 CBS: account maintenance is a separate workflow from account opening.
+     * Only ACTIVE accounts can be modified — PENDING/FROZEN/DORMANT/CLOSED are rejected.
+     *
+     * Modifiable fields (per Finacle ACCTMOD):
+     *   - nomineeName, nomineeRelationship (RBI Deposit Insurance)
+     *   - jointHolderMode (EITHER_SURVIVOR, FORMER_SURVIVOR, JOINTLY)
+     *   - chequeBookEnabled, debitCardEnabled (operational flags)
+     *   - dailyWithdrawalLimit, dailyTransferLimit (per-account risk controls)
+     *   - odLimit (for CURRENT_OD accounts only)
+     *   - interestRate (per-account override, ADMIN only, savings accounts only)
+     *   - minimumBalance (per-account override/waiver, ADMIN only)
+     *
+     * Immutable after creation (must open new account):
+     *   - accountNumber, accountType, productCode, currencyCode, branch, customer
+     *
+     * Per RBI IT Governance §8.3: every modification is audited with before/after state.
+     * Per Finacle ACCTMOD: CHECKER/ADMIN only (enforced in SecurityConfig).
+     *
+     * @param accountNumber Account to modify
+     * @param nomineeName New nominee name (null = no change)
+     * @param nomineeRelationship New nominee relationship (null = no change)
+     * @param jointHolderMode New joint holder mode (null = no change)
+     * @param chequeBookEnabled Enable/disable cheque book (null = no change)
+     * @param debitCardEnabled Enable/disable debit card (null = no change)
+     * @param dailyWithdrawalLimit New daily withdrawal limit (null = no change)
+     * @param dailyTransferLimit New daily transfer limit (null = no change)
+     * @param odLimit New OD limit for CURRENT_OD accounts (null = no change)
+     * @param interestRate Per-account interest rate override (null = no change)
+     * @param minimumBalance Per-account minimum balance override/waiver (null = no change)
+     * @return Updated account
+     */
+    DepositAccount maintainAccount(
+            String accountNumber,
+            String nomineeName,
+            String nomineeRelationship,
+            String jointHolderMode,
+            Boolean chequeBookEnabled,
+            Boolean debitCardEnabled,
+            BigDecimal dailyWithdrawalLimit,
+            BigDecimal dailyTransferLimit,
+            BigDecimal odLimit,
+            BigDecimal interestRate,
+            BigDecimal minimumBalance);
+
     /** Get account by number (read-only, no lock) */
     DepositAccount getAccount(String accountNumber);
 

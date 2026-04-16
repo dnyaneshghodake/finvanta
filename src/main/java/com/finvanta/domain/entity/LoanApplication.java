@@ -27,11 +27,13 @@ public class LoanApplication extends BaseEntity {
     @Column(name = "application_number", nullable = false, length = 40)
     private String applicationNumber;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    /** CBS: EAGER — customer name/CIF displayed on every application screen */
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "customer_id", nullable = false)
     private Customer customer;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    /** CBS: EAGER — branch code displayed on every application screen */
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
 

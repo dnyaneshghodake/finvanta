@@ -1,17 +1,21 @@
 package com.finvanta.controller;
 
+import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.LoanStatus;
+import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -37,10 +41,14 @@ import org.springframework.web.servlet.ModelAndView;
 public class ReportController {
 
     private final LoanAccountRepository accountRepository;
+    private final DepositAccountRepository depositAccountRepository;
     private final BusinessDateService businessDateService;
 
-    public ReportController(LoanAccountRepository accountRepository, BusinessDateService businessDateService) {
+    public ReportController(LoanAccountRepository accountRepository,
+            DepositAccountRepository depositAccountRepository,
+            BusinessDateService businessDateService) {
         this.accountRepository = accountRepository;
+        this.depositAccountRepository = depositAccountRepository;
         this.businessDateService = businessDateService;
     }
 
@@ -222,6 +230,72 @@ public class ReportController {
                         : BigDecimal.ZERO);
         mav.addObject("businessDate", getBusinessDate());
         return mav;
+    }
+
+    /**
+     * CBS Unclaimed Deposits Report per RBI UDGAM Direction 2024.
+     * Per RBI: banks must identify and report accounts with no customer-initiated
+     * transaction for 10+ years (INOPERATIVE status) with non-zero balance.
+     * These are "unclaimed deposits" that must be reported to RBI UDGAM portal.
+     *
+     * Report includes: account number, customer details, last transaction date,
+     * balance, branch — all fields required by RBI UDGAM submission format.
+     *
+     * CSV export available for regulatory submission.
+     */
+    @GetMapping("/udgam")
+    public ModelAndView udgamReport() {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("reports/udgam");
+        List<DepositAccount> unclaimed = depositAccountRepository.findUnclaimedDeposits(tenantId);
+        BigDecimal totalUnclaimed = depositAccountRepository.sumUnclaimedDepositBalance(tenantId);
+
+        mav.addObject("unclaimedAccounts", unclaimed);
+        mav.addObject("totalUnclaimed", totalUnclaimed);
+        mav.addObject("totalCount", unclaimed.size());
+        mav.addObject("businessDate", getBusinessDate());
+        mav.addObject("pageTitle", "Unclaimed Deposits (RBI UDGAM)");
+        return mav;
+    }
+
+    /**
+     * CBS UDGAM CSV Export for RBI submission.
+     * Per RBI UDGAM Direction 2024: regulatory submission in machine-readable format.
+     */
+    @GetMapping("/udgam/export")
+    public ResponseEntity<byte[]> exportUdgam() {
+        String tenantId = TenantContext.getCurrentTenant();
+        List<DepositAccount> unclaimed = depositAccountRepository.findUnclaimedDeposits(tenantId);
+
+        StringBuilder csv = new StringBuilder();
+        csv.append("Account Number,Customer CIF,Customer Name,Account Type,Branch Code,");
+        csv.append("Balance (INR),Last Transaction Date,Opened Date,Dormant Since,Status\n");
+        for (DepositAccount da : unclaimed) {
+            // CBS: Defensive null checks on all entity associations per RBI UDGAM export.
+            // INOPERATIVE accounts are long-dormant — data integrity issues (orphaned FK,
+            // migrated records) are more likely on 10yr+ old accounts. A single NPE must
+            // NOT abort the entire regulatory CSV export. Per Finacle REPORT_ENGINE:
+            // null associations render as empty fields, never crash the report.
+            csv.append(da.getAccountNumber() != null ? da.getAccountNumber() : "").append(',');
+            csv.append(da.getCustomer() != null ? da.getCustomer().getCustomerNumber() : "").append(',');
+            String fullName = (da.getCustomer() != null && da.getCustomer().getFullName() != null)
+                    ? da.getCustomer().getFullName() : "";
+            csv.append('"').append(fullName.replace("\"", "\"\"")).append("\",");
+            csv.append(da.getAccountType() != null ? da.getAccountType() : "").append(',');
+            csv.append(da.getBranch() != null ? da.getBranch().getBranchCode() : "").append(',');
+            csv.append(da.getLedgerBalance() != null ? da.getLedgerBalance() : "0").append(',');
+            csv.append(da.getLastTransactionDate() != null ? da.getLastTransactionDate() : "").append(',');
+            csv.append(da.getOpenedDate() != null ? da.getOpenedDate() : "").append(',');
+            csv.append(da.getDormantDate() != null ? da.getDormantDate() : "").append(',');
+            csv.append(da.getAccountStatus() != null ? da.getAccountStatus() : "");
+            csv.append('\n');
+        }
+
+        String filename = "UDGAM_Unclaimed_Deposits_" + LocalDate.now() + ".csv";
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                .header("Content-Type", "text/csv; charset=UTF-8")
+                .body(csv.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     private String getIracCategory(LoanStatus status) {

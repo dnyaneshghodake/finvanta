@@ -248,7 +248,8 @@ public class ApprovalWorkflowService {
             "VERIFY", 24,       // Verification must happen within 24 hours
             "APPROVE", 48,      // Approval within 48 hours
             "ACCOUNT_OPENING", 4, // CASA account activation within 4 hours
-            "CLR_OUTWARD_HIGH_VALUE", 2 // High-value clearing within 2 hours per RBI TAT
+            "CLR_OUTWARD_HIGH_VALUE", 2, // High-value clearing within 2 hours per RBI TAT
+            "PRODUCT_GL_CHANGE", 4 // GL code changes on live products — urgent per Finacle PDDEF
     );
 
     /**

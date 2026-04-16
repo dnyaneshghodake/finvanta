@@ -3,19 +3,23 @@ package com.finvanta.controller;
 import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.audit.AuditService;
 import com.finvanta.batch.InterBranchSettlementService;
+import com.finvanta.domain.entity.ChargeConfig;
 import com.finvanta.domain.entity.ProductMaster;
+import com.finvanta.domain.entity.TransactionLimit;
 import com.finvanta.repository.AppUserRepository;
 import com.finvanta.repository.ChargeConfigRepository;
 import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.repository.TransactionLimitRepository;
 import com.finvanta.service.MfaService;
+import com.finvanta.service.ProductMasterService;
 import com.finvanta.service.QrCodeGenerator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
@@ -40,6 +44,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 @RequestMapping("/admin")
 public class AdminController {
 
+    private final ProductMasterService productService;
     private final ProductMasterRepository productRepository;
     private final TransactionLimitRepository limitRepository;
     private final ChargeConfigRepository chargeConfigRepository;
@@ -52,6 +57,7 @@ public class AdminController {
     private final InterBranchSettlementService settlementService;
 
     public AdminController(
+            ProductMasterService productService,
             ProductMasterRepository productRepository,
             TransactionLimitRepository limitRepository,
             ChargeConfigRepository chargeConfigRepository,
@@ -62,6 +68,7 @@ public class AdminController {
             QrCodeGenerator qrCodeGenerator,
             AppUserRepository appUserRepository,
             InterBranchSettlementService settlementService) {
+        this.productService = productService;
         this.productRepository = productRepository;
         this.limitRepository = limitRepository;
         this.chargeConfigRepository = chargeConfigRepository;
@@ -87,17 +94,88 @@ public class AdminController {
         return mav;
     }
 
-    /** View product details — validates tenant ownership to prevent cross-tenant data leak */
+    /**
+     * CBS Product Search per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
+     * Searches by product code, name, category, or lifecycle status.
+     * ADMIN-only (enforced in SecurityConfig). Tenant-scoped.
+     */
+    @GetMapping("/products/search")
+    public ModelAndView searchProducts(@RequestParam(required = false) String q) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("admin/products");
+        if (q != null && !q.isBlank() && q.trim().length() >= 2) {
+            mav.addObject("products", productRepository.searchProducts(tenantId, q.trim()));
+            mav.addObject("searchQuery", q);
+        } else {
+            mav.addObject("products", productRepository.findByTenantIdOrderByProductCode(tenantId));
+        }
+        return mav;
+    }
+
+    /** View product details with active account count (GAP 5) */
     @GetMapping("/products/{id}")
     public ModelAndView viewProduct(@PathVariable Long id) {
-        String tenantId = TenantContext.getCurrentTenant();
-        var product = productRepository
-                .findById(id)
-                .filter(p -> p.getTenantId().equals(tenantId))
-                .orElseThrow(() -> new BusinessException("PRODUCT_NOT_FOUND", "Product not found: " + id));
+        ProductMaster product = productService.getProduct(id);
+        long activeAccounts = productService.countActiveAccounts(id);
         ModelAndView mav = new ModelAndView("admin/product-detail");
         mav.addObject("product", product);
+        mav.addObject("activeAccountCount", activeAccounts);
         return mav;
+    }
+
+    /** Product edit form — pre-populated with current values, immutable fields disabled */
+    @GetMapping("/products/{id}/edit")
+    public ModelAndView showEditProductForm(@PathVariable Long id) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ProductMaster product = productService.getProduct(id);
+        long activeAccounts = productService.countActiveAccounts(id);
+        ModelAndView mav = new ModelAndView("admin/product-edit");
+        mav.addObject("product", product);
+        mav.addObject("activeAccountCount", activeAccounts);
+        mav.addObject("glAccounts", glMasterRepository.findAllPostableAccounts(tenantId));
+        return mav;
+    }
+
+    /** Update product — delegates to ProductMasterService with full validation */
+    @PostMapping("/products/{id}/edit")
+    public Object updateProduct(@PathVariable Long id, @ModelAttribute ProductMaster updated,
+            RedirectAttributes redirectAttributes) {
+        try {
+            ProductMaster saved = productService.updateProduct(id, updated);
+            redirectAttributes.addFlashAttribute("success", "Product updated: " + saved.getProductCode());
+            return "redirect:/admin/products/" + id;
+        } catch (Exception e) {
+            String tenantId = TenantContext.getCurrentTenant();
+            ModelAndView mav = new ModelAndView("admin/product-edit");
+            try {
+                ProductMaster existing = productService.getProduct(id);
+                updated.setId(existing.getId());
+                updated.setProductCode(existing.getProductCode());
+                updated.setProductCategory(existing.getProductCategory());
+                mav.addObject("product", updated);
+                mav.addObject("activeAccountCount", productService.countActiveAccounts(id));
+            } catch (Exception ex) {
+                redirectAttributes.addFlashAttribute("error", e.getMessage());
+                return "redirect:/admin/products";
+            }
+            mav.addObject("error", e.getMessage());
+            mav.addObject("glAccounts", glMasterRepository.findAllPostableAccounts(tenantId));
+            return mav;
+        }
+    }
+
+    /** Product lifecycle status change — ACTIVE/SUSPENDED/RETIRED */
+    @PostMapping("/products/{id}/status")
+    public String changeProductStatus(@PathVariable Long id, @RequestParam String status,
+            RedirectAttributes redirectAttributes) {
+        try {
+            ProductMaster product = productService.changeStatus(id, status);
+            redirectAttributes.addFlashAttribute("success",
+                    "Product " + product.getProductCode() + " status changed to " + status);
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/products/" + id;
     }
 
     /** Product creation form — shows GL codes for mapping */
@@ -111,94 +189,24 @@ public class AdminController {
     }
 
     /**
-     * Create a new product per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG.
-     * Per CBS standards: every product must have complete GL mapping before activation.
+     * Create product — delegates to ProductMasterService with full validation.
+     * Per CBS Tier-1: on error, re-displays form with entered data preserved (GAP 4).
      */
     @PostMapping("/products/create")
-    public String createProduct(
-            @RequestParam String productCode,
-            @RequestParam String productName,
-            @RequestParam String productCategory,
-            @RequestParam(required = false) String description,
-            @RequestParam(defaultValue = "ACTUAL_365") String interestMethod,
-            @RequestParam(defaultValue = "FIXED") String interestType,
-            @RequestParam BigDecimal minInterestRate,
-            @RequestParam BigDecimal maxInterestRate,
-            @RequestParam(defaultValue = "2.0000") BigDecimal defaultPenalRate,
-            @RequestParam BigDecimal minLoanAmount,
-            @RequestParam BigDecimal maxLoanAmount,
-            @RequestParam int minTenureMonths,
-            @RequestParam int maxTenureMonths,
-            @RequestParam(defaultValue = "MONTHLY") String repaymentFrequency,
-            @RequestParam String glLoanAsset,
-            @RequestParam String glInterestReceivable,
-            @RequestParam String glBankOperations,
-            @RequestParam String glInterestIncome,
-            @RequestParam String glFeeIncome,
-            @RequestParam String glPenalIncome,
-            @RequestParam String glProvisionExpense,
-            @RequestParam String glProvisionNpa,
-            @RequestParam String glWriteOffExpense,
-            @RequestParam String glInterestSuspense,
-            RedirectAttributes redirectAttributes) {
-        String tenantId = TenantContext.getCurrentTenant();
+    public Object createProduct(@ModelAttribute ProductMaster product, RedirectAttributes redirectAttributes) {
         try {
-            if (productRepository
-                    .findByTenantIdAndProductCode(tenantId, productCode)
-                    .isPresent()) {
-                throw new BusinessException("DUPLICATE_PRODUCT", "Product code already exists: " + productCode);
-            }
-
-            ProductMaster p = new ProductMaster();
-            p.setTenantId(tenantId);
-            p.setProductCode(productCode);
-            p.setProductName(productName);
-            p.setProductCategory(productCategory);
-            p.setDescription(description);
-            p.setCurrencyCode("INR");
-            p.setInterestMethod(interestMethod);
-            p.setInterestType(interestType);
-            p.setMinInterestRate(minInterestRate);
-            p.setMaxInterestRate(maxInterestRate);
-            p.setDefaultPenalRate(defaultPenalRate);
-            p.setMinLoanAmount(minLoanAmount);
-            p.setMaxLoanAmount(maxLoanAmount);
-            p.setMinTenureMonths(minTenureMonths);
-            p.setMaxTenureMonths(maxTenureMonths);
-            p.setRepaymentFrequency(repaymentFrequency);
-            p.setGlLoanAsset(glLoanAsset);
-            p.setGlInterestReceivable(glInterestReceivable);
-            p.setGlBankOperations(glBankOperations);
-            p.setGlInterestIncome(glInterestIncome);
-            p.setGlFeeIncome(glFeeIncome);
-            p.setGlPenalIncome(glPenalIncome);
-            p.setGlProvisionExpense(glProvisionExpense);
-            p.setGlProvisionNpa(glProvisionNpa);
-            p.setGlWriteOffExpense(glWriteOffExpense);
-            p.setGlInterestSuspense(glInterestSuspense);
-            p.setActive(true);
-            p.setRepaymentAllocation("INTEREST_FIRST");
-            p.setCreatedBy(SecurityUtil.getCurrentUsername());
-
-            ProductMaster saved = productRepository.save(p);
-            // Evict GL cache so new product's GL codes are loaded
-            glResolver.evictCache();
-
-            auditService.logEvent(
-                    "ProductMaster",
-                    saved.getId(),
-                    "PRODUCT_CREATED",
-                    null,
-                    productCode,
-                    "PRODUCT_MASTER",
-                    "Product created: " + productCode + " — " + productName + " | Category: " + productCategory
-                            + " | By: " + SecurityUtil.getCurrentUsername());
-
-            redirectAttributes.addFlashAttribute("success", "Product created: " + productCode);
+            ProductMaster saved = productService.createProduct(product);
+            redirectAttributes.addFlashAttribute("success", "Product created: " + saved.getProductCode());
+            return "redirect:/admin/products";
         } catch (Exception e) {
-            redirectAttributes.addFlashAttribute("error", e.getMessage());
+            // GAP 4: Preserve entered data on validation failure
+            String tenantId = TenantContext.getCurrentTenant();
+            ModelAndView mav = new ModelAndView("admin/product-create");
+            mav.addObject("product", product);
+            mav.addObject("error", e.getMessage());
+            mav.addObject("glAccounts", glMasterRepository.findAllPostableAccounts(tenantId));
+            return mav;
         }
-        return "redirect:/admin/products";
     }
 
     /**
@@ -228,17 +236,339 @@ public class AdminController {
         return mav;
     }
 
+    /**
+     * CBS Transaction Limit Create per Finacle LIMDEF / Temenos LIMIT.CHECK.
+     * Per RBI Internal Controls: per-role, per-type amount limits for operational risk.
+     */
+    @PostMapping("/limits/create")
+    public String createLimit(
+            @RequestParam String role,
+            @RequestParam String transactionType,
+            @RequestParam(required = false) BigDecimal perTransactionLimit,
+            @RequestParam(required = false) BigDecimal dailyAggregateLimit,
+            @RequestParam(required = false) String description,
+            RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            String user = SecurityUtil.getCurrentUsername();
+
+            if (role == null || role.isBlank())
+                throw new BusinessException("ROLE_REQUIRED", "Role is mandatory.");
+            if (transactionType == null || transactionType.isBlank())
+                throw new BusinessException("TXN_TYPE_REQUIRED", "Transaction type is mandatory.");
+
+            TransactionLimit tl = new TransactionLimit();
+            tl.setTenantId(tenantId);
+            tl.setRole(role);
+            tl.setTransactionType(transactionType);
+            tl.setPerTransactionLimit(perTransactionLimit);
+            tl.setDailyAggregateLimit(dailyAggregateLimit);
+            tl.setDescription(description);
+            tl.setActive(true);
+            tl.setCreatedBy(user);
+
+            limitRepository.save(tl);
+
+            auditService.logEvent("TransactionLimit", tl.getId(), "LIMIT_CREATED", null,
+                    tl.getRole() + "/" + tl.getTransactionType(), "LIMIT_CONFIG",
+                    "Limit created: " + tl.getRole() + "/" + tl.getTransactionType()
+                            + " | Per-txn: " + tl.getPerTransactionLimit()
+                            + " | Daily: " + tl.getDailyAggregateLimit() + " | By: " + user);
+
+            redirectAttributes.addFlashAttribute("success",
+                    "Limit created: " + tl.getRole() + " / " + tl.getTransactionType());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/limits";
+    }
+
+    /** CBS Transaction Limit Edit per Finacle LIMDEF */
+    @PostMapping("/limits/{id}/edit")
+    public String updateLimit(
+            @PathVariable Long id,
+            @RequestParam(required = false) BigDecimal perTransactionLimit,
+            @RequestParam(required = false) BigDecimal dailyAggregateLimit,
+            @RequestParam(required = false) String description,
+            RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            String user = SecurityUtil.getCurrentUsername();
+
+            TransactionLimit tl = limitRepository.findById(id)
+                    .filter(l -> l.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("LIMIT_NOT_FOUND", "Limit not found: " + id));
+
+            String before = tl.getPerTransactionLimit() + "|" + tl.getDailyAggregateLimit();
+
+            tl.setPerTransactionLimit(perTransactionLimit);
+            tl.setDailyAggregateLimit(dailyAggregateLimit);
+            tl.setDescription(description);
+            tl.setUpdatedBy(user);
+
+            limitRepository.save(tl);
+
+            String after = tl.getPerTransactionLimit() + "|" + tl.getDailyAggregateLimit();
+            auditService.logEvent("TransactionLimit", tl.getId(), "LIMIT_UPDATED", before, after,
+                    "LIMIT_CONFIG", "Limit updated: " + tl.getRole() + "/" + tl.getTransactionType() + " by " + user);
+
+            redirectAttributes.addFlashAttribute("success",
+                    "Limit updated: " + tl.getRole() + " / " + tl.getTransactionType());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/limits";
+    }
+
+    /** CBS Transaction Limit Activate/Deactivate per Finacle LIMDEF */
+    @PostMapping("/limits/{id}/toggle-active")
+    public String toggleLimitActive(@PathVariable Long id, RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            String user = SecurityUtil.getCurrentUsername();
+
+            TransactionLimit tl = limitRepository.findById(id)
+                    .filter(l -> l.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("LIMIT_NOT_FOUND", "Limit not found: " + id));
+
+            boolean newState = !tl.isActive();
+            tl.setActive(newState);
+            tl.setUpdatedBy(user);
+            limitRepository.save(tl);
+
+            auditService.logEvent("TransactionLimit", tl.getId(),
+                    newState ? "LIMIT_ACTIVATED" : "LIMIT_DEACTIVATED",
+                    String.valueOf(!newState), String.valueOf(newState),
+                    "LIMIT_CONFIG",
+                    "Limit " + (newState ? "activated" : "deactivated") + ": "
+                            + tl.getRole() + "/" + tl.getTransactionType() + " by " + user);
+
+            redirectAttributes.addFlashAttribute("success",
+                    "Limit " + (newState ? "activated" : "deactivated") + ": "
+                            + tl.getRole() + " / " + tl.getTransactionType());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/limits";
+    }
+
     // ========================================================================
     // Charge Configuration Management (Finacle CHRG_MASTER)
     // ========================================================================
 
-    /** List all charge configurations */
+    /** List all charge configurations (active only) */
     @GetMapping("/charges")
     public ModelAndView listCharges() {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("admin/charges");
         mav.addObject("charges", chargeConfigRepository.findByTenantIdAndIsActiveTrueOrderByEventTriggerAsc(tenantId));
+        mav.addObject("glAccounts", glMasterRepository.findAllPostableAccounts(tenantId));
+        mav.addObject("products", productRepository.findByTenantIdOrderByProductCode(tenantId));
         return mav;
+    }
+
+    /**
+     * CBS Charge Config Create per Finacle CHRG_MASTER / Temenos AA.CHARGE.PARAMETER.
+     * Per RBI Fair Lending Code 2023: all charges must be transparent, justified, and audited.
+     */
+    @PostMapping("/charges/create")
+    public String createCharge(
+            @RequestParam String chargeCode,
+            @RequestParam String chargeName,
+            @RequestParam(required = false) String chargeCategory,
+            @RequestParam String eventTrigger,
+            @RequestParam String calculationType,
+            @RequestParam(required = false) String frequency,
+            @RequestParam(required = false) BigDecimal baseAmount,
+            @RequestParam(required = false) BigDecimal percentage,
+            @RequestParam(required = false) String slabJson,
+            @RequestParam(required = false) BigDecimal minAmount,
+            @RequestParam(required = false) BigDecimal maxAmount,
+            @RequestParam(required = false) String currencyCode,
+            @RequestParam(defaultValue = "false") boolean gstApplicable,
+            @RequestParam(required = false) BigDecimal gstRate,
+            @RequestParam String glChargeIncome,
+            @RequestParam(required = false) String glGstPayable,
+            @RequestParam(defaultValue = "false") boolean waiverAllowed,
+            @RequestParam(required = false) BigDecimal maxWaiverPercent,
+            @RequestParam(required = false) String productCode,
+            @RequestParam(required = false) String channel,
+            @RequestParam(required = false) String validFrom,
+            @RequestParam(required = false) String validTo,
+            @RequestParam(required = false) String customerDescription,
+            RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            String user = SecurityUtil.getCurrentUsername();
+
+            // CBS Validation per Finacle CHRG_MASTER
+            if (chargeCode == null || chargeCode.isBlank())
+                throw new BusinessException("CHARGE_CODE_REQUIRED", "Charge code is mandatory.");
+            if (!chargeCode.matches("^[A-Z0-9_]{2,50}$"))
+                throw new BusinessException("INVALID_CHARGE_CODE", "Uppercase alphanumeric + underscore, 2-50 chars.");
+            if ("FLAT".equals(calculationType) && (baseAmount == null || baseAmount.signum() <= 0))
+                throw new BusinessException("BASE_AMOUNT_REQUIRED", "Base amount is mandatory for FLAT charges.");
+            if ("PERCENTAGE".equals(calculationType) && (percentage == null || percentage.signum() <= 0))
+                throw new BusinessException("PERCENTAGE_REQUIRED", "Percentage is mandatory for PERCENTAGE charges.");
+            if ("SLAB".equals(calculationType) && (slabJson == null || slabJson.isBlank()))
+                throw new BusinessException("SLAB_JSON_REQUIRED", "Slab JSON is mandatory for SLAB charges.");
+            if (gstApplicable && (gstRate == null || gstRate.signum() <= 0))
+                throw new BusinessException("GST_RATE_REQUIRED", "GST rate is mandatory when GST is applicable.");
+
+            ChargeConfig cc = new ChargeConfig();
+            cc.setTenantId(tenantId);
+            cc.setChargeCode(chargeCode.trim().toUpperCase());
+            cc.setChargeName(chargeName);
+            cc.setChargeCategory(chargeCategory != null && !chargeCategory.isBlank() ? chargeCategory : null);
+            cc.setEventTrigger(eventTrigger);
+            cc.setCalculationType(calculationType);
+            cc.setFrequency(frequency != null && !frequency.isBlank() ? frequency : null);
+            cc.setBaseAmount(baseAmount);
+            cc.setPercentage(percentage);
+            cc.setSlabJson(slabJson);
+            cc.setMinAmount(minAmount);
+            cc.setMaxAmount(maxAmount);
+            cc.setCurrencyCode(currencyCode != null && !currencyCode.isBlank() ? currencyCode : "INR");
+            cc.setGstApplicable(gstApplicable);
+            cc.setGstRate(gstApplicable ? gstRate : null);
+            cc.setGlChargeIncome(glChargeIncome);
+            cc.setGlGstPayable(gstApplicable ? glGstPayable : null);
+            cc.setWaiverAllowed(waiverAllowed);
+            cc.setMaxWaiverPercent(waiverAllowed ? maxWaiverPercent : null);
+            cc.setProductCode(productCode != null && !productCode.isBlank() ? productCode : null);
+            cc.setChannel(channel != null && !channel.isBlank() ? channel : null);
+            cc.setValidFrom(validFrom != null && !validFrom.isBlank() ? LocalDate.parse(validFrom) : null);
+            cc.setValidTo(validTo != null && !validTo.isBlank() ? LocalDate.parse(validTo) : null);
+            cc.setCustomerDescription(customerDescription != null && !customerDescription.isBlank() ? customerDescription : null);
+            cc.setIsActive(true);
+            cc.setCreatedBy(user);
+
+            chargeConfigRepository.save(cc);
+
+            auditService.logEvent("ChargeConfig", cc.getId(), "CHARGE_CREATED", null,
+                    cc.getChargeCode(), "CHARGE_CONFIG",
+                    "Charge created: " + cc.getChargeCode() + " | " + cc.getCalculationType()
+                            + " | Trigger: " + cc.getEventTrigger() + " | By: " + user);
+
+            redirectAttributes.addFlashAttribute("success", "Charge created: " + cc.getChargeCode());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/charges";
+    }
+
+    /** CBS Charge Config Edit per Finacle CHRG_MASTER */
+    @PostMapping("/charges/{id}/edit")
+    public String updateCharge(
+            @PathVariable Long id,
+            @RequestParam String chargeName,
+            @RequestParam(required = false) String chargeCategory,
+            @RequestParam String eventTrigger,
+            @RequestParam String calculationType,
+            @RequestParam(required = false) String frequency,
+            @RequestParam(required = false) BigDecimal baseAmount,
+            @RequestParam(required = false) BigDecimal percentage,
+            @RequestParam(required = false) String slabJson,
+            @RequestParam(required = false) BigDecimal minAmount,
+            @RequestParam(required = false) BigDecimal maxAmount,
+            @RequestParam(required = false) String currencyCode,
+            @RequestParam(defaultValue = "false") boolean gstApplicable,
+            @RequestParam(required = false) BigDecimal gstRate,
+            @RequestParam String glChargeIncome,
+            @RequestParam(required = false) String glGstPayable,
+            @RequestParam(defaultValue = "false") boolean waiverAllowed,
+            @RequestParam(required = false) BigDecimal maxWaiverPercent,
+            @RequestParam(required = false) String productCode,
+            @RequestParam(required = false) String channel,
+            @RequestParam(required = false) String validFrom,
+            @RequestParam(required = false) String validTo,
+            @RequestParam(required = false) String customerDescription,
+            RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            String user = SecurityUtil.getCurrentUsername();
+
+            ChargeConfig cc = chargeConfigRepository.findById(id)
+                    .filter(c -> c.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("CHARGE_NOT_FOUND", "Charge config not found: " + id));
+
+            // CBS Validation per Finacle CHRG_MASTER (same rules as createCharge)
+            if ("FLAT".equals(calculationType) && (baseAmount == null || baseAmount.signum() <= 0))
+                throw new BusinessException("BASE_AMOUNT_REQUIRED", "Base amount is mandatory for FLAT charges.");
+            if ("PERCENTAGE".equals(calculationType) && (percentage == null || percentage.signum() <= 0))
+                throw new BusinessException("PERCENTAGE_REQUIRED", "Percentage is mandatory for PERCENTAGE charges.");
+            if ("SLAB".equals(calculationType) && (slabJson == null || slabJson.isBlank()))
+                throw new BusinessException("SLAB_JSON_REQUIRED", "Slab JSON is mandatory for SLAB charges.");
+            if (gstApplicable && (gstRate == null || gstRate.signum() <= 0))
+                throw new BusinessException("GST_RATE_REQUIRED", "GST rate is mandatory when GST is applicable.");
+
+            String before = cc.getCalculationType() + "|" + cc.getBaseAmount() + "|" + cc.getPercentage();
+
+            cc.setChargeName(chargeName);
+            cc.setChargeCategory(chargeCategory != null && !chargeCategory.isBlank() ? chargeCategory : null);
+            cc.setEventTrigger(eventTrigger);
+            cc.setCalculationType(calculationType);
+            cc.setFrequency(frequency != null && !frequency.isBlank() ? frequency : null);
+            cc.setBaseAmount(baseAmount);
+            cc.setPercentage(percentage);
+            cc.setSlabJson(slabJson);
+            cc.setMinAmount(minAmount);
+            cc.setMaxAmount(maxAmount);
+            cc.setCurrencyCode(currencyCode != null && !currencyCode.isBlank() ? currencyCode : "INR");
+            cc.setGstApplicable(gstApplicable);
+            cc.setGstRate(gstApplicable ? gstRate : null);
+            cc.setGlChargeIncome(glChargeIncome);
+            cc.setGlGstPayable(gstApplicable ? glGstPayable : null);
+            cc.setWaiverAllowed(waiverAllowed);
+            cc.setMaxWaiverPercent(waiverAllowed ? maxWaiverPercent : null);
+            cc.setProductCode(productCode != null && !productCode.isBlank() ? productCode : null);
+            cc.setChannel(channel != null && !channel.isBlank() ? channel : null);
+            cc.setValidFrom(validFrom != null && !validFrom.isBlank() ? LocalDate.parse(validFrom) : null);
+            cc.setValidTo(validTo != null && !validTo.isBlank() ? LocalDate.parse(validTo) : null);
+            cc.setCustomerDescription(customerDescription != null && !customerDescription.isBlank() ? customerDescription : null);
+            cc.setUpdatedBy(user);
+
+            chargeConfigRepository.save(cc);
+
+            String after = cc.getCalculationType() + "|" + cc.getBaseAmount() + "|" + cc.getPercentage();
+            auditService.logEvent("ChargeConfig", cc.getId(), "CHARGE_UPDATED", before, after,
+                    "CHARGE_CONFIG", "Charge updated: " + cc.getChargeCode() + " by " + user);
+
+            redirectAttributes.addFlashAttribute("success", "Charge updated: " + cc.getChargeCode());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/charges";
+    }
+
+    /** CBS Charge Config Activate/Deactivate per Finacle CHRG_MASTER */
+    @PostMapping("/charges/{id}/toggle-active")
+    public String toggleChargeActive(@PathVariable Long id, RedirectAttributes redirectAttributes) {
+        try {
+            String tenantId = TenantContext.getCurrentTenant();
+            String user = SecurityUtil.getCurrentUsername();
+
+            ChargeConfig cc = chargeConfigRepository.findById(id)
+                    .filter(c -> c.getTenantId().equals(tenantId))
+                    .orElseThrow(() -> new BusinessException("CHARGE_NOT_FOUND", "Charge config not found: " + id));
+
+            boolean newState = !cc.getIsActive();
+            cc.setIsActive(newState);
+            cc.setUpdatedBy(user);
+            chargeConfigRepository.save(cc);
+
+            auditService.logEvent("ChargeConfig", cc.getId(),
+                    newState ? "CHARGE_ACTIVATED" : "CHARGE_DEACTIVATED",
+                    String.valueOf(!newState), String.valueOf(newState),
+                    "CHARGE_CONFIG",
+                    "Charge " + (newState ? "activated" : "deactivated") + ": " + cc.getChargeCode() + " by " + user);
+
+            redirectAttributes.addFlashAttribute("success",
+                    "Charge " + (newState ? "activated" : "deactivated") + ": " + cc.getChargeCode());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/admin/charges";
     }
 
     // ========================================================================

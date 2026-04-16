@@ -5,6 +5,8 @@ import com.finvanta.domain.entity.Customer;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,8 +19,6 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     List<Customer> findByTenantIdAndActiveTrue(String tenantId);
 
-    Optional<Customer> findByTenantIdAndPanNumber(String tenantId, String panNumber);
-
     boolean existsByTenantIdAndCustomerNumber(String tenantId, String customerNumber);
 
     List<Customer> findByTenantIdAndKycVerifiedFalse(String tenantId);
@@ -30,17 +30,21 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     // === P1 Gap 5.1: Customer Search (essential for branch operations) ===
 
     /**
-     * Search customers by name (first or last), customer number, mobile, or PAN.
+     * Search customers by name (first or last), customer number, or mobile.
      * Per Finacle CIF_SEARCH: branch staff must be able to search by any identifier.
      * Uses LOWER() for case-insensitive matching.
+     *
+     * CBS CRITICAL: PAN search is NOT included in LIKE queries because PAN is encrypted
+     * (AES-256-GCM with random IV). LIKE on ciphertext NEVER matches plaintext input.
+     * For PAN-based lookup, use findByPanHash() with SHA-256 hash comparison.
+     *
      * NOTE: This searches ALL branches — use searchCustomersByBranch for MAKER/CHECKER.
      */
     @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId AND c.active = true AND ("
             + "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "c.customerNumber LIKE CONCAT('%', :query, '%') OR "
-            + "c.mobileNumber LIKE CONCAT('%', :query, '%') OR "
-            + "c.panNumber LIKE CONCAT('%', :query, '%'))")
+            + "c.mobileNumber LIKE CONCAT('%', :query, '%'))")
     List<Customer> searchCustomers(@Param("tenantId") String tenantId, @Param("query") String query);
 
     /**
@@ -53,18 +57,45 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
             + "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "c.customerNumber LIKE CONCAT('%', :query, '%') OR "
-            + "c.mobileNumber LIKE CONCAT('%', :query, '%') OR "
-            + "c.panNumber LIKE CONCAT('%', :query, '%'))")
+            + "c.mobileNumber LIKE CONCAT('%', :query, '%'))")
     List<Customer> searchCustomersByBranch(
             @Param("tenantId") String tenantId, @Param("branchId") Long branchId, @Param("query") String query);
 
-    // === P1 Gap 5.2: Duplicate CIF Detection (per RBI KYC: one PAN = one CIF) ===
+    // === Paginated Search (per Finacle CIF_SEARCH / Temenos ENQUIRY) ===
 
-    /** Check if PAN already exists (for duplicate CIF prevention) */
-    boolean existsByTenantIdAndPanNumber(String tenantId, String panNumber);
+    /** Paginated: all active customers for a tenant (ADMIN/AUDITOR) */
+    Page<Customer> findByTenantIdAndActiveTrue(String tenantId, Pageable pageable);
 
-    /** Check if Aadhaar already exists */
-    boolean existsByTenantIdAndAadhaarNumber(String tenantId, String aadhaarNumber);
+    /** Paginated: active customers at a specific branch (MAKER/CHECKER) */
+    Page<Customer> findByTenantIdAndBranchIdAndActiveTrue(String tenantId, Long branchId, Pageable pageable);
+
+    /** Paginated: search all branches (ADMIN/AUDITOR) */
+    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId AND c.active = true AND ("
+            + "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "c.customerNumber LIKE CONCAT('%', :query, '%') OR "
+            + "c.mobileNumber LIKE CONCAT('%', :query, '%'))")
+    Page<Customer> searchCustomersPaged(
+            @Param("tenantId") String tenantId, @Param("query") String query, Pageable pageable);
+
+    /** Paginated: search within branch (MAKER/CHECKER) */
+    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId AND c.active = true "
+            + "AND c.branch.id = :branchId AND ("
+            + "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "c.customerNumber LIKE CONCAT('%', :query, '%') OR "
+            + "c.mobileNumber LIKE CONCAT('%', :query, '%'))")
+    Page<Customer> searchCustomersByBranchPaged(
+            @Param("tenantId") String tenantId, @Param("branchId") Long branchId,
+            @Param("query") String query, Pageable pageable);
+
+    /**
+     * PAN-based customer lookup via SHA-256 hash.
+     * Per CBS: PAN is encrypted (AES-256-GCM), so LIKE/= on ciphertext doesn't work.
+     * Caller must compute SHA-256 hash of the search PAN and pass it here.
+     * Returns Optional since one PAN = one CIF per RBI KYC norms.
+     */
+    Optional<Customer> findByTenantIdAndPanHashAndActiveTrue(String tenantId, String panHash);
 
     // === KYC Re-Verification (RBI Master Direction on KYC 2016 Section 16) ===
 

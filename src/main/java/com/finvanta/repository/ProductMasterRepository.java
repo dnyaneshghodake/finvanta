@@ -28,4 +28,20 @@ public interface ProductMasterRepository extends JpaRepository<ProductMaster, Lo
 
     /** Check if product code exists (for duplicate prevention) */
     boolean existsByTenantIdAndProductCode(String tenantId, String productCode);
+
+    // === CBS PDDEF Search per Finacle PDDEF / Temenos AA.PRODUCT.CATALOG ===
+
+    /**
+     * Search products by code, name, category, or status.
+     * Per Finacle PDDEF: ADMIN must locate products for GL config, rate changes,
+     * and lifecycle management. Tenant-scoped (ADMIN-only module).
+     */
+    @Query("SELECT p FROM ProductMaster p WHERE p.tenantId = :tenantId AND ("
+            + "LOWER(p.productCode) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(p.productName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(CAST(p.productCategory AS string)) LIKE LOWER(CONCAT('%', :query, '%')) OR "
+            + "LOWER(CAST(p.productStatus AS string)) LIKE LOWER(CONCAT('%', :query, '%')))"
+            + " ORDER BY p.productCode")
+    List<ProductMaster> searchProducts(
+            @Param("tenantId") String tenantId, @Param("query") String query);
 }
