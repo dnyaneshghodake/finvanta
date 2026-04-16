@@ -1,5 +1,8 @@
 package com.finvanta.config;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -8,7 +11,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.slf4j.Logger;
@@ -34,6 +36,24 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * {@code ApiResponse} envelope as every other API error so clients have one
  * error path to handle.
  *
+ * <p><b>Bucket eviction (defence against rate-limiter-as-DoS):</b> the bucket
+ * map is backed by a bounded Caffeine cache ({@link #MAX_BUCKETS} entries,
+ * {@link #BUCKET_TTL} idle expiry). Without this, a hostile client that
+ * rotates the {@code X-Forwarded-For} header on every request would allocate
+ * an unbounded number of {@link Bucket} entries and exhaust the heap, turning
+ * the rate limiter itself into a memory-amplification DoS vector. Caffeine's
+ * Window-TinyLFU admission policy also protects against the adversarial
+ * eviction pattern that a naive LRU would be vulnerable to.
+ *
+ * <p><b>X-Forwarded-For trust model:</b> {@code resolveClientIp} honours
+ * {@code X-Forwarded-For} because CBS is expected to run behind a trusted
+ * reverse proxy (Finacle CONNECT / API gateway) that normalises this header
+ * and strips any client-supplied value. Deployments that do NOT front the app
+ * with such a proxy MUST set {@code server.forward-headers-strategy=none} in
+ * application.yml so Spring refuses forwarded headers; otherwise a hostile
+ * client can still pick a fresh IP per request, but the cache bound above
+ * prevents that from turning into an OOM.
+ *
  * <p><b>Implementation note:</b> this is an in-process limiter -- adequate for a
  * single-node deployment. A production multi-node cluster should front this
  * with Redis (e.g. Bucket4j + Lettuce) so buckets are shared across nodes.
@@ -48,7 +68,28 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private static final Duration REFILL_INTERVAL = Duration.ofSeconds(6);
     private static final String AUTH_PATH_PREFIX = "/api/v1/auth/";
 
-    private final ConcurrentHashMap<String, Bucket> buckets = new ConcurrentHashMap<>();
+    /**
+     * Hard ceiling on concurrently-tracked source IPs. Chosen so the worst-case
+     * footprint stays tractable even if every slot is occupied (~200 bytes per
+     * bucket + map entry + String key => ~20MB at 100K entries). Caffeine's
+     * Window-TinyLFU eviction picks the least-valuable entry; attacker-rotated
+     * IPs naturally lose to real clients that hit the endpoint repeatedly.
+     */
+    private static final int MAX_BUCKETS = 100_000;
+
+    /**
+     * Idle TTL per bucket. After {@code BUCKET_TTL} of inactivity the bucket is
+     * evicted and the next request from that IP starts a fresh bucket at full
+     * capacity -- acceptable because an attacker who sustained the rate for
+     * the full TTL has already been throttled, and the reset does NOT lower
+     * the overall ceiling.
+     */
+    private static final Duration BUCKET_TTL = Duration.ofMinutes(10);
+
+    private final Cache<String, Bucket> buckets = Caffeine.newBuilder()
+            .maximumSize(MAX_BUCKETS)
+            .expireAfterAccess(BUCKET_TTL)
+            .build();
 
     @Override
     protected void doFilterInternal(
@@ -68,7 +109,10 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         }
 
         String clientIp = resolveClientIp(request);
-        Bucket bucket = buckets.computeIfAbsent(clientIp, ip -> new Bucket());
+        // Caffeine get(key, mappingFunction) is the analog of computeIfAbsent --
+        // atomic creation on first touch, subject to the bounded-size and
+        // expireAfterAccess policies declared above.
+        Bucket bucket = buckets.get(clientIp, ip -> new Bucket());
         if (!bucket.tryConsume()) {
             log.warn("AUTH_RATE_LIMIT_TRIPPED: ip={}, path={}", clientIp, path);
             response.setStatus(429);

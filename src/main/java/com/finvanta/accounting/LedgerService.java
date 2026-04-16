@@ -9,8 +9,6 @@ import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.repository.TenantLedgerStateRepository;
 import com.finvanta.util.TenantContext;
 
-import org.springframework.dao.DataIntegrityViolationException;
-
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -51,12 +49,15 @@ public class LedgerService {
 
     private final LedgerEntryRepository ledgerRepository;
     private final TenantLedgerStateRepository ledgerStateRepository;
+    private final TenantLedgerStateBootstrap ledgerStateBootstrap;
 
     public LedgerService(
             LedgerEntryRepository ledgerRepository,
-            TenantLedgerStateRepository ledgerStateRepository) {
+            TenantLedgerStateRepository ledgerStateRepository,
+            TenantLedgerStateBootstrap ledgerStateBootstrap) {
         this.ledgerRepository = ledgerRepository;
         this.ledgerStateRepository = ledgerStateRepository;
+        this.ledgerStateBootstrap = ledgerStateBootstrap;
     }
 
     /**
@@ -163,9 +164,21 @@ public class LedgerService {
     /**
      * Returns the per-tenant sentinel row with a pessimistic write lock.
      * Creates the row on the very first posting (lazy bootstrap). The insert
-     * races are resolved by the {@code tenant_ledger_state} primary key --
-     * the losing insert fails with {@link DataIntegrityViolationException} and
-     * the subsequent re-fetch sees the winning row under lock.
+     * races are resolved by the {@code tenant_ledger_state} primary key.
+     *
+     * <p><b>Why the INSERT runs in a separate transaction:</b> if the insert
+     * executed inside THIS (outer) transaction via
+     * {@code repository.saveAndFlush(...)} and a concurrent posting won the
+     * PK race, Spring's repository-proxy {@code TransactionInterceptor} would
+     * mark the enclosing transaction {@code rollback-only} BEFORE the
+     * {@code DataIntegrityViolationException} surfaces here. Even catching it
+     * cleanly would leave the outer posting doomed -- the subsequent GL balance
+     * update and ledger write would all be rolled back on commit with
+     * {@code UnexpectedRollbackException}. Delegating the INSERT to
+     * {@link TenantLedgerStateBootstrap#insertIfAbsent} (which uses
+     * {@link org.springframework.transaction.annotation.Propagation#REQUIRES_NEW
+     * REQUIRES_NEW}) isolates the nested transaction so the rollback is scoped
+     * to just that INSERT; the caller's posting transaction is untouched.
      */
     private TenantLedgerState ensureAndLockSentinel(String tenantId) {
         java.util.Optional<TenantLedgerState> existing =
@@ -173,12 +186,9 @@ public class LedgerService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        try {
-            ledgerStateRepository.saveAndFlush(new TenantLedgerState(tenantId));
-        } catch (DataIntegrityViolationException concurrent) {
-            // Another thread inserted the sentinel first -- harmless, re-lock below.
-            log.debug("Tenant ledger sentinel race resolved by PK: tenant={}", tenantId);
-        }
+        // REQUIRES_NEW: a PK collision here rolls back ONLY the nested
+        // sentinel-insert transaction, not our posting transaction.
+        ledgerStateBootstrap.insertIfAbsent(tenantId);
         return ledgerStateRepository.findAndLock(tenantId)
                 .orElseThrow(() -> new IllegalStateException(
                         "tenant_ledger_state row disappeared for tenant=" + tenantId));
