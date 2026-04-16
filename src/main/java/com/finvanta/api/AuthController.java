@@ -341,8 +341,14 @@ public class AuthController {
                     0L,
                     "REFRESH_TOKEN_REUSED",
                     null,
+                    // CBS: Map.of throws NPE on null values -- the two earlier
+                    // audit calls in this method (lines 258, 278) already guard
+                    // username for the same reason. Preserve parity here so a
+                    // crafted refresh token whose subject claim resolves null
+                    // cannot turn the intended HTTP 401 REFRESH_TOKEN_REUSED
+                    // into an NPE-driven HTTP 500.
                     java.util.Map.of(
-                            "username", username,
+                            "username", username != null ? username : "UNKNOWN",
                             "jti", oldJti,
                             "detection", "UNIQUE_CONSTRAINT"),
                     "AUTH",
