@@ -72,8 +72,18 @@ public class AsyncConfig implements AsyncConfigurer {
     /**
      * Decorator that captures CBS context (tenant, security, MDC) on the submitting
      * thread and re-installs it on the worker thread for the duration of the task.
-     * Cleaned up in a finally block to avoid leaking context across thread-pool
-     * reuse, which would be a severe tenant-bleeding vulnerability.
+     *
+     * <p><b>Save / restore, not blind clear:</b> the finally block must
+     * RESTORE the caller thread's pre-task context, not unconditionally
+     * clear it. The executor's rejection handler is
+     * {@link java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy},
+     * which runs the decorated Runnable on the submitting thread when the
+     * pool + queue are saturated. On a worker thread "restore" and "clear"
+     * are equivalent (worker starts with empty context), but on the caller
+     * thread a blind clear would wipe the caller's own {@link TenantContext},
+     * {@link SecurityContextHolder}, and {@link MDC} -- any subsequent DB
+     * call on that request thread would fail with {@code TENANT_NOT_SET}
+     * and lose audit attribution. Snapshot first, restore in finally.
      */
     @Bean
     public TaskDecorator cbsContextTaskDecorator() {
@@ -85,6 +95,14 @@ public class AsyncConfig implements AsyncConfigurer {
             Map<String, String> mdc = MDC.getCopyOfContextMap();
 
             return () -> {
+                // Snapshot the EXECUTING thread's context so CallerRunsPolicy
+                // (which invokes us on the submitting thread under saturation)
+                // does not wipe the caller's active tenant / user / MDC.
+                String previousTenant = TenantContext.isSet()
+                        ? TenantContext.getCurrentTenant()
+                        : null;
+                SecurityContext previousSecurity = SecurityContextHolder.getContext();
+                Map<String, String> previousMdc = MDC.getCopyOfContextMap();
                 try {
                     if (tenantId != null) {
                         TenantContext.setCurrentTenant(tenantId);
@@ -97,9 +115,19 @@ public class AsyncConfig implements AsyncConfigurer {
                     }
                     runnable.run();
                 } finally {
-                    MDC.clear();
-                    SecurityContextHolder.clearContext();
-                    TenantContext.clear();
+                    // Restore — not clear — so CallerRunsPolicy doesn't
+                    // destroy the submitting thread's own context.
+                    if (previousMdc != null) {
+                        MDC.setContextMap(previousMdc);
+                    } else {
+                        MDC.clear();
+                    }
+                    SecurityContextHolder.setContext(previousSecurity);
+                    if (previousTenant != null) {
+                        TenantContext.setCurrentTenant(previousTenant);
+                    } else {
+                        TenantContext.clear();
+                    }
                 }
             };
         };
