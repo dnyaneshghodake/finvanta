@@ -141,7 +141,15 @@ public class SecurityConfig {
                     if (isDevProfile()) {
                         auth.requestMatchers("/h2-console/**").permitAll();
                     }
-                    auth.requestMatchers("/admin/**")
+                    // CBS: Explicit rule for branch-switching admin endpoint per Finacle
+                    // BRANCH_CONTEXT / Temenos BRANCH.SWITCH. Declared BEFORE /admin/**
+                    // so it is resolved first and survives any future reordering of the
+                    // /admin/** wildcard. The wildcard already guards it, but per Tier-1
+                    // CBS security review: every mutable admin endpoint must have an
+                    // explicit RBAC rule for auditability and defence in depth.
+                    auth.requestMatchers("/admin/switch-branch")
+                            .hasRole("ADMIN")
+                            .requestMatchers("/admin/**")
                             .hasRole("ADMIN")
                             .requestMatchers("/batch/**")
                             .hasRole("ADMIN")

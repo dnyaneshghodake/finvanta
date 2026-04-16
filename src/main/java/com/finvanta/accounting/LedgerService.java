@@ -205,8 +205,18 @@ public class LedgerService {
      * For a ledger with 10M entries at pageSize=5000: ~2000 DB queries, each returning
      * 5000 rows. Total wall time depends on DB latency but is typically < 5 minutes.
      *
+     * <p><b>Transaction semantics:</b> marked {@code readOnly=true} so Hibernate
+     * skips dirty-check and flushes, and {@code REPEATABLE_READ} so concurrent
+     * ledger appends cannot change already-seen entries mid-walk (prevents false
+     * tamper detection). Per Finacle/Temenos Tier-1: chain verification is a
+     * read-only operation and must never hold write locks or cause accidental
+     * updates via snapshot drift.
+     *
      * @return true if the entire chain is intact, false if any tamper detected
      */
+    @Transactional(
+            readOnly = true,
+            isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public boolean verifyChainIntegrity() {
         String tenantId = TenantContext.getCurrentTenant();
         log.info("Ledger chain integrity verification started for tenant={}", tenantId);

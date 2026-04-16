@@ -7,7 +7,9 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Date;
+import java.util.UUID;
 
 import javax.crypto.SecretKey;
 
@@ -96,21 +98,39 @@ public class JwtTokenService {
      * Per RBI: refresh tokens MUST NOT carry role/branch —
      * they can only be exchanged for a new access token,
      * not used directly for financial operations.
+     *
+     * <p>Per RFC 6749 §10.4 / OWASP JWT Cheat Sheet: every refresh token carries
+     * a unique {@code jti} (JWT ID) claim so the authorization server can track
+     * and revoke individual tokens (refresh-token rotation denylist). The
+     * {@code jti} is the primary key used by
+     * {@link com.finvanta.repository.RevokedRefreshTokenRepository} to detect replay.
      */
-    public String generateRefreshToken(
+    public RefreshTokenIssue generateRefreshToken(
             String username, String tenantId) {
         long now = System.currentTimeMillis();
-        return Jwts.builder()
+        Date issuedAt = new Date(now);
+        Date expiresAt = new Date(now + refreshTokenExpiryMs);
+        String jti = UUID.randomUUID().toString();
+        String token = Jwts.builder()
                 .subject(username)
                 .issuer(issuer)
+                .id(jti)
                 .claim(CLAIM_TENANT, tenantId)
                 .claim(CLAIM_TYPE, TYPE_REFRESH)
-                .issuedAt(new Date(now))
-                .expiration(new Date(
-                        now + refreshTokenExpiryMs))
+                .issuedAt(issuedAt)
+                .expiration(expiresAt)
                 .signWith(signingKey)
                 .compact();
+        return new RefreshTokenIssue(token, jti, expiresAt.toInstant());
     }
+
+    /**
+     * Immutable result of {@link #generateRefreshToken(String, String)} carrying
+     * the serialized JWT plus its canonical {@code jti} and expiry -- both needed
+     * by {@code AuthController.refresh} to persist the consumed token in the
+     * rotation denylist.
+     */
+    public record RefreshTokenIssue(String token, String jti, Instant expiresAt) {}
 
     /**
      * Parse and validate a JWT token. Returns claims if valid.
@@ -155,6 +175,17 @@ public class JwtTokenService {
     public boolean isRefreshToken(Claims claims) {
         return TYPE_REFRESH.equals(
                 claims.get(CLAIM_TYPE, String.class));
+    }
+
+    /** Extract the {@code jti} (JWT ID) claim -- required by the refresh-token rotation denylist. */
+    public String getJti(Claims claims) {
+        return claims.getId();
+    }
+
+    /** Extract the token expiration as an {@link Instant} -- for denylist persistence. */
+    public Instant getExpiration(Claims claims) {
+        Date exp = claims.getExpiration();
+        return exp != null ? exp.toInstant() : null;
     }
 
     /**
