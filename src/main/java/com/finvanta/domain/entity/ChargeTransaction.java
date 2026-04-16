@@ -120,6 +120,18 @@ public class ChargeTransaction extends BaseEntity {
     @Column(name = "customer_state_code", length = 10)
     private String customerStateCode;
 
+    /**
+     * GL code of the customer account that was debited at levy time.
+     * Captured immutably so waiver/reversal contra journals credit the EXACT
+     * same GL that was originally debited — per RBI FPC 2023 §5.7 / Finacle
+     * CHG_MASTER: reversals must be the mirror image of the original posting.
+     * Without this, waive/reverse would hardcode SB_DEPOSITS (GL 2010) even
+     * when the original levy debited CA_DEPOSITS (GL 2020), causing a permanent
+     * trial balance imbalance on the two GL heads.
+     */
+    @Column(name = "customer_gl_code", length = 20)
+    private String customerGlCode;
+
     /** Total amount debited from customer (baseFee + CGST + SGST + IGST) */
     @Column(name = "total_debit", precision = 18, scale = 2,
             nullable = false)

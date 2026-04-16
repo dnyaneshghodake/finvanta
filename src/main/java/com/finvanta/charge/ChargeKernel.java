@@ -266,6 +266,7 @@ public class ChargeKernel {
         chgTxn.setSgstAmount(gst.sgst());
         chgTxn.setIgstAmount(gst.igst());
         chgTxn.setCustomerStateCode(customerStateCode);
+        chgTxn.setCustomerGlCode(customerGlCode);
         chgTxn.setTotalDebit(totalDebit);
         chgTxn.setStatus(ChargeTransactionStatus.LEVIED);
         chgTxn.setJournalEntryId(result.getJournalEntryId());
@@ -334,12 +335,15 @@ public class ChargeKernel {
 
         List<JournalLineRequest> contraLines = buildContraLines(
                 chgTxn, def, "Waiver: ");
-        // Waivers credit the customer's SB/CA GL -- the bank absorbs the charge as
-        // income loss. The exact customer GL is not recorded on the levy txn so we
-        // fall back to SB_DEPOSITS (dominant case); callers that waive Current
-        // accounts should patch this GL in a later iteration.
+        // CBS: Credit the EXACT same customer GL that was debited at levy time.
+        // Per RBI FPC 2023 §5.7 / Finacle CHG_MASTER: contra journals must be
+        // the mirror image of the original posting. customerGlCode is persisted
+        // at levy time; legacy records (created before this column existed) fall
+        // back to SB_DEPOSITS as the conservative default.
+        String customerGl = chgTxn.getCustomerGlCode() != null
+                ? chgTxn.getCustomerGlCode() : GLConstants.SB_DEPOSITS;
         contraLines.add(new JournalLineRequest(
-                GLConstants.SB_DEPOSITS,
+                customerGl,
                 DebitCredit.CREDIT,
                 chgTxn.getTotalDebit(),
                 "Charge waiver credit"));
@@ -427,13 +431,13 @@ public class ChargeKernel {
         // income or GST Payable non-zero on the trial balance.
         List<JournalLineRequest> contraLines = buildContraLines(
                 chgTxn, def, "Reversal: ");
-        // Credit the same customer GL that was originally debited. We cannot
-        // re-derive the exact customer GL from the ChargeTransaction record
-        // (it's not stored), so we post to SB_DEPOSITS by convention. This is
-        // acceptable for CASA; loan-specific reversals flow through
-        // {@link com.finvanta.legacy.loan.LoanChargeEngine#reverseCharge}.
+        // CBS: Credit the EXACT same customer GL that was debited at levy time.
+        // Per RBI FPC 2023 §5.7: reversals must be the mirror image of the
+        // original posting so the net GL impact is zero on every head.
+        String customerGl = chgTxn.getCustomerGlCode() != null
+                ? chgTxn.getCustomerGlCode() : GLConstants.SB_DEPOSITS;
         contraLines.add(new JournalLineRequest(
-                GLConstants.SB_DEPOSITS,
+                customerGl,
                 DebitCredit.CREDIT,
                 chgTxn.getTotalDebit(),
                 "Reversal credit: " + def.getChargeName()));
