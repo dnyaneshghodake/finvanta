@@ -8,6 +8,8 @@ import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.repository.JournalEntryRepository;
 import com.finvanta.repository.LedgerEntryRepository;
 import com.finvanta.repository.LoanTransactionRepository;
+import com.finvanta.service.txn360.TxnRefResolver;
+import com.finvanta.service.txn360.TxnRefResolverRegistry;
 import com.finvanta.util.TenantContext;
 
 import java.util.List;
@@ -43,16 +45,19 @@ public class Txn360Controller {
     private final LoanTransactionRepository loanTxnRepository;
     private final JournalEntryRepository journalEntryRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
+    private final TxnRefResolverRegistry txnRefResolverRegistry;
 
     public Txn360Controller(
             DepositTransactionRepository depositTxnRepository,
             LoanTransactionRepository loanTxnRepository,
             JournalEntryRepository journalEntryRepository,
-            LedgerEntryRepository ledgerEntryRepository) {
+            LedgerEntryRepository ledgerEntryRepository,
+            TxnRefResolverRegistry txnRefResolverRegistry) {
         this.depositTxnRepository = depositTxnRepository;
         this.loanTxnRepository = loanTxnRepository;
         this.journalEntryRepository = journalEntryRepository;
         this.ledgerEntryRepository = ledgerEntryRepository;
+        this.txnRefResolverRegistry = txnRefResolverRegistry;
     }
 
     /**
@@ -71,68 +76,29 @@ public class Txn360Controller {
         String tenantId = TenantContext.getCurrentTenant();
         String ref = q.trim();
 
-        // CBS: Detect reference type by prefix and search the appropriate field.
-        // Per Finacle TRAN_INQUIRY: the system auto-detects the reference type
-        // and searches across ALL modules (Deposit + Loan).
-        DepositTransaction depositTxn = null;
-        LoanTransaction loanTxn = null;
-        JournalEntry journalEntry = null;
-        List<LedgerEntry> ledgerEntries = List.of();
+        // CBS: Delegate reference-type detection to the strategy registry. Each
+        // TxnRefResolver claims a prefix (VCH/TXN/JRN/fallback) and returns a
+        // resolution that the controller assembles into the view model. Adding
+        // a new reference family (e.g. CLR for clearing, IB for inter-branch)
+        // is a pure additive change -- publish a new TxnRefResolver bean, no
+        // controller edit required. Per Finacle TRAN_INQUIRY dispatcher pattern.
+        TxnRefResolver.TxnRefResolution resolution =
+                txnRefResolverRegistry.resolve(tenantId, ref);
 
-        if (ref.startsWith("VCH")) {
-            // CBS: Voucher lookup returns List because fund transfers create two subledger
-            // entries (TRANSFER_DEBIT + TRANSFER_CREDIT) sharing the same voucher number.
-            // Per Finacle TRAN_INQUIRY: show the first match; the full lifecycle is visible
-            // via the shared journal entry which links to both legs.
-            var depositVchResults = depositTxnRepository
-                    .findByTenantIdAndVoucherNumber(tenantId, ref);
-            depositTxn = depositVchResults.isEmpty() ? null : depositVchResults.get(0);
-            if (depositTxn == null) {
-                loanTxn = loanTxnRepository
-                        .findByTenantIdAndVoucherNumber(tenantId, ref).orElse(null);
-            }
-        } else if (ref.startsWith("TXN")) {
-            depositTxn = depositTxnRepository
-                    .findByTenantIdAndTransactionRef(tenantId, ref).orElse(null);
-            if (depositTxn == null) {
-                loanTxn = loanTxnRepository
-                        .findByTenantIdAndTransactionRef(tenantId, ref).orElse(null);
-            }
-        } else if (ref.startsWith("JRN")) {
-            journalEntry = journalEntryRepository
-                    .findByTenantIdAndJournalRef(tenantId, ref).orElse(null);
-        } else {
-            // Unknown prefix — try all in order: deposit → loan → journal
-            depositTxn = depositTxnRepository
-                    .findByTenantIdAndTransactionRef(tenantId, ref).orElse(null);
-            if (depositTxn == null) {
-                loanTxn = loanTxnRepository
-                        .findByTenantIdAndTransactionRef(tenantId, ref).orElse(null);
-            }
-            if (depositTxn == null && loanTxn == null) {
-                var depVchFallback = depositTxnRepository
-                        .findByTenantIdAndVoucherNumber(tenantId, ref);
-                depositTxn = depVchFallback.isEmpty() ? null : depVchFallback.get(0);
-            }
-            if (depositTxn == null && loanTxn == null) {
-                loanTxn = loanTxnRepository
-                        .findByTenantIdAndVoucherNumber(tenantId, ref).orElse(null);
-            }
-            if (depositTxn == null && loanTxn == null) {
-                journalEntry = journalEntryRepository
-                        .findByTenantIdAndJournalRef(tenantId, ref).orElse(null);
-            }
-        }
+        DepositTransaction depositTxn = resolution.depositTxn();
+        LoanTransaction loanTxn = resolution.loanTxn();
+        JournalEntry journalEntry = resolution.journalEntry();
+        List<LedgerEntry> ledgerEntries = List.of();
 
         // Resolve journal entry from subledger transaction
         Long journalEntryId = null;
         if (depositTxn != null) {
             mav.addObject("depositTxn", depositTxn);
-            mav.addObject("sourceModule", "DEPOSIT");
+            mav.addObject("sourceModule", resolution.sourceModule());
             journalEntryId = depositTxn.getJournalEntryId();
         } else if (loanTxn != null) {
             mav.addObject("loanTxn", loanTxn);
-            mav.addObject("sourceModule", "LOAN");
+            mav.addObject("sourceModule", resolution.sourceModule());
             journalEntryId = loanTxn.getJournalEntryId();
         }
 
@@ -152,8 +118,7 @@ public class Txn360Controller {
             mav.addObject("ledgerEntries", ledgerEntries);
         }
 
-        // If nothing found at all
-        if (depositTxn == null && loanTxn == null && journalEntry == null) {
+        if (resolution.isEmpty()) {
             mav.addObject("error", "No transaction found for reference: " + ref);
         }
 

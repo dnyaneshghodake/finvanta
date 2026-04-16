@@ -3,9 +3,13 @@ package com.finvanta.accounting;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.domain.entity.JournalEntryLine;
 import com.finvanta.domain.entity.LedgerEntry;
+import com.finvanta.domain.entity.TenantLedgerState;
 import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.repository.LedgerEntryRepository;
+import com.finvanta.repository.TenantLedgerStateRepository;
 import com.finvanta.util.TenantContext;
+
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -46,9 +50,13 @@ public class LedgerService {
     private static final Logger log = LoggerFactory.getLogger(LedgerService.class);
 
     private final LedgerEntryRepository ledgerRepository;
+    private final TenantLedgerStateRepository ledgerStateRepository;
 
-    public LedgerService(LedgerEntryRepository ledgerRepository) {
+    public LedgerService(
+            LedgerEntryRepository ledgerRepository,
+            TenantLedgerStateRepository ledgerStateRepository) {
         this.ledgerRepository = ledgerRepository;
+        this.ledgerStateRepository = ledgerStateRepository;
     }
 
     /**
@@ -60,24 +68,21 @@ public class LedgerService {
      * - SHA-256 hash chain
      * - Source journal traceability
      *
-     * <h3>CBS Ledger Sequence Serialization Strategy:</h3>
-     * The pessimistic lock on the latest ledger entry serializes concurrent postings
-     * when at least one entry exists. For the very first posting (empty ledger),
-     * no row exists to lock, so two concurrent first-postings could both get
-     * sequence=1. The UNIQUE constraint (uq_ledger_tenant_seq) is the DB-level
-     * safety net — one will succeed, the other will get a ConstraintViolationException
-     * which propagates up and rolls back the entire transaction (including GL updates).
+     * <h3>CBS Ledger Sequence Serialization Strategy (Finacle LEDGER_STATE):</h3>
+     * Every tenant has exactly one {@link TenantLedgerState} sentinel row keyed by
+     * {@code tenant_id}. Before computing the next sequence, {@code postToLedger}
+     * acquires a {@code SELECT ... FOR UPDATE} on that row. The row is seeded
+     * lazily on the very first posting via {@link #ensureAndLockSentinel(String)},
+     * so even the first-ever posting on an empty ledger serializes behind the same
+     * lock -- closing the first-posting race where two concurrent postings could
+     * both receive sequence=1 and rely solely on {@code uq_ledger_tenant_seq} as
+     * the tie-breaker. The sentinel row also caches the last sequence and last
+     * hash so we can skip a second {@code findAndLockLatestByTenantId} round-trip.
      *
-     * This is acceptable because:
-     * <ol>
-     *   <li>First-posting race is extremely rare (only on tenant initialization)</li>
-     *   <li>The retry at the caller level (BatchService per-account try/catch) handles it</li>
-     *   <li>GL updates and ledger are in the same @Transactional — both roll back atomically</li>
-     * </ol>
-     *
-     * <b>Production enhancement:</b> Use a DB sequence (CREATE SEQUENCE ledger_seq_tenant)
-     * or a dedicated tenant_ledger_state table with a sentinel row per tenant that
-     * is always locked before sequence allocation.
+     * <p>The {@code LedgerEntry} table remains the authoritative record; the
+     * sentinel is purely a serialization primitive. If the sentinel drifts from
+     * the entries table (e.g. after a restore), the unique constraint still
+     * catches duplicate sequences and rolls back the entire transaction.
      *
      * @param journalEntry The posted journal entry
      * @return List of created ledger entries
@@ -86,14 +91,11 @@ public class LedgerService {
     public List<LedgerEntry> postToLedger(JournalEntry journalEntry) {
         String tenantId = TenantContext.getCurrentTenant();
 
-        // Get current max sequence and previous hash for chain.
-        // Uses pessimistic lock to serialize concurrent postings and prevent
-        // duplicate sequences or broken hash chains.
-        // NOTE: For the first-ever posting (empty ledger), no lock is acquired.
-        // The UNIQUE constraint (uq_ledger_tenant_seq) is the safety net — see Javadoc above.
-        java.util.Optional<LedgerEntry> latestEntry = ledgerRepository.findAndLockLatestByTenantId(tenantId);
-        long currentSequence = latestEntry.map(LedgerEntry::getLedgerSequence).orElse(0L);
-        String previousHash = latestEntry.map(LedgerEntry::getHashValue).orElse("GENESIS");
+        // CBS LEDGER_STATE: lock the per-tenant sentinel row to serialize ALL
+        // concurrent postings -- including the first ever on an empty ledger.
+        TenantLedgerState state = ensureAndLockSentinel(tenantId);
+        long currentSequence = state.getLastSequence();
+        String previousHash = state.getLastHash();
 
         List<LedgerEntry> entries = new ArrayList<>();
 
@@ -137,15 +139,49 @@ public class LedgerService {
         List<LedgerEntry> saved = ledgerRepository.saveAll(entries);
 
         if (!saved.isEmpty()) {
+            // CBS LEDGER_STATE: advance the sentinel to the last posted entry so the
+            // next posting picks up where this one left off without re-querying
+            // ledger_entries. Persisted inside the same @Transactional so a rollback
+            // of the posting also rolls back the sentinel advance.
+            LedgerEntry last = saved.get(saved.size() - 1);
+            state.setLastSequence(last.getLedgerSequence());
+            state.setLastHash(last.getHashValue());
+            state.setUpdatedAt(LocalDateTime.now());
+            ledgerStateRepository.save(state);
+
             log.debug(
                     "Ledger posted: journalRef={}, entries={}, sequences={}-{}",
                     journalEntry.getJournalRef(),
                     saved.size(),
                     saved.get(0).getLedgerSequence(),
-                    saved.get(saved.size() - 1).getLedgerSequence());
+                    last.getLedgerSequence());
         }
 
         return saved;
+    }
+
+    /**
+     * Returns the per-tenant sentinel row with a pessimistic write lock.
+     * Creates the row on the very first posting (lazy bootstrap). The insert
+     * races are resolved by the {@code tenant_ledger_state} primary key --
+     * the losing insert fails with {@link DataIntegrityViolationException} and
+     * the subsequent re-fetch sees the winning row under lock.
+     */
+    private TenantLedgerState ensureAndLockSentinel(String tenantId) {
+        java.util.Optional<TenantLedgerState> existing =
+                ledgerStateRepository.findAndLock(tenantId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        try {
+            ledgerStateRepository.saveAndFlush(new TenantLedgerState(tenantId));
+        } catch (DataIntegrityViolationException concurrent) {
+            // Another thread inserted the sentinel first -- harmless, re-lock below.
+            log.debug("Tenant ledger sentinel race resolved by PK: tenant={}", tenantId);
+        }
+        return ledgerStateRepository.findAndLock(tenantId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "tenant_ledger_state row disappeared for tenant=" + tenantId));
     }
 
     /**

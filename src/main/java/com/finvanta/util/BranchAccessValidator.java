@@ -7,9 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 // Note: BusinessException is in the same package (com.finvanta.util) — no import needed.
-// SecurityUtil is also in the same package — static calls are used intentionally
-// for lightweight access to the Spring Security context. Consider refactoring to
-// an injected dependency for testability in a future PR.
+// SecurityUtil access is routed through the injected {@link CbsSecurityContext}
+// so validators are unit-testable without a full Spring Security context.
 
 /**
  * CBS Branch Access Validator per Finacle BRANCH_CONTEXT / Temenos COMPANY.CHECK.
@@ -44,6 +43,12 @@ public class BranchAccessValidator {
 
     private static final Logger log = LoggerFactory.getLogger(BranchAccessValidator.class);
 
+    private final CbsSecurityContext securityContext;
+
+    public BranchAccessValidator(CbsSecurityContext securityContext) {
+        this.securityContext = securityContext;
+    }
+
     /**
      * Validates that the current user has access to the specified branch.
      * Throws BusinessException if access is denied.
@@ -74,15 +79,15 @@ public class BranchAccessValidator {
         // Per RBI IT Governance: ADMIN has full access, AUDITOR has read-only all-branch access.
         // Uses hasRole()/isAuditorRole() instead of getCurrentUserRole() because the latter
         // excludes AUDITOR from its return values (designed for transaction limit resolution only).
-        if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
+        if (securityContext.isAdminRole() || securityContext.isAuditorRole()) {
             return;
         }
 
-        Long userBranchId = SecurityUtil.getCurrentUserBranchId();
+        Long userBranchId = securityContext.getCurrentUserBranchId();
         if (userBranchId == null) {
             // System user or user without branch assignment — allow
             // This handles SYSTEM-initiated operations (EOD, batch)
-            String username = SecurityUtil.getCurrentUsername();
+            String username = securityContext.getCurrentUsername();
             if ("SYSTEM".equals(username) || "SYSTEM_EOD".equals(username)) {
                 return;
             }
@@ -97,9 +102,9 @@ public class BranchAccessValidator {
         }
 
         if (!userBranchId.equals(targetBranchId)) {
-            String username = SecurityUtil.getCurrentUsername();
-            String userBranchCode = SecurityUtil.getCurrentUserBranchCode();
-            String userRole = SecurityUtil.getCurrentUserRole();
+            String username = securityContext.getCurrentUsername();
+            String userBranchCode = securityContext.getCurrentUserBranchCode();
+            String userRole = securityContext.getCurrentUserRole();
             log.warn(
                     "BRANCH_ACCESS_DENIED: user={}, userBranch={}, targetBranch={}, role={}",
                     username,

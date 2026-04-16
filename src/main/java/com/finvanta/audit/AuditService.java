@@ -116,32 +116,84 @@ public class AuditService {
                 tenantId, entityType, entityId);
     }
 
+    /**
+     * Full paginated audit chain verification per RBI IT Governance Direction 2023 §8.3.
+     *
+     * <p>Walks every audit record in ascending id order (chronological) and validates:
+     * <ol>
+     *   <li>The first record links to {@code GENESIS}.</li>
+     *   <li>Every subsequent record's {@code previousHash} equals the prior record's {@code hash}.</li>
+     *   <li>Every record's stored {@code hash} matches the hash recomputed from its fields --
+     *       this detects post-hoc tampering of the audit payload itself.</li>
+     * </ol>
+     *
+     * <p>Memory profile is O(pageSize), not O(totalRecords). Per Finacle/Temenos Tier-1
+     * audit standards, partial verification (the pre-refactor "recent 500" check) is
+     * not acceptable to an RBI on-site inspector -- the entire chain must be walked
+     * to certify integrity. Read-only + REPEATABLE_READ so concurrent audit appends
+     * cannot invalidate already-seen pages mid-walk.
+     */
+    @Transactional(
+            readOnly = true,
+            isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public boolean verifyChainIntegrity(String tenantId) {
-        List<AuditLog> logs = auditLogRepository.findRecentAuditLogs(tenantId);
-        if (logs.isEmpty()) {
+        long total = auditLogRepository.countByTenantId(tenantId);
+        if (total == 0) {
+            log.info("Audit chain trivially valid: tenant={} has no audit records", tenantId);
             return true;
         }
 
-        for (int i = 0; i < logs.size() - 1; i++) {
-            AuditLog current = logs.get(i);
-            AuditLog previous = logs.get(i + 1);
-            if (!current.getPreviousHash().equals(previous.getHash())) {
-                log.error("Audit chain integrity violation detected at log id={}", current.getId());
-                return false;
+        log.info("Audit chain verification started: tenant={}, records={}", tenantId, total);
+
+        String expectedPreviousHash = "GENESIS";
+        long verifiedCount = 0;
+        int pageSize = 5000;
+        int pageNumber = 0;
+
+        while (true) {
+            List<AuditLog> entries = auditLogRepository.findAllByTenantIdOrderByIdAsc(
+                    tenantId,
+                    org.springframework.data.domain.PageRequest.of(pageNumber, pageSize));
+            if (entries.isEmpty()) {
+                break;
+            }
+
+            for (AuditLog entry : entries) {
+                // 1. Chain linkage: this record's previousHash must match the expected hash
+                //    (which was the previous record's stored hash, or GENESIS for the first).
+                if (!expectedPreviousHash.equals(entry.getPreviousHash())) {
+                    log.error(
+                            "AUDIT TAMPER DETECTED: chain break at id={}. "
+                                    + "Expected previousHash={}, found previousHash={}",
+                            entry.getId(),
+                            expectedPreviousHash,
+                            entry.getPreviousHash());
+                    return false;
+                }
+                // 2. Payload integrity: recompute hash and compare with stored value.
+                String recomputed = computeHash(entry, entry.getPreviousHash());
+                if (!recomputed.equals(entry.getHash())) {
+                    log.error(
+                            "AUDIT TAMPER DETECTED: hash mismatch at id={}. "
+                                    + "Stored hash={}, recomputed hash={}",
+                            entry.getId(),
+                            entry.getHash(),
+                            recomputed);
+                    return false;
+                }
+                // 3. Advance: current record's stored hash is what the next record must link to.
+                expectedPreviousHash = entry.getHash();
+                verifiedCount++;
+            }
+
+            pageNumber++;
+            if (verifiedCount % 50000 == 0) {
+                log.info("Audit chain verification progress: tenant={}, {}/{}",
+                        tenantId, verifiedCount, total);
             }
         }
 
-        // Only verify GENESIS link if we have the complete chain (fewer records than page size)
-        if (logs.size() < 500) {
-            AuditLog oldest = logs.get(logs.size() - 1);
-            if (!"GENESIS".equals(oldest.getPreviousHash())) {
-                log.error(
-                        "Audit chain integrity violation: oldest record id={} does not link to GENESIS",
-                        oldest.getId());
-                return false;
-            }
-        }
-
+        log.info("Audit chain FULLY VERIFIED: tenant={}, records={}", tenantId, verifiedCount);
         return true;
     }
 

@@ -27,6 +27,19 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
         return findRecentAuditLogsPaged(tenantId, PageRequest.of(0, 500));
     }
 
+    /**
+     * Ascending-id walk over the ENTIRE audit chain for integrity verification.
+     * Per Finacle/Temenos Tier-1 and RBI IT Governance Direction 2023 §8.3: audit
+     * chain verification must cover every record, not just the recent window.
+     * Partial verification is not acceptable to an RBI on-site inspector.
+     */
+    @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId ORDER BY al.id ASC")
+    List<AuditLog> findAllByTenantIdOrderByIdAsc(
+            @Param("tenantId") String tenantId, Pageable pageable);
+
+    @Query("SELECT COUNT(al) FROM AuditLog al WHERE al.tenantId = :tenantId")
+    long countByTenantId(@Param("tenantId") String tenantId);
+
     default Optional<AuditLog> findLatestByTenantId(String tenantId) {
         List<AuditLog> logs = findTopByTenantIdOrderByIdDesc(tenantId);
         return logs.isEmpty() ? Optional.empty() : Optional.of(logs.get(0));
