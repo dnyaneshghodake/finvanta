@@ -235,6 +235,18 @@ class CasaDepositIntegrationTest {
         assertTrialBalance();
     }
 
+    /** Opens a CURRENT account (different type from SAVINGS) for transfer target. */
+    private DepositAccount createActiveCurrentAccount() {
+        Customer cust = customerRepository.findAll().stream()
+                .filter(c -> c.getTenantId().equals(TENANT))
+                .findFirst().orElseThrow();
+        DepositAccount acct = depositService.openAccount(
+                cust.getId(), testBranchId, "CURRENT", "CURRENT",
+                null, "Nominee", "SPOUSE");
+        depositService.activateAccount(acct.getAccountNumber());
+        return depositService.getAccount(acct.getAccountNumber());
+    }
+
     @Test
     @Transactional
     @DisplayName("Transfer: atomic debit/credit across two accounts")
@@ -243,7 +255,7 @@ class CasaDepositIntegrationTest {
         DepositAccount src = createActiveAccount();
         depositService.deposit(src.getAccountNumber(),
                 new BigDecimal("100000.00"), BIZ_DATE, "Seed", null, "BRANCH");
-        DepositAccount tgt = createActiveAccount();
+        DepositAccount tgt = createActiveCurrentAccount();
 
         DepositTransaction xfer = depositService.transfer(
                 src.getAccountNumber(), tgt.getAccountNumber(),
