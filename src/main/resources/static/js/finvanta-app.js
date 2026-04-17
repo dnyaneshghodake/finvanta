@@ -76,17 +76,22 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     /**
-     * Submit a form while ensuring the `.fv-form` submit event listener fires
-     * (loading overlay + double-click prevention). `form.submit()` bypasses
-     * addEventListener('submit') handlers — `requestSubmit()` does not.
-     * Falls back to `form.submit()` for older browsers (IE11 / legacy Edge).
+     * Submit a form with loading overlay and double-click prevention.
+     * Shows the overlay and disables the submit button BEFORE calling
+     * form.submit(). We use form.submit() (not requestSubmit()) because
+     * requestSubmit() fires the submit event handler which disables the
+     * button — and then requestSubmit() itself fails because the submitter
+     * is disabled. form.submit() bypasses event handlers but we manually
+     * trigger the overlay here to compensate.
      */
     function safeFormSubmit(form) {
-        if (typeof form.requestSubmit === 'function') {
-            form.requestSubmit();
-        } else {
-            form.submit();
+        var submitBtn = form.querySelector('[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
         }
+        showLoading();
+        form.submit();
     }
 
     /* Bind [data-confirm] buttons to styled modal instead of browser confirm() */
