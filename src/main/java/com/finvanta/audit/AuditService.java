@@ -315,20 +315,23 @@ public class AuditService {
             // (calendar generation, holiday management) that don't reference a specific entity.
             String entityIdStr = auditLog.getEntityId() != null
                     ? auditLog.getEntityId().toString() : "0";
-            // CBS Tier-1 CRITICAL: canonicalize eventTimestamp to microsecond precision
-            // in ISO_LOCAL_DATE_TIME format. LocalDateTime.now() has nanosecond precision
-            // in-memory, but H2 DATETIME and SQL Server DATETIME2 round-trip to microsecond
-            // precision. If we hashed the in-memory nanos-precise LocalDateTime at insert
-            // but recomputed from the microsecond-precise reloaded value during
-            // verifyChainIntegrity, the hashes would ALWAYS diverge -- every audit chain
-            // verification after a DB round-trip would report a false tamper. Per Finacle
-            // AUDIT_TRAIL / Temenos AUDIT.LOG hash standards: every field used in the hash
-            // MUST be normalized to a canonical representation compatible with the lowest
-            // precision used across all supported DB column types. This also guarantees
-            // hash stability across H2 (test) and SQL Server (prod).
+            // CBS Tier-1 CRITICAL: canonicalize eventTimestamp to SECOND precision in
+            // ISO_LOCAL_DATE_TIME format, matching the truncation applied at insert time
+            // (see logEvent line that sets eventTimestamp). Both sites MUST use the same
+            // precision — SECONDS — so the hash computed at insert is identical to the
+            // hash recomputed during verifyChainIntegrity after a DB round-trip.
+            // Using ISO_LOCAL_DATE_TIME.format() instead of LocalDateTime.toString()
+            // guarantees a stable representation (e.g., "2026-04-01T10:30:00" rather
+            // than "2026-04-01T10:30" which toString() emits when seconds are zero).
+            // Per Finacle AUDIT_TRAIL / Temenos AUDIT.LOG hash standards: every field
+            // used in the hash MUST be normalized to a canonical representation
+            // compatible with the coarsest DB precision across all supported column
+            // types (SQL Server DATETIME rounds to 3.33ms, so SECONDS is the safe
+            // floor). This also guarantees hash stability across H2 (test) and SQL
+            // Server (prod).
             String canonicalTimestamp = auditLog.getEventTimestamp() != null
                     ? auditLog.getEventTimestamp()
-                            .truncatedTo(java.time.temporal.ChronoUnit.MICROS)
+                            .truncatedTo(java.time.temporal.ChronoUnit.SECONDS)
                             .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
                     : "";
             String data = auditLog.getTenantId()
