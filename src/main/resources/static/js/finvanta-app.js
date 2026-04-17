@@ -357,6 +357,17 @@ document.addEventListener('DOMContentLoaded', function () {
     if (typeof jQuery !== 'undefined' && typeof jQuery.fn.DataTable !== 'undefined') {
         jQuery('.fv-datatable').each(function () {
             if (!jQuery.fn.DataTable.isDataTable(this)) {
+                /* CBS: Remove JSP-rendered empty-state colspan rows before DataTables init.
+                   When tables are empty, JSPs render <tr><td colspan="N">No data</td></tr>.
+                   DataTables interprets this as a data row with 1 column, causing
+                   "Requested unknown parameter" errors. Removing them lets DataTables
+                   show its own emptyTable message instead. */
+                jQuery(this).find('tbody tr').each(function () {
+                    if (jQuery(this).children('td[colspan]').length === 1
+                        && jQuery(this).children('td').length === 1) {
+                        jQuery(this).remove();
+                    }
+                });
                 jQuery(this).DataTable({
                     paging: true,
                     searching: true,
