@@ -32,22 +32,24 @@
             <!-- Step 1: Trial Run Form -->
             <form method="post" action="${pageContext.request.contextPath}/batch/eod/trial" class="fv-form mb-3">
                 <div class="row align-items-end">
-                    <div class="col-md-4">
-                        <label for="businessDate" class="form-label">Business Date *</label>
+                    <div class="col-md-4 fv-mandatory-group">
+                        <label for="businessDate" class="form-label fv-required">Business Date</label>
                         <input type="date" name="businessDate" id="businessDate" class="form-control" required
                                value="<c:out value='${trialDate}' />" />
                     </div>
                     <div class="col-md-4">
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                        <button type="submit" class="btn btn-info"><i class="bi bi-search"></i> Run Trial (Validate)</button>
+                        <button type="submit" class="btn btn-fv-primary"><i class="bi bi-search"></i> Run Trial (Validate)</button>
                     </div>
                 </div>
             </form>
 
             <!-- Trial Results Checklist -->
             <c:if test="${not empty trialResults}">
-                <div class="fv-card mb-3" style="border:2px solid ${trialClean ? '#198754' : '#dc3545'};">
-                    <div class="card-header" style="background:${trialClean ? '#d1e7dd' : '#f8d7da'};color:${trialClean ? '#0f5132' : '#842029'};">
+                <%-- CBS Tier-1: semantic fv-card-pass / fv-card-fail utility classes
+                     replace inline hex borders/backgrounds so brand-color changes propagate. --%>
+                <div class="fv-card mb-3 ${trialClean ? 'fv-card-pass' : 'fv-card-fail'}">
+                    <div class="card-header">
                         <i class="bi ${trialClean ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'}"></i>
                         EOD Trial Results for <c:out value="${trialDate}" />
                         &mdash; <c:choose>
@@ -84,28 +86,25 @@
                     </div>
                 </div>
 
-                <!-- Step 2: Apply Button (gated by trial results) -->
+                <!-- Step 2: Apply Button (gated by trial results)
+                     CBS Tier-1: the styled `data-confirm` modal replaces the prior inline
+                     browser `confirm()`. EOD is the single most destructive op in CBS
+                     (NPA classification + provisioning + business-date roll) — the highest-
+                     signal modal is required, matching every other destructive flow
+                     (password reset, user deactivate, loan reversal, charge reversal). -->
                 <c:choose>
                     <c:when test="${trialClean}">
                         <form method="post" action="${pageContext.request.contextPath}/batch/eod/apply">
                             <input type="hidden" name="businessDate" value="<c:out value='${trialDate}' />" />
                             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                            <button type="submit" class="btn btn-warning btn-lg" id="applyEodBtn"
-                                    data-date="<c:out value='${trialDate}' />">
+                            <button type="submit" class="btn btn-fv-warning btn-lg"
+                                    data-confirm="Execute EOD for ${trialDate}? This will classify all accounts, post provisioning, and advance the business date. This action cannot be undone.">
                                 <i class="bi bi-play-circle"></i> Apply EOD for <c:out value="${trialDate}" />
                             </button>
                         </form>
-                        <script>
-                            document.getElementById('applyEodBtn').addEventListener('click', function(e) {
-                                var dt = this.getAttribute('data-date');
-                                if (!confirm('Execute EOD for ' + dt + '? This will process all accounts. Continue?')) {
-                                    e.preventDefault();
-                                }
-                            });
-                        </script>
                     </c:when>
                     <c:otherwise>
-                        <button class="btn btn-secondary btn-lg" disabled title="Resolve all BLOCKER checks before Apply">
+                        <button class="btn btn-outline-secondary btn-lg" disabled title="Resolve all BLOCKER checks before Apply">
                             <i class="bi bi-lock"></i> Apply EOD (Blocked &mdash; resolve issues above)
                         </button>
                     </c:otherwise>

@@ -84,7 +84,9 @@
 
         <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <li class="nav-section">Audit</li>
-        <li><a href="${pageContext.request.contextPath}/audit/logs" class="nav-link"><i class="bi bi-shield-lock"></i><span class="nav-text">Audit Logs</span></a></li>
+        <%-- CBS Tier-1: bi-journal-check signals an immutable, append-only audit journal
+             (hash-chained per RBI IT Governance §8.3). Distinct from bi-shield-lock on MFA. --%>
+        <li><a href="${pageContext.request.contextPath}/audit/logs" class="nav-link"><i class="bi bi-journal-check"></i><span class="nav-text">Audit Logs</span></a></li>
         </c:if>
     </ul>
 </nav>

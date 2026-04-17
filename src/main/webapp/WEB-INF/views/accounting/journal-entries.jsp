@@ -83,6 +83,18 @@
                         <tr><td colspan="7" class="text-center text-muted">No journal entries found</td></tr>
                     </c:if>
                 </tbody>
+                <%-- CBS Tier-1: tfoot totals row (Debit / Credit aggregate) per Finacle JRNL_INQUIRY
+                     standard. Uses `.amount` class so digits line up with tbody via monospace. --%>
+                <c:if test="${not empty totalDebit or not empty totalCredit}">
+                <tfoot>
+                    <tr class="fw-bold" style="background:#f8f9fa;border-top:2px solid var(--fv-primary);">
+                        <td colspan="4" class="text-end">Totals:</td>
+                        <td class="amount"><fmt:formatNumber value="${totalDebit}" type="number" maxFractionDigits="2" /></td>
+                        <td class="amount"><fmt:formatNumber value="${totalCredit}" type="number" maxFractionDigits="2" /></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+                </c:if>
             </table>
             </div>
         </div>

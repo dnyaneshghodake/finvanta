@@ -16,7 +16,11 @@
     --fv-text-muted: #90a4ae;
     --fv-border: #dee2e6;
     --fv-success: #2e7d32;
+    --fv-success-bg: #d1e7dd;
+    --fv-success-fg: #0f5132;
     --fv-danger: #c62828;
+    --fv-danger-bg: #f8d7da;
+    --fv-danger-fg: #842029;
     --fv-warning: #ef6c00;
     --fv-info: #1565c0;
     --fv-font-size: 13px;
@@ -24,9 +28,22 @@
     --fv-topbar-height: 56px;
     --fv-mandatory-color: #c62828;
     --fv-mandatory-border: #e57373;
+    /* CBS Tier-1: single field height across filter/body forms per Finacle field-height std.
+       Override to 28px on `.form-control-sm` / `.form-select-sm` for topbar / filter strips. */
+    --fv-field-height: 32px;
+    /* CBS Tier-1: cap content width at 1600px for ultra-wide monitors (1920px+ / 2560px).
+       Below this, content fills available space. Matches Finacle Client / Temenos Transact. */
+    --fv-content-max-width: 1600px;
 }
 body {
-    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Tahoma, Geneva, Verdana, sans-serif;
+    /* CBS Tier-1: vernacular fallbacks per RBI Retail Banking Direction 2023 §4.2 (multilingual
+       passbook/SMS/UI). Noto Sans <script> stack covers all 22 scheduled languages; browsers
+       silently fall through to Segoe UI if system lacks the specific Devanagari/Tamil/Bengali/
+       Kannada/Gujarati/Telugu/Malayalam/Gurmukhi face. No extra font asset downloaded. */
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Noto Sans Devanagari',
+        'Noto Sans Tamil', 'Noto Sans Bengali', 'Noto Sans Kannada', 'Noto Sans Gujarati',
+        'Noto Sans Telugu', 'Noto Sans Malayalam', 'Noto Sans Gurmukhi',
+        Tahoma, Geneva, Verdana, sans-serif;
     font-size: var(--fv-font-size);
     background: var(--fv-body-bg);
     color: var(--fv-text-primary);
@@ -120,13 +137,16 @@ body {
 .fv-topbar .fv-topbar-right a { color: #90caf9; text-decoration: none; font-size: 12px; }
 .fv-topbar .fv-topbar-right a:hover { color: #ffffff; }
 
-/* Main Content */
+/* Main Content
+ * CBS Tier-1: cap content width so tables/forms stay readable on ultra-wide monitors
+ * (1920px+, 2560px dual-monitor branch setups). Below the cap, content fills available
+ * width bounded by (100vw - sidebar). Matches Finacle Client / Temenos Transact layout. */
 .fv-main {
     margin-left: var(--fv-sidebar-width);
     margin-top: var(--fv-topbar-height);
     padding: 16px 20px;
     min-height: calc(100vh - var(--fv-topbar-height) - 40px);
-    max-width: calc(100vw - var(--fv-sidebar-width));
+    max-width: min(calc(100vw - var(--fv-sidebar-width)), var(--fv-content-max-width));
     overflow-x: hidden;
 }
 
@@ -214,6 +234,21 @@ body {
 .fv-form .form-label { font-size: 12px; font-weight: 500; color: var(--fv-text-secondary); margin-bottom: 4px; }
 .fv-form .form-control, .fv-form .form-select { font-size: 13px; padding: 6px 10px; border-color: var(--fv-border); }
 .fv-form .form-control:focus, .fv-form .form-select:focus { border-color: var(--fv-primary); box-shadow: 0 0 0 2px rgba(26,35,126,0.1); }
+/* CBS Tier-1 field-height normalization per Finacle/Temenos single-density rule.
+   Same height across inputs + selects inside `.fv-form` so row-based forms line up.
+   Excludes textarea (multi-line) and file inputs (native control sizing). */
+.fv-form input.form-control:not([type="file"]),
+.fv-form select.form-select { height: var(--fv-field-height); }
+.fv-form input.form-control-sm:not([type="file"]),
+.fv-form select.form-select-sm { height: 28px; }
+
+/* CBS Tier-1: semantic card emphasis classes. Replaces inline
+   `style="border:2px solid #198754;background:#d1e7dd"` patterns with
+   theme-token-driven utility classes so brand-color changes propagate. */
+.fv-card.fv-card-pass { border: 2px solid var(--fv-success); }
+.fv-card.fv-card-pass > .card-header { background: var(--fv-success-bg); color: var(--fv-success-fg); }
+.fv-card.fv-card-fail { border: 2px solid var(--fv-danger); }
+.fv-card.fv-card-fail > .card-header { background: var(--fv-danger-bg); color: var(--fv-danger-fg); }
 
 /* ================================================================
    CBS FOCUS INDICATORS — Per WCAG 2.1 AA SC 2.4.7 / RBI Accessibility
@@ -442,7 +477,11 @@ body {
 
 /* Login Page */
 .fv-login-wrapper { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--fv-sidebar-bg) 0%, var(--fv-primary) 100%); }
-.fv-login-card { background: #ffffff; border-radius: 6px; padding: 36px; width: 380px; box-shadow: 0 16px 48px rgba(0,0,0,0.3); }
+/* CBS Tier-1: responsive login card — clamps at 380px on desktop but shrinks on narrow
+   viewports (branch tablet / 320px mobile). Prevents horizontal overflow on <400px widths.
+   Padding also reduces on very narrow screens so the form doesn't push the edges. */
+.fv-login-card { background: #ffffff; border-radius: 6px; padding: 36px; width: min(380px, calc(100vw - 32px)); max-width: 380px; box-shadow: 0 16px 48px rgba(0,0,0,0.3); }
+@media (max-width: 400px) { .fv-login-card { padding: 24px 20px; } }
 .fv-login-card h1 { text-align: center; color: var(--fv-primary); font-size: 24px; margin-bottom: 4px; letter-spacing: 1px; }
 .fv-login-card .subtitle { text-align: center; color: var(--fv-text-muted); font-size: 12px; margin-bottom: 28px; }
 
