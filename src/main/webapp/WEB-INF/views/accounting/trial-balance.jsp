@@ -5,6 +5,11 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Trial Balance</li>
+    </ul>
+
     <!-- Balance Status -->
     <div class="row g-3 mb-3">
         <div class="col">
