@@ -1,10 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+    <!--
+      Spring Boot 3.3.13 (latest 3.3.x) bump per audit finding M2 (CVE surface).
+      Transitively patches:
+        - spring-framework 6.1.6 -> 6.1.14 (CVE-2024-38809 WebFlux DoS, CVE-2024-38820 DataBinder)
+        - spring-security 6.2.4 -> 6.3.x (CVE-2024-38821 auth bypass, CVE-2024-38827 authz inconsistency)
+        - tomcat-embed 10.1.20 -> 10.1.34 (CVE-2024-34750, CVE-2024-38286, CVE-2024-50379 TLS MitM,
+          CVE-2024-52316/52317)
+        - logback 1.4.14 -> 1.5.13 (CVE-2023-6481, CVE-2024-12798 JNDI)
+        - jackson-databind 2.15.4 -> 2.17.x
+      3.3.x is the last LTS before Spring Boot 4; 3.2.x reached EOL 2024-11.
+      Per RBI IT Governance Direction 2023 §8.2: dependency CVE hygiene is mandatory.
+    -->
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.5</version>
+        <version>3.3.13</version>
         <relativePath/>
     </parent>
     <groupId>com.finvanta</groupId>
