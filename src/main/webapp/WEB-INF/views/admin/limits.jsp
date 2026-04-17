@@ -45,11 +45,11 @@
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small">Per-Transaction Limit</label>
-                        <input type="number" name="perTransactionLimit" class="form-control form-control-sm" data-fv-type="amount" placeholder="e.g., 1000000"/>
+                        <input type="number" name="perTransactionLimit" class="form-control form-control-sm" data-fv-type="amount" step="0.01" placeholder="e.g., 1000000"/>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small">Daily Aggregate Limit</label>
-                        <input type="number" name="dailyAggregateLimit" class="form-control form-control-sm" data-fv-type="amount" placeholder="e.g., 5000000"/>
+                        <input type="number" name="dailyAggregateLimit" class="form-control form-control-sm" data-fv-type="amount" step="0.01" placeholder="e.g., 5000000"/>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label small">Description</label>
@@ -130,8 +130,8 @@
                                         <form method="post" action="${pageContext.request.contextPath}/admin/limits/${limit.id}/edit" class="fv-form">
                                             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
                                             <div class="modal-body">
-                                                <div class="mb-3"><label class="form-label">Per-Transaction Limit</label><input type="number" name="perTransactionLimit" class="form-control" data-fv-type="amount" value="${limit.perTransactionLimit}"/><small class="text-muted">Set to 0 to block this transaction type. Leave empty for unlimited.</small></div>
-                                                <div class="mb-3"><label class="form-label">Daily Aggregate Limit</label><input type="number" name="dailyAggregateLimit" class="form-control" data-fv-type="amount" value="${limit.dailyAggregateLimit}"/></div>
+                                                <div class="mb-3"><label class="form-label">Per-Transaction Limit</label><input type="number" name="perTransactionLimit" class="form-control" data-fv-type="amount" step="0.01" value="${limit.perTransactionLimit}"/><small class="text-muted">Set to 0 to block this transaction type. Leave empty for unlimited.</small></div>
+                                                <div class="mb-3"><label class="form-label">Daily Aggregate Limit</label><input type="number" name="dailyAggregateLimit" class="form-control" data-fv-type="amount" step="0.01" value="${limit.dailyAggregateLimit}"/></div>
                                                 <div class="mb-3"><label class="form-label">Description</label><input type="text" name="description" class="form-control" maxlength="500" value="<c:out value='${limit.description}'/>"/></div>
                                             </div>
                                             <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-fv-primary">Save Changes</button></div>

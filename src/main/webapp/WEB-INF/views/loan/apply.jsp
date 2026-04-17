@@ -63,7 +63,7 @@
                     </div>
                     <div class="col-md-6 fv-mandatory-group">
                         <label for="requestedAmount" class="form-label fv-required">Requested Amount (INR)</label><span class="fv-help-icon" data-fv-help="Per product PDDEF: min/max amount auto-populated. Per RBI exposure norms: subject to borrower's max borrowing limit.">?</span>
-                        <input type="number" name="requestedAmount" id="requestedAmount" class="form-control" data-fv-type="amount" min="10000" max="50000000" required placeholder="e.g., 1000000" />
+                        <input type="number" name="requestedAmount" id="requestedAmount" class="form-control" data-fv-type="amount" step="0.01" min="10000" max="50000000" required placeholder="e.g., 1000000" />
                         <small id="amountHint" class="form-text text-muted"></small>
                     </div>
                 </div>
