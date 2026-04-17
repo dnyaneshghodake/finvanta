@@ -324,8 +324,9 @@ public class DepositController {
 
             TransactionPreview preview = transactionEngine.validate(request);
 
-            // Enrich with account-specific info
-            return TransactionPreview.builder()
+            // CBS: Enrich the engine preview with account-specific info.
+            // Re-build with ALL engine checks copied, plus account context.
+            TransactionPreview.Builder enriched = TransactionPreview.builder()
                     .accountNumber(accountNumber)
                     .accountHolder(account.getCustomer().getFirstName() + " " + account.getCustomer().getLastName())
                     .branchCode(account.getBranch().getBranchCode())
@@ -338,9 +339,38 @@ public class DepositController {
                     .valueDate(businessDate)
                     .narration(request.getNarration())
                     .requiresApproval(preview.isRequiresApproval())
-                    .journalLines(preview.getJournalLines())
-                    // Copy all checks from engine preview
-                    .build();
+                    .journalLines(preview.getJournalLines());
+
+            // Copy ALL engine validation checks into the enriched preview
+            for (TransactionPreview.CheckResult check : preview.getChecks()) {
+                enriched.addCheck(check.step(), check.category(), check.description(), check.passed(), check.detail());
+            }
+
+            // Add account-specific checks not covered by the engine
+            boolean accountActive = account.isActive();
+            enriched.addCheck("ACCOUNT_STATUS", "Account",
+                    "Account " + accountNumber + " is " + account.getAccountStatus(),
+                    accountActive,
+                    accountActive ? "ACTIVE — transactions allowed" : "Status " + account.getAccountStatus() + " — transactions blocked");
+
+            if ("CASH_WITHDRAWAL".equals(txnType)) {
+                boolean hasFunds = account.hasSufficientFunds(amount);
+                enriched.addCheck("SUFFICIENT_FUNDS", "Account",
+                        "Sufficient funds for withdrawal of INR " + amount,
+                        hasFunds,
+                        hasFunds ? "Available: INR " + account.getEffectiveAvailable()
+                                : "Insufficient: available INR " + account.getEffectiveAvailable() + " < requested INR " + amount);
+                if (account.getMinimumBalance() != null && account.getMinimumBalance().signum() > 0) {
+                    java.math.BigDecimal postBalance = account.getLedgerBalance().subtract(amount);
+                    boolean minBalOk = postBalance.compareTo(account.getMinimumBalance()) >= 0;
+                    enriched.addCheck("MINIMUM_BALANCE", "Account",
+                            "Post-withdrawal balance INR " + postBalance + " ≥ minimum INR " + account.getMinimumBalance(),
+                            minBalOk,
+                            minBalOk ? "OK" : "BREACH: post-balance INR " + postBalance + " < minimum INR " + account.getMinimumBalance());
+                }
+            }
+
+            return enriched.build();
         } catch (Exception e) {
             // Return a single-check preview with the error
             return TransactionPreview.builder()

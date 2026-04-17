@@ -397,6 +397,140 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // ================================================================
+    // CBS TRANSACTION PREVIEW — Per Finacle TRAN_PREVIEW / Temenos OFS.VALIDATE
+    // Calls /deposit/preview/{accountNumber} on amount blur to show a pre-posting
+    // validation checklist. Renders into #txnPreviewPanel on deposit/withdraw pages.
+    // ================================================================
+    (function initTxnPreview() {
+        var panel = document.getElementById('txnPreviewPanel');
+        if (!panel) return; // Not on a transaction form page
+
+        var amountInput = document.querySelector('input[data-fv-type="amount"]');
+        if (!amountInput) return;
+
+        // Detect transaction type and account number from the form action URL
+        var form = amountInput.closest('form');
+        if (!form) return;
+        var action = form.getAttribute('action') || '';
+        var txnType = action.indexOf('/deposit/deposit/') >= 0 ? 'CASH_DEPOSIT'
+            : action.indexOf('/deposit/withdraw/') >= 0 ? 'CASH_WITHDRAWAL' : null;
+        if (!txnType) return;
+
+        // Extract account number from the URL path
+        var pathParts = action.split('/');
+        var accountNumber = pathParts[pathParts.length - 1];
+        if (!accountNumber) return;
+
+        var ctx = document.querySelector('meta[name="ctx"]');
+        var basePath = ctx ? ctx.getAttribute('content') : '';
+        var debounceTimer = null;
+
+        amountInput.addEventListener('blur', function () {
+            var amount = parseFloat(this.value);
+            if (!amount || amount <= 0) {
+                panel.style.display = 'none';
+                return;
+            }
+            // Debounce: wait 300ms after blur before calling preview
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function () {
+                fetchPreview(accountNumber, amount, txnType);
+            }, 300);
+        });
+
+        function fetchPreview(accNo, amount, type) {
+            var url = basePath + '/deposit/preview/' + encodeURIComponent(accNo)
+                + '?amount=' + amount + '&txnType=' + encodeURIComponent(type);
+            fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                .then(function (resp) { return resp.json(); })
+                .then(function (preview) { renderPreview(preview); })
+                .catch(function (err) {
+                    panel.innerHTML = '<div class="alert alert-warning small"><i class="bi bi-exclamation-triangle"></i> Preview unavailable: ' + err.message + '</div>';
+                    panel.style.display = 'block';
+                });
+        }
+
+        function renderPreview(p) {
+            if (!p || !p.checks || p.checks.length === 0) {
+                panel.style.display = 'none';
+                return;
+            }
+            var canPost = p.canPost;
+            var blockers = p.blockerCount || 0;
+            var html = '<div class="fv-card ' + (canPost ? 'fv-card-pass' : 'fv-card-fail') + '">';
+            html += '<div class="card-header"><i class="bi ' + (canPost ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill') + '"></i> ';
+            html += 'Transaction Preview &mdash; ';
+            if (canPost) {
+                html += '<strong>ALL CHECKS PASSED</strong>';
+                if (p.requiresApproval) {
+                    html += ' <span class="badge bg-warning text-dark ms-2"><i class="bi bi-hourglass-split"></i> Requires Checker Approval</span>';
+                }
+            } else {
+                html += '<strong>' + blockers + ' BLOCKER' + (blockers > 1 ? 'S' : '') + ' FOUND</strong>';
+            }
+            html += '</div><div class="card-body p-0">';
+
+            // Account summary row
+            if (p.accountNumber) {
+                html += '<div class="px-3 py-2 small" style="background:#f8f9fa;border-bottom:1px solid var(--fv-border);">';
+                html += '<strong>' + escHtml(p.accountNumber) + '</strong>';
+                if (p.accountHolder) html += ' &mdash; ' + escHtml(p.accountHolder);
+                if (p.branchCode) html += ' | Branch: ' + escHtml(p.branchCode);
+                if (p.currentBalance != null) html += ' | Balance: <strong>INR ' + fmtNum(p.currentBalance) + '</strong>';
+                if (p.projectedBalance != null) html += ' &rarr; <strong>INR ' + fmtNum(p.projectedBalance) + '</strong>';
+                html += '</div>';
+            }
+
+            // Validation checklist table
+            html += '<table class="table table-sm mb-0"><thead><tr><th style="width:30px;"></th><th>Category</th><th>Check</th><th>Status</th><th>Detail</th></tr></thead><tbody>';
+            for (var i = 0; i < p.checks.length; i++) {
+                var c = p.checks[i];
+                var icon = c.passed ? '<i class="bi bi-check-circle-fill text-success"></i>'
+                    : '<i class="bi bi-x-circle-fill text-danger"></i>';
+                html += '<tr' + (!c.passed ? ' class="table-danger"' : '') + '>';
+                html += '<td class="text-center">' + icon + '</td>';
+                html += '<td><strong>' + escHtml(c.category) + '</strong></td>';
+                html += '<td>' + escHtml(c.description) + '</td>';
+                html += '<td>' + (c.passed ? '<span class="fv-badge fv-badge-active">PASS</span>' : '<span class="fv-badge fv-badge-rejected">BLOCKED</span>') + '</td>';
+                html += '<td class="small text-muted">' + escHtml(c.detail || '') + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+
+            // GL Journal Lines preview
+            if (p.journalLines && p.journalLines.length > 0) {
+                html += '<div class="px-3 py-2 small" style="background:#e8eaf6;border-top:2px solid var(--fv-primary);"><strong><i class="bi bi-journal-text"></i> GL Journal Lines (Double-Entry)</strong></div>';
+                html += '<table class="table table-sm mb-0"><thead><tr><th>GL Code</th><th>GL Name</th><th>DR/CR</th><th class="text-end">Amount</th><th>Narration</th></tr></thead><tbody>';
+                for (var j = 0; j < p.journalLines.length; j++) {
+                    var gl = p.journalLines[j];
+                    html += '<tr><td class="font-monospace">' + escHtml(gl.glCode) + '</td>';
+                    html += '<td>' + escHtml(gl.glName) + '</td>';
+                    html += '<td><span class="' + (gl.debitCredit === 'DEBIT' ? 'text-danger' : 'text-success') + '">' + gl.debitCredit + '</span></td>';
+                    html += '<td class="text-end amount">' + fmtNum(gl.amount) + '</td>';
+                    html += '<td class="small">' + escHtml(gl.narration || '') + '</td></tr>';
+                }
+                html += '</tbody></table>';
+            }
+
+            html += '</div></div>';
+            panel.innerHTML = html;
+            panel.style.display = 'block';
+        }
+
+        function escHtml(s) {
+            if (!s) return '';
+            var d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function fmtNum(n) {
+            if (n === null || n === undefined) return '--';
+            return typeof window.fvFormatINR === 'function' ? window.fvFormatINR(n) : Number(n).toFixed(2);
+        }
+    })();
+
+    // ================================================================
     // Active sidebar link highlighting
     // ================================================================
     var currentPath = window.location.pathname;
