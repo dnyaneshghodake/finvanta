@@ -137,11 +137,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    /* Current minimum length for the active reason prompt — set per invocation */
+    var reasonMinLength = 3;
+
     document.getElementById('fvReasonOk').addEventListener('click', function () {
         var input = document.getElementById('fvReasonInput');
         var errorDiv = document.getElementById('fvReasonError');
         var val = input.value.trim();
-        if (!val || val.length < 3) {
+        if (!val || val.length < reasonMinLength) {
+            errorDiv.textContent = 'Input is mandatory and must be at least '
+                + reasonMinLength + ' characters.';
             errorDiv.style.display = 'block';
             input.classList.add('is-invalid');
             input.focus();
@@ -162,6 +167,7 @@ document.addEventListener('DOMContentLoaded', function () {
      * Called via onclick="fvPromptReason(this)" on buttons with:
      *   data-fv-reason-prompt="Label text"
      *   data-fv-reason-confirm="Confirmation message"
+     *   data-fv-reason-minlength="N" (optional, default 3)
      *
      * @param {HTMLElement} btn The button that triggered the prompt
      */
@@ -169,11 +175,15 @@ document.addEventListener('DOMContentLoaded', function () {
         initReasonModal();
         var promptLabel = btn.getAttribute('data-fv-reason-prompt') || 'Reason (mandatory):';
         var confirmMsg = btn.getAttribute('data-fv-reason-confirm') || 'Confirm this action?';
+        reasonMinLength = parseInt(btn.getAttribute('data-fv-reason-minlength') || '3', 10);
         document.getElementById('fvReasonLabel').textContent = promptLabel;
         document.getElementById('fvReasonTitle').innerHTML =
             '<i class="bi bi-chat-left-text me-1"></i> ' + confirmMsg;
         var input = document.getElementById('fvReasonInput');
         input.value = '';
+        input.setAttribute('minlength', reasonMinLength);
+        input.setAttribute('placeholder',
+            'Enter value (minimum ' + reasonMinLength + ' characters)');
         input.classList.remove('is-invalid');
         document.getElementById('fvReasonError').style.display = 'none';
 

@@ -139,6 +139,7 @@
                                 <button type="button" class="btn btn-sm btn-outline-secondary"
                                     data-fv-reason-prompt="New password (minimum 8 characters):"
                                     data-fv-reason-confirm="Reset password for this user?"
+                                    data-fv-reason-minlength="8"
                                     onclick="fvPromptReason(this);">
                                     <i class="bi bi-key"></i> Reset Pwd
                                 </button>
