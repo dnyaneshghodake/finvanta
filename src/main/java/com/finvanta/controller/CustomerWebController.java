@@ -147,12 +147,16 @@ public class CustomerWebController {
         }
     }
 
-    /** CBS Customer View — delegates to CustomerCifService for branch access enforcement */
+    /**
+     * CBS Customer View — delegates to CustomerCifService for branch access enforcement.
+     * Uses getCustomerWithAudit() to emit CIF_VIEW audit event per RBI IT Governance
+     * Direction 2023 §8.3: user-initiated access to customer PII must be logged.
+     */
     @GetMapping("/view/{id}")
     public ModelAndView viewCustomer(@PathVariable Long id) {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("customer/view");
-        Customer customer = customerService.getCustomer(id);
+        Customer customer = customerService.getCustomerWithAudit(id);
         mav.addObject("customer", customer);
         mav.addObject("maskedPan", PiiMaskingUtil.maskPan(customer.getPanNumber()));
         mav.addObject("maskedAadhaar", PiiMaskingUtil.maskAadhaar(customer.getAadhaarNumber()));
@@ -164,10 +168,15 @@ public class CustomerWebController {
         return mav;
     }
 
-    /** CBS CIF Edit — pre-populated form for mutable fields */
+    /**
+     * CBS CIF Edit — pre-populated form for mutable fields.
+     * Uses getCustomerWithAudit() because loading the edit form is a user-initiated
+     * view of PII data (PAN, Aadhaar displayed as masked, but decrypted server-side).
+     * Per RBI IT Governance Direction 2023 §8.3: this access must be audited.
+     */
     @GetMapping("/edit/{id}")
     public ModelAndView showEditForm(@PathVariable Long id) {
-        Customer customer = customerService.getCustomer(id);
+        Customer customer = customerService.getCustomerWithAudit(id);
         ModelAndView mav = new ModelAndView("customer/edit");
         mav.addObject("customer", customer);
         mav.addObject("maskedPan", PiiMaskingUtil.maskPan(customer.getPanNumber()));
