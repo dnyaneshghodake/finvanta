@@ -587,19 +587,27 @@ public class Customer extends BaseEntity {
     void enforceImmutablePii() {
         // Only enforce if snapshots were taken (i.e., entity was loaded from DB,
         // not a freshly created entity going through its first save).
-        if (originalPanHash != null && panHash != null
-                && !originalPanHash.equals(panHash)) {
-            throw new IllegalStateException(
-                    "CBS IMMUTABILITY VIOLATION: PAN number cannot be changed after CIF creation. "
-                            + "Per RBI KYC Master Direction 2016: PAN defines the CIF identity. "
-                            + "Customer: " + customerNumber);
+        if (originalPanHash != null) {
+            // CBS Tier-1: Detect BOTH modification AND nullification of PAN.
+            // The previous implementation only checked (originalPanHash != null && panHash != null),
+            // which short-circuited when panHash was set to null — silently allowing PAN deletion.
+            // Per RBI KYC Master Direction 2016: PAN defines the CIF identity and must never be
+            // removed or changed after creation. Correction requires CIF closure and re-creation.
+            if (!originalPanHash.equals(panHash)) {
+                throw new IllegalStateException(
+                        "CBS IMMUTABILITY VIOLATION: PAN number cannot be changed or removed after CIF creation. "
+                                + "Per RBI KYC Master Direction 2016: PAN defines the CIF identity. "
+                                + "Customer: " + customerNumber);
+            }
         }
-        if (originalAadhaarHash != null && aadhaarHash != null
-                && !originalAadhaarHash.equals(aadhaarHash)) {
-            throw new IllegalStateException(
-                    "CBS IMMUTABILITY VIOLATION: Aadhaar number cannot be changed after CIF creation. "
-                            + "Per UIDAI / RBI KYC norms: Aadhaar is immutable post-CIF creation. "
-                            + "Customer: " + customerNumber);
+        if (originalAadhaarHash != null) {
+            // CBS Tier-1: Same nullification guard for Aadhaar.
+            if (!originalAadhaarHash.equals(aadhaarHash)) {
+                throw new IllegalStateException(
+                        "CBS IMMUTABILITY VIOLATION: Aadhaar number cannot be changed or removed after CIF creation. "
+                                + "Per UIDAI / RBI KYC norms: Aadhaar is immutable post-CIF creation. "
+                                + "Customer: " + customerNumber);
+            }
         }
     }
 

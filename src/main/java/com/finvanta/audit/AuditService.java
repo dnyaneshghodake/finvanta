@@ -50,6 +50,21 @@ public class AuditService {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * CBS Tier-1 IMPORTANT: Timestamp precision is SECONDS for hash stability.
+     *
+     * <p>Both logEvent (insert) and computeHash (verify) truncate eventTimestamp
+     * to SECONDS precision. This is a BREAKING CHANGE from the previous MICROS
+     * precision. Any audit records created before this change will fail hash
+     * verification because their hashes were computed with microsecond-precision
+     * timestamps.
+     *
+     * <p><b>Greenfield assumption:</b> This change assumes no pre-existing audit
+     * records exist in any deployment environment. If migrating from a previous
+     * version with MICROS precision, a one-time migration script must recompute
+     * and update all stored hashes using SECONDS truncation. See
+     * {@code computeHash} for the canonical timestamp format.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public AuditLog logEvent(
             String entityType,
