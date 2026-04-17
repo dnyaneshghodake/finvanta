@@ -29,7 +29,7 @@
             <div class="row mb-3">
                 <div class="col-md-6 fv-mandatory-group">
                     <label for="depositAmount" class="form-label fv-required">Amount (INR)</label>
-                    <input type="number" id="depositAmount" name="amount" class="form-control" data-fv-type="amount" min="0.01" required autofocus tabindex="1"/>
+                    <input type="number" id="depositAmount" name="amount" class="form-control" data-fv-type="amount" min="0.01" step="0.01" required autofocus tabindex="1"/>
                 </div>
                 <div class="col-md-6">
                     <label for="depositNarration" class="form-label">Narration</label>

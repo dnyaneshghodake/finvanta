@@ -66,7 +66,7 @@
         <div class="row mb-3">
             <div class="col-md-4">
                 <label for="amount" class="form-label">Transfer Amount (INR) <span class="text-danger">*</span></label>
-                <input type="number" name="amount" id="amount" class="form-control" data-fv-type="amount" min="0.01" required placeholder="0.00"/>
+                <input type="number" name="amount" id="amount" class="form-control" data-fv-type="amount" min="0.01" step="0.01" required placeholder="0.00"/>
             </div>
             <div class="col-md-4">
                 <label class="form-label">Transfer Mode</label>
