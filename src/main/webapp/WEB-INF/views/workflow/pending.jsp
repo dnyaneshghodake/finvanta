@@ -1,4 +1,5 @@
 <%@ taglib prefix="c" uri="jakarta.tags.core" %>
+<%@ taglib prefix="fn" uri="jakarta.tags.functions" %>
 <c:set var="pageTitle" value="Pending Approvals" />
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>
@@ -51,7 +52,7 @@
                                     <input type="hidden" name="remarks" value="Approved" />
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                     <button type="submit" class="btn btn-sm btn-fv-success"
-                                            data-confirm="Approve ${item.entityType} ${item.entityId} (${item.actionType})? This will execute the posting and cannot be undone.">
+                                            data-confirm="Approve ${fn:escapeXml(item.entityType)} ${fn:escapeXml(item.entityId)} (${fn:escapeXml(item.actionType)})? This will execute the posting and cannot be undone.">
                                         <i class="bi bi-check-circle"></i> Approve
                                     </button>
                                 </form>
@@ -59,7 +60,7 @@
                                     <input type="hidden" name="remarks" value="Rejected" />
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                     <button type="submit" class="btn btn-sm btn-fv-danger"
-                                            data-confirm="Reject ${item.entityType} ${item.entityId} (${item.actionType})?">
+                                            data-confirm="Reject ${fn:escapeXml(item.entityType)} ${fn:escapeXml(item.entityId)} (${fn:escapeXml(item.actionType)})?">
                                         <i class="bi bi-x-circle"></i> Reject
                                     </button>
                                 </form>

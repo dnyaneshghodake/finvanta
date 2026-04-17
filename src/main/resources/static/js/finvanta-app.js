@@ -75,6 +75,20 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    /**
+     * Submit a form while ensuring the `.fv-form` submit event listener fires
+     * (loading overlay + double-click prevention). `form.submit()` bypasses
+     * addEventListener('submit') handlers — `requestSubmit()` does not.
+     * Falls back to `form.submit()` for older browsers (IE11 / legacy Edge).
+     */
+    function safeFormSubmit(form) {
+        if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+        } else {
+            form.submit();
+        }
+    }
+
     /* Bind [data-confirm] buttons to styled modal instead of browser confirm() */
     document.querySelectorAll('[data-confirm]').forEach(function (btn) {
         btn.addEventListener('click', function (e) {
@@ -88,7 +102,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 /* If button is inside a form, submit the form */
                 var form = targetBtn.closest('form');
                 if (form) {
-                    form.submit();
+                    safeFormSubmit(form);
                 } else if (targetBtn.tagName === 'A') {
                     window.location.href = targetBtn.href;
                 }
@@ -192,7 +206,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (form) {
                 var reasonField = form.querySelector('.fv-reason-field');
                 if (reasonField) reasonField.value = reason;
-                form.submit();
+                safeFormSubmit(form);
             }
         };
         if (bsReasonModal) bsReasonModal.show();

@@ -85,7 +85,7 @@
                 </tbody>
                 <%-- CBS Tier-1: tfoot totals row (Debit / Credit aggregate) per Finacle JRNL_INQUIRY
                      standard. Uses `.amount` class so digits line up with tbody via monospace. --%>
-                <c:if test="${not empty totalDebit or not empty totalCredit}">
+                <c:if test="${not empty entries}">
                 <tfoot>
                     <tr class="fw-bold" style="background:#f8f9fa;border-top:2px solid var(--fv-primary);">
                         <td colspan="4" class="text-end">Totals:</td>

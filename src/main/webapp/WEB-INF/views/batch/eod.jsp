@@ -98,7 +98,7 @@
                             <input type="hidden" name="businessDate" value="<c:out value='${trialDate}' />" />
                             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                             <button type="submit" class="btn btn-fv-warning btn-lg"
-                                    data-confirm="Execute EOD for ${trialDate}? This will classify all accounts, post provisioning, and advance the business date. This action cannot be undone.">
+                                    data-confirm="Execute EOD for <c:out value='${trialDate}' />? This will classify all accounts, post provisioning, and advance the business date. This action cannot be undone.">
                                 <i class="bi bi-play-circle"></i> Apply EOD for <c:out value="${trialDate}" />
                             </button>
                         </form>
