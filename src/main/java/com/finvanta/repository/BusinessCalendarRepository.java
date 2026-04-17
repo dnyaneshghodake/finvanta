@@ -186,9 +186,11 @@ public interface BusinessCalendarRepository extends JpaRepository<BusinessCalend
     /**
      * @deprecated Use {@link #findAndLockByTenantIdAndBranchIdAndDate} instead.
      * CBS: LIMIT 1 prevents NonUniqueResultException with multi-branch calendars.
+     * 30s lock timeout per Finacle DAYCTRL standard.
      */
     @Deprecated(forRemoval = true)
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
     @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId "
             + "AND bc.businessDate = :date ORDER BY bc.branch.id ASC LIMIT 1")
     Optional<BusinessCalendar> findAndLockByTenantIdAndDate(
