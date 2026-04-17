@@ -99,7 +99,7 @@
                     <div class="row mb-3">
                         <div class="col-md-3"><input type="text" name="permanentCity" class="form-control" value="<c:out value='${customer.permanentCity}'/>" maxlength="100" placeholder="City" /></div>
                         <div class="col-md-3"><input type="text" name="permanentState" class="form-control" value="<c:out value='${customer.permanentState}'/>" maxlength="100" placeholder="State" /></div>
-                        <div class="col-md-3"><input type="text" name="permanentPinCode" class="form-control" value="<c:out value='${customer.permanentPinCode}'/>" maxlength="6" pattern="[0-9]{6}" title="6-digit PIN" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" placeholder="PIN Code" /></div>
+                        <div class="col-md-3"><input type="text" name="permanentPinCode" class="form-control" data-fv-type="pincode" value="<c:out value='${customer.permanentPinCode}'/>" maxlength="6" pattern="[0-9]{6}" title="6-digit PIN" inputmode="numeric" placeholder="PIN Code" /></div>
                         <div class="col-md-3"><select name="permanentCountry" class="form-select"><option value="INDIA" ${customer.permanentCountry == 'INDIA' or empty customer.permanentCountry ? 'selected' : ''}>India</option><option value="OTHER" ${customer.permanentCountry != 'INDIA' and not empty customer.permanentCountry ? 'selected' : ''}>Other</option></select></div>
                     </div>
                 </div>
