@@ -485,7 +485,7 @@ public class Customer extends BaseEntity {
      */
     public void computeCkycAccountType() {
         CustomerType ct = CustomerType.fromString(customerType);
-        this.ckycAccountType = ct != null ? ct.getCkycAccountType() : "INDIVIDUAL";
+        this.ckycAccountType = ct != null ? ct.getCkycAccountType() : "NON_INDIVIDUAL";
     }
 
     // === KYC Helpers ===
