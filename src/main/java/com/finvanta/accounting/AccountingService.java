@@ -100,20 +100,6 @@ public class AccountingService {
         ENGINE_TOKEN.remove();
     }
 
-    // Legacy compatibility — retained for migration period only.
-    // TODO: Remove after confirming no callers use the old API.
-    /** @deprecated Use generateEngineToken()/clearEngineToken() instead */
-    @Deprecated(forRemoval = true)
-    public static void enterEngineContext() {
-        generateEngineToken();
-    }
-
-    /** @deprecated Use clearEngineToken() instead */
-    @Deprecated(forRemoval = true)
-    public static void exitEngineContext() {
-        clearEngineToken();
-    }
-
     public AccountingService(
             JournalEntryRepository journalEntryRepository,
             GLMasterRepository glMasterRepository,
