@@ -113,9 +113,29 @@ document.getElementById('transferForm').addEventListener('submit', function(e) {
     var to = document.getElementById('toAccount').value;
     if (from && to && from === to) {
         e.preventDefault();
-        alert('Source and target accounts cannot be the same.');
+        /* CBS Tier-1: Use field-level validation instead of browser alert().
+           Per Finacle TRAN_POSTING: same-account transfers are blocked with
+           inline error feedback, not modal dialogs that can be suppressed. */
+        var toSelect = document.getElementById('toAccount');
+        toSelect.classList.add('is-invalid');
+        var errDiv = document.getElementById('sameAccountError');
+        if (!errDiv) {
+            errDiv = document.createElement('div');
+            errDiv.id = 'sameAccountError';
+            errDiv.className = 'text-danger small mt-1';
+            errDiv.textContent = 'Source and target accounts cannot be the same. Please select a different target account.';
+            toSelect.parentNode.appendChild(errDiv);
+        }
+        errDiv.style.display = 'block';
+        toSelect.focus();
         return false;
     }
+});
+/* Clear same-account error when target account changes */
+document.getElementById('toAccount').addEventListener('change', function() {
+    this.classList.remove('is-invalid');
+    var errDiv = document.getElementById('sameAccountError');
+    if (errDiv) errDiv.style.display = 'none';
 });
 </script>
 

@@ -50,7 +50,7 @@
                     <textarea name="remarks" id="remarks" class="form-control" rows="3" required placeholder="Enter approval remarks"></textarea>
                 </div>
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                <button type="submit" class="btn btn-success">Approve Application</button>
+                <button type="submit" class="btn btn-success" data-confirm="Approve this loan application for INR ${application.requestedAmount}? This action creates a loan account."><i class="bi bi-check-circle"></i> Approve Application</button>
             </form>
             <hr class="my-3" />
             <form method="post" action="${pageContext.request.contextPath}/loan/reject/${application.id}" class="fv-form">

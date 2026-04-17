@@ -113,6 +113,15 @@
                 <c:if test="${not empty customer.nomineeAddress}"><div class="fv-detail-item"><div class="fv-detail-label">Nominee Address</div><div class="fv-detail-value"><c:out value="${customer.nomineeAddress}" /></div></div></c:if>
                 </c:if>
 
+                <%-- === Audit Metadata (RBI IT Governance Direction 2023 §8.3) === --%>
+                <div class="fv-detail-section-title"><i class="bi bi-clock-history"></i> Record Audit Trail</div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Created By</div><div class="fv-detail-value"><c:out value="${customer.createdBy}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Created Date</div><div class="fv-detail-value"><c:out value="${customer.createdAt}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Last Modified By</div><div class="fv-detail-value"><c:out value="${customer.lastModifiedBy}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Last Modified Date</div><div class="fv-detail-value"><c:out value="${customer.lastModifiedAt}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Record Version</div><div class="fv-detail-value"><c:out value="${customer.version}" default="0" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Audit Hash</div><div class="fv-detail-value"><small class="font-monospace text-muted"><c:out value="${customer.auditHash}" default="--" /></small></div></div>
+
             </div><%-- end fv-detail-grid --%>
         </div>
     </div>
@@ -331,9 +340,11 @@
                                     <form method="post" action="${pageContext.request.contextPath}/customer/document/verify/${doc.id}" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                         <input type="hidden" name="action" value="REJECT" />
-                                        <input type="hidden" name="rejectionReason" value="" id="rejReason_${doc.id}" />
-                                        <button type="submit" class="btn btn-sm btn-danger" title="Reject document"
-                                            onclick="var r=prompt('Rejection reason (mandatory):'); if(!r||r.trim().length<3){alert('Reason is mandatory');return false;} document.getElementById('rejReason_${doc.id}').value=r; return confirm('Reject this document?');">
+                                        <input type="hidden" name="rejectionReason" value="" class="fv-reason-field" />
+                                        <button type="button" class="btn btn-sm btn-danger" title="Reject document"
+                                            data-fv-reason-prompt="Rejection reason (mandatory):"
+                                            data-fv-reason-confirm="Reject this document?"
+                                            onclick="fvPromptReason(this);">
                                             <i class="bi bi-x-circle"></i> Reject</button>
                                     </form>
                                 </c:if>

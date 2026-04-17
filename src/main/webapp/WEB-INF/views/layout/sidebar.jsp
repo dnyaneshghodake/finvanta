@@ -1,5 +1,5 @@
 <%@ taglib prefix="c" uri="jakarta.tags.core" %>
-<nav class="fv-sidebar">
+<nav class="fv-sidebar" aria-label="Main Navigation" role="navigation">
     <div class="fv-sidebar-brand">
         <h1>FINVANTA</h1>
         <small>Core Banking System</small>

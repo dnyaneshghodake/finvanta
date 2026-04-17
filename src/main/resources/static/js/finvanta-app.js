@@ -98,6 +98,102 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ================================================================
+    // REASON PROMPT MODAL — Per Finacle: styled modal replaces prompt()
+    // Used for rejection/reversal flows that require a mandatory reason.
+    // Triggered by buttons with data-fv-reason-prompt / data-fv-reason-confirm.
+    // ================================================================
+    var reasonModal = document.createElement('div');
+    reasonModal.className = 'modal fade fv-confirm-modal fv-confirm-info';
+    reasonModal.id = 'fvReasonModal';
+    reasonModal.setAttribute('tabindex', '-1');
+    reasonModal.innerHTML =
+        '<div class="modal-dialog modal-dialog-centered">'
+        + '<div class="modal-content">'
+        + '<div class="modal-header">'
+        + '<h6 class="modal-title" id="fvReasonTitle"><i class="bi bi-chat-left-text me-1"></i> Provide Reason</h6>'
+        + '<button type="button" class="btn-close" data-bs-dismiss="modal"></button>'
+        + '</div>'
+        + '<div class="modal-body">'
+        + '<label for="fvReasonInput" class="form-label fw-bold" id="fvReasonLabel">Reason (mandatory):</label>'
+        + '<textarea id="fvReasonInput" class="form-control" rows="3" required minlength="3" '
+        + 'placeholder="Enter reason (minimum 3 characters)"></textarea>'
+        + '<div id="fvReasonError" class="text-danger small mt-1" style="display:none;">'
+        + 'Reason is mandatory and must be at least 3 characters.</div>'
+        + '</div>'
+        + '<div class="modal-footer">'
+        + '<button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">'
+        + '<i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">Esc</span></button>'
+        + '<button type="button" class="btn btn-sm btn-danger" id="fvReasonOk">'
+        + '<i class="bi bi-check-circle"></i> Confirm</button>'
+        + '</div></div></div>';
+    document.body.appendChild(reasonModal);
+
+    var bsReasonModal = null;
+    var pendingReasonAction = null;
+
+    function initReasonModal() {
+        if (!bsReasonModal && typeof bootstrap !== 'undefined') {
+            bsReasonModal = new bootstrap.Modal(reasonModal);
+        }
+    }
+
+    document.getElementById('fvReasonOk').addEventListener('click', function () {
+        var input = document.getElementById('fvReasonInput');
+        var errorDiv = document.getElementById('fvReasonError');
+        var val = input.value.trim();
+        if (!val || val.length < 3) {
+            errorDiv.style.display = 'block';
+            input.classList.add('is-invalid');
+            input.focus();
+            return;
+        }
+        errorDiv.style.display = 'none';
+        input.classList.remove('is-invalid');
+        if (bsReasonModal) bsReasonModal.hide();
+        if (pendingReasonAction) {
+            pendingReasonAction(val);
+            pendingReasonAction = null;
+        }
+    });
+
+    /**
+     * CBS Reason Prompt — replaces browser prompt() + confirm() for flows
+     * that require a mandatory reason (rejection, reversal, etc.).
+     * Called via onclick="fvPromptReason(this)" on buttons with:
+     *   data-fv-reason-prompt="Label text"
+     *   data-fv-reason-confirm="Confirmation message"
+     *
+     * @param {HTMLElement} btn The button that triggered the prompt
+     */
+    window.fvPromptReason = function (btn) {
+        initReasonModal();
+        var promptLabel = btn.getAttribute('data-fv-reason-prompt') || 'Reason (mandatory):';
+        var confirmMsg = btn.getAttribute('data-fv-reason-confirm') || 'Confirm this action?';
+        document.getElementById('fvReasonLabel').textContent = promptLabel;
+        document.getElementById('fvReasonTitle').innerHTML =
+            '<i class="bi bi-chat-left-text me-1"></i> ' + confirmMsg;
+        var input = document.getElementById('fvReasonInput');
+        input.value = '';
+        input.classList.remove('is-invalid');
+        document.getElementById('fvReasonError').style.display = 'none';
+
+        var form = btn.closest('form');
+        pendingReasonAction = function (reason) {
+            if (form) {
+                var reasonField = form.querySelector('.fv-reason-field');
+                if (reasonField) reasonField.value = reason;
+                form.submit();
+            }
+        };
+        if (bsReasonModal) bsReasonModal.show();
+        /* Focus textarea after modal animation */
+        reasonModal.addEventListener('shown.bs.modal', function handler() {
+            input.focus();
+            reasonModal.removeEventListener('shown.bs.modal', handler);
+        });
+    };
+
+    // ================================================================
     // FORM SUBMIT — Loading overlay + double-click prevention
     // ================================================================
     document.querySelectorAll('.fv-form').forEach(function (form) {
