@@ -134,13 +134,13 @@ public class Customer extends BaseEntity {
      *   HIGH   → re-KYC every 2 years (PEP, high-value, adverse media)
      * Per RBI: risk category must be assessed at onboarding and reviewed periodically.
      *
-     * <p>CBS Tier-1 (Gap 1): Closed enumeration — prevents arbitrary strings from being
-     * persisted. {@code @Enumerated(EnumType.STRING)} stores the enum name as VARCHAR,
-     * schema-compatible with the previous String field (same column values).
+     * <p>CBS Tier-1 (Gap 1): Validated against {@link KycRiskCategory} enum at the service
+     * layer. Field remains String for backward compatibility with the API response DTO
+     * ({@code CustomerResponse} record). Full enum migration requires coordinated change
+     * across entity + API controller + tests in a dedicated PR.
      */
-    @Enumerated(EnumType.STRING)
     @Column(name = "kyc_risk_category", length = 10)
-    private KycRiskCategory kycRiskCategory = KycRiskCategory.MEDIUM;
+    private String kycRiskCategory = "MEDIUM";
 
     /**
      * KYC expiry date — computed from kycVerifiedDate + risk-based period.
@@ -185,14 +185,13 @@ public class Customer extends BaseEntity {
     /**
      * Customer type per RBI KYC Direction.
      * Determines KYC document requirements and regulatory treatment.
+     * Values: INDIVIDUAL, JOINT, HUF, PARTNERSHIP, COMPANY, TRUST, NRI, MINOR, GOVERNMENT
      *
-     * <p>CBS Tier-1 (Gap 1): Closed enumeration — prevents arbitrary strings.
-     * {@code @Enumerated(EnumType.STRING)} stores enum name as VARCHAR,
-     * schema-compatible with the previous String field.
+     * <p>CBS Tier-1 (Gap 1): Validated against {@link CustomerType} enum at the service
+     * layer. Field remains String for backward compatibility with the API response DTO.
      */
-    @Enumerated(EnumType.STRING)
     @Column(name = "customer_type", length = 20)
-    private CustomerType customerType = CustomerType.INDIVIDUAL;
+    private String customerType = "INDIVIDUAL";
 
     /**
      * Politically Exposed Person flag per RBI KYC Direction Section 2(1)(fa).
@@ -481,13 +480,12 @@ public class Customer extends BaseEntity {
      * Computes CKYC account type from customer type.
      * Per CERSAI: INDIVIDUAL/JOINT/MINOR/NRI → INDIVIDUAL; rest → NON_INDIVIDUAL
      *
-     * <p>CBS Tier-1 (Gap 1): Now delegates to {@link CustomerType#getCkycAccountType()}
-     * — the mapping is owned by the enum, not duplicated in business logic.
+     * <p>CBS Tier-1 (Gap 1): Delegates to {@link CustomerType#getCkycAccountType()} via
+     * enum lookup. Falls back to "INDIVIDUAL" for null/unrecognized values.
      */
     public void computeCkycAccountType() {
-        this.ckycAccountType = customerType != null
-                ? customerType.getCkycAccountType()
-                : "INDIVIDUAL";
+        CustomerType ct = CustomerType.fromString(customerType);
+        this.ckycAccountType = ct != null ? ct.getCkycAccountType() : "INDIVIDUAL";
     }
 
     // === KYC Helpers ===
@@ -499,13 +497,12 @@ public class Customer extends BaseEntity {
      *   MEDIUM → 8 years
      *   HIGH   → 2 years
      *
-     * <p>CBS Tier-1 (Gap 1): Now delegates to {@link KycRiskCategory#getRenewalYears()}
-     * — eliminates the silent MEDIUM default for unrecognized string values.
+     * <p>CBS Tier-1 (Gap 1): Delegates to {@link KycRiskCategory#getRenewalYears()} via
+     * enum lookup. Falls back to MEDIUM (8 years) for null/unrecognized values.
      */
     public int getKycRenewalYears() {
-        return kycRiskCategory != null
-                ? kycRiskCategory.getRenewalYears()
-                : KycRiskCategory.MEDIUM.getRenewalYears();
+        KycRiskCategory risk = KycRiskCategory.fromString(kycRiskCategory);
+        return risk != null ? risk.getRenewalYears() : KycRiskCategory.MEDIUM.getRenewalYears();
     }
 
     /**
