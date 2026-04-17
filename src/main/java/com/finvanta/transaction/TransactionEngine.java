@@ -379,6 +379,24 @@ public class TransactionEngine {
                 request.getSourceModule(), request.getTransactionType());
 
         // ================================================================
+        // STEP 8.0 (PRE-ALLOCATION): Voucher & Transaction Ref Generation
+        // CBS CRITICAL: Pre-allocate voucher number and transaction ref BEFORE
+        // acquiring PESSIMISTIC_WRITE locks in Step 8. SequenceGeneratorService
+        // uses REQUIRES_NEW propagation which suspends the current TX. If we
+        // allocated AFTER GL locks (the old Step 9 position), the REQUIRES_NEW
+        // would suspend a TX holding GL/ledger PESSIMISTIC_WRITE locks — a
+        // deadlock vector on SQL Server identical to the AuditService issue.
+        //
+        // Pre-allocation is safe: if Step 8 fails and rolls back, the voucher
+        // number is "wasted" (gap in sequence). Per Finacle/Temenos/RBI:
+        // gaps in voucher numbers are explicitly allowed; duplicates are not.
+        // The SequenceGeneratorService REQUIRES_NEW ensures the sequence
+        // increment commits independently, preventing reuse on retry.
+        // ================================================================
+        String voucherNumber = generateVoucherNumber(request.getBranchCode(), request.getValueDate());
+        String txnRef = ReferenceGenerator.generateTransactionRef();
+
+        // ================================================================
         // STEP 8: Double-Entry Journal Posting
         // GL validation → DR==CR → GL balance update → Ledger → Batch totals
         // This is delegated to AccountingService which handles:
@@ -442,20 +460,26 @@ public class TransactionEngine {
                 journalEntry.getJournalRef(), journalEntry.getTotalDebit(), journalEntry.getTotalCredit());
 
         // ================================================================
-        // STEP 9: Voucher Generation
-        // Unique voucher number per branch per date
-        // Format: VCH/branchCode/YYYYMMDD/sequence
+        // STEP 9: Voucher Number — already pre-allocated in Step 8.0 above.
+        // Moved before GL locks to avoid REQUIRES_NEW deadlock.
         // ================================================================
-        String voucherNumber = generateVoucherNumber(request.getBranchCode(), request.getValueDate());
 
         // ================================================================
         // STEP 10: Audit Trail
-        // Immutable record with hash chain via AuditService
+        // Immutable record with hash chain via AuditService.
+        // txnRef already pre-allocated in Step 8.0 above.
         // ================================================================
-        String txnRef = ReferenceGenerator.generateTransactionRef();
         LocalDateTime postingDate = LocalDateTime.now();
 
-        auditService.logEvent(
+        // CBS CRITICAL: Use logEventInline (Propagation.REQUIRED) — NOT logEvent (REQUIRES_NEW).
+        // TransactionEngine.execute() is @Transactional and holds PESSIMISTIC_WRITE locks
+        // acquired during Step 8 (GL balance update, ledger sentinel). logEvent(REQUIRES_NEW)
+        // would suspend this TX, open a new connection, and deadlock on SQL Server when the
+        // audit INSERT contends with the held GL locks. logEventInline joins THIS transaction.
+        // If this TX rolls back, the audit record is lost — acceptable because the posting
+        // never committed (nothing to audit). Failed attempts are caught at the controller
+        // level which calls logEvent(REQUIRES_NEW) outside the failed TX.
+        auditService.logEventInline(
                 "Transaction",
                 journalEntry.getId(),
                 request.getTransactionType(),

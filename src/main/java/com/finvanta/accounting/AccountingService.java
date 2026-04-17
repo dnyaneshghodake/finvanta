@@ -184,7 +184,17 @@ public class AccountingService {
             }
         }
 
-        auditService.logEvent(
+        // CBS CRITICAL: Use logEventInline (Propagation.REQUIRED) — NOT logEvent (REQUIRES_NEW).
+        // At this point we hold PESSIMISTIC_WRITE locks on GLMaster, GLBranchBalance, and
+        // TenantLedgerState rows. logEvent(REQUIRES_NEW) would suspend this transaction
+        // without releasing those locks, then open a new connection whose INSERT into
+        // audit_logs contends with the held locks — a guaranteed deadlock on SQL Server
+        // due to lock escalation. logEventInline joins THIS transaction so the audit
+        // INSERT sees the same lock scope and commits atomically with the posting.
+        // Trade-off: if this TX rolls back, the audit record is also lost — acceptable
+        // because a rolled-back posting never happened (nothing to audit). The
+        // TransactionEngine Step 10 audit (also inline) captures the committed state.
+        auditService.logEventInline(
                 "JournalEntry",
                 savedEntry.getId(),
                 "POST",
@@ -380,18 +390,46 @@ public class AccountingService {
             // Step 2: Update branch-level GLBranchBalance (per-branch running balance)
             // Per Finacle GL_BRANCH: concurrent postings to same branch+GL are serialized
             // via PESSIMISTIC_WRITE lock to prevent lost-update on running balances.
+            //
+            // CBS CRITICAL — First-posting race condition:
+            // On the first-ever posting to a branch+GL combination, findAndLock returns
+            // empty (SELECT FOR UPDATE on a non-existent row is a no-op on most DB engines
+            // — it does NOT acquire a gap lock in READ_COMMITTED). Two concurrent first-
+            // postings both see empty, both try to INSERT, one wins and the other gets a
+            // DataIntegrityViolationException on uq idx_glbb_tenant_branch_gl.
+            //
+            // Resolution: catch the constraint violation, re-lock the now-existing row,
+            // and proceed. Same pattern as LedgerService.ensureAndLockSentinel().
+            // The save() that triggered the violation is rolled back by Spring's proxy
+            // at the repository level (not at our @Transactional level), so the
+            // persistence context is safe to continue.
             if (branch != null) {
                 GLBranchBalance branchBalance = glBranchBalanceRepository
                         .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
-                        .orElseGet(() -> {
-                            // Auto-create branch balance row on first posting to this branch+GL
-                            GLBranchBalance newBalance = new GLBranchBalance();
-                            newBalance.setTenantId(tenantId);
-                            newBalance.setBranch(branch);
-                            newBalance.setGlCode(line.glCode());
-                            newBalance.setGlName(gl.getGlName());
-                            return newBalance;
-                        });
+                        .orElse(null);
+
+                if (branchBalance == null) {
+                    // Auto-create branch balance row on first posting to this branch+GL.
+                    // Race-safe: if a concurrent TX inserts first, we catch the constraint
+                    // violation and re-lock the winner's row.
+                    try {
+                        branchBalance = new GLBranchBalance();
+                        branchBalance.setTenantId(tenantId);
+                        branchBalance.setBranch(branch);
+                        branchBalance.setGlCode(line.glCode());
+                        branchBalance.setGlName(gl.getGlName());
+                        branchBalance = glBranchBalanceRepository.saveAndFlush(branchBalance);
+                    } catch (org.springframework.dao.DataIntegrityViolationException concurrent) {
+                        // Another thread won the insert race — re-lock the now-existing row.
+                        log.debug("GLBranchBalance race resolved: branch={}, gl={}", branch.getBranchCode(), line.glCode());
+                        branchBalance = glBranchBalanceRepository
+                                .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
+                                .orElseThrow(() -> new BusinessException(
+                                        "GL_BRANCH_BALANCE_MISSING",
+                                        "GLBranchBalance row disappeared after concurrent insert: "
+                                                + branch.getBranchCode() + "/" + line.glCode()));
+                    }
+                }
 
                 if (line.debitCredit() == DebitCredit.DEBIT) {
                     branchBalance.setDebitBalance(branchBalance.getDebitBalance().add(line.amount()));

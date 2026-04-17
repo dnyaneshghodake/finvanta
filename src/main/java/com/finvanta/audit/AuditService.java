@@ -64,9 +64,87 @@ public class AuditService {
      * version with MICROS precision, a one-time migration script must recompute
      * and update all stored hashes using SECONDS truncation. See
      * {@code computeHash} for the canonical timestamp format.
+     *
+     * <p><b>Transaction propagation:</b> Uses {@link Propagation#REQUIRES_NEW}
+     * so audit records survive parent transaction rollbacks (e.g., failed login
+     * attempts, rejected transactions). This is the correct default for
+     * <em>standalone</em> audit calls (controller-level, security events).
+     *
+     * <p><b>CRITICAL — SQL Server deadlock hazard:</b> Do NOT call this method
+     * from inside a transaction that holds {@code PESSIMISTIC_WRITE} locks
+     * (e.g., GL balance updates, ledger posting). {@code REQUIRES_NEW} suspends
+     * the outer transaction WITHOUT releasing its locks, then opens a new
+     * connection that may contend with those held locks — a guaranteed deadlock
+     * on SQL Server due to lock escalation. Use {@link #logEventInline} instead
+     * for audit calls that execute within the GL posting pipeline
+     * ({@code AccountingService}, {@code TransactionEngine}).
+     *
+     * @see #logEventInline
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public AuditLog logEvent(
+            String entityType,
+            Long entityId,
+            String action,
+            Object beforeState,
+            Object afterState,
+            String module,
+            String description) {
+        return logEventInternal(entityType, entityId, action, beforeState, afterState, module, description);
+    }
+
+    /**
+     * CBS Tier-1: Inline audit logging that joins the caller's existing transaction.
+     *
+     * <p>Functionally identical to {@link #logEvent} but uses
+     * {@link Propagation#REQUIRED} (default) instead of {@code REQUIRES_NEW}.
+     * The audit record commits or rolls back WITH the enclosing transaction.
+     *
+     * <p><b>When to use this:</b> Any code path that already holds
+     * {@code PESSIMISTIC_WRITE} locks — specifically:
+     * <ul>
+     *   <li>{@code AccountingService.postJournalEntry()} — holds GL + ledger locks</li>
+     *   <li>{@code TransactionEngine.execute()} — wraps the entire 10-step pipeline</li>
+     * </ul>
+     *
+     * <p><b>Trade-off:</b> If the enclosing transaction rolls back (e.g., DB
+     * constraint violation after the audit INSERT), the audit record is also
+     * lost. This is acceptable for GL-pipeline audits because:
+     * <ol>
+     *   <li>If the posting rolls back, the financial event never happened —
+     *       there is nothing to audit.</li>
+     *   <li>The {@code TransactionEngine} logs a separate audit at Step 10
+     *       (after GL posting succeeds) which captures the committed state.</li>
+     *   <li>Failed posting attempts are captured by the controller-level
+     *       catch block which calls the standard {@link #logEvent} (REQUIRES_NEW)
+     *       outside the failed transaction.</li>
+     * </ol>
+     *
+     * <p>Per Finacle/Temenos Tier-1 architecture: audit logging inside the GL
+     * posting pipeline is synchronous-inline (same TX). Audit logging for
+     * security events (login, password change, session expiry) uses REQUIRES_NEW
+     * because those must survive parent rollbacks.
+     *
+     * @see #logEvent
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public AuditLog logEventInline(
+            String entityType,
+            Long entityId,
+            String action,
+            Object beforeState,
+            Object afterState,
+            String module,
+            String description) {
+        return logEventInternal(entityType, entityId, action, beforeState, afterState, module, description);
+    }
+
+    /**
+     * Shared implementation for both {@link #logEvent} and {@link #logEventInline}.
+     * Extracted to avoid code duplication — the only difference is the
+     * {@code @Transactional} propagation on the public method.
+     */
+    private AuditLog logEventInternal(
             String entityType,
             Long entityId,
             String action,
@@ -88,45 +166,18 @@ public class AuditService {
 
         AuditLog auditLog = new AuditLog();
         auditLog.setTenantId(tenantId);
-        // CBS Tier-1: Branch attribution on audit records per Finacle AUDIT_TRAIL.
-        // Records the OPERATING branch (switched branch if ADMIN has switched, else home).
-        // Per Finacle SOL_SWITCH: the audit record must reflect WHICH BRANCH'S DATA was
-        // accessed/modified — not just who did it. This enables branch-level audit reports
-        // where the ADMIN's actions on Branch X appear in Branch X's audit trail.
-        // The user's HOME branch is recorded in the description field by callers that need
-        // forensic user-attribution (e.g., BranchSwitchController).
-        // Null for system/tenant-level events where no branch context exists.
         Long userBranchId = SecurityUtil.getCurrentUserBranchId();
         if (userBranchId != null) {
             auditLog.setBranchId(userBranchId);
             auditLog.setBranchCode(SecurityUtil.getCurrentUserBranchCode());
         }
         auditLog.setEntityType(entityType);
-        // CBS Tier-1: Per Finacle AUDIT_TRAIL — entity_id is NEVER null in the database.
-        // 0L = system-level event (calendar generation, holiday, HO settlement, branch switch).
-        // This is the SINGLE enforcement point — no caller in any module needs to worry
-        // about null entityId. The service layer normalizes it before persistence.
         auditLog.setEntityId(entityId != null ? entityId : 0L);
         auditLog.setAction(action);
         auditLog.setBeforeSnapshot(beforeJson);
         auditLog.setAfterSnapshot(afterJson);
         auditLog.setPerformedBy(performedBy);
         auditLog.setIpAddress(ipAddress);
-        // CBS Tier-1: canonicalize eventTimestamp to second precision so the value
-        // stored in the entity is byte-for-byte identical to what every supported DB
-        // column type preserves on round-trip. SQL Server's legacy DATETIME rounds
-        // to 3.33ms increments (.000 / .003 / .007), SQL Server DATETIME2 and H2
-        // TIMESTAMP support microsecond+ precision, and H2's MSSQLServer mode
-        // DATETIME may behave like either depending on driver/version. Truncating
-        // to SECONDS bulletproofs the hash chain across every supported deployment
-        // because every DB type preserves second precision exactly. Without this,
-        // verifyChainIntegrity would report false tamper on every load -- any audit
-        // record whose in-memory LocalDateTime.now() had fractional seconds gets
-        // rounded/truncated by the DB, and the stored hash (computed from the full
-        // in-memory value) would diverge from the recomputed hash (computed from
-        // the loaded rounded value). Per Finacle AUDIT_TRAIL / Temenos AUDIT.LOG
-        // hash standards: hash input must use canonical representations compatible
-        // with the coarsest DB precision.
         auditLog.setEventTimestamp(LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS));
         auditLog.setPreviousHash(previousHash);
         auditLog.setModule(module);
