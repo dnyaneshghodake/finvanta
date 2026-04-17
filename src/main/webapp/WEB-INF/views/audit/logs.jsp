@@ -5,6 +5,10 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Audit Logs</li>
+    </ul>
     <div class="row g-3 mb-3">
         <div class="col-auto">
             <div class="fv-stat-card ${chainIntegrity ? 'stat-success' : 'stat-danger'}">

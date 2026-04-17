@@ -5,8 +5,13 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Journal Entries</li>
+    </ul>
+
     <div class="fv-card">
-        <div class="card-header">Filter</div>
+        <div class="card-header"><i class="bi bi-journal-text"></i> Filter</div>
         <div class="card-body">
             <form method="get" action="${pageContext.request.contextPath}/accounting/journal-entries" class="fv-form">
                 <div class="row g-2 align-items-end">

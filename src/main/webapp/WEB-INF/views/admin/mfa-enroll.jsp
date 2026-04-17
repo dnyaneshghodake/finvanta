@@ -4,10 +4,16 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-    <c:if test="${not empty error}"><div class="alert alert-danger alert-dismissible fade show"><c:out value="${error}" /><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div></c:if>
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/admin/mfa">MFA Management</a></li>
+        <li class="active">Enroll &mdash; <c:out value="${username}" /></li>
+    </ul>
+
+    <c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}" /></div></c:if>
 
     <div class="fv-card">
-        <div class="card-header">MFA Enrollment: <c:out value="${username}" /></div>
+        <div class="card-header"><i class="bi bi-shield-lock"></i> MFA Enrollment: <c:out value="${username}" /> <div class="float-end"><a href="${pageContext.request.contextPath}/admin/mfa" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/admin/mfa"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a></div></div>
         <div class="card-body">
             <div class="row">
                 <div class="col-md-6">
