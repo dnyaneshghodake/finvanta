@@ -3,6 +3,8 @@ package com.finvanta.service.impl;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
+import com.finvanta.domain.enums.CustomerType;
+import com.finvanta.domain.enums.KycRiskCategory;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanAccountRepository;
@@ -128,13 +130,13 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         c.setBranch(branch);
         c.setCreatedBy(user);
         c.setUpdatedBy(null);
-        c.setCustomerType(c.getCustomerType() != null ? c.getCustomerType() : "INDIVIDUAL");
+        c.setCustomerType(c.getCustomerType() != null ? c.getCustomerType() : CustomerType.INDIVIDUAL);
         c.computePanHash();
         c.computeAadhaarHash();
         c.computeCkycAccountType();
 
         // CBS: PEP auto-sets HIGH risk per FATF
-        if (c.isPep()) c.setKycRiskCategory("HIGH");
+        if (c.isPep()) c.setKycRiskCategory(KycRiskCategory.HIGH);
 
         Customer saved = customerRepo.save(c);
 
@@ -176,6 +178,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
      * @param customerId the customer ID to view
      * @return the Customer entity with branch access enforced
      */
+    @Override
     @Transactional(readOnly = true)
     public Customer getCustomerWithAudit(Long customerId) {
         Customer c = getCustomer(customerId);
