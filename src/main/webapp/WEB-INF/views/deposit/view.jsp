@@ -189,7 +189,7 @@
             <div class="row mb-3">
                 <div class="col-md-2">
                     <label class="form-label small">Daily Withdrawal Limit</label>
-                    <input type="number" name="dailyWithdrawalLimit" class="form-control form-control-sm" data-fv-type="amount" value="${account.dailyWithdrawalLimit}"/>
+                    <input type="number" name="dailyWithdrawalLimit" class="form-control form-control-sm" data-fv-type="amount" step="0.01" value="${account.dailyWithdrawalLimit}"/>
                     <small class="text-muted">0 = unlimited</small>
                 </div>
                 <div class="col-md-2">

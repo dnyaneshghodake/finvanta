@@ -34,14 +34,14 @@
                             <option value="FLAT">Flat Amount</option><option value="PERCENTAGE">Percentage</option><option value="SLAB">Slab-Based</option>
                         </select>
                     </div>
-                    <div class="col-md-1"><label class="form-label small">Base Amt</label><input type="number" name="baseAmount" class="form-control form-control-sm" data-fv-type="amount" placeholder="500"/></div>
-                    <div class="col-md-1"><label class="form-label small">Pct %</label><input type="number" name="percentage" class="form-control form-control-sm" data-fv-type="rate" placeholder="1.00"/></div>
-                    <div class="col-md-1"><label class="form-label small">Min</label><input type="number" name="minAmount" class="form-control form-control-sm" data-fv-type="amount"/></div>
+                    <div class="col-md-1"><label class="form-label small">Base Amt</label><input type="number" name="baseAmount" class="form-control form-control-sm" data-fv-type="amount" step="0.01" placeholder="500"/></div>
+                    <div class="col-md-1"><label class="form-label small">Pct %</label><input type="number" name="percentage" class="form-control form-control-sm" data-fv-type="rate" step="0.01" placeholder="1.00"/></div>
+                    <div class="col-md-1"><label class="form-label small">Min</label><input type="number" name="minAmount" class="form-control form-control-sm" data-fv-type="amount" step="0.01"/></div>
                 </div>
                 <div class="row mb-2">
-                    <div class="col-md-1"><label class="form-label small">Max</label><input type="number" name="maxAmount" class="form-control form-control-sm" data-fv-type="amount"/></div>
+                    <div class="col-md-1"><label class="form-label small">Max</label><input type="number" name="maxAmount" class="form-control form-control-sm" data-fv-type="amount" step="0.01"/></div>
                     <div class="col-md-1"><label class="form-label small">GST</label><div class="form-check mt-2"><input type="checkbox" name="gstApplicable" value="true" class="form-check-input" id="gstCheck"/><label class="form-check-label small" for="gstCheck">Yes</label></div></div>
-                    <div class="col-md-1"><label class="form-label small">GST %</label><input type="number" name="gstRate" class="form-control form-control-sm" data-fv-type="rate" value="18.00"/></div>
+                    <div class="col-md-1"><label class="form-label small">GST %</label><input type="number" name="gstRate" class="form-control form-control-sm" data-fv-type="rate" step="0.01" value="18.00"/></div>
                     <div class="col-md-2"><label class="form-label small">GL Income *</label>
                         <select name="glChargeIncome" class="form-select form-select-sm" required>
                             <c:forEach var="gl" items="${glAccounts}"><option value="${gl.glCode}" ${gl.glCode == '4002' ? 'selected' : ''}><c:out value="${gl.glCode}"/> &mdash; <c:out value="${gl.glName}"/></option></c:forEach>
@@ -54,7 +54,7 @@
                         </select>
                     </div>
                     <div class="col-md-1"><label class="form-label small">Waiver</label><div class="form-check mt-2"><input type="checkbox" name="waiverAllowed" value="true" class="form-check-input"/><label class="form-check-label small">Yes</label></div></div>
-                    <div class="col-md-1"><label class="form-label small">Max W%</label><input type="number" name="maxWaiverPercent" class="form-control form-control-sm" data-fv-type="rate" placeholder="50"/></div>
+                    <div class="col-md-1"><label class="form-label small">Max W%</label><input type="number" name="maxWaiverPercent" class="form-control form-control-sm" data-fv-type="rate" step="0.01" placeholder="50"/></div>
                     <div class="col-md-2"><label class="form-label small">Product</label>
                         <select name="productCode" class="form-select form-select-sm">
                             <option value="">ALL Products</option>
