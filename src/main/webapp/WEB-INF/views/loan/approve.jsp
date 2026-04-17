@@ -5,8 +5,14 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/loan/applications">Loan Applications</a></li>
+        <li class="active">Approve &mdash; <c:out value="${application.applicationNumber}" /></li>
+    </ul>
+
     <div class="fv-card">
-        <div class="card-header">Application Summary <a href="${pageContext.request.contextPath}/loan/applications" class="btn btn-sm btn-outline-secondary float-end">Back</a></div>
+        <div class="card-header"><i class="bi bi-check2-square"></i> Application Summary &mdash; <c:out value="${application.applicationNumber}" /> <div class="float-end"><a href="${pageContext.request.contextPath}/loan/applications" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/loan/applications"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a></div></div>
         <div class="card-body">
             <table class="table fv-table">
                 <tbody>
@@ -44,7 +50,7 @@
                     <textarea name="remarks" id="remarks" class="form-control" rows="3" required placeholder="Enter approval remarks"></textarea>
                 </div>
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                <button type="submit" class="btn btn-success">Approve Application</button>
+                <button type="submit" class="btn btn-success" data-confirm="Approve this loan application for INR ${application.requestedAmount}? This action creates a loan account."><i class="bi bi-check-circle"></i> Approve Application</button>
             </form>
             <hr class="my-3" />
             <form method="post" action="${pageContext.request.contextPath}/loan/reject/${application.id}" class="fv-form">

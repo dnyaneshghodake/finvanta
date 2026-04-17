@@ -5,9 +5,14 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-    <c:if test="${not empty success}"><div class="alert alert-success alert-dismissible fade show"><c:out value="${success}" /><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div></c:if>
-    <c:if test="${not empty error}"><div class="alert alert-danger alert-dismissible fade show"><c:out value="${error}" /><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div></c:if>
-    <c:if test="${not empty info}"><div class="alert alert-info alert-dismissible fade show"><c:out value="${info}" /><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div></c:if>
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">MFA Management</li>
+    </ul>
+
+    <c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}" /></div></c:if>
+    <c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}" /></div></c:if>
+    <c:if test="${not empty info}"><div class="fv-alert alert alert-info"><c:out value="${info}" /></div></c:if>
 
     <div class="fv-card">
         <div class="card-header">MFA Management (RBI IT Governance Direction 2023 &sect;8.4)</div>

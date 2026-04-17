@@ -6,7 +6,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
+    <meta name="ctx" content="${pageContext.request.contextPath}" />
     <title>Finvanta CBS - <c:out value="${pageTitle}" default="Banking System" /></title>
+    <%-- CBS Tier-1: Favicon per bank branding standards. SVG for modern browsers, ICO fallback. --%>
+    <link rel="icon" type="image/svg+xml" href="${pageContext.request.contextPath}/img/favicon.svg">
+    <link rel="icon" type="image/x-icon" href="${pageContext.request.contextPath}/img/favicon.ico">
     <!-- Offline Vendor CSS -->
     <link rel="stylesheet" href="${pageContext.request.contextPath}/css/bootstrap.min.css">
     <link rel="stylesheet" href="${pageContext.request.contextPath}/css/bootstrap-icons.css">
@@ -15,3 +19,10 @@
     <link rel="stylesheet" href="${pageContext.request.contextPath}/css/finvanta-theme.css">
 </head>
 <body>
+<%-- CBS Tier-1: Print-only header for branch file maintenance printouts.
+     Hidden on screen, visible only in @media print. Shows bank name + timestamp. --%>
+<div class="fv-print-header">
+    <h2>FINVANTA — Core Banking System</h2>
+    <small><c:out value="${pageTitle}" default="" /> | Branch: <c:out value="${userBranchCode}" default="--" /> | Printed by: <c:out value="${pageContext.request.userPrincipal.name}" default="" /> | <span id="fvPrintTimestamp"></span></small>
+    <script>document.getElementById('fvPrintTimestamp').textContent='Printed: '+new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});</script>
+</div>

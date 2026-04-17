@@ -5,8 +5,13 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-    <c:if test="${not empty success}"><div class="alert alert-success"><c:out value="${success}"/></div></c:if>
-    <c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">User Management</li>
+    </ul>
+
+    <c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}"/></div></c:if>
+    <c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
 
     <!-- Create User Form -->
     <div class="fv-card mb-3">
@@ -130,9 +135,12 @@
                             </c:if>
                             <form method="post" action="${pageContext.request.contextPath}/admin/users/reset-password/${u.id}" class="d-inline">
                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-                                <input type="hidden" name="newPassword" value="" id="pwd_${u.id}"/>
-                                <button type="submit" class="btn btn-sm btn-outline-secondary"
-                                    onclick="var p=prompt('New password (min 8 chars):'); if(!p||p.length<8){alert('Password must be at least 8 characters');return false;} document.getElementById('pwd_${u.id}').value=p; return confirm('Reset password for this user?');">
+                                <input type="hidden" name="newPassword" value="" class="fv-reason-field"/>
+                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    data-fv-reason-prompt="New password (minimum 8 characters):"
+                                    data-fv-reason-confirm="Reset password for this user?"
+                                    data-fv-reason-minlength="8"
+                                    onclick="fvPromptReason(this);">
                                     <i class="bi bi-key"></i> Reset Pwd
                                 </button>
                             </form>

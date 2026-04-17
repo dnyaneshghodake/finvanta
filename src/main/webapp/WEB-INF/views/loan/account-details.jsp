@@ -5,6 +5,12 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/loan/accounts">Loan Accounts</a></li>
+        <li class="active"><c:out value="${account.accountNumber}" /></li>
+    </ul>
+
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
@@ -22,12 +28,13 @@
     </div>
 
     <div class="fv-card">
-        <div class="card-header">Account Information
+        <div class="card-header"><i class="bi bi-bank"></i> Account Information &mdash; <c:out value="${account.accountNumber}" />
             <div class="float-end">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print();" title="Print Account"><i class="bi bi-printer"></i> Print <span class="fv-kbd">Ctrl+P</span></button>
                 <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
                     <a href="${pageContext.request.contextPath}/audit/logs?entityType=LoanAccount&entityId=${account.id}" class="btn btn-sm btn-outline-info me-1"><i class="bi bi-shield-lock"></i> Audit Trail</a>
                 </c:if>
-                <a href="${pageContext.request.contextPath}/loan/accounts" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+                <a href="${pageContext.request.contextPath}/loan/accounts" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/loan/accounts"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a>
             </div>
         </div>
         <div class="card-body">
@@ -328,7 +335,7 @@
 
                 <c:if test="${!account.multiDisbursement}">
                 <!-- Single disbursement: full sanctioned amount -->
-                <form method="post" action="${pageContext.request.contextPath}/loan/disburse/${account.accountNumber}">
+                <form method="post" action="${pageContext.request.contextPath}/loan/disburse/${account.accountNumber}" class="fv-form">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                     <button type="submit" class="btn btn-success" data-confirm="Confirm full disbursement of INR ${account.undisbursedAmount}?">Disburse Full Amount</button>
                 </form>
@@ -350,7 +357,7 @@
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                     <button type="submit" class="btn btn-success" data-confirm="Confirm tranche disbursement?">Disburse Tranche</button>
                 </form>
-                <form method="post" action="${pageContext.request.contextPath}/loan/disburse/${account.accountNumber}" class="d-inline">
+                <form method="post" action="${pageContext.request.contextPath}/loan/disburse/${account.accountNumber}" class="fv-form d-inline">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                     <button type="submit" class="btn btn-outline-success" data-confirm="Disburse all remaining INR ${account.undisbursedAmount}?">Disburse All Remaining</button>
                 </form>
@@ -433,7 +440,7 @@
                 <p class="text-danger">Write off this NPA account. This removes the loan asset from the balance sheet and is <strong>irreversible</strong>.</p>
                 <p>Outstanding Principal: <strong class="amount"><fmt:formatNumber value="${account.outstandingPrincipal}" type="number" maxFractionDigits="2" /> INR</strong></p>
                 <p>Provisioning Held: <strong class="amount"><fmt:formatNumber value="${account.provisioningAmount}" type="number" maxFractionDigits="2" /> INR</strong></p>
-                <form method="post" action="${pageContext.request.contextPath}/loan/write-off/${account.accountNumber}">
+                <form method="post" action="${pageContext.request.contextPath}/loan/write-off/${account.accountNumber}" class="fv-form">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                     <button type="submit" class="btn btn-danger" data-confirm="CONFIRM WRITE-OFF: This action is irreversible and will remove INR ${account.outstandingPrincipal} from the balance sheet.">Write Off Account</button>
                 </form>
@@ -581,12 +588,14 @@
                             <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
                             <td>
                                 <c:if test="${!txn.reversed && txn.transactionType != 'REVERSAL' && !account.status.terminal}">
-                                    <form method="post" action="${pageContext.request.contextPath}/loan/reversal/${txn.transactionRef}" style="display:inline">
+                                    <form method="post" action="${pageContext.request.contextPath}/loan/reversal/${txn.transactionRef}" class="fv-form d-inline">
                                         <input type="hidden" name="accountNumber" value="${account.accountNumber}" />
-                                        <input type="hidden" name="reason" value="" id="reason_${txn.transactionRef}" />
+                                        <input type="hidden" name="reason" value="" class="fv-reason-field" />
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                        <button type="submit" class="btn btn-sm btn-outline-danger"
-                                            onclick="var r=prompt('Reversal reason (mandatory):'); if(!r){return false;} document.getElementById('reason_${txn.transactionRef}').value=r; return confirm('Reverse transaction ${txn.transactionRef}?');">
+                                        <button type="button" class="btn btn-sm btn-outline-danger"
+                                            data-fv-reason-prompt="Reversal reason (mandatory):"
+                                            data-fv-reason-confirm="Reverse transaction ${txn.transactionRef}?"
+                                            onclick="fvPromptReason(this);">
                                             Reverse
                                         </button>
                                     </form>

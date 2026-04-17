@@ -5,11 +5,21 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-<c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+<ul class="fv-breadcrumb">
+    <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+    <li><a href="${pageContext.request.contextPath}/deposit/accounts">CASA Accounts</a></li>
+    <li><a href="${pageContext.request.contextPath}/deposit/view/${account.accountNumber}"><c:out value="${account.accountNumber}"/></a></li>
+    <li class="active">Statement</li>
+</ul>
+
+<c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4>Account Statement: <c:out value="${account.accountNumber}"/></h4>
-    <a href="${pageContext.request.contextPath}/deposit/view/${account.accountNumber}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to Account</a>
+    <h4><i class="bi bi-journal-text"></i> Account Statement: <c:out value="${account.accountNumber}"/></h4>
+    <div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print();" title="Print Statement"><i class="bi bi-printer"></i> Print <span class="fv-kbd">Ctrl+P</span></button>
+        <a href="${pageContext.request.contextPath}/deposit/view/${account.accountNumber}" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/deposit/view/${account.accountNumber}"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a>
+    </div>
 </div>
 
 <div class="fv-card mb-3">

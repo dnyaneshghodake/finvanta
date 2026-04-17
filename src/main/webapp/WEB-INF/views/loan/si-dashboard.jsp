@@ -5,8 +5,13 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-    <c:if test="${not empty success}"><div class="alert alert-success"><c:out value="${success}"/></div></c:if>
-    <c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">SI Dashboard</li>
+    </ul>
+
+    <c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}"/></div></c:if>
+    <c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
 
     <!-- Summary Metrics -->
     <div class="row g-3 mb-3">
@@ -46,9 +51,11 @@
                             </form>
                             <form method="post" action="${pageContext.request.contextPath}/loan/si/reject/${si.siReference}" class="d-inline">
                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                <input type="hidden" name="reason" value="" id="reject_${si.siReference}" />
-                                <button type="submit" class="btn btn-sm btn-outline-danger"
-                                    onclick="var r=prompt('Rejection reason (mandatory):'); if(!r){return false;} document.getElementById('reject_${si.siReference}').value=r; return confirm('Reject SI ${si.siReference}?');">
+                                <input type="hidden" name="reason" value="" class="fv-reason-field" />
+                                <button type="button" class="btn btn-sm btn-outline-danger"
+                                    data-fv-reason-prompt="Rejection reason (mandatory):"
+                                    data-fv-reason-confirm="Reject SI ${si.siReference}?"
+                                    onclick="fvPromptReason(this);">
                                     <i class="bi bi-x-circle"></i> Reject
                                 </button>
                             </form>

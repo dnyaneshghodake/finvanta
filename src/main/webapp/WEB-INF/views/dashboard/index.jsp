@@ -5,6 +5,11 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <%-- CBS Tier-1: Breadcrumb root --%>
+    <ul class="fv-breadcrumb">
+        <li class="active"><i class="bi bi-speedometer2"></i> Dashboard</li>
+    </ul>
+
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>

@@ -35,11 +35,27 @@ public interface CustomerCifService {
 
     /**
      * Get customer by ID with branch access enforcement.
+     * Does NOT emit an audit event — use {@link #getCustomerWithAudit(Long)} for
+     * user-initiated views that require CIF_VIEW audit logging.
      *
      * @param customerId Customer ID
      * @return Customer entity
      */
     Customer getCustomer(Long customerId);
+
+    /**
+     * Get customer by ID with branch access enforcement AND CIF_VIEW audit logging.
+     *
+     * <p>Per RBI IT Governance Direction 2023 §8.3: user-initiated access to customer
+     * PII must be logged for forensic investigation. Use this method in controller
+     * endpoints where a user explicitly views a customer record (view page, edit page,
+     * API GET). For internal service-to-service calls (document upload, charge levy),
+     * use {@link #getCustomer(Long)} to avoid audit table flooding.
+     *
+     * @param customerId Customer ID
+     * @return Customer entity
+     */
+    Customer getCustomerWithAudit(Long customerId);
 
     /**
      * Verify KYC for a customer. Uses CBS business date for verification date.

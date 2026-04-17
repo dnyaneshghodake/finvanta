@@ -5,6 +5,10 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">IRAC Report</li>
+    </ul>
     <div class="row g-3 mb-3">
         <div class="col"><div class="fv-stat-card"><div class="stat-value"><c:out value="${totalAccounts}" /></div><div class="stat-label">Total Accounts</div></div></div>
         <div class="col"><div class="fv-stat-card"><div class="stat-value amount"><fmt:formatNumber value="${totalOutstanding}" type="number" maxFractionDigits="0" /></div><div class="stat-label">Total Outstanding</div></div></div>

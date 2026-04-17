@@ -1,6 +1,8 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.config.PiiEncryptionConverter;
+import com.finvanta.domain.enums.CustomerType;
+import com.finvanta.domain.enums.KycRiskCategory;
 import com.finvanta.util.PiiHashUtil;
 
 import jakarta.persistence.*;
@@ -131,6 +133,11 @@ public class Customer extends BaseEntity {
      *   MEDIUM → re-KYC every 8 years (self-employed, moderate value)
      *   HIGH   → re-KYC every 2 years (PEP, high-value, adverse media)
      * Per RBI: risk category must be assessed at onboarding and reviewed periodically.
+     *
+     * <p>CBS Tier-1 (Gap 1): Validated against {@link KycRiskCategory} enum at the service
+     * layer. Field remains String for backward compatibility with the API response DTO
+     * ({@code CustomerResponse} record). Full enum migration requires coordinated change
+     * across entity + API controller + tests in a dedicated PR.
      */
     @Column(name = "kyc_risk_category", length = 10)
     private String kycRiskCategory = "MEDIUM";
@@ -179,6 +186,9 @@ public class Customer extends BaseEntity {
      * Customer type per RBI KYC Direction.
      * Determines KYC document requirements and regulatory treatment.
      * Values: INDIVIDUAL, JOINT, HUF, PARTNERSHIP, COMPANY, TRUST, NRI, MINOR, GOVERNMENT
+     *
+     * <p>CBS Tier-1 (Gap 1): Validated against {@link CustomerType} enum at the service
+     * layer. Field remains String for backward compatibility with the API response DTO.
      */
     @Column(name = "customer_type", length = 20)
     private String customerType = "INDIVIDUAL";
@@ -435,17 +445,47 @@ public class Customer extends BaseEntity {
         return firstName + " " + lastName;
     }
 
+    // === CBS Tier-1 (Gap 6): Pre-masked PII accessors for view layer ===
+    //
+    // Per RBI IT Governance Direction 2023 / UIDAI Aadhaar Act 2016:
+    // PII must be masked before it reaches the presentation layer. These
+    // @Transient computed properties expose pre-masked values so JSP views
+    // use ${cust.maskedPan} instead of decrypting the full PAN in the template
+    // and masking inline. This ensures decrypted PII never traverses the
+    // template engine pipeline — masking happens at the entity boundary.
+    //
+    // Per Finacle CIF_LIST: PII columns in list views always show masked values.
+    // The view page uses controller-provided masked values (PiiMaskingUtil)
+    // for consistency; these accessors extend the same pattern to list views.
+
+    /** Masked PAN for list/display — never exposes full decrypted PAN to view layer. */
+    @Transient
+    public String getMaskedPan() {
+        return com.finvanta.util.PiiMaskingUtil.maskPan(this.panNumber);
+    }
+
+    /** Masked Aadhaar for list/display — per UIDAI, only last 4 digits visible. */
+    @Transient
+    public String getMaskedAadhaar() {
+        return com.finvanta.util.PiiMaskingUtil.maskAadhaar(this.aadhaarNumber);
+    }
+
+    /** Masked mobile for list/display — only last 4 digits visible. */
+    @Transient
+    public String getMaskedMobile() {
+        return com.finvanta.util.PiiMaskingUtil.maskMobile(this.mobileNumber);
+    }
+
     /**
      * Computes CKYC account type from customer type.
      * Per CERSAI: INDIVIDUAL/JOINT/MINOR/NRI → INDIVIDUAL; rest → NON_INDIVIDUAL
+     *
+     * <p>CBS Tier-1 (Gap 1): Delegates to {@link CustomerType#getCkycAccountType()} via
+     * enum lookup. Falls back to "INDIVIDUAL" for null/unrecognized values.
      */
     public void computeCkycAccountType() {
-        if ("INDIVIDUAL".equals(customerType) || "JOINT".equals(customerType)
-                || "MINOR".equals(customerType) || "NRI".equals(customerType)) {
-            this.ckycAccountType = "INDIVIDUAL";
-        } else {
-            this.ckycAccountType = "NON_INDIVIDUAL";
-        }
+        CustomerType ct = CustomerType.fromString(customerType);
+        this.ckycAccountType = ct != null ? ct.getCkycAccountType() : "NON_INDIVIDUAL";
     }
 
     // === KYC Helpers ===
@@ -456,11 +496,13 @@ public class Customer extends BaseEntity {
      *   LOW    → 10 years
      *   MEDIUM → 8 years
      *   HIGH   → 2 years
+     *
+     * <p>CBS Tier-1 (Gap 1): Delegates to {@link KycRiskCategory#getRenewalYears()} via
+     * enum lookup. Falls back to MEDIUM (8 years) for null/unrecognized values.
      */
     public int getKycRenewalYears() {
-        if ("HIGH".equals(kycRiskCategory)) return 2;
-        if ("LOW".equals(kycRiskCategory)) return 10;
-        return 8; // MEDIUM default
+        KycRiskCategory risk = KycRiskCategory.fromString(kycRiskCategory);
+        return risk != null ? risk.getRenewalYears() : KycRiskCategory.MEDIUM.getRenewalYears();
     }
 
     /**
@@ -503,6 +545,70 @@ public class Customer extends BaseEntity {
     /** JSP/view-layer convenience — uses system date as approximation. */
     public boolean isKycExpiringSoon() {
         return isKycExpiringSoon(LocalDate.now());
+    }
+
+    // === PII Immutability Guard (GAP 2 — Tier-1 defense-in-depth) ===
+
+    /**
+     * CBS Tier-1 CRITICAL: PAN and Aadhaar are IMMUTABLE after initial CIF creation.
+     * Per RBI KYC Master Direction 2016: PAN/Aadhaar define the CIF identity and
+     * must never be changed — correction requires CIF closure and re-creation.
+     *
+     * <p>This {@code @PreUpdate} hook is the LAST LINE OF DEFENSE. The service layer
+     * ({@code CustomerCifServiceImpl.updateCustomer}) already excludes PAN/Aadhaar
+     * from the mutable field copy, and the API controller rejects requests with
+     * PAN/Aadhaar in the body. But if any future code path (batch job, admin tool,
+     * direct repo save) accidentally modifies these fields, this hook catches it
+     * at the JPA boundary — before the SQL UPDATE is issued.
+     *
+     * <p>Per Finacle CIF_MASTER: immutable fields are enforced by DB triggers.
+     * JPA {@code @PreUpdate} is the closest equivalent in Spring Boot without
+     * requiring DB-vendor-specific DDL.
+     *
+     * <p><b>Mechanism:</b> Stores the original PAN/Aadhaar hashes at load time via
+     * {@code @PostLoad}. On {@code @PreUpdate}, recomputes hashes from current field
+     * values and compares. If changed, throws {@code IllegalStateException} which
+     * aborts the transaction. Uses hashes (not plaintext) because the encrypted
+     * ciphertext changes on every read (random IV), so direct comparison is impossible.
+     */
+    @Transient
+    private String originalPanHash;
+
+    @Transient
+    private String originalAadhaarHash;
+
+    @PostLoad
+    void snapshotImmutableFields() {
+        this.originalPanHash = this.panHash;
+        this.originalAadhaarHash = this.aadhaarHash;
+    }
+
+    @PreUpdate
+    void enforceImmutablePii() {
+        // Only enforce if snapshots were taken (i.e., entity was loaded from DB,
+        // not a freshly created entity going through its first save).
+        if (originalPanHash != null) {
+            // CBS Tier-1: Detect BOTH modification AND nullification of PAN.
+            // The previous implementation only checked (originalPanHash != null && panHash != null),
+            // which short-circuited when panHash was set to null — silently allowing PAN deletion.
+            // Per RBI KYC Master Direction 2016: PAN defines the CIF identity and must never be
+            // removed or changed after creation. Correction requires CIF closure and re-creation.
+            if (!originalPanHash.equals(panHash)) {
+                throw new IllegalStateException(
+                        "CBS IMMUTABILITY VIOLATION: PAN number cannot be changed or removed after CIF creation. "
+                                + "Per RBI KYC Master Direction 2016: PAN defines the CIF identity. "
+                                + "Customer: " + customerNumber);
+            }
+        }
+        if (originalAadhaarHash != null) {
+            // CBS Tier-1: Same nullification guard for Aadhaar.
+            if (!originalAadhaarHash.equals(aadhaarHash)) {
+                throw new IllegalStateException(
+                        "CBS IMMUTABILITY VIOLATION: Aadhaar number cannot be changed or removed after CIF creation. "
+                                + "Per UIDAI / RBI KYC norms: Aadhaar is immutable post-CIF creation. "
+                                + "Customer: " + customerNumber);
+            }
+        }
     }
 
     // === PII Hash Helpers ===

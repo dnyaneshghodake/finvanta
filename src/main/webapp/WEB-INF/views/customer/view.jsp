@@ -5,6 +5,13 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <%-- CBS Tier-1: Breadcrumb per Finacle/Temenos: Home > Module > Screen --%>
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/customer/list">Customers</a></li>
+        <li class="active">CIF Detail &mdash; <c:out value="${customer.customerNumber}" /></li>
+    </ul>
+
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
@@ -13,43 +20,54 @@
     </c:if>
 
     <div class="fv-card">
-        <div class="card-header">Customer Details
+        <div class="card-header"><i class="bi bi-person-badge"></i> Customer Details &mdash; <c:out value="${customer.customerNumber}" />
             <div class="float-end">
-                <a href="${pageContext.request.contextPath}/customer/list" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print();" title="Print CIF"><i class="bi bi-printer"></i> Print <span class="fv-kbd">Ctrl+P</span></button>
+                <a href="${pageContext.request.contextPath}/customer/list" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/customer/list"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a>
                 <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
                 <a href="${pageContext.request.contextPath}/customer/edit/${customer.id}" class="btn btn-sm btn-fv-primary"><i class="bi bi-pencil"></i> Edit</a>
                 </c:if>
             </div>
         </div>
         <div class="card-body">
-            <table class="table fv-table">
-                <tbody>
-                <tr><td class="fw-bold">Customer Number</td><td><c:out value="${customer.customerNumber}" /></td></tr>
-                <tr><td class="fw-bold">Full Name</td><td><c:out value="${customer.fullName}" /></td></tr>
-                <tr><td class="fw-bold">Customer Type</td><td><c:choose><c:when test="${customer.customerType == 'INDIVIDUAL'}">Individual</c:when><c:when test="${customer.customerType == 'JOINT'}">Joint</c:when><c:when test="${customer.customerType == 'HUF'}">HUF</c:when><c:when test="${customer.customerType == 'PARTNERSHIP'}">Partnership</c:when><c:when test="${customer.customerType == 'COMPANY'}">Company</c:when><c:when test="${customer.customerType == 'TRUST'}">Trust</c:when><c:when test="${customer.customerType == 'NRI'}">NRI</c:when><c:when test="${customer.customerType == 'MINOR'}">Minor</c:when><c:when test="${customer.customerType == 'GOVERNMENT'}">Government</c:when><c:otherwise><c:out value="${customer.customerType}" /></c:otherwise></c:choose></td></tr>
-                <tr><td class="fw-bold">Gender</td><td><c:choose><c:when test="${customer.gender == 'M'}">Male</c:when><c:when test="${customer.gender == 'F'}">Female</c:when><c:when test="${customer.gender == 'T'}">Transgender</c:when><c:otherwise>--</c:otherwise></c:choose></td></tr>
-                <tr><td class="fw-bold">Date of Birth</td><td><c:out value="${customer.dateOfBirth}" /></td></tr>
-                <tr><td class="fw-bold">Marital Status</td><td><c:choose><c:when test="${customer.maritalStatus == 'SINGLE'}">Single</c:when><c:when test="${customer.maritalStatus == 'MARRIED'}">Married</c:when><c:when test="${customer.maritalStatus == 'DIVORCED'}">Divorced</c:when><c:when test="${customer.maritalStatus == 'WIDOWED'}">Widowed</c:when><c:when test="${customer.maritalStatus == 'SEPARATED'}">Separated</c:when><c:otherwise>--</c:otherwise></c:choose></td></tr>
-                <tr><td class="fw-bold">Father's Name</td><td><c:out value="${customer.fatherName}" default="--" /></td></tr>
-                <tr><td class="fw-bold">Mother's Name</td><td><c:out value="${customer.motherName}" default="--" /></td></tr>
-                <c:if test="${not empty customer.spouseName}"><tr><td class="fw-bold">Spouse Name</td><td><c:out value="${customer.spouseName}" /></td></tr></c:if>
-                <tr><td class="fw-bold">Nationality</td><td><c:choose><c:when test="${customer.nationality == 'INDIAN'}">Indian</c:when><c:when test="${customer.nationality == 'NRI'}">NRI</c:when><c:when test="${customer.nationality == 'PIO'}">PIO</c:when><c:when test="${customer.nationality == 'OCI'}">OCI</c:when><c:when test="${customer.nationality == 'FOREIGN'}">Foreign</c:when><c:otherwise>--</c:otherwise></c:choose></td></tr>
-                <tr><td class="fw-bold">Occupation</td><td><c:choose><c:when test="${customer.occupationCode == 'SALARIED_PRIVATE'}">Salaried (Pvt)</c:when><c:when test="${customer.occupationCode == 'SALARIED_GOVT'}">Salaried (Govt)</c:when><c:when test="${customer.occupationCode == 'BUSINESS'}">Business</c:when><c:when test="${customer.occupationCode == 'PROFESSIONAL'}">Professional</c:when><c:when test="${customer.occupationCode == 'SELF_EMPLOYED'}">Self Employed</c:when><c:when test="${customer.occupationCode == 'RETIRED'}">Retired</c:when><c:when test="${customer.occupationCode == 'HOUSEWIFE'}">Housewife</c:when><c:when test="${customer.occupationCode == 'STUDENT'}">Student</c:when><c:when test="${customer.occupationCode == 'AGRICULTURIST'}">Agriculturist</c:when><c:when test="${customer.occupationCode == 'OTHER'}">Other</c:when><c:otherwise>--</c:otherwise></c:choose></td></tr>
-                <%-- CBS: PII masking per RBI IT Governance Direction 2023 / UIDAI Aadhaar Act 2016.
-                     PAN/Aadhaar/Mobile are masked in display — only last 4 digits visible.
-                     Full values are available in DB (encrypted) for authorized operations. --%>
-                <tr><td class="fw-bold">PAN</td><td><c:out value="${maskedPan}" /></td></tr>
-                <tr><td class="fw-bold">Aadhaar</td><td><c:out value="${maskedAadhaar}" /></td></tr>
-                <tr><td class="fw-bold">Mobile</td><td><c:out value="${maskedMobile}" /></td></tr>
-                <tr><td class="fw-bold">Email</td><td><c:out value="${customer.email}" /></td></tr>
-                <tr><td class="fw-bold">Correspondence Address</td><td><c:out value="${customer.address}" />, <c:out value="${customer.city}" />, <c:out value="${customer.state}" /> - <c:out value="${customer.pinCode}" /></td></tr>
+            <%-- CBS Tier-1: Multi-column detail grid per Finacle CIF_VIEW — 3 columns --%>
+            <div class="fv-detail-grid fv-detail-3col">
+                <div class="fv-detail-section-title"><i class="bi bi-person-badge"></i> CIF Identity</div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Customer Number</div><div class="fv-detail-value"><c:out value="${customer.customerNumber}" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Full Name</div><div class="fv-detail-value"><c:out value="${customer.fullName}" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Customer Type</div><div class="fv-detail-value"><c:choose><c:when test="${customer.customerType == 'INDIVIDUAL'}">Individual</c:when><c:when test="${customer.customerType == 'JOINT'}">Joint</c:when><c:when test="${customer.customerType == 'HUF'}">HUF</c:when><c:when test="${customer.customerType == 'PARTNERSHIP'}">Partnership</c:when><c:when test="${customer.customerType == 'COMPANY'}">Company</c:when><c:when test="${customer.customerType == 'TRUST'}">Trust</c:when><c:when test="${customer.customerType == 'NRI'}">NRI</c:when><c:when test="${customer.customerType == 'MINOR'}">Minor</c:when><c:when test="${customer.customerType == 'GOVERNMENT'}">Government</c:when><c:otherwise><c:out value="${customer.customerType}" /></c:otherwise></c:choose></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Status</div><div class="fv-detail-value"><c:choose><c:when test="${customer.active}"><span class="fv-badge fv-badge-active">Active</span></c:when><c:otherwise><span class="fv-badge fv-badge-rejected">Inactive</span></c:otherwise></c:choose></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Branch</div><div class="fv-detail-value"><a href="${pageContext.request.contextPath}/branch/view/${customer.branch.id}"><c:out value="${customer.branch.branchCode}" /> &mdash; <c:out value="${customer.branch.branchName}" /></a></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">CIBIL Score</div><div class="fv-detail-value"><c:out value="${customer.cibilScore}" default="--" /></div></div>
+
+                <div class="fv-detail-section-title"><i class="bi bi-person"></i> Personal Details &amp; Demographics (CKYC)</div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Gender</div><div class="fv-detail-value"><c:choose><c:when test="${customer.gender == 'M'}">Male</c:when><c:when test="${customer.gender == 'F'}">Female</c:when><c:when test="${customer.gender == 'T'}">Transgender</c:when><c:otherwise>--</c:otherwise></c:choose></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Date of Birth</div><div class="fv-detail-value"><c:out value="${customer.dateOfBirth}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Marital Status</div><div class="fv-detail-value"><c:choose><c:when test="${customer.maritalStatus == 'SINGLE'}">Single</c:when><c:when test="${customer.maritalStatus == 'MARRIED'}">Married</c:when><c:when test="${customer.maritalStatus == 'DIVORCED'}">Divorced</c:when><c:when test="${customer.maritalStatus == 'WIDOWED'}">Widowed</c:when><c:when test="${customer.maritalStatus == 'SEPARATED'}">Separated</c:when><c:otherwise>--</c:otherwise></c:choose></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Father's Name</div><div class="fv-detail-value"><c:out value="${customer.fatherName}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Mother's Name</div><div class="fv-detail-value"><c:out value="${customer.motherName}" default="--" /></div></div>
+                <c:if test="${not empty customer.spouseName}"><div class="fv-detail-item"><div class="fv-detail-label">Spouse Name</div><div class="fv-detail-value"><c:out value="${customer.spouseName}" /></div></div></c:if>
+                <div class="fv-detail-item"><div class="fv-detail-label">Nationality</div><div class="fv-detail-value"><c:choose><c:when test="${customer.nationality == 'INDIAN'}">Indian</c:when><c:when test="${customer.nationality == 'NRI'}">NRI</c:when><c:when test="${customer.nationality == 'PIO'}">PIO</c:when><c:when test="${customer.nationality == 'OCI'}">OCI</c:when><c:when test="${customer.nationality == 'FOREIGN'}">Foreign</c:when><c:otherwise>--</c:otherwise></c:choose></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Occupation</div><div class="fv-detail-value"><c:choose><c:when test="${customer.occupationCode == 'SALARIED_PRIVATE'}">Salaried (Pvt)</c:when><c:when test="${customer.occupationCode == 'SALARIED_GOVT'}">Salaried (Govt)</c:when><c:when test="${customer.occupationCode == 'BUSINESS'}">Business</c:when><c:when test="${customer.occupationCode == 'PROFESSIONAL'}">Professional</c:when><c:when test="${customer.occupationCode == 'SELF_EMPLOYED'}">Self Employed</c:when><c:when test="${customer.occupationCode == 'RETIRED'}">Retired</c:when><c:when test="${customer.occupationCode == 'HOUSEWIFE'}">Housewife</c:when><c:when test="${customer.occupationCode == 'STUDENT'}">Student</c:when><c:when test="${customer.occupationCode == 'AGRICULTURIST'}">Agriculturist</c:when><c:when test="${customer.occupationCode == 'OTHER'}">Other</c:when><c:otherwise>--</c:otherwise></c:choose></div></div>
+                <%-- === PII & Contact (Masked per RBI IT Governance / UIDAI) === --%>
+                <div class="fv-detail-section-title"><i class="bi bi-shield-lock"></i> PII &amp; Contact (Masked per RBI/UIDAI)</div>
+                <div class="fv-detail-item"><div class="fv-detail-label">PAN</div><div class="fv-detail-value"><c:out value="${maskedPan}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Aadhaar</div><div class="fv-detail-value"><c:out value="${maskedAadhaar}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Mobile</div><div class="fv-detail-value"><c:out value="${maskedMobile}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Email</div><div class="fv-detail-value"><c:out value="${customer.email}" default="--" /></div></div>
+
+                <%-- === Address === --%>
+                <div class="fv-detail-section-title"><i class="bi bi-geo-alt"></i> Address</div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Correspondence Address</div><div class="fv-detail-value"><c:out value="${customer.address}" />, <c:out value="${customer.city}" />, <c:out value="${customer.state}" /> - <c:out value="${customer.pinCode}" /></div></div>
                 <c:if test="${not customer.addressSameAsPermanent}">
-                <tr><td class="fw-bold">Permanent Address</td><td><c:out value="${customer.permanentAddress}" />, <c:out value="${customer.permanentCity}" />, <c:out value="${customer.permanentState}" /> - <c:out value="${customer.permanentPinCode}" /> (<c:out value="${customer.permanentCountry}" />)</td></tr>
+                <div class="fv-detail-item"><div class="fv-detail-label">Permanent Address</div><div class="fv-detail-value"><c:out value="${customer.permanentAddress}" />, <c:out value="${customer.permanentCity}" />, <c:out value="${customer.permanentState}" /> - <c:out value="${customer.permanentPinCode}" /> (<c:out value="${customer.permanentCountry}" />)</div></div>
                 </c:if>
                 <c:if test="${customer.addressSameAsPermanent}">
-                <tr><td class="fw-bold">Permanent Address</td><td><span class="text-muted">Same as correspondence</span></td></tr>
+                <div class="fv-detail-item"><div class="fv-detail-label">Permanent Address</div><div class="fv-detail-value"><span class="text-muted">Same as correspondence</span></div></div>
                 </c:if>
-                <tr><td class="fw-bold">KYC Status</td><td>
+                <%-- === KYC & Compliance === --%>
+                <div class="fv-detail-section-title"><i class="bi bi-shield-check"></i> KYC &amp; Compliance</div>
+                <div class="fv-detail-item"><div class="fv-detail-label">KYC Status</div><div class="fv-detail-value">
                     <c:choose>
                         <c:when test="${customer.kycVerified}"><span class="fv-badge fv-badge-active">Verified</span> (by <c:out value="${customer.kycVerifiedBy}" /> on <c:out value="${customer.kycVerifiedDate}" />)</c:when>
                         <c:otherwise>
@@ -62,69 +80,49 @@
                             </c:if>
                         </c:otherwise>
                     </c:choose>
-                </td></tr>
-                <%-- CBS Sprint 1.2: KYC Risk, Expiry, PEP, and Customer Group fields --%>
-                <tr><td class="fw-bold">KYC Risk Category</td><td>
-                    <c:choose>
-                        <c:when test="${customer.kycRiskCategory == 'HIGH'}"><span class="fv-badge fv-badge-npa">HIGH</span></c:when>
-                        <c:when test="${customer.kycRiskCategory == 'LOW'}"><span class="fv-badge fv-badge-active">LOW</span></c:when>
-                        <c:otherwise><span class="fv-badge fv-badge-pending">MEDIUM</span></c:otherwise>
-                    </c:choose>
-                </td></tr>
-                <tr><td class="fw-bold">KYC Expiry Date</td><td>
-                    <c:choose>
-                        <c:when test="${customer.kycExpired}"><span class="fv-badge fv-badge-npa">EXPIRED</span> <c:out value="${customer.kycExpiryDate}" /></c:when>
-                        <c:when test="${customer.kycExpiringSoon}"><span class="fv-badge fv-badge-pending">Expiring Soon</span> <c:out value="${customer.kycExpiryDate}" /></c:when>
-                        <c:when test="${not empty customer.kycExpiryDate}"><c:out value="${customer.kycExpiryDate}" /></c:when>
-                        <c:otherwise>--</c:otherwise>
-                    </c:choose>
-                </td></tr>
+                </div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">KYC Risk Category</div><div class="fv-detail-value"><c:choose><c:when test="${customer.kycRiskCategory == 'HIGH'}"><span class="fv-badge fv-badge-npa">HIGH</span></c:when><c:when test="${customer.kycRiskCategory == 'LOW'}"><span class="fv-badge fv-badge-active">LOW</span></c:when><c:otherwise><span class="fv-badge fv-badge-pending">MEDIUM</span></c:otherwise></c:choose></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">KYC Expiry Date</div><div class="fv-detail-value"><c:choose><c:when test="${customer.kycExpired}"><span class="fv-badge fv-badge-npa">EXPIRED</span> <c:out value="${customer.kycExpiryDate}" /></c:when><c:when test="${customer.kycExpiringSoon}"><span class="fv-badge fv-badge-pending">Expiring Soon</span> <c:out value="${customer.kycExpiryDate}" /></c:when><c:when test="${not empty customer.kycExpiryDate}"><c:out value="${customer.kycExpiryDate}" /></c:when><c:otherwise>--</c:otherwise></c:choose></div></div>
                 <c:if test="${customer.rekycDue}">
-                <tr><td class="fw-bold">Re-KYC Status</td><td><span class="fv-badge fv-badge-npa"><i class="bi bi-exclamation-triangle"></i> RE-KYC DUE</span></td></tr>
+                <div class="fv-detail-item"><div class="fv-detail-label">Re-KYC Status</div><div class="fv-detail-value"><span class="fv-badge fv-badge-npa"><i class="bi bi-exclamation-triangle"></i> RE-KYC DUE</span></div></div>
                 </c:if>
-                <tr><td class="fw-bold">PEP (Politically Exposed)</td><td>
-                    <c:choose>
-                        <c:when test="${customer.pep}"><span class="fv-badge fv-badge-npa">YES - Enhanced Due Diligence Required</span></c:when>
-                        <c:otherwise>No</c:otherwise>
-                    </c:choose>
-                </td></tr>
+                <div class="fv-detail-item"><div class="fv-detail-label">PEP (Politically Exposed)</div><div class="fv-detail-value"><c:choose><c:when test="${customer.pep}"><span class="fv-badge fv-badge-npa">YES - Enhanced Due Diligence</span></c:when><c:otherwise>No</c:otherwise></c:choose></div></div>
                 <c:if test="${not empty customer.customerGroupName}">
-                <tr><td class="fw-bold">Customer Group</td><td><c:out value="${customer.customerGroupName}" /> (ID: <c:out value="${customer.customerGroupId}" />)</td></tr>
+                <div class="fv-detail-item"><div class="fv-detail-label">Customer Group</div><div class="fv-detail-value"><c:out value="${customer.customerGroupName}" /> (ID: <c:out value="${customer.customerGroupId}" />)</div></div>
                 </c:if>
-                <%-- CKYC / CERSAI Status --%>
-                <tr><td class="fw-bold">CKYC Status</td><td>
-                    <c:choose>
-                        <c:when test="${customer.ckycStatus == 'REGISTERED'}"><span class="fv-badge fv-badge-active">REGISTERED</span> KIN: <c:out value="${customer.ckycNumber}" /></c:when>
-                        <c:when test="${customer.ckycStatus == 'UPLOADED'}"><span class="fv-badge fv-badge-pending">UPLOADED</span></c:when>
-                        <c:when test="${customer.ckycStatus == 'FAILED'}"><span class="fv-badge fv-badge-npa">FAILED</span></c:when>
-                        <c:otherwise><span class="text-muted">Not Registered</span></c:otherwise>
-                    </c:choose>
-                </td></tr>
-                <c:if test="${not empty customer.ckycNumber}"><tr><td class="fw-bold">CKYC Number (KIN)</td><td><c:out value="${customer.ckycNumber}" /></td></tr></c:if>
-                <tr><td class="fw-bold">KYC Mode</td><td><c:choose><c:when test="${customer.kycMode == 'IN_PERSON'}">In-Person</c:when><c:when test="${customer.kycMode == 'VIDEO_KYC'}">Video KYC</c:when><c:when test="${customer.kycMode == 'DIGITAL_KYC'}">Digital KYC</c:when><c:when test="${customer.kycMode == 'CKYC_DOWNLOAD'}">CKYC Download</c:when><c:otherwise>--</c:otherwise></c:choose></td></tr>
-                <c:if test="${not empty customer.photoIdType}"><tr><td class="fw-bold">Photo ID</td><td><c:choose><c:when test="${customer.photoIdType == 'PASSPORT'}">Passport</c:when><c:when test="${customer.photoIdType == 'VOTER_ID'}">Voter ID</c:when><c:when test="${customer.photoIdType == 'DRIVING_LICENSE'}">Driving License</c:when><c:when test="${customer.photoIdType == 'PAN_CARD'}">PAN Card</c:when><c:when test="${customer.photoIdType == 'AADHAAR'}">Aadhaar</c:when><c:when test="${customer.photoIdType == 'NREGA_CARD'}">NREGA Card</c:when><c:otherwise><c:out value="${customer.photoIdType}" /></c:otherwise></c:choose><c:if test="${not empty customer.photoIdNumber}"> &mdash; <c:out value="${customer.photoIdNumber}" /></c:if></td></tr></c:if>
-                <c:if test="${not empty customer.addressProofType}"><tr><td class="fw-bold">Address Proof</td><td><c:choose><c:when test="${customer.addressProofType == 'PASSPORT'}">Passport</c:when><c:when test="${customer.addressProofType == 'VOTER_ID'}">Voter ID</c:when><c:when test="${customer.addressProofType == 'DRIVING_LICENSE'}">Driving License</c:when><c:when test="${customer.addressProofType == 'UTILITY_BILL'}">Utility Bill</c:when><c:when test="${customer.addressProofType == 'BANK_STATEMENT'}">Bank Statement</c:when><c:when test="${customer.addressProofType == 'AADHAAR'}">Aadhaar</c:when><c:when test="${customer.addressProofType == 'RATION_CARD'}">Ration Card</c:when><c:when test="${customer.addressProofType == 'RENT_AGREEMENT'}">Rent Agreement</c:when><c:otherwise><c:out value="${customer.addressProofType}" /></c:otherwise></c:choose><c:if test="${not empty customer.addressProofNumber}"> &mdash; <c:out value="${customer.addressProofNumber}" /></c:if></td></tr></c:if>
-                <c:if test="${customer.videoKycDone}"><tr><td class="fw-bold">Video KYC</td><td><span class="fv-badge fv-badge-active">Completed</span></td></tr></c:if>
-                <tr><td class="fw-bold">Annual Income Band</td><td><c:choose><c:when test="${customer.annualIncomeBand == 'BELOW_1L'}">&lt; 1 Lakh</c:when><c:when test="${customer.annualIncomeBand == '1L_TO_5L'}">1 - 5 Lakhs</c:when><c:when test="${customer.annualIncomeBand == '5L_TO_10L'}">5 - 10 Lakhs</c:when><c:when test="${customer.annualIncomeBand == '10L_TO_25L'}">10 - 25 Lakhs</c:when><c:when test="${customer.annualIncomeBand == '25L_TO_1CR'}">25 Lakhs - 1 Crore</c:when><c:when test="${customer.annualIncomeBand == 'ABOVE_1CR'}">&gt; 1 Crore</c:when><c:otherwise>--</c:otherwise></c:choose></td></tr>
-                <tr><td class="fw-bold">CIBIL Score</td><td><c:out value="${customer.cibilScore}" /></td></tr>
-                <tr><td class="fw-bold">Branch</td><td><a href="${pageContext.request.contextPath}/branch/view/${customer.branch.id}"><c:out value="${customer.branch.branchCode}" /> - <c:out value="${customer.branch.branchName}" /></a></td></tr>
-                <tr><td class="fw-bold">Monthly Income</td><td class="amount"><c:if test="${customer.monthlyIncome != null}"><fmt:formatNumber value="${customer.monthlyIncome}" type="number" maxFractionDigits="2" /> INR</c:if><c:if test="${customer.monthlyIncome == null}">--</c:if></td></tr>
-                <tr><td class="fw-bold">Max Borrowing Limit</td><td class="amount"><c:if test="${customer.maxBorrowingLimit != null}"><fmt:formatNumber value="${customer.maxBorrowingLimit}" type="number" maxFractionDigits="2" /> INR</c:if><c:if test="${customer.maxBorrowingLimit == null}">--</c:if></td></tr>
-                <tr><td class="fw-bold">Employment</td><td><c:choose><c:when test="${customer.employmentType == 'SALARIED'}">Salaried</c:when><c:when test="${customer.employmentType == 'SELF_EMPLOYED'}">Self Employed</c:when><c:when test="${customer.employmentType == 'BUSINESS'}">Business</c:when><c:when test="${customer.employmentType == 'RETIRED'}">Retired</c:when><c:when test="${customer.employmentType == 'OTHER'}">Other</c:when><c:otherwise>--</c:otherwise></c:choose><c:if test="${not empty customer.employerName}"> &mdash; <c:out value="${customer.employerName}" /></c:if></td></tr>
-                <%-- Nominee Details per RBI Nomination Guidelines --%>
+                <%-- === CKYC / CERSAI === --%>
+                <div class="fv-detail-section-title"><i class="bi bi-file-earmark-check"></i> CKYC / CERSAI</div>
+                <div class="fv-detail-item"><div class="fv-detail-label">CKYC Status</div><div class="fv-detail-value"><c:choose><c:when test="${customer.ckycStatus == 'REGISTERED'}"><span class="fv-badge fv-badge-active">REGISTERED</span> KIN: <c:out value="${customer.ckycNumber}" /></c:when><c:when test="${customer.ckycStatus == 'UPLOADED'}"><span class="fv-badge fv-badge-pending">UPLOADED</span></c:when><c:when test="${customer.ckycStatus == 'FAILED'}"><span class="fv-badge fv-badge-npa">FAILED</span></c:when><c:otherwise><span class="text-muted">Not Registered</span></c:otherwise></c:choose></div></div>
+                <c:if test="${not empty customer.ckycNumber}"><div class="fv-detail-item"><div class="fv-detail-label">CKYC Number (KIN)</div><div class="fv-detail-value"><c:out value="${customer.ckycNumber}" /></div></div></c:if>
+                <div class="fv-detail-item"><div class="fv-detail-label">KYC Mode</div><div class="fv-detail-value"><c:choose><c:when test="${customer.kycMode == 'IN_PERSON'}">In-Person</c:when><c:when test="${customer.kycMode == 'VIDEO_KYC'}">Video KYC</c:when><c:when test="${customer.kycMode == 'DIGITAL_KYC'}">Digital KYC</c:when><c:when test="${customer.kycMode == 'CKYC_DOWNLOAD'}">CKYC Download</c:when><c:otherwise>--</c:otherwise></c:choose></div></div>
+                <c:if test="${not empty customer.photoIdType}"><div class="fv-detail-item"><div class="fv-detail-label">Photo ID</div><div class="fv-detail-value"><c:choose><c:when test="${customer.photoIdType == 'PASSPORT'}">Passport</c:when><c:when test="${customer.photoIdType == 'VOTER_ID'}">Voter ID</c:when><c:when test="${customer.photoIdType == 'DRIVING_LICENSE'}">Driving License</c:when><c:when test="${customer.photoIdType == 'PAN_CARD'}">PAN Card</c:when><c:when test="${customer.photoIdType == 'AADHAAR'}">Aadhaar</c:when><c:when test="${customer.photoIdType == 'NREGA_CARD'}">NREGA Card</c:when><c:otherwise><c:out value="${customer.photoIdType}" /></c:otherwise></c:choose><c:if test="${not empty customer.photoIdNumber}"> &mdash; <c:out value="${customer.photoIdNumber}" /></c:if></div></div></c:if>
+                <c:if test="${not empty customer.addressProofType}"><div class="fv-detail-item"><div class="fv-detail-label">Address Proof</div><div class="fv-detail-value"><c:choose><c:when test="${customer.addressProofType == 'PASSPORT'}">Passport</c:when><c:when test="${customer.addressProofType == 'VOTER_ID'}">Voter ID</c:when><c:when test="${customer.addressProofType == 'DRIVING_LICENSE'}">Driving License</c:when><c:when test="${customer.addressProofType == 'UTILITY_BILL'}">Utility Bill</c:when><c:when test="${customer.addressProofType == 'BANK_STATEMENT'}">Bank Statement</c:when><c:when test="${customer.addressProofType == 'AADHAAR'}">Aadhaar</c:when><c:when test="${customer.addressProofType == 'RATION_CARD'}">Ration Card</c:when><c:when test="${customer.addressProofType == 'RENT_AGREEMENT'}">Rent Agreement</c:when><c:otherwise><c:out value="${customer.addressProofType}" /></c:otherwise></c:choose><c:if test="${not empty customer.addressProofNumber}"> &mdash; <c:out value="${customer.addressProofNumber}" /></c:if></div></div></c:if>
+                <c:if test="${customer.videoKycDone}"><div class="fv-detail-item"><div class="fv-detail-label">Video KYC</div><div class="fv-detail-value"><span class="fv-badge fv-badge-active">Completed</span></div></div></c:if>
+                <%-- === Income & Exposure (RBI Norms) === --%>
+                <div class="fv-detail-section-title"><i class="bi bi-currency-rupee"></i> Income &amp; Exposure (RBI Norms)</div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Annual Income Band</div><div class="fv-detail-value"><c:choose><c:when test="${customer.annualIncomeBand == 'BELOW_1L'}">&lt; 1 Lakh</c:when><c:when test="${customer.annualIncomeBand == '1L_TO_5L'}">1 - 5 Lakhs</c:when><c:when test="${customer.annualIncomeBand == '5L_TO_10L'}">5 - 10 Lakhs</c:when><c:when test="${customer.annualIncomeBand == '10L_TO_25L'}">10 - 25 Lakhs</c:when><c:when test="${customer.annualIncomeBand == '25L_TO_1CR'}">25 Lakhs - 1 Crore</c:when><c:when test="${customer.annualIncomeBand == 'ABOVE_1CR'}">&gt; 1 Crore</c:when><c:otherwise>--</c:otherwise></c:choose></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Monthly Income</div><div class="fv-detail-value amount"><c:if test="${customer.monthlyIncome != null}">&#8377; <fmt:formatNumber value="${customer.monthlyIncome}" type="number" maxFractionDigits="2" /></c:if><c:if test="${customer.monthlyIncome == null}">--</c:if></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Max Borrowing Limit</div><div class="fv-detail-value amount"><c:if test="${customer.maxBorrowingLimit != null}">&#8377; <fmt:formatNumber value="${customer.maxBorrowingLimit}" type="number" maxFractionDigits="2" /></c:if><c:if test="${customer.maxBorrowingLimit == null}">--</c:if></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Employment</div><div class="fv-detail-value"><c:choose><c:when test="${customer.employmentType == 'SALARIED'}">Salaried</c:when><c:when test="${customer.employmentType == 'SELF_EMPLOYED'}">Self Employed</c:when><c:when test="${customer.employmentType == 'BUSINESS'}">Business</c:when><c:when test="${customer.employmentType == 'RETIRED'}">Retired</c:when><c:when test="${customer.employmentType == 'OTHER'}">Other</c:when><c:otherwise>--</c:otherwise></c:choose><c:if test="${not empty customer.employerName}"> &mdash; <c:out value="${customer.employerName}" /></c:if></div></div>
+
+                <%-- === Nominee Details (RBI Nomination Guidelines) === --%>
                 <c:if test="${not empty customer.nomineeDob or not empty customer.nomineeAddress or not empty customer.nomineeGuardianName}">
-                <tr><td class="fw-bold">Nominee DOB</td><td><c:out value="${customer.nomineeDob}" default="--" /></td></tr>
-                <c:if test="${not empty customer.nomineeGuardianName}"><tr><td class="fw-bold">Nominee Guardian</td><td><c:out value="${customer.nomineeGuardianName}" /></td></tr></c:if>
-                <c:if test="${not empty customer.nomineeAddress}"><tr><td class="fw-bold">Nominee Address</td><td><c:out value="${customer.nomineeAddress}" /></td></tr></c:if>
+                <div class="fv-detail-section-title"><i class="bi bi-people"></i> Nominee Details (RBI Nomination Guidelines)</div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Nominee DOB</div><div class="fv-detail-value"><c:out value="${customer.nomineeDob}" default="--" /></div></div>
+                <c:if test="${not empty customer.nomineeGuardianName}"><div class="fv-detail-item"><div class="fv-detail-label">Nominee Guardian</div><div class="fv-detail-value"><c:out value="${customer.nomineeGuardianName}" /></div></div></c:if>
+                <c:if test="${not empty customer.nomineeAddress}"><div class="fv-detail-item"><div class="fv-detail-label">Nominee Address</div><div class="fv-detail-value"><c:out value="${customer.nomineeAddress}" /></div></div></c:if>
                 </c:if>
-                <tr><td class="fw-bold">Status</td><td>
-                    <c:choose>
-                        <c:when test="${customer.active}"><span class="fv-badge fv-badge-active">Active</span></c:when>
-                        <c:otherwise><span class="fv-badge fv-badge-rejected">Inactive</span></c:otherwise>
-                    </c:choose>
-                </td></tr>
-                </tbody>
-            </table>
+
+                <%-- === Audit Metadata (RBI IT Governance Direction 2023 §8.3) === --%>
+                <div class="fv-detail-section-title"><i class="bi bi-clock-history"></i> Record Audit Trail</div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Created By</div><div class="fv-detail-value"><c:out value="${customer.createdBy}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Created Date</div><div class="fv-detail-value"><c:out value="${customer.createdAt}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Last Modified By</div><div class="fv-detail-value"><c:out value="${customer.lastModifiedBy}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Last Modified Date</div><div class="fv-detail-value"><c:out value="${customer.lastModifiedAt}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Record Version</div><div class="fv-detail-value"><c:out value="${customer.version}" default="0" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Audit Hash</div><div class="fv-detail-value"><small class="font-monospace text-muted"><c:out value="${customer.auditHash}" default="--" /></small></div></div>
+
+            </div><%-- end fv-detail-grid --%>
         </div>
     </div>
 
@@ -342,9 +340,11 @@
                                     <form method="post" action="${pageContext.request.contextPath}/customer/document/verify/${doc.id}" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                         <input type="hidden" name="action" value="REJECT" />
-                                        <input type="hidden" name="rejectionReason" value="" id="rejReason_${doc.id}" />
-                                        <button type="submit" class="btn btn-sm btn-danger" title="Reject document"
-                                            onclick="var r=prompt('Rejection reason (mandatory):'); if(!r||r.trim().length<3){alert('Reason is mandatory');return false;} document.getElementById('rejReason_${doc.id}').value=r; return confirm('Reject this document?');">
+                                        <input type="hidden" name="rejectionReason" value="" class="fv-reason-field" />
+                                        <button type="button" class="btn btn-sm btn-danger" title="Reject document"
+                                            data-fv-reason-prompt="Rejection reason (mandatory):"
+                                            data-fv-reason-confirm="Reject this document?"
+                                            onclick="fvPromptReason(this);">
                                             <i class="bi bi-x-circle"></i> Reject</button>
                                     </form>
                                 </c:if>

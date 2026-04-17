@@ -5,11 +5,17 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-<c:if test="${not empty success}"><div class="alert alert-success"><c:out value="${success}"/></div></c:if>
-<c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+<ul class="fv-breadcrumb">
+    <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+    <li><a href="${pageContext.request.contextPath}/deposit/accounts">CASA Accounts</a></li>
+    <li class="active">Fund Transfer</li>
+</ul>
+
+<c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}"/></div></c:if>
+<c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
 
 <div class="fv-card">
-    <div class="card-header">Internal Fund Transfer <span class="badge bg-info ms-2">Finacle TRAN_POSTING</span></div>
+    <div class="card-header"><i class="bi bi-arrow-left-right"></i> Internal Fund Transfer <span class="badge bg-info ms-2">Finacle TRAN_POSTING</span> <div class="float-end"><a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/deposit/accounts"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a></div></div>
     <div class="card-body">
     <form method="post" action="${pageContext.request.contextPath}/deposit/transfer" class="fv-form" id="transferForm">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
@@ -107,9 +113,29 @@ document.getElementById('transferForm').addEventListener('submit', function(e) {
     var to = document.getElementById('toAccount').value;
     if (from && to && from === to) {
         e.preventDefault();
-        alert('Source and target accounts cannot be the same.');
+        /* CBS Tier-1: Use field-level validation instead of browser alert().
+           Per Finacle TRAN_POSTING: same-account transfers are blocked with
+           inline error feedback, not modal dialogs that can be suppressed. */
+        var toSelect = document.getElementById('toAccount');
+        toSelect.classList.add('is-invalid');
+        var errDiv = document.getElementById('sameAccountError');
+        if (!errDiv) {
+            errDiv = document.createElement('div');
+            errDiv.id = 'sameAccountError';
+            errDiv.className = 'text-danger small mt-1';
+            errDiv.textContent = 'Source and target accounts cannot be the same. Please select a different target account.';
+            toSelect.parentNode.appendChild(errDiv);
+        }
+        errDiv.style.display = 'block';
+        toSelect.focus();
         return false;
     }
+});
+/* Clear same-account error when target account changes */
+document.getElementById('toAccount').addEventListener('change', function() {
+    this.classList.remove('is-invalid');
+    var errDiv = document.getElementById('sameAccountError');
+    if (errDiv) errDiv.style.display = 'none';
 });
 </script>
 
