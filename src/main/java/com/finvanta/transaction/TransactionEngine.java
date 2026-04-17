@@ -314,6 +314,9 @@ public class TransactionEngine {
                     request.getAmount(), request.getTransactionType(), request.getValueDate());
         }
 
+        log.debug("Transaction pipeline: STEP 6 (limits) passed — entering STEP 7 (maker-checker). module={}, type={}, amount={}",
+                request.getSourceModule(), request.getTransactionType(), request.getAmount());
+
         // ================================================================
         // STEP 7: Maker-Checker Gate
         // Per RBI Internal Controls: transactions above the per-transaction limit
@@ -371,6 +374,9 @@ public class TransactionEngine {
                     LocalDateTime.now(),
                     postingStatus);
         }
+
+        log.debug("Transaction pipeline: STEP 7 (maker-checker) passed — auto-approved. Entering STEP 8 (GL posting). module={}, type={}",
+                request.getSourceModule(), request.getTransactionType());
 
         // ================================================================
         // STEP 8: Double-Entry Journal Posting
@@ -431,6 +437,9 @@ public class TransactionEngine {
             // Always clear the engine context token — prevents stale tokens on thread pool reuse
             AccountingService.clearEngineToken();
         }
+
+        log.debug("Transaction pipeline: STEP 8 (GL posting) completed. journalRef={}, debit={}, credit={}",
+                journalEntry.getJournalRef(), journalEntry.getTotalDebit(), journalEntry.getTotalCredit());
 
         // ================================================================
         // STEP 9: Voucher Generation

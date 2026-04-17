@@ -269,15 +269,19 @@ public class DepositController {
             @RequestParam(required = false) String narration,
             RedirectAttributes ra) {
         try {
+            log.debug("Deposit request received: account={}, amount={}, narration={}", accountNumber, amount, narration);
             // CBS: Server-side validation — defense-in-depth per OWASP / RBI IT Governance
             if (amount == null || amount.signum() <= 0) {
                 throw new BusinessException("INVALID_AMOUNT", "Deposit amount must be positive");
             }
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+            log.debug("Deposit: calling service. account={}, amount={}, businessDate={}", accountNumber, amount, businessDate);
             DepositTransaction txn =
                     depositService.deposit(accountNumber, amount, businessDate, narration, null, "BRANCH");
+            log.debug("Deposit completed: account={}, voucher={}, txnRef={}", accountNumber, txn.getVoucherNumber(), txn.getTransactionRef());
             ra.addFlashAttribute("success", "Deposit of INR " + amount + " posted. Voucher: " + txn.getVoucherNumber());
         } catch (Exception e) {
+            log.error("Deposit failed: account={}, amount={}, error={}", accountNumber, amount, e.getMessage(), e);
             ra.addFlashAttribute("error", e.getMessage());
         }
         return "redirect:/deposit/view/" + accountNumber;
