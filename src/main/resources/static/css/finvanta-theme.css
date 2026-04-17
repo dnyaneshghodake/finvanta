@@ -195,20 +195,22 @@ body {
 .fv-stat-card.stat-success { border-top-color: var(--fv-success); }
 .fv-stat-card.stat-success .stat-value, .fv-stat-card.stat-success .stat-icon { color: var(--fv-success); }
 
-/* Tables CBS High Density */
-.fv-table { font-size: 12px; margin-bottom: 0; width: 100%; table-layout: auto; }
+/* Tables CBS Standard Density — readable on 1366×768 branch monitors and above.
+   Previous "High Density" (11px/12px, 6px padding, 250px max-width) was too compact
+   when combined with DataTables styling. Bumped to 13px body / 12px header / 10px 12px
+   padding for comfortable readability per Finacle Client standard density. */
+.fv-table { font-size: 13px; margin-bottom: 0; width: 100%; table-layout: auto; }
 .fv-table thead th {
     background: #e8eaf6; color: var(--fv-primary);
-    font-weight: 600; font-size: 11px;
+    font-weight: 600; font-size: 12px;
     text-transform: uppercase; letter-spacing: 0.3px;
-    padding: 8px 8px;
+    padding: 10px 12px;
     border-bottom: 2px solid #c5cae9;
     white-space: nowrap; vertical-align: middle;
 }
 .fv-table tbody td {
-    padding: 6px 8px; vertical-align: middle;
+    padding: 8px 12px; vertical-align: middle;
     border-bottom: 1px solid #f0f0f0;
-    max-width: 250px; overflow: hidden; text-overflow: ellipsis;
 }
 .fv-table tbody tr:hover { background: #f5f7fa; }
 .fv-table .amount { font-family: 'Courier New', Consolas, monospace; font-weight: 600; text-align: right; white-space: nowrap; }
@@ -500,8 +502,8 @@ body {
     .fv-main { margin-left: 60px; max-width: calc(100vw - 60px); }
     .fv-footer { margin-left: 60px; }
     /* Tighter table padding on smaller screens */
-    .fv-table thead th { padding: 6px 4px; font-size: 10px; }
-    .fv-table tbody td { padding: 4px 4px; font-size: 11px; max-width: 150px; }
+    .fv-table thead th { padding: 6px 6px; font-size: 11px; }
+    .fv-table tbody td { padding: 5px 6px; font-size: 12px; }
     .fv-table .btn-sm { padding: 1px 4px; font-size: 10px; }
     /* Detail grid: 3-col → 2-col on smaller screens (1366×768 branch monitors) */
     .fv-detail-grid.fv-detail-3col { grid-template-columns: 1fr 1fr; }
