@@ -46,11 +46,12 @@
                         <tr>
                             <td><c:out value="${cust.customerNumber}" /></td>
                             <td><c:out value="${cust.fullName}" /></td>
-                            <%-- CBS: PII masked in list view per RBI IT Governance / UIDAI.
-                                 Full PAN/Mobile are decrypted but only last 4 chars shown.
+                            <%-- CBS Tier-1 (Gap 6): PII masked via entity-level accessors per RBI IT Governance / UIDAI.
+                                 Pre-masked values from Customer.getMaskedPan() / getMaskedMobile()
+                                 — decrypted PAN/Mobile never reach the JSP template engine.
                                  Per Finacle CIF_LIST: PII is always masked in list views. --%>
-                            <td><c:if test="${not empty cust.panNumber}"><c:choose><c:when test="${cust.panNumber.length() > 4}">XXXXXX<c:out value="${cust.panNumber.substring(cust.panNumber.length() - 4)}" /></c:when><c:otherwise>****</c:otherwise></c:choose></c:if></td>
-                            <td><c:if test="${not empty cust.mobileNumber}"><c:choose><c:when test="${cust.mobileNumber.length() > 4}">XXXXXX<c:out value="${cust.mobileNumber.substring(cust.mobileNumber.length() - 4)}" /></c:when><c:otherwise>****</c:otherwise></c:choose></c:if></td>
+                            <td><c:out value="${cust.maskedPan}" /></td>
+                            <td><c:out value="${cust.maskedMobile}" /></td>
                             <td>
                                 <c:choose>
                                     <c:when test="${cust.kycVerified}"><span class="fv-badge fv-badge-active">Verified</span></c:when>

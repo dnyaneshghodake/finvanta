@@ -435,6 +435,37 @@ public class Customer extends BaseEntity {
         return firstName + " " + lastName;
     }
 
+    // === CBS Tier-1 (Gap 6): Pre-masked PII accessors for view layer ===
+    //
+    // Per RBI IT Governance Direction 2023 / UIDAI Aadhaar Act 2016:
+    // PII must be masked before it reaches the presentation layer. These
+    // @Transient computed properties expose pre-masked values so JSP views
+    // use ${cust.maskedPan} instead of decrypting the full PAN in the template
+    // and masking inline. This ensures decrypted PII never traverses the
+    // template engine pipeline — masking happens at the entity boundary.
+    //
+    // Per Finacle CIF_LIST: PII columns in list views always show masked values.
+    // The view page uses controller-provided masked values (PiiMaskingUtil)
+    // for consistency; these accessors extend the same pattern to list views.
+
+    /** Masked PAN for list/display — never exposes full decrypted PAN to view layer. */
+    @Transient
+    public String getMaskedPan() {
+        return com.finvanta.util.PiiMaskingUtil.maskPan(this.panNumber);
+    }
+
+    /** Masked Aadhaar for list/display — per UIDAI, only last 4 digits visible. */
+    @Transient
+    public String getMaskedAadhaar() {
+        return com.finvanta.util.PiiMaskingUtil.maskAadhaar(this.aadhaarNumber);
+    }
+
+    /** Masked mobile for list/display — only last 4 digits visible. */
+    @Transient
+    public String getMaskedMobile() {
+        return com.finvanta.util.PiiMaskingUtil.maskMobile(this.mobileNumber);
+    }
+
     /**
      * Computes CKYC account type from customer type.
      * Per CERSAI: INDIVIDUAL/JOINT/MINOR/NRI → INDIVIDUAL; rest → NON_INDIVIDUAL

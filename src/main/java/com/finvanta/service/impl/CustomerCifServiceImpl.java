@@ -85,6 +85,12 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         validateCustomerFields(tid, c.getFirstName(), c.getLastName(), c.getPanNumber(),
                 c.getAadhaarNumber(), c.getMobileNumber(), c.getPinCode(), c.getEmail());
 
+        // CBS Tier-1 (Gap 4): CKYC mandatory field validation per CERSAI Specification v2.0.
+        // Gender, DOB, father's name, mother's name are mandatory for INDIVIDUAL-type customers.
+        // Without this, a crafted POST bypassing HTML5 required attributes can create a CIF
+        // with null CKYC-mandatory fields — blocking subsequent CERSAI upload.
+        validateCkycMandatoryFields(c);
+
         Branch branch = branchRepo.findById(branchId)
                 .filter(b -> b.getTenantId().equals(tid) && b.isActive())
                 .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "" + branchId));
@@ -150,6 +156,18 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                 .orElseThrow(() -> new BusinessException(
                         "CUSTOMER_NOT_FOUND", "" + customerId));
         branchValidator.validateAccess(c.getBranch());
+
+        // CBS Tier-1 (Gap 8): Audit PII access per RBI IT Governance Direction 2023 §8.3.
+        // Every read of customer PII (even view-only) must be logged for forensic investigation:
+        // "who viewed which customer's data when." Per Finacle AUDIT_TRAIL / Temenos AUDIT.LOG:
+        // CIF_VIEW events enable compliance to answer RBI inspector queries like
+        // "show all users who accessed customer X's record in the last 30 days."
+        // Uses REQUIRES_NEW propagation (AuditService) so audit persists even if the
+        // enclosing read-only transaction has no write intent.
+        auditSvc.logEvent("Customer", c.getId(), "CIF_VIEW", null,
+                c.getCustomerNumber(), "CIF",
+                "Customer record viewed by " + SecurityUtil.getCurrentUsername());
+
         return c;
     }
 
@@ -468,10 +486,18 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                         "Customer with this PAN already exists. Per RBI KYC norms, one PAN = one CIF.");
         }
 
-        // Aadhaar format: exactly 12 digits
+        // Aadhaar format: exactly 12 digits + Verhoeff checksum validation
         if (aadhaarNumber != null && !aadhaarNumber.isBlank()) {
             if (!aadhaarNumber.matches("^[0-9]{12}$"))
                 throw new BusinessException("INVALID_AADHAAR_FORMAT", "Aadhaar must be exactly 12 digits.");
+            // CBS Tier-1 (Gap 5): Verhoeff checksum validation per UIDAI specification.
+            // The 12th digit of Aadhaar is a check digit computed using the Verhoeff algorithm.
+            // Without this, any random 12-digit number passes format validation (e.g., 000000000000).
+            // Per Finacle CIF_MASTER / Temenos CUSTOMER: Aadhaar check digit is validated at intake.
+            if (!isValidVerhoeff(aadhaarNumber))
+                throw new BusinessException("INVALID_AADHAAR_CHECKSUM",
+                        "Aadhaar number failed Verhoeff checksum validation. "
+                                + "Please verify the number and re-enter.");
             if (customerRepo.existsByTenantIdAndAadhaarHash(tid, PiiHashUtil.computeSha256(aadhaarNumber)))
                 throw new BusinessException("DUPLICATE_AADHAAR",
                         "Customer with this Aadhaar already exists. Duplicate CIFs are prohibited per RBI KYC.");
@@ -498,6 +524,101 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                         "Email address format is invalid.");
         }
     }
+
+    /**
+     * CBS CKYC Mandatory Field Validation per CERSAI Specification v2.0.
+     *
+     * <p>For INDIVIDUAL-type customers (INDIVIDUAL, JOINT, MINOR, NRI), CERSAI
+     * requires: gender, date of birth, and father's name. Mother's name is also
+     * mandatory per CERSAI v2.0 Section 4.2.
+     *
+     * <p>Non-INDIVIDUAL types (HUF, PARTNERSHIP, COMPANY, TRUST, GOVERNMENT) have
+     * different mandatory fields handled by the CKYC upload batch — not validated
+     * here because the fields are populated during entity registration, not CIF creation.
+     *
+     * <p>This validation runs on CREATE only. On UPDATE, these fields are mutable
+     * (can be corrected during re-KYC) and are validated by {@code validateMutableFields}.
+     *
+     * @param c the customer entity being created
+     */
+    private void validateCkycMandatoryFields(Customer c) {
+        String type = c.getCustomerType() != null ? c.getCustomerType() : "INDIVIDUAL";
+        // CKYC mandatory fields apply to INDIVIDUAL-type customers per CERSAI spec
+        boolean isIndividualType = "INDIVIDUAL".equals(type) || "JOINT".equals(type)
+                || "MINOR".equals(type) || "NRI".equals(type);
+        if (!isIndividualType) return;
+
+        if (c.getGender() == null || c.getGender().isBlank())
+            throw new BusinessException("GENDER_REQUIRED",
+                    "Gender is mandatory for individual customers per CERSAI CKYC specification v2.0.");
+        if (!"M".equals(c.getGender()) && !"F".equals(c.getGender()) && !"T".equals(c.getGender()))
+            throw new BusinessException("INVALID_GENDER",
+                    "Gender must be M (Male), F (Female), or T (Transgender) per NALSA 2014 / CERSAI.");
+        if (c.getDateOfBirth() == null)
+            throw new BusinessException("DOB_REQUIRED",
+                    "Date of birth is mandatory for individual customers per CERSAI CKYC specification v2.0.");
+        if (c.getFatherName() == null || c.getFatherName().isBlank())
+            throw new BusinessException("FATHER_NAME_REQUIRED",
+                    "Father's name is mandatory for individual customers per CERSAI CKYC specification v2.0.");
+        if (c.getMotherName() == null || c.getMotherName().isBlank())
+            throw new BusinessException("MOTHER_NAME_REQUIRED",
+                    "Mother's name is mandatory for individual customers per CERSAI CKYC specification v2.0.");
+    }
+
+    // ========================================================================
+    // AADHAAR VERHOEFF CHECKSUM (Gap 5 — per UIDAI specification)
+    // ========================================================================
+
+    /**
+     * Validates an Aadhaar number using the Verhoeff checksum algorithm.
+     *
+     * <p>Per UIDAI specification: the 12th digit of Aadhaar is a check digit computed
+     * using the Verhoeff algorithm (a dihedral group D5-based checksum). This catches
+     * single-digit errors, all adjacent transpositions, and most twin errors.
+     *
+     * <p>Reference: Verhoeff, J. (1969). "Error Detecting Decimal Codes".
+     * Mathematical Centre Tract 29, Amsterdam.
+     *
+     * @param number the 12-digit Aadhaar number
+     * @return true if the Verhoeff checksum is valid
+     */
+    static boolean isValidVerhoeff(String number) {
+        if (number == null || number.isEmpty()) return false;
+        int c = 0;
+        int len = number.length();
+        for (int i = len - 1; i >= 0; i--) {
+            int digit = number.charAt(i) - '0';
+            if (digit < 0 || digit > 9) return false;
+            c = VERHOEFF_D[c][VERHOEFF_P[((len - 1 - i) % 8)][digit]];
+        }
+        return c == 0;
+    }
+
+    // Verhoeff multiplication table (D5 dihedral group)
+    private static final int[][] VERHOEFF_D = {
+            {0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+            {1, 2, 3, 4, 0, 6, 7, 8, 9, 5},
+            {2, 3, 4, 0, 1, 7, 8, 9, 5, 6},
+            {3, 4, 0, 1, 2, 8, 9, 5, 6, 7},
+            {4, 0, 1, 2, 3, 9, 5, 6, 7, 8},
+            {5, 9, 8, 7, 6, 0, 4, 3, 2, 1},
+            {6, 5, 9, 8, 7, 1, 0, 4, 3, 2},
+            {7, 6, 5, 9, 8, 2, 1, 0, 4, 3},
+            {8, 7, 6, 5, 9, 3, 2, 1, 0, 4},
+            {9, 8, 7, 6, 5, 4, 3, 2, 1, 0}
+    };
+
+    // Verhoeff permutation table
+    private static final int[][] VERHOEFF_P = {
+            {0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+            {1, 5, 7, 6, 2, 8, 3, 0, 9, 4},
+            {5, 8, 0, 3, 7, 9, 6, 1, 4, 2},
+            {8, 9, 1, 6, 0, 4, 3, 5, 2, 7},
+            {9, 4, 5, 3, 1, 2, 6, 8, 7, 0},
+            {4, 2, 8, 6, 5, 7, 3, 9, 0, 1},
+            {2, 7, 9, 3, 8, 0, 6, 4, 1, 5},
+            {7, 0, 4, 6, 9, 1, 3, 2, 5, 8}
+    };
 
     /**
      * CBS Mutable Field Validation for customer update operations.
