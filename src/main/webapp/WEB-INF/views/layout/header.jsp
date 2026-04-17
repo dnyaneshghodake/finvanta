@@ -19,5 +19,6 @@
      Hidden on screen, visible only in @media print. Shows bank name + timestamp. --%>
 <div class="fv-print-header">
     <h2>FINVANTA — Core Banking System</h2>
-    <small><c:out value="${pageTitle}" default="" /> | Branch: <c:out value="${userBranchCode}" default="--" /> | Printed by: <c:out value="${pageContext.request.userPrincipal.name}" default="" /></small>
+    <small><c:out value="${pageTitle}" default="" /> | Branch: <c:out value="${userBranchCode}" default="--" /> | Printed by: <c:out value="${pageContext.request.userPrincipal.name}" default="" /> | <span id="fvPrintTimestamp"></span></small>
+    <script>document.getElementById('fvPrintTimestamp').textContent='Printed: '+new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});</script>
 </div>

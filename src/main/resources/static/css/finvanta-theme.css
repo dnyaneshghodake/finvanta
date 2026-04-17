@@ -400,6 +400,21 @@ body {
 /* CBS PRINT-ONLY HEADER — visible only during print */
 .fv-print-header { display: none; }
 
+/* ================================================================
+   CBS SESSION TIMEOUT WARNING — Per Finacle session countdown banner
+   Fixed bar at bottom of viewport, slides up when session nears expiry.
+   ================================================================ */
+.fv-session-warning {
+    display: none; position: fixed; bottom: 0; left: var(--fv-sidebar-width); right: 0;
+    background: #fff3e0; color: #e65100; border-top: 2px solid #ef6c00;
+    padding: 10px 20px; font-size: 13px; font-weight: 500;
+    z-index: 9998; text-align: center;
+    box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
+    animation: fv-slide-up 0.3s ease;
+}
+.fv-session-warning.active { display: block; }
+@keyframes fv-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
 /* Login Page */
 .fv-login-wrapper { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--fv-sidebar-bg) 0%, var(--fv-primary) 100%); }
 .fv-login-card { background: #ffffff; border-radius: 6px; padding: 36px; width: 380px; box-shadow: 0 16px 48px rgba(0,0,0,0.3); }
@@ -420,6 +435,10 @@ body {
     .fv-table thead th { padding: 6px 4px; font-size: 10px; }
     .fv-table tbody td { padding: 4px 4px; font-size: 11px; max-width: 150px; }
     .fv-table .btn-sm { padding: 1px 4px; font-size: 10px; }
+    /* Detail grid: 3-col → 2-col on smaller screens (1366×768 branch monitors) */
+    .fv-detail-grid.fv-detail-3col { grid-template-columns: 1fr 1fr; }
+    /* Session warning spans full width on collapsed sidebar */
+    .fv-session-warning { left: 60px; }
 }
 
 /* ================================================================
@@ -432,7 +451,8 @@ body {
     .dataTables_wrapper .dataTables_length,
     .dataTables_wrapper .dataTables_filter,
     .dataTables_wrapper .dataTables_paginate,
-    .fv-loading-overlay, .modal { display: none !important; }
+    .fv-loading-overlay, .modal,
+    .fv-session-warning { display: none !important; }
     .fv-main {
         margin: 0 !important; padding: 10px !important;
         max-width: 100% !important; font-size: 11px !important;

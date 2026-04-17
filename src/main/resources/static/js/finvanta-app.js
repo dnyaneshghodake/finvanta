@@ -247,4 +247,94 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    // ================================================================
+    // ALERT AUTO-DISMISS — Per Finacle: success messages fade after 5s
+    // ================================================================
+    document.querySelectorAll('.fv-alert.alert-success').forEach(function (alert) {
+        setTimeout(function () {
+            alert.style.transition = 'opacity 0.5s ease';
+            alert.style.opacity = '0';
+            setTimeout(function () { alert.style.display = 'none'; }, 500);
+        }, 5000);
+    });
+
+    // ================================================================
+    // FORM DIRTY-STATE WARNING — Per Finacle: "Unsaved changes" on navigate
+    // Tracks .fv-form inputs for changes; warns on beforeunload if dirty.
+    // ================================================================
+    var formDirty = false;
+    document.querySelectorAll('.fv-form').forEach(function (form) {
+        form.addEventListener('input', function () { formDirty = true; });
+        form.addEventListener('change', function () { formDirty = true; });
+        form.addEventListener('submit', function () { formDirty = false; });
+    });
+    window.addEventListener('beforeunload', function (e) {
+        if (formDirty) {
+            e.preventDefault();
+            e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+        }
+    });
+
+    // ================================================================
+    // SESSION TIMEOUT WARNING — Per Finacle: countdown before expiry
+    // Shows a warning banner 2 minutes before the server session expires.
+    // Default session timeout: 30 minutes (1800s). Configurable via
+    // data-fv-session-timeout attribute on <body>.
+    // ================================================================
+    var sessionTimeout = parseInt(document.body.getAttribute('data-fv-session-timeout') || '1800', 10);
+    var warningAt = (sessionTimeout - 120) * 1000; /* 2 minutes before expiry */
+    var expiryAt = sessionTimeout * 1000;
+
+    var sessionBanner = document.createElement('div');
+    sessionBanner.className = 'fv-session-warning';
+    sessionBanner.id = 'fvSessionWarning';
+    sessionBanner.innerHTML = '<i class="bi bi-clock-history"></i> '
+        + 'Session expires in <strong id="fvSessionCountdown">2:00</strong> minutes. '
+        + '<button type="button" class="btn btn-sm btn-warning ms-2" id="fvSessionExtend">'
+        + '<i class="bi bi-arrow-clockwise"></i> Extend Session</button>';
+    document.body.appendChild(sessionBanner);
+
+    var sessionTimer = null;
+    var countdownTimer = null;
+
+    function showSessionWarning() {
+        sessionBanner.classList.add('active');
+        var remaining = 120;
+        countdownTimer = setInterval(function () {
+            remaining--;
+            var m = Math.floor(remaining / 60);
+            var s = remaining % 60;
+            var el = document.getElementById('fvSessionCountdown');
+            if (el) el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+            if (remaining <= 0) {
+                clearInterval(countdownTimer);
+                window.location.href = window.location.pathname.replace(/\/[^\/]*$/, '') + '/login?expired=true';
+            }
+        }, 1000);
+    }
+
+    function resetSessionTimer() {
+        sessionBanner.classList.remove('active');
+        if (sessionTimer) clearTimeout(sessionTimer);
+        if (countdownTimer) clearInterval(countdownTimer);
+        sessionTimer = setTimeout(showSessionWarning, warningAt);
+    }
+
+    document.getElementById('fvSessionExtend').addEventListener('click', function () {
+        /* Ping server to extend session, then reset timer */
+        fetch(window.location.href, { method: 'HEAD', credentials: 'same-origin' })
+            .then(function () { resetSessionTimer(); })
+            .catch(function () { resetSessionTimer(); });
+    });
+
+    /* Reset timer on any user interaction */
+    ['click', 'keydown', 'scroll'].forEach(function (evt) {
+        document.addEventListener(evt, function () {
+            if (!sessionBanner.classList.contains('active')) {
+                resetSessionTimer();
+            }
+        }, { passive: true });
+    });
+    resetSessionTimer();
+
 });
