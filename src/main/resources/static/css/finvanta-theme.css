@@ -426,8 +426,12 @@ body {
 
 /* ================================================================
    CBS CONFIRMATION MODAL — Per Finacle styled modal dialogs
-   Replaces browser confirm() for destructive actions
+   Replaces browser confirm() for destructive actions.
+   Defensive display:none ensures modals stay hidden even if Bootstrap
+   CSS fails to load (vendor assets are not committed to repo).
    ================================================================ */
+.fv-confirm-modal { display: none; }
+.fv-confirm-modal.show { display: block; }
 .fv-confirm-modal .modal-header {
     background: var(--fv-danger); color: #ffffff;
     padding: 10px 16px; border-bottom: none;
