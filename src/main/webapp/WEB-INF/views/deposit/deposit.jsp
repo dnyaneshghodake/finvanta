@@ -24,6 +24,11 @@
         | Customer: <c:out value="${account.customer.firstName}"/> <c:out value="${account.customer.lastName}"/>
         | Current Balance: <strong><fmt:formatNumber value="${account.ledgerBalance}" type="currency" currencyCode="INR"/></strong></p>
 
+        <%-- CBS Tier-1: Transaction Preview Panel per Finacle TRAN_PREVIEW.
+             Hidden by default — populated via AJAX when amount is entered.
+             Shows all validation checks BEFORE the operator clicks Post. --%>
+        <div id="txnPreviewPanel" style="display:none;" class="mb-3"></div>
+
         <form method="post" action="${pageContext.request.contextPath}/deposit/deposit/${account.accountNumber}" class="fv-form">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
             <div class="row mb-3">

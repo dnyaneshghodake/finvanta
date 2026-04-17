@@ -623,6 +623,198 @@ public class TransactionEngine {
     }
 
     /**
+     * CBS Tier-1 Transaction Preview (Dry-Run Validation) per Finacle TRAN_PREVIEW.
+     *
+     * <p>Runs the full validation chain (Steps 1–7) WITHOUT committing any GL posting.
+     * Each step's pass/fail is recorded in the returned {@link TransactionPreview}.
+     * Unlike {@link #execute(TransactionRequest)} which throws on the FIRST failure,
+     * this method continues through ALL steps to collect a complete checklist.
+     *
+     * <p><b>What is validated:</b>
+     * <ul>
+     *   <li>Step 2: Business date exists in calendar, not a holiday</li>
+     *   <li>Step 2.5: Value date within allowed window (T-2 to T+0)</li>
+     *   <li>Step 3: Day status is DAY_OPEN, EOD not complete</li>
+     *   <li>Step 4: Amount positive, ≤2 decimal places, currency INR</li>
+     *   <li>Step 5: Branch exists and is active</li>
+     *   <li>Step 5.5: Open transaction batch exists for the business date</li>
+     *   <li>Step 6: Per-transaction and daily aggregate limits</li>
+     *   <li>Step 7: Maker-checker threshold (reports whether approval required)</li>
+     *   <li>GL: Journal lines validated (GL codes exist, active, postable, DR==CR)</li>
+     * </ul>
+     *
+     * <p><b>What is NOT done:</b> No GL balance update, no ledger posting, no voucher
+     * allocation, no audit trail, no sequence consumption. This is purely read-only.
+     *
+     * <p><b>Thread safety:</b> Read-only — no locks acquired, no state mutated.
+     * Safe to call from AJAX endpoints without contention concerns.
+     *
+     * @param request The transaction request to validate
+     * @return TransactionPreview with all check results and GL line preview
+     */
+    @Transactional(readOnly = true)
+    public TransactionPreview validate(TransactionRequest request) {
+        String tenantId = TenantContext.getCurrentTenant();
+        TransactionPreview.Builder preview = TransactionPreview.builder()
+                .amount(request.getAmount())
+                .transactionType(request.getTransactionType())
+                .accountNumber(request.getAccountReference())
+                .branchCode(request.getBranchCode())
+                .valueDate(request.getValueDate())
+                .narration(request.getNarration());
+
+        // --- Step 2: Business Date Validation ---
+        Long branchId = null;
+        if (request.getBranchCode() != null && !request.getBranchCode().isBlank()) {
+            var branchOpt = branchRepository.findByTenantIdAndBranchCode(tenantId, request.getBranchCode());
+            if (branchOpt.isPresent()) {
+                branchId = branchOpt.get().getId();
+            }
+        }
+        if (branchId == null) {
+            branchId = SecurityUtil.getCurrentUserBranchId();
+        }
+
+        BusinessCalendar calendar = null;
+        try {
+            if (branchId != null) {
+                calendar = calendarRepository
+                        .findByTenantIdAndBranchIdAndBusinessDate(tenantId, branchId, request.getValueDate())
+                        .orElse(null);
+            }
+            if (calendar == null) {
+                calendar = calendarRepository
+                        .findByTenantIdAndBusinessDate(tenantId, request.getValueDate())
+                        .orElse(null);
+            }
+            boolean dateValid = calendar != null && !calendar.isHoliday();
+            preview.addCheck("BUSINESS_DATE", "Day Control",
+                    "Value date " + request.getValueDate() + " exists in calendar and is not a holiday",
+                    dateValid,
+                    calendar == null ? "Date not found in business calendar"
+                            : calendar.isHoliday() ? "Holiday: " + calendar.getHolidayDescription() : "OK");
+        } catch (Exception e) {
+            preview.addCheck("BUSINESS_DATE", "Day Control", "Business date validation", false, e.getMessage());
+        }
+
+        // --- Step 2.5: Value Date Window ---
+        if (!request.isSystemGenerated() && calendar != null) {
+            try {
+                LocalDate currentBizDate = businessDateService.getCurrentBusinessDate();
+                businessDateService.validateValueDateWindow(
+                        request.getValueDate(), currentBizDate, valueDateBackDays, valueDateForwardDays);
+                preview.addCheck("VALUE_DATE_WINDOW", "Day Control",
+                        "Value date within allowed window (T-" + valueDateBackDays + " to T+" + valueDateForwardDays + ")",
+                        true, "Current biz date: " + currentBizDate);
+            } catch (BusinessException e) {
+                if (!"NO_OPEN_DAY".equals(e.getErrorCode())) {
+                    preview.addCheck("VALUE_DATE_WINDOW", "Day Control", "Value date window", false, e.getMessage());
+                }
+            }
+        }
+
+        // --- Step 3: Day Status ---
+        if (calendar != null && !request.isSystemGenerated()) {
+            boolean dayOpen = calendar.getDayStatus().isTransactionAllowed() && !calendar.isEodComplete();
+            preview.addCheck("DAY_STATUS", "Day Control",
+                    "Day is open for transactions (status: " + calendar.getDayStatus() + ")",
+                    dayOpen,
+                    !calendar.getDayStatus().isTransactionAllowed() ? "Day status: " + calendar.getDayStatus()
+                            : calendar.isEodComplete() ? "EOD already complete — day must be closed and reopened" : "OK");
+        }
+
+        // --- Step 4: Amount & Currency ---
+        boolean amountValid = request.getAmount() != null && request.getAmount().signum() > 0;
+        boolean precisionValid = true;
+        if (amountValid) {
+            java.math.BigDecimal norm = request.getAmount().stripTrailingZeros();
+            precisionValid = norm.scale() <= 2 && (norm.precision() - norm.scale()) <= 16;
+        }
+        boolean currencyValid = request.getCurrencyCode() == null || CBS_CURRENCY_CODE.equals(request.getCurrencyCode());
+        preview.addCheck("AMOUNT", "Amount", "Amount is positive with ≤2 decimal places",
+                amountValid && precisionValid, amountValid ? "INR " + request.getAmount() : "Invalid amount");
+        preview.addCheck("CURRENCY", "Amount", "Currency is " + CBS_CURRENCY_CODE,
+                currencyValid, currencyValid ? CBS_CURRENCY_CODE : "Unsupported: " + request.getCurrencyCode());
+
+        // --- Step 5: Branch ---
+        if (request.getBranchCode() != null && !request.getBranchCode().isBlank()) {
+            var branchOpt = branchRepository.findByTenantIdAndBranchCode(tenantId, request.getBranchCode());
+            boolean branchActive = branchOpt.isPresent() && branchOpt.get().isActive();
+            preview.addCheck("BRANCH", "Branch", "Branch " + request.getBranchCode() + " exists and is active",
+                    branchActive, branchActive ? "OK" : "Branch not found or inactive");
+        }
+
+        // --- Step 5.5: Batch ---
+        if (!request.isSystemGenerated()) {
+            var openBatches = batchRepository.findOpenBatches(tenantId, request.getValueDate());
+            preview.addCheck("BATCH", "Batch Control",
+                    "Open transaction batch exists for " + request.getValueDate(),
+                    !openBatches.isEmpty(),
+                    openBatches.isEmpty() ? "No OPEN batch — open via Transaction Batches screen" : openBatches.size() + " open batch(es)");
+        }
+
+        // --- Step 6: Transaction Limits ---
+        if (!request.isSystemGenerated()) {
+            try {
+                limitService.validateTransactionLimit(
+                        request.getAmount(), request.getTransactionType(), request.getValueDate());
+                preview.addCheck("TRANSACTION_LIMIT", "Limits",
+                        "Per-transaction and daily aggregate limits", true, "Within limits");
+            } catch (BusinessException e) {
+                preview.addCheck("TRANSACTION_LIMIT", "Limits",
+                        "Transaction limit validation", false, e.getMessage());
+            }
+            // CBS: Limit details for preview display are embedded in the check detail
+            // string above (the BusinessException message includes limit values).
+            // Future enhancement: expose structured limit info via TransactionLimitService.
+        }
+
+        // --- Step 7: Maker-Checker ---
+        if (!request.isSystemGenerated()) {
+            boolean needsApproval = makerCheckerService.requiresApproval(
+                    request.getAmount(), request.getTransactionType());
+            preview.requiresApproval(needsApproval);
+            preview.addCheck("MAKER_CHECKER", "Authorization",
+                    needsApproval ? "Requires checker approval (amount exceeds threshold or high-risk operation)"
+                            : "Auto-approved (within single-authorization threshold)",
+                    true, // Maker-checker is never a blocker — it's informational
+                    needsApproval ? "PENDING_APPROVAL — checker must authorize before GL posting" : "Single authorization");
+        }
+
+        // --- GL Validation (read-only — no posting) ---
+        java.util.List<TransactionPreview.JournalLinePreview> glLines = new java.util.ArrayList<>();
+        if (request.getJournalLines() != null && request.getJournalLines().size() >= 2) {
+            java.math.BigDecimal totalDr = java.math.BigDecimal.ZERO;
+            java.math.BigDecimal totalCr = java.math.BigDecimal.ZERO;
+            boolean allGlValid = true;
+            for (var line : request.getJournalLines()) {
+                var glOpt = accountingService.getGlMasterRepository()
+                        .findByTenantIdAndGlCode(tenantId, line.glCode());
+                boolean valid = glOpt.isPresent() && glOpt.get().isActive() && !glOpt.get().isHeaderAccount();
+                String glName = glOpt.map(gl -> gl.getGlName()).orElse("UNKNOWN");
+                glLines.add(new TransactionPreview.JournalLinePreview(
+                        line.glCode(), glName, line.debitCredit().name(), line.amount(), line.narration()));
+                if (!valid) allGlValid = false;
+                if (line.debitCredit() == com.finvanta.domain.enums.DebitCredit.DEBIT) {
+                    totalDr = totalDr.add(line.amount());
+                } else {
+                    totalCr = totalCr.add(line.amount());
+                }
+            }
+            preview.journalLines(glLines);
+            preview.addCheck("GL_VALIDATION", "GL",
+                    "All GL codes exist, are active, and are postable",
+                    allGlValid, allGlValid ? "All GL codes valid" : "One or more GL codes invalid/inactive");
+            boolean balanced = totalDr.compareTo(totalCr) == 0;
+            preview.addCheck("DOUBLE_ENTRY", "GL",
+                    "Double-entry balance: DR " + totalDr + " = CR " + totalCr,
+                    balanced, balanced ? "Balanced" : "IMBALANCE: DR " + totalDr + " ≠ CR " + totalCr);
+        }
+
+        return preview.build();
+    }
+
+    /**
      * Generates a voucher number per Finacle/Temenos convention.
      * Format: VCH/{branchCode}/{YYYYMMDD}/{sequence}
      *

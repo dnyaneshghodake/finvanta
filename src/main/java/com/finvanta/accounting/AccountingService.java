@@ -511,5 +511,14 @@ public class AccountingService {
         return result;
     }
 
+    /**
+     * CBS Tier-1: Expose GLMasterRepository for read-only GL validation in
+     * TransactionEngine.validate() dry-run. No mutations — only used for
+     * findByTenantIdAndGlCode() lookups during preview.
+     */
+    public GLMasterRepository getGlMasterRepository() {
+        return glMasterRepository;
+    }
+
     public record JournalLineRequest(String glCode, DebitCredit debitCredit, BigDecimal amount, String narration) {}
 }
