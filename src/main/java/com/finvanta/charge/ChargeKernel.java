@@ -424,7 +424,9 @@ public class ChargeKernel {
         // re-derive the exact customer GL from the ChargeTransaction record
         // (it's not stored), so we post to SB_DEPOSITS by convention. This is
         // acceptable for CASA; loan-specific reversals flow through
-        // {@link com.finvanta.legacy.loan.LoanChargeEngine#reverseCharge}.
+        // {@link com.finvanta.batch.ChargeEngine#reverseCharge} until the loan
+        // ChargeConfig model is folded into ChargeDefinition and this kernel
+        // absorbs the loan path as well.
         contraLines.add(new JournalLineRequest(
                 GLConstants.SB_DEPOSITS,
                 DebitCredit.CREDIT,
