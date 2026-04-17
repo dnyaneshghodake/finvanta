@@ -68,6 +68,18 @@ public class MakerCheckerService {
      * @param transactionType Transaction type (DISBURSEMENT, REPAYMENT, etc.)
      * @return true if checker approval is required
      */
+    /**
+     * CBS Tier-1: Transaction types that ALWAYS require maker-checker approval
+     * regardless of amount threshold. Per Finacle TRAN_AUTH / RBI Internal Controls:
+     * reversals and write-offs are higher-risk than original postings because they
+     * undo committed financial state. A single operator must not be able to reverse
+     * a transaction unilaterally — this would enable embezzlement (post + reverse
+     * to pocket the difference). Per Finacle TRAN_REVERSAL: reversal requires
+     * dual authorization even for amounts below the normal threshold.
+     */
+    private static final java.util.Set<String> ALWAYS_REQUIRE_APPROVAL = java.util.Set.of(
+            "REVERSAL", "WRITE_OFF", "WRITE_OFF_RECOVERY");
+
     public boolean requiresApproval(BigDecimal amount, String transactionType) {
         String tenantId = TenantContext.getCurrentTenant();
         String role = SecurityUtil.getCurrentUserRole();
@@ -75,6 +87,16 @@ public class MakerCheckerService {
         if (role == null) {
             // No transactional role -- this will be caught by TransactionLimitService
             return false;
+        }
+
+        // CBS Tier-1: Reversals and write-offs ALWAYS require dual authorization
+        // regardless of amount. Per Finacle TRAN_REVERSAL / RBI Internal Controls:
+        // these are higher-risk operations that undo committed financial state.
+        if (ALWAYS_REQUIRE_APPROVAL.contains(transactionType)) {
+            log.info(
+                    "MAKER_CHECKER: {} always requires approval (high-risk operation). amount={}, role={}",
+                    transactionType, amount, role);
+            return true;
         }
 
         // Resolve the per-transaction limit as the maker-checker threshold

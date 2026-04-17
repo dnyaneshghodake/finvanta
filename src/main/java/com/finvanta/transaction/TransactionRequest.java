@@ -162,6 +162,10 @@ public class TransactionRequest {
         return systemGenerated;
     }
 
+    public String getCurrencyCode() {
+        return currencyCode;
+    }
+
     public List<CompoundJournalGroup> getCompoundJournalGroups() {
         return compoundJournalGroups;
     }
@@ -203,6 +207,7 @@ public class TransactionRequest {
         private String productType;
         private String idempotencyKey;
         private boolean systemGenerated = false;
+        private String currencyCode;
         private List<CompoundJournalGroup> compoundJournalGroups;
 
         public Builder amount(BigDecimal amount) {
@@ -262,6 +267,16 @@ public class TransactionRequest {
 
         public Builder systemGenerated(boolean systemGenerated) {
             this.systemGenerated = systemGenerated;
+            return this;
+        }
+
+        /**
+         * CBS Tier-1: Set transaction currency code per RBI FEMA.
+         * Optional — defaults to null (engine assumes INR when null).
+         * Per Finacle TRAN_POSTING.CURRENCY: explicit currency on every posting.
+         */
+        public Builder currencyCode(String currencyCode) {
+            this.currencyCode = currencyCode;
             return this;
         }
 

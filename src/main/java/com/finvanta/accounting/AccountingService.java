@@ -18,6 +18,9 @@ import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -54,6 +57,9 @@ public class AccountingService {
     private final AuditService auditService;
     private final LedgerService ledgerService;
     private final TransactionBatchRepository batchRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     /**
      * CBS Engine Context Guard — cryptographic token-based trust boundary.
@@ -432,6 +438,17 @@ public class AccountingService {
                         branchBalance = glBranchBalanceRepository.saveAndFlush(branchBalance);
                     } catch (org.springframework.dao.DataIntegrityViolationException concurrent) {
                         // Another thread won the insert race — re-lock the now-existing row.
+                        // CBS CRITICAL: Clear the persistence context to evict the failed entity.
+                        // saveAndFlush() registered the new GLBranchBalance in the first-level
+                        // cache before the flush failed. Without clear(), the subsequent
+                        // findAndLock would return the stale managed entity (with id=null,
+                        // version=null) instead of the DB row inserted by the winning thread.
+                        // Per Hibernate spec: after a failed flush, the Session state is
+                        // undefined — clear() is the only safe recovery path within the same TX.
+                        // This also evicts the GLMaster entity locked in Step 1, but that's safe
+                        // because we already updated and saved it above — the clear() does not
+                        // roll back the SQL UPDATE, only the in-memory cache.
+                        entityManager.clear();
                         log.debug("GLBranchBalance race resolved: branch={}, gl={}", branch.getBranchCode(), line.glCode());
                         branchBalance = glBranchBalanceRepository
                                 .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
