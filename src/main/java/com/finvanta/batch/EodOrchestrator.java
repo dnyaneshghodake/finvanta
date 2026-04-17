@@ -1097,4 +1097,36 @@ public class EodOrchestrator {
                 .append(e.getMessage())
                 .append("\n");
     }
+
+    // ------------------------------------------------------------------
+    // Read-only queries for the EOD dashboard (BatchController).
+    //
+    // These replace the callers that previously depended on
+    // com.finvanta.legacy.BatchService, which caused
+    // CbsArchitectureTest.legacyPackage_notDependedOnFromProduction to fail
+    // because production code must not depend on the legacy package.
+    // Both methods are tenant-scoped via TenantContext and are pure reads
+    // (no transactional boundary needed).
+    // ------------------------------------------------------------------
+
+    /**
+     * Returns the full batch job history for the current tenant, most recent first.
+     * Per Finacle BATCH_HIST / Temenos EB.BATCH.LOG: operators review the last N
+     * EOD runs from the batch dashboard.
+     */
+    public List<BatchJob> getBatchHistory() {
+        return batchJobRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.getCurrentTenant());
+    }
+
+    /**
+     * Returns the EOD_BATCH job for a specific business date, or {@code null}
+     * if no EOD has been initiated for that date.
+     * Per Finacle DAYCTRL: EOD re-run detection relies on this lookup.
+     */
+    public BatchJob getBatchJobByDate(LocalDate businessDate) {
+        return batchJobRepository
+                .findByTenantIdAndJobNameAndBusinessDate(
+                        TenantContext.getCurrentTenant(), "EOD_BATCH", businessDate)
+                .orElse(null);
+    }
 }
