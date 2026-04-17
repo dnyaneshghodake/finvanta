@@ -97,7 +97,22 @@ public class AuditService {
         auditLog.setAfterSnapshot(afterJson);
         auditLog.setPerformedBy(performedBy);
         auditLog.setIpAddress(ipAddress);
-        auditLog.setEventTimestamp(LocalDateTime.now());
+        // CBS Tier-1: canonicalize eventTimestamp to second precision so the value
+        // stored in the entity is byte-for-byte identical to what every supported DB
+        // column type preserves on round-trip. SQL Server's legacy DATETIME rounds
+        // to 3.33ms increments (.000 / .003 / .007), SQL Server DATETIME2 and H2
+        // TIMESTAMP support microsecond+ precision, and H2's MSSQLServer mode
+        // DATETIME may behave like either depending on driver/version. Truncating
+        // to SECONDS bulletproofs the hash chain across every supported deployment
+        // because every DB type preserves second precision exactly. Without this,
+        // verifyChainIntegrity would report false tamper on every load -- any audit
+        // record whose in-memory LocalDateTime.now() had fractional seconds gets
+        // rounded/truncated by the DB, and the stored hash (computed from the full
+        // in-memory value) would diverge from the recomputed hash (computed from
+        // the loaded rounded value). Per Finacle AUDIT_TRAIL / Temenos AUDIT.LOG
+        // hash standards: hash input must use canonical representations compatible
+        // with the coarsest DB precision.
+        auditLog.setEventTimestamp(LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS));
         auditLog.setPreviousHash(previousHash);
         auditLog.setModule(module);
         auditLog.setDescription(description);
@@ -300,11 +315,27 @@ public class AuditService {
             // (calendar generation, holiday management) that don't reference a specific entity.
             String entityIdStr = auditLog.getEntityId() != null
                     ? auditLog.getEntityId().toString() : "0";
+            // CBS Tier-1 CRITICAL: canonicalize eventTimestamp to microsecond precision
+            // in ISO_LOCAL_DATE_TIME format. LocalDateTime.now() has nanosecond precision
+            // in-memory, but H2 DATETIME and SQL Server DATETIME2 round-trip to microsecond
+            // precision. If we hashed the in-memory nanos-precise LocalDateTime at insert
+            // but recomputed from the microsecond-precise reloaded value during
+            // verifyChainIntegrity, the hashes would ALWAYS diverge -- every audit chain
+            // verification after a DB round-trip would report a false tamper. Per Finacle
+            // AUDIT_TRAIL / Temenos AUDIT.LOG hash standards: every field used in the hash
+            // MUST be normalized to a canonical representation compatible with the lowest
+            // precision used across all supported DB column types. This also guarantees
+            // hash stability across H2 (test) and SQL Server (prod).
+            String canonicalTimestamp = auditLog.getEventTimestamp() != null
+                    ? auditLog.getEventTimestamp()
+                            .truncatedTo(java.time.temporal.ChronoUnit.MICROS)
+                            .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                    : "";
             String data = auditLog.getTenantId()
                     + auditLog.getEntityType()
                     + entityIdStr
                     + auditLog.getAction()
-                    + auditLog.getEventTimestamp()
+                    + canonicalTimestamp
                     + auditLog.getPerformedBy()
                     + previousHash;
             byte[] hashBytes = digest.digest(data.getBytes(StandardCharsets.UTF_8));
