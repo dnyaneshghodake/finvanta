@@ -333,7 +333,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                 || !safeEquals(
                         existing.getDateOfBirth() != null ? existing.getDateOfBirth().toString() : null,
                         updated.getDateOfBirth() != null ? updated.getDateOfBirth().toString() : null)
-                || existing.getCustomerType() != updated.getCustomerType();
+                || !safeEquals(existing.getCustomerType(), updated.getCustomerType());
 
         // CBS: Update ONLY mutable fields. PAN, Aadhaar, customerNumber are IMMUTABLE.
         existing.setFirstName(updated.getFirstName());
@@ -406,9 +406,14 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         // OR if the existing entity was already non-PEP (safe to copy false).
         // Same pattern for addressSameAsPermanent (entity default=true could override false).
         if (updated.getKycRiskCategory() != null) {
-            // CBS Tier-1 (Gap 1): kycRiskCategory is now a closed enum — JPA rejects
-            // invalid values at bind time (IllegalArgumentException on unknown enum name).
-            // No manual string validation needed; the enum IS the validation.
+            // CBS Tier-1 (Gap 1): Validate kycRiskCategory against KycRiskCategory enum.
+            // The enum is the source of truth for allowed values. If the string doesn't
+            // match any enum constant, reject it — prevents silent MEDIUM default.
+            if (KycRiskCategory.fromString(updated.getKycRiskCategory()) == null) {
+                throw new BusinessException("INVALID_KYC_RISK_CATEGORY",
+                        "KYC risk category must be LOW, MEDIUM, or HIGH. Got: "
+                                + updated.getKycRiskCategory());
+            }
             existing.setKycRiskCategory(updated.getKycRiskCategory());
             existing.computeKycExpiry();
         }
@@ -422,7 +427,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         // For API path: populateCustomerFromRequest only sets pep when non-null.
         if (updated.isPep()) {
             existing.setPep(true);
-            existing.setKycRiskCategory(KycRiskCategory.HIGH);
+            existing.setKycRiskCategory("HIGH");
             existing.computeKycExpiry();
         } else if (!existing.isPep()) {
             // Both are false — no change needed, but safe to set explicitly
@@ -432,7 +437,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         // To explicitly de-PEP a customer, the kycRiskCategory must also be changed
         // (indicating an intentional risk reassessment, not a missing field).
         if (!updated.isPep() && existing.isPep() && updated.getKycRiskCategory() != null
-                && updated.getKycRiskCategory() != KycRiskCategory.HIGH) {
+                && !"HIGH".equals(updated.getKycRiskCategory())) {
             // Intentional de-PEP: risk category explicitly changed away from HIGH
             existing.setPep(false);
         }
@@ -551,9 +556,11 @@ public class CustomerCifServiceImpl implements CustomerCifService {
      * @param c the customer entity being created
      */
     private void validateCkycMandatoryFields(Customer c) {
-        CustomerType type = c.getCustomerType() != null ? c.getCustomerType() : CustomerType.INDIVIDUAL;
-        // CKYC mandatory fields apply to INDIVIDUAL-type customers per CERSAI spec.
-        // CBS Tier-1 (Gap 1): Uses CustomerType enum — type-safe, no string comparison.
+        // CBS Tier-1 (Gap 1+4): Parse customerType String via CustomerType enum for type-safe
+        // CKYC mandatory field determination. Falls back to INDIVIDUAL if null/unrecognized.
+        CustomerType type = CustomerType.fromString(c.getCustomerType());
+        if (type == null) type = CustomerType.INDIVIDUAL;
+        // CKYC mandatory fields apply to INDIVIDUAL-type customers per CERSAI spec
         boolean isIndividualType = type == CustomerType.INDIVIDUAL || type == CustomerType.JOINT
                 || type == CustomerType.MINOR || type == CustomerType.NRI;
         if (!isIndividualType) return;
