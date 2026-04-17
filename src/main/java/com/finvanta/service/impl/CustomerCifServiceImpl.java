@@ -156,18 +156,32 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                 .orElseThrow(() -> new BusinessException(
                         "CUSTOMER_NOT_FOUND", "" + customerId));
         branchValidator.validateAccess(c.getBranch());
+        return c;
+    }
 
-        // CBS Tier-1 (Gap 8): Audit PII access per RBI IT Governance Direction 2023 §8.3.
-        // Every read of customer PII (even view-only) must be logged for forensic investigation:
-        // "who viewed which customer's data when." Per Finacle AUDIT_TRAIL / Temenos AUDIT.LOG:
-        // CIF_VIEW events enable compliance to answer RBI inspector queries like
-        // "show all users who accessed customer X's record in the last 30 days."
-        // Uses REQUIRES_NEW propagation (AuditService) so audit persists even if the
-        // enclosing read-only transaction has no write intent.
+    /**
+     * CBS Tier-1 (Gap 8): Audit-logged customer view per RBI IT Governance Direction 2023 §8.3.
+     *
+     * <p>Identical to {@link #getCustomer(Long)} but additionally emits a {@code CIF_VIEW}
+     * audit event. Used by controller endpoints where a <b>user explicitly views</b> a
+     * customer record (view page, edit page, API GET). NOT used by internal service-to-service
+     * calls (document upload, charge levy, etc.) where {@code getCustomer()} is called for
+     * branch-access validation only — those would flood the audit table with noise.
+     *
+     * <p>Per Finacle AUDIT_TRAIL / Temenos AUDIT.LOG: CIF_VIEW events enable compliance to
+     * answer RBI inspector queries like "show all users who accessed customer X's record
+     * in the last 30 days." Uses {@code REQUIRES_NEW} propagation (AuditService) so the
+     * audit record persists even if the enclosing read-only transaction has no write intent.
+     *
+     * @param customerId the customer ID to view
+     * @return the Customer entity with branch access enforced
+     */
+    @Transactional(readOnly = true)
+    public Customer getCustomerWithAudit(Long customerId) {
+        Customer c = getCustomer(customerId);
         auditSvc.logEvent("Customer", c.getId(), "CIF_VIEW", null,
                 c.getCustomerNumber(), "CIF",
                 "Customer record viewed by " + SecurityUtil.getCurrentUsername());
-
         return c;
     }
 
