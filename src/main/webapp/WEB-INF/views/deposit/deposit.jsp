@@ -5,9 +5,16 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-<c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+<ul class="fv-breadcrumb">
+    <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+    <li><a href="${pageContext.request.contextPath}/deposit/accounts">CASA Accounts</a></li>
+    <li><a href="${pageContext.request.contextPath}/deposit/view/${account.accountNumber}"><c:out value="${account.accountNumber}"/></a></li>
+    <li class="active">Cash Deposit</li>
+</ul>
 
-<h4>Cash Deposit</h4>
+<c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
+
+<h4><i class="bi bi-plus-circle"></i> Cash Deposit</h4>
 <div class="card"><div class="card-body">
     <p>Account: <strong><c:out value="${account.accountNumber}"/></strong>
     | Customer: <c:out value="${account.customer.firstName}"/> <c:out value="${account.customer.lastName}"/>
