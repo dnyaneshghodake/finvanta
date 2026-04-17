@@ -6,6 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
+    <meta name="ctx" content="${pageContext.request.contextPath}" />
     <title>Finvanta CBS - <c:out value="${pageTitle}" default="Banking System" /></title>
     <%-- CBS Tier-1: Favicon per bank branding standards. SVG for modern browsers, ICO fallback. --%>
     <link rel="icon" type="image/svg+xml" href="${pageContext.request.contextPath}/img/favicon.svg">

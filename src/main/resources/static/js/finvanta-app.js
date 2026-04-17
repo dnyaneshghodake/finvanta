@@ -308,7 +308,14 @@ document.addEventListener('DOMContentLoaded', function () {
             if (el) el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
             if (remaining <= 0) {
                 clearInterval(countdownTimer);
-                window.location.href = window.location.pathname.replace(/\/[^\/]*$/, '') + '/login?expired=true';
+                /* CBS Tier-1: Redirect to login using context path, not relative path.
+                   The previous implementation stripped the last path segment, which broke
+                   for multi-segment paths (e.g., /customer/view/123 → /customer/view/login).
+                   Per Finacle/Temenos: session expiry always redirects to the login page
+                   at the application context root. */
+                var ctx = document.querySelector('meta[name="ctx"]');
+                var base = ctx ? ctx.getAttribute('content') : '';
+                window.location.href = base + '/login?expired=true';
             }
         }, 1000);
     }

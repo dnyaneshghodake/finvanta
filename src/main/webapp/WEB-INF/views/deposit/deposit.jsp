@@ -20,7 +20,7 @@
     | Customer: <c:out value="${account.customer.firstName}"/> <c:out value="${account.customer.lastName}"/>
     | Current Balance: <strong><fmt:formatNumber value="${account.ledgerBalance}" type="currency" currencyCode="INR"/></strong></p>
 
-    <form method="post" action="${pageContext.request.contextPath}/deposit/deposit/${account.accountNumber}">
+    <form method="post" action="${pageContext.request.contextPath}/deposit/deposit/${account.accountNumber}" class="fv-form">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
         <div class="row mb-3">
         <div class="col-md-6">

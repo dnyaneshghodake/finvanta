@@ -20,7 +20,7 @@
     | Customer: <c:out value="${account.customer.firstName}"/> <c:out value="${account.customer.lastName}"/>
     | Available Balance: <strong><fmt:formatNumber value="${account.effectiveAvailable}" type="currency" currencyCode="INR"/></strong></p>
 
-    <form method="post" action="${pageContext.request.contextPath}/deposit/withdraw/${account.accountNumber}">
+    <form method="post" action="${pageContext.request.contextPath}/deposit/withdraw/${account.accountNumber}" class="fv-form">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
         <div class="row mb-3">
         <div class="col-md-6">
