@@ -1,4 +1,5 @@
 /* Finvanta CBS - Banking Grade Theme | Offline Only | No CDN */
+/* Tier-1 CBS UI per Finacle/Temenos/BNP standards — RBI IT Governance Direction 2023 */
 :root {
     --fv-primary: #1a237e;
     --fv-primary-dark: #0d1547;
@@ -20,7 +21,9 @@
     --fv-info: #1565c0;
     --fv-font-size: 13px;
     --fv-sidebar-width: 240px;
-    --fv-topbar-height: 50px;
+    --fv-topbar-height: 56px;
+    --fv-mandatory-color: #c62828;
+    --fv-mandatory-border: #e57373;
 }
 body {
     font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Tahoma, Geneva, Verdana, sans-serif;
@@ -227,6 +230,175 @@ body {
 .fv-table.dataTable thead th.sorting::before,
 .fv-table.dataTable thead th.sorting_asc::before,
 .fv-table.dataTable thead th.sorting_desc::before { right: 8px; bottom: auto; top: 50%; transform: translateY(-70%); position: absolute; }
+
+/* ================================================================
+   CBS BREADCRUMB — Per Finacle/Temenos: Home > Module > Screen
+   ================================================================ */
+.fv-breadcrumb {
+    display: flex; align-items: center; gap: 4px;
+    padding: 8px 0 4px; margin-bottom: 8px;
+    font-size: 12px; color: var(--fv-text-muted);
+    list-style: none;
+}
+.fv-breadcrumb li { display: inline-flex; align-items: center; }
+.fv-breadcrumb li + li::before { content: '\203A'; margin: 0 6px; color: var(--fv-border); font-size: 14px; }
+.fv-breadcrumb a { color: var(--fv-primary-light); text-decoration: none; }
+.fv-breadcrumb a:hover { color: var(--fv-primary); text-decoration: underline; }
+.fv-breadcrumb .active { color: var(--fv-text-primary); font-weight: 500; }
+
+/* ================================================================
+   CBS MANDATORY FIELD INDICATOR — Per Finacle CIF_MASTER
+   Red left-border + red asterisk on required field labels.
+   ================================================================ */
+.fv-form .form-label.fv-required::after {
+    content: ' *'; color: var(--fv-mandatory-color); font-weight: 700;
+}
+.fv-form .fv-mandatory-group { border-left: 3px solid var(--fv-mandatory-border); padding-left: 10px; }
+
+/* ================================================================
+   CBS COLLAPSIBLE SECTION PANELS — Per Finacle accordion sections
+   ================================================================ */
+.fv-section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; margin-bottom: 0;
+    background: #f5f7fa; border: 1px solid var(--fv-border);
+    border-radius: 4px 4px 0 0; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: var(--fv-primary);
+    user-select: none; transition: background 0.15s ease;
+}
+.fv-section-header:hover { background: #e8eaf6; }
+.fv-section-header.collapsed { border-radius: 4px; margin-bottom: 12px; }
+.fv-section-header .fv-chevron { font-size: 12px; transition: transform 0.2s ease; }
+.fv-section-header.collapsed .fv-chevron { transform: rotate(-90deg); }
+.fv-section-body {
+    padding: 12px; border: 1px solid var(--fv-border);
+    border-top: none; border-radius: 0 0 4px 4px; margin-bottom: 12px;
+}
+.fv-section-body.fv-collapsed { display: none; }
+
+/* ================================================================
+   CBS TAB NAVIGATION — Per Finacle CIF_MASTER tabbed panels
+   ================================================================ */
+.fv-tabs { border-bottom: 2px solid var(--fv-border); margin-bottom: 16px; }
+.fv-tabs .nav-link {
+    font-size: 12px; font-weight: 600; color: var(--fv-text-secondary);
+    padding: 8px 16px; border: none; border-bottom: 2px solid transparent;
+    margin-bottom: -2px; text-transform: uppercase; letter-spacing: 0.3px;
+    transition: all 0.15s ease; cursor: pointer; background: none;
+}
+.fv-tabs .nav-link:hover { color: var(--fv-primary); border-bottom-color: var(--fv-primary-light); }
+.fv-tabs .nav-link.active {
+    color: var(--fv-primary); border-bottom-color: var(--fv-primary);
+    background: transparent;
+}
+.fv-tabs .nav-link i { margin-right: 4px; }
+.fv-tab-pane { display: none; }
+.fv-tab-pane.active { display: block; }
+
+/* ================================================================
+   CBS FIELD-LEVEL TOOLTIP — Per Finacle/Temenos field help
+   ================================================================ */
+.fv-help-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--fv-info); color: #ffffff;
+    font-size: 9px; font-weight: 700; margin-left: 4px;
+    cursor: help; position: relative; vertical-align: middle;
+}
+.fv-help-icon::after {
+    content: attr(data-fv-help);
+    position: absolute; bottom: 120%; left: 50%; transform: translateX(-50%);
+    background: #263238; color: #ffffff; font-size: 11px; font-weight: 400;
+    padding: 6px 10px; border-radius: 4px;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+    z-index: 1060; max-width: 320px; white-space: normal; line-height: 1.4;
+}
+.fv-help-icon:hover::after { opacity: 1; }
+
+/* ================================================================
+   CBS MULTI-COLUMN DETAIL LAYOUT — Per Finacle CIF_VIEW
+   2-3 columns of label-value pairs instead of single-column table
+   ================================================================ */
+.fv-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.fv-detail-grid.fv-detail-3col { grid-template-columns: 1fr 1fr 1fr; }
+.fv-detail-item {
+    display: flex; flex-direction: column;
+    padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
+}
+.fv-detail-item:hover { background: #f8f9fa; }
+.fv-detail-label {
+    font-size: 10px; font-weight: 600; color: var(--fv-text-muted);
+    text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 2px;
+}
+.fv-detail-value { font-size: 13px; color: var(--fv-text-primary); font-weight: 500; }
+.fv-detail-value.amount {
+    font-family: 'Courier New', Consolas, monospace;
+    font-weight: 700; color: var(--fv-primary);
+}
+.fv-detail-section-title {
+    grid-column: 1 / -1; padding: 10px 12px 6px;
+    font-size: 12px; font-weight: 700; color: var(--fv-primary);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 2px solid #c5cae9; background: #f5f7fa;
+    display: flex; align-items: center; gap: 6px;
+}
+
+/* ================================================================
+   CBS LOADING OVERLAY — Per Finacle "Processing..." spinner
+   Prevents double-click during form POST / AJAX operations
+   ================================================================ */
+.fv-loading-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.45); z-index: 9999;
+    justify-content: center; align-items: center; flex-direction: column;
+}
+.fv-loading-overlay.active { display: flex; }
+.fv-loading-spinner {
+    width: 48px; height: 48px; border: 4px solid rgba(255,255,255,0.3);
+    border-top-color: #ffffff; border-radius: 50%;
+    animation: fv-spin 0.8s linear infinite;
+}
+@keyframes fv-spin { to { transform: rotate(360deg); } }
+.fv-loading-text {
+    color: #ffffff; font-size: 14px; font-weight: 600;
+    margin-top: 12px; letter-spacing: 0.5px;
+}
+
+/* ================================================================
+   CBS CONFIRMATION MODAL — Per Finacle styled modal dialogs
+   Replaces browser confirm() for destructive actions
+   ================================================================ */
+.fv-confirm-modal .modal-header {
+    background: var(--fv-danger); color: #ffffff;
+    padding: 10px 16px; border-bottom: none;
+}
+.fv-confirm-modal .modal-header .modal-title { font-size: 14px; font-weight: 600; }
+.fv-confirm-modal .modal-header .btn-close { filter: brightness(0) invert(1); }
+.fv-confirm-modal .modal-body { padding: 20px 16px; font-size: 13px; text-align: center; }
+.fv-confirm-modal .modal-body .fv-confirm-icon {
+    font-size: 36px; color: var(--fv-danger); margin-bottom: 12px;
+}
+.fv-confirm-modal .modal-footer { padding: 10px 16px; border-top: 1px solid var(--fv-border); }
+.fv-confirm-modal.fv-confirm-info .modal-header { background: var(--fv-info); }
+.fv-confirm-modal.fv-confirm-info .modal-body .fv-confirm-icon { color: var(--fv-info); }
+
+/* CBS KEYBOARD SHORTCUT BADGE — Per Finacle F2=Save, F3=Cancel */
+.fv-kbd {
+    display: inline-block; padding: 1px 5px; font-size: 10px;
+    font-family: 'Courier New', Consolas, monospace; font-weight: 600;
+    background: #eceff1; color: #546e7a; border: 1px solid #cfd8dc;
+    border-radius: 3px; margin-left: 6px; vertical-align: middle;
+    line-height: 1.4;
+}
+
+/* CBS AMOUNT INPUT FORMATTING — INR with thousand separators */
+.fv-amount-display {
+    font-family: 'Courier New', Consolas, monospace;
+    font-weight: 600; color: var(--fv-primary); font-size: 13px;
+}
+
+/* CBS PRINT-ONLY HEADER — visible only during print */
+.fv-print-header { display: none; }
 
 /* Login Page */
 .fv-login-wrapper { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--fv-sidebar-bg) 0%, var(--fv-primary) 100%); }
