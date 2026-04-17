@@ -122,8 +122,9 @@
                     <div class="col-md-4"><label class="form-label">Nominee Guardian Name</label><input type="text" name="nomineeGuardianName" class="form-control" value="<c:out value='${customer.nomineeGuardianName}'/>" maxlength="200" /><small class="text-muted">Required if nominee is a minor</small></div>
                     <div class="col-md-4"><label class="form-label">Nominee Address</label><input type="text" name="nomineeAddress" class="form-control" value="<c:out value='${customer.nomineeAddress}'/>" maxlength="500" /></div>
                 </div>
+                </div><%-- end Nominee section body --%>
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                <button type="submit" class="btn btn-sm btn-fv-primary mt-2"><i class="bi bi-plus-circle"></i> Add Customer</button>
+                <button type="submit" class="btn btn-sm btn-fv-primary mt-2"><i class="bi bi-plus-circle"></i> Add Customer <span class="fv-kbd">F2</span></button>
             </form>
         </div>
     </div>

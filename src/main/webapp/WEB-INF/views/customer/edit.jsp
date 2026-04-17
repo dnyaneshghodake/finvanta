@@ -4,11 +4,19 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <%-- CBS Tier-1: Breadcrumb per Finacle/Temenos --%>
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/customer/list">Customers</a></li>
+        <li><a href="${pageContext.request.contextPath}/customer/view/${customer.id}"><c:out value="${customer.customerNumber}" /></a></li>
+        <li class="active">Edit</li>
+    </ul>
+
     <c:if test="${not empty error}">
         <div class="fv-alert alert alert-danger"><c:out value="${error}" /></div>
     </c:if>
     <div class="fv-card">
-        <div class="card-header"><i class="bi bi-pencil-square"></i> Edit Customer &mdash; <c:out value="${customer.customerNumber}" /> <a href="${pageContext.request.contextPath}/customer/view/${customer.id}" class="btn btn-sm btn-outline-secondary float-end"><i class="bi bi-x-circle"></i> Cancel</a></div>
+        <div class="card-header"><i class="bi bi-pencil-square"></i> Edit Customer &mdash; <c:out value="${customer.customerNumber}" /> <div class="float-end"><a href="${pageContext.request.contextPath}/customer/view/${customer.id}" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/customer/view/${customer.id}"><i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span></a></div></div>
         <div class="card-body">
             <form method="post" action="${pageContext.request.contextPath}/customer/edit/${customer.id}" class="fv-form">
                 <!-- Immutable fields (read-only per RBI KYC norms) — PII masked per RBI/UIDAI -->
@@ -35,7 +43,8 @@
                     <div class="col-md-3"><label class="form-label">KYC Risk Category</label><select name="kycRiskCategory" class="form-select"><option value="LOW" ${customer.kycRiskCategory == 'LOW' ? 'selected' : ''}>Low</option><option value="MEDIUM" ${customer.kycRiskCategory == 'MEDIUM' ? 'selected' : ''}>Medium</option><option value="HIGH" ${customer.kycRiskCategory == 'HIGH' ? 'selected' : ''}>High</option></select></div>
                     <div class="col-md-3"><label class="form-label">PEP</label><div class="form-check mt-2"><input type="hidden" name="_pep" value="on" /><input type="checkbox" name="pep" value="true" class="form-check-input" id="pepEdit" ${customer.pep ? 'checked' : ''} /><label class="form-check-label" for="pepEdit">Politically Exposed Person</label></div></div>
                 </div>
-                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-person"></i> Personal Details &amp; Demographics</h6>
+                <div class="fv-section-header" onclick=""><i class="bi bi-person"></i> Personal Details &amp; Demographics <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
                 <div class="row mb-3">
                     <div class="col-md-3"><label class="form-label">First Name *</label><input type="text" name="firstName" class="form-control" value="<c:out value='${customer.firstName}'/>" required maxlength="100" /></div>
                     <div class="col-md-3"><label class="form-label">Last Name *</label><input type="text" name="lastName" class="form-control" value="<c:out value='${customer.lastName}'/>" required maxlength="100" /></div>
@@ -55,7 +64,9 @@
                     <div class="col-md-3"><label class="form-label">CIBIL Score</label><input type="number" name="cibilScore" class="form-control" value="${customer.cibilScore}" min="300" max="900" /></div>
                 </div>
 
-                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-shield-check"></i> KYC Document Details</h6>
+                </div><%-- end Personal Details section body --%>
+                <div class="fv-section-header" onclick=""><i class="bi bi-shield-check"></i> KYC Document Details <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
                 <div class="row mb-3">
                     <div class="col-md-3"><label class="form-label">Photo ID Type</label><select name="photoIdType" class="form-select"><option value="">--</option><option value="PASSPORT" ${customer.photoIdType == 'PASSPORT' ? 'selected' : ''}>Passport</option><option value="VOTER_ID" ${customer.photoIdType == 'VOTER_ID' ? 'selected' : ''}>Voter ID</option><option value="DRIVING_LICENSE" ${customer.photoIdType == 'DRIVING_LICENSE' ? 'selected' : ''}>DL</option><option value="PAN_CARD" ${customer.photoIdType == 'PAN_CARD' ? 'selected' : ''}>PAN Card</option><option value="AADHAAR" ${customer.photoIdType == 'AADHAAR' ? 'selected' : ''}>Aadhaar</option></select></div>
                     <div class="col-md-3"><label class="form-label">Photo ID Number</label><input type="text" name="photoIdNumber" class="form-control" value="<c:out value='${customer.photoIdNumber}'/>" maxlength="30" /></div>
@@ -66,7 +77,9 @@
                     <div class="col-md-3"><label class="form-label">KYC Mode</label><select name="kycMode" class="form-select"><option value="">--</option><option value="IN_PERSON" ${customer.kycMode == 'IN_PERSON' ? 'selected' : ''}>In-Person</option><option value="VIDEO_KYC" ${customer.kycMode == 'VIDEO_KYC' ? 'selected' : ''}>Video KYC</option><option value="DIGITAL_KYC" ${customer.kycMode == 'DIGITAL_KYC' ? 'selected' : ''}>Digital KYC</option><option value="CKYC_DOWNLOAD" ${customer.kycMode == 'CKYC_DOWNLOAD' ? 'selected' : ''}>CKYC Download</option></select></div>
                 </div>
 
-                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-telephone"></i> Contact &amp; Correspondence Address</h6>
+                </div><%-- end KYC Document section body --%>
+                <div class="fv-section-header" onclick=""><i class="bi bi-telephone"></i> Contact &amp; Correspondence Address <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
                 <div class="row mb-3">
                     <div class="col-md-4"><label class="form-label">Mobile Number *</label><input type="text" name="mobileNumber" class="form-control" value="<c:out value='${customer.mobileNumber}'/>" required maxlength="10" pattern="[6-9][0-9]{9}" title="10-digit mobile" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" /></div>
                     <div class="col-md-4"><label class="form-label">Email</label><input type="email" name="email" class="form-control" value="<c:out value='${customer.email}'/>" maxlength="200" /></div>
@@ -78,7 +91,9 @@
                     <div class="col-md-4"><input type="text" name="pinCode" class="form-control" value="<c:out value='${customer.pinCode}'/>" maxlength="6" pattern="[0-9]{6}" title="6-digit PIN" inputmode="numeric" onkeypress="return event.charCode>=48&&event.charCode<=57" placeholder="PIN Code" /></div>
                 </div>
 
-                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-geo-alt"></i> Permanent Address (CKYC/CERSAI)</h6>
+                </div><%-- end Contact section body --%>
+                <div class="fv-section-header" onclick=""><i class="bi bi-geo-alt"></i> Permanent Address (CKYC/CERSAI) <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
                 <div class="row mb-2">
                     <div class="col-md-12"><div class="form-check"><input type="hidden" name="_addressSameAsPermanent" value="on" /><input type="checkbox" name="addressSameAsPermanent" value="true" class="form-check-input" id="addrSame" ${customer.addressSameAsPermanent ? 'checked' : ''} onchange="togglePermanentAddr();" /><label class="form-check-label" for="addrSame">Same as correspondence address</label></div></div>
                 </div>
@@ -92,7 +107,9 @@
                     </div>
                 </div>
 
-                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-currency-rupee"></i> Income &amp; Exposure (RBI Norms)</h6>
+                </div><%-- end Permanent Address section body --%>
+                <div class="fv-section-header" onclick=""><i class="bi bi-currency-rupee"></i> Income &amp; Exposure (RBI Norms) <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
                 <div class="row mb-3">
                     <div class="col-md-3"><label class="form-label">Monthly Income (INR)</label><input type="number" name="monthlyIncome" class="form-control" value="${customer.monthlyIncome}" step="0.01" min="0" /></div>
                     <div class="col-md-3"><label class="form-label">Max Borrowing Limit (INR)</label><input type="number" name="maxBorrowingLimit" class="form-control" value="${customer.maxBorrowingLimit}" step="0.01" min="0" /></div>
@@ -100,7 +117,9 @@
                     <div class="col-md-3"><label class="form-label">Employer Name</label><input type="text" name="employerName" class="form-control" value="<c:out value='${customer.employerName}'/>" /></div>
                 </div>
 
-                <h6 class="text-muted border-bottom pb-1 mb-3"><i class="bi bi-people"></i> Nominee Details (RBI Nomination Guidelines)</h6>
+                </div><%-- end Income section body --%>
+                <div class="fv-section-header" onclick=""><i class="bi bi-people"></i> Nominee Details (RBI Nomination Guidelines) <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
                 <div class="row mb-3">
                     <div class="col-md-4"><label class="form-label">Nominee Date of Birth</label><input type="date" name="nomineeDob" class="form-control" value="${customer.nomineeDob}" /></div>
                     <div class="col-md-4"><label class="form-label">Nominee Guardian Name</label><input type="text" name="nomineeGuardianName" class="form-control" value="<c:out value='${customer.nomineeGuardianName}'/>" maxlength="200" /><small class="text-muted">Required if nominee is a minor</small></div>
@@ -112,9 +131,10 @@
                      second save throws OptimisticLockException instead of silently overwriting.
                      Per RBI Operational Risk Guidelines: concurrent data modification must be
                      detected and rejected to prevent data corruption. --%>
+                </div><%-- end Nominee section body --%>
                 <input type="hidden" name="version" value="${customer.version}" />
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                <button type="submit" class="btn btn-sm btn-fv-primary mt-2"><i class="bi bi-check-circle"></i> Save Changes</button>
+                <button type="submit" class="btn btn-sm btn-fv-primary mt-2"><i class="bi bi-check-circle"></i> Save Changes <span class="fv-kbd">F2</span></button>
             </form>
         </div>
     </div>
