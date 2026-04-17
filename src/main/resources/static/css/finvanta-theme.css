@@ -207,6 +207,7 @@ body {
 .fv-badge-approved { background: #e3f2fd; color: var(--fv-info); }
 .fv-badge-rejected { background: #ffebee; color: var(--fv-danger); }
 .fv-badge-npa { background: #fce4ec; color: #ad1457; }
+.fv-badge-info { background: #e3f2fd; color: var(--fv-info); }
 .fv-badge-closed { background: #eceff1; color: #546e7a; }
 
 /* Forms */
@@ -214,9 +215,33 @@ body {
 .fv-form .form-control, .fv-form .form-select { font-size: 13px; padding: 6px 10px; border-color: var(--fv-border); }
 .fv-form .form-control:focus, .fv-form .form-select:focus { border-color: var(--fv-primary); box-shadow: 0 0 0 2px rgba(26,35,126,0.1); }
 
+/* ================================================================
+   CBS FOCUS INDICATORS — Per WCAG 2.1 AA SC 2.4.7 / RBI Accessibility
+   Keyboard-only users must see a visible focus ring on all interactive
+   elements. Uses :focus-visible to avoid showing rings on mouse clicks.
+   ================================================================ */
+.form-control:focus-visible, .form-select:focus-visible,
+.btn:focus-visible, a:focus-visible,
+.nav-link:focus-visible, .page-link:focus-visible {
+    outline: 2px solid var(--fv-sidebar-active);
+    outline-offset: 2px;
+    box-shadow: none;
+}
+.fv-sidebar .nav-link:focus-visible {
+    outline-color: var(--fv-sidebar-active);
+    outline-offset: -2px;
+    background: var(--fv-sidebar-hover);
+}
+
 /* Buttons */
 .btn-fv-primary { background: var(--fv-primary); border-color: var(--fv-primary); color: #ffffff; font-size: 12px; padding: 6px 14px; }
 .btn-fv-primary:hover { background: var(--fv-primary-light); border-color: var(--fv-primary-light); color: #ffffff; }
+.btn-fv-success { background: var(--fv-success); border-color: var(--fv-success); color: #ffffff; font-size: 12px; padding: 6px 14px; }
+.btn-fv-success:hover { background: #388e3c; border-color: #388e3c; color: #ffffff; }
+.btn-fv-danger { background: var(--fv-danger); border-color: var(--fv-danger); color: #ffffff; font-size: 12px; padding: 6px 14px; }
+.btn-fv-danger:hover { background: #d32f2f; border-color: #d32f2f; color: #ffffff; }
+.btn-fv-warning { background: var(--fv-warning); border-color: var(--fv-warning); color: #ffffff; font-size: 12px; padding: 6px 14px; }
+.btn-fv-warning:hover { background: #f57c00; border-color: #f57c00; color: #ffffff; }
 
 /* DataTables Overrides */
 .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter,

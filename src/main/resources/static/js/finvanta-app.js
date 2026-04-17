@@ -254,10 +254,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // ================================================================
     // KEYBOARD SHORTCUTS — Per Finacle F2=Save, F3=Cancel, Ctrl+P=Print
+    // CBS Tier-1: Added Alt+S (Save), Alt+N (New), Alt+F (Search) for
+    // broader browser compatibility. F2/F3 conflict with browser defaults
+    // in some environments (F2=edit cell, F3=find in Firefox).
     // ================================================================
     document.addEventListener('keydown', function (e) {
-        /* F2 = Submit the first visible .fv-form */
-        if (e.key === 'F2') {
+        /* F2 or Alt+S = Submit the first visible .fv-form */
+        if (e.key === 'F2' || (e.altKey && (e.key === 's' || e.key === 'S'))) {
             e.preventDefault();
             var form = document.querySelector('.fv-form');
             if (form) {
@@ -265,8 +268,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (submitBtn && !submitBtn.disabled) submitBtn.click();
             }
         }
-        /* F3 = Cancel / Go back */
-        if (e.key === 'F3') {
+        /* F3 or Alt+C = Cancel / Go back */
+        if (e.key === 'F3' || (e.altKey && (e.key === 'c' || e.key === 'C'))) {
             e.preventDefault();
             var cancelBtn = document.querySelector('[data-fv-cancel]');
             if (cancelBtn) {
@@ -274,6 +277,23 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 window.history.back();
             }
+        }
+        /* Alt+N = Navigate to "New" / "Add" action on current page */
+        if (e.altKey && (e.key === 'n' || e.key === 'N')) {
+            e.preventDefault();
+            var newBtn = document.querySelector('[data-fv-new]')
+                || document.querySelector('a[href*="/add"]')
+                || document.querySelector('a[href*="/apply"]')
+                || document.querySelector('a[href*="/open"]');
+            if (newBtn) window.location.href = newBtn.href;
+        }
+        /* Alt+F = Focus the first search/filter input on the page */
+        if (e.altKey && (e.key === 'f' || e.key === 'F')) {
+            e.preventDefault();
+            var searchInput = document.querySelector('input[name="q"]')
+                || document.querySelector('.dataTables_filter input')
+                || document.querySelector('input[type="search"]');
+            if (searchInput) searchInput.focus();
         }
         /* Ctrl+P = Print (browser default, but we ensure overlay is hidden) */
         if (e.ctrlKey && e.key === 'p') {

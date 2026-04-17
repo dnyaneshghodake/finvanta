@@ -34,7 +34,12 @@
                 </c:if>
             </form>
             <div class="table-responsive">
-            <table class="table fv-table fv-datatable">
+            <%-- CBS Tier-1: Do NOT use fv-datatable here — this table uses server-side
+                 pagination (customerPage). Adding fv-datatable triggers DataTables client-side
+                 pagination on the already-paginated subset, causing "Showing 1 to 25 of 25"
+                 on a page that shows "Page 2 of 10". Per Finacle CIF_LIST: server-side
+                 pagination is the correct pattern for large datasets. --%>
+            <table class="table fv-table">
                 <thead>
                     <tr>
                         <th>Customer No.</th>
