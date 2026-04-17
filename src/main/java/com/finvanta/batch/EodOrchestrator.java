@@ -1126,7 +1126,7 @@ public class EodOrchestrator {
     public BatchJob getBatchJobByDate(LocalDate businessDate) {
         return batchJobRepository
                 .findByTenantIdAndJobNameAndBusinessDate(
-                        TenantContext.getCurrentTenant(), "EOD_BATCH", businessDate)
+                        TenantContext.getCurrentTenant(), "EOD", businessDate)
                 .orElse(null);
     }
 }
