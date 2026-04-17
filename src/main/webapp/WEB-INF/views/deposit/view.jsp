@@ -124,11 +124,13 @@
 </c:if>
 <c:if test="${(pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')) && !account.closed}">
 <div class="card mt-3"><div class="card-body">
-    <form method="post" action="${pageContext.request.contextPath}/deposit/close/${account.accountNumber}" class="d-inline">
+    <form method="post" action="${pageContext.request.contextPath}/deposit/close/${account.accountNumber}" class="fv-form d-inline">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-        <input type="hidden" name="reason" value="" id="closeReason"/>
-        <button type="submit" class="btn btn-outline-danger btn-sm"
-            onclick="var r=prompt('Closure reason (mandatory):'); if(!r){return false;} document.getElementById('closeReason').value=r; return confirm('Close this account? Balance must be zero.');">
+        <input type="hidden" name="reason" value="" class="fv-reason-field"/>
+        <button type="button" class="btn btn-outline-danger btn-sm"
+            data-fv-reason-prompt="Closure reason (mandatory):"
+            data-fv-reason-confirm="Close this account? Balance must be zero."
+            onclick="fvPromptReason(this);">
             <i class="bi bi-x-circle"></i> Close Account
         </button>
     </form>
@@ -354,12 +356,14 @@
     </c:choose></td>
     <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
     <td><c:if test="${!t.reversed && t.transactionType != 'REVERSAL' && !account.closed}">
-        <form method="post" action="${pageContext.request.contextPath}/deposit/reversal/${t.transactionRef}" style="display:inline">
+        <form method="post" action="${pageContext.request.contextPath}/deposit/reversal/${t.transactionRef}" class="fv-form d-inline">
             <input type="hidden" name="accountNumber" value="<c:out value='${account.accountNumber}'/>"/>
-            <input type="hidden" name="reason" value="" id="reason_${t.id}"/>
+            <input type="hidden" name="reason" value="" class="fv-reason-field"/>
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-            <button type="submit" class="btn btn-sm btn-outline-danger"
-                onclick="var r=prompt('Reversal reason (mandatory):'); if(!r){return false;} document.getElementById('reason_${t.id}').value=r; return confirm('Reverse this transaction?');">
+            <button type="button" class="btn btn-sm btn-outline-danger"
+                data-fv-reason-prompt="Reversal reason (mandatory):"
+                data-fv-reason-confirm="Reverse this CASA transaction?"
+                onclick="fvPromptReason(this);">
                 Reverse
             </button>
         </form>

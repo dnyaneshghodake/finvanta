@@ -51,9 +51,11 @@
                             </form>
                             <form method="post" action="${pageContext.request.contextPath}/loan/si/reject/${si.siReference}" class="d-inline">
                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                <input type="hidden" name="reason" value="" id="reject_${si.siReference}" />
-                                <button type="submit" class="btn btn-sm btn-outline-danger"
-                                    onclick="var r=prompt('Rejection reason (mandatory):'); if(!r){return false;} document.getElementById('reject_${si.siReference}').value=r; return confirm('Reject SI ${si.siReference}?');">
+                                <input type="hidden" name="reason" value="" class="fv-reason-field" />
+                                <button type="button" class="btn btn-sm btn-outline-danger"
+                                    data-fv-reason-prompt="Rejection reason (mandatory):"
+                                    data-fv-reason-confirm="Reject SI ${si.siReference}?"
+                                    onclick="fvPromptReason(this);">
                                     <i class="bi bi-x-circle"></i> Reject
                                 </button>
                             </form>

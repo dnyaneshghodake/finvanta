@@ -122,7 +122,7 @@
                         <td><c:out value="${doc.verifiedBy}" default="--" /></td>
                         <td><c:if test="${doc.verificationStatus == 'PENDING'}">
                             <form method="post" action="${pageContext.request.contextPath}/loan/document/verify/${doc.id}" class="d-inline"><input type="hidden" name="applicationId" value="${application.id}" /><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" /><button type="submit" class="btn btn-sm btn-success">Verify</button></form>
-                            <form method="post" action="${pageContext.request.contextPath}/loan/document/reject/${doc.id}" class="d-inline"><input type="hidden" name="applicationId" value="${application.id}" /><input type="hidden" name="rejectionReason" value="" id="docRej_${doc.id}" /><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" /><button type="submit" class="btn btn-sm btn-danger" onclick="var r=prompt('Rejection reason:'); if(!r){return false;} document.getElementById('docRej_${doc.id}').value=r;">Reject</button></form>
+                            <form method="post" action="${pageContext.request.contextPath}/loan/document/reject/${doc.id}" class="d-inline"><input type="hidden" name="applicationId" value="${application.id}" /><input type="hidden" name="rejectionReason" value="" class="fv-reason-field" /><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" /><button type="button" class="btn btn-sm btn-danger" data-fv-reason-prompt="Rejection reason (mandatory):" data-fv-reason-confirm="Reject this document?" onclick="fvPromptReason(this);">Reject</button></form>
                         </c:if></td>
                     </tr>
                 </c:forEach>

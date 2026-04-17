@@ -100,10 +100,12 @@
                             <td>
                                 <a href="${pageContext.request.contextPath}/loan/approve/${app.id}" class="btn btn-sm btn-fv-primary">Approve</a>
                                 <form method="post" action="${pageContext.request.contextPath}/loan/reject/${app.id}" class="d-inline">
-                                    <input type="hidden" name="reason" value="" id="rejectReason_${app.id}" />
+                                    <input type="hidden" name="reason" value="" class="fv-reason-field" />
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                    <button type="submit" class="btn btn-sm btn-danger"
-                                        onclick="var r=prompt('Rejection reason (mandatory per RBI Fair Practices Code):'); if(!r||!r.trim()){alert('Rejection reason is mandatory.');return false;} document.getElementById('rejectReason_${app.id}').value=r; return confirm('Reject this application?');">Reject</button>
+                                    <button type="button" class="btn btn-sm btn-danger"
+                                        data-fv-reason-prompt="Rejection reason (mandatory per RBI Fair Practices Code):"
+                                        data-fv-reason-confirm="Reject this loan application?"
+                                        onclick="fvPromptReason(this);">Reject</button>
                                 </form>
                             </td>
                         </tr>

@@ -135,9 +135,11 @@
                             </c:if>
                             <form method="post" action="${pageContext.request.contextPath}/admin/users/reset-password/${u.id}" class="d-inline">
                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-                                <input type="hidden" name="newPassword" value="" id="pwd_${u.id}"/>
-                                <button type="submit" class="btn btn-sm btn-outline-secondary"
-                                    onclick="var p=prompt('New password (min 8 chars):'); if(!p||p.length<8){alert('Password must be at least 8 characters');return false;} document.getElementById('pwd_${u.id}').value=p; return confirm('Reset password for this user?');">
+                                <input type="hidden" name="newPassword" value="" class="fv-reason-field"/>
+                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    data-fv-reason-prompt="New password (minimum 8 characters):"
+                                    data-fv-reason-confirm="Reset password for this user?"
+                                    onclick="fvPromptReason(this);">
                                     <i class="bi bi-key"></i> Reset Pwd
                                 </button>
                             </form>
