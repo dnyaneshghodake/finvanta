@@ -272,6 +272,16 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                 .filter(b -> b.getTenantId().equals(tid) && b.isActive())
                 .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "" + branchId));
 
+        // CBS Tier-1: Optimistic locking — propagate the @Version from the form/API
+        // to the existing entity so JPA detects concurrent modifications. If the version
+        // from the client is stale (another user saved in between), Hibernate throws
+        // OptimisticLockException on flush. Without this, the version on the existing
+        // entity is always "current" (just loaded), so the check never fires.
+        // Per Finacle CIF_MASTER / RBI Operational Risk: concurrent edits must be rejected.
+        if (updated.getVersion() != null) {
+            existing.setVersion(updated.getVersion());
+        }
+
         String beforeState = existing.getFullName() + "|" + existing.getMobileNumber();
 
         // CBS Validation: validate mutable fields on update (format checks only — no duplicate PAN/Aadhaar).

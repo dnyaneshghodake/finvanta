@@ -106,6 +106,13 @@
                     <div class="col-md-4"><label class="form-label">Nominee Guardian Name</label><input type="text" name="nomineeGuardianName" class="form-control" value="<c:out value='${customer.nomineeGuardianName}'/>" maxlength="200" /><small class="text-muted">Required if nominee is a minor</small></div>
                     <div class="col-md-4"><label class="form-label">Nominee Address</label><input type="text" name="nomineeAddress" class="form-control" value="<c:out value='${customer.nomineeAddress}'/>" maxlength="500" /></div>
                 </div>
+                <%-- CBS Tier-1: Optimistic locking token per Finacle CIF_MASTER / Temenos CUSTOMER.
+                     The @Version field is carried through the form so JPA detects concurrent
+                     modifications. If two MAKERs edit the same customer simultaneously, the
+                     second save throws OptimisticLockException instead of silently overwriting.
+                     Per RBI Operational Risk Guidelines: concurrent data modification must be
+                     detected and rejected to prevent data corruption. --%>
+                <input type="hidden" name="version" value="${customer.version}" />
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                 <button type="submit" class="btn btn-sm btn-fv-primary mt-2"><i class="bi bi-check-circle"></i> Save Changes</button>
             </form>

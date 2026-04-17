@@ -505,6 +505,62 @@ public class Customer extends BaseEntity {
         return isKycExpiringSoon(LocalDate.now());
     }
 
+    // === PII Immutability Guard (GAP 2 — Tier-1 defense-in-depth) ===
+
+    /**
+     * CBS Tier-1 CRITICAL: PAN and Aadhaar are IMMUTABLE after initial CIF creation.
+     * Per RBI KYC Master Direction 2016: PAN/Aadhaar define the CIF identity and
+     * must never be changed — correction requires CIF closure and re-creation.
+     *
+     * <p>This {@code @PreUpdate} hook is the LAST LINE OF DEFENSE. The service layer
+     * ({@code CustomerCifServiceImpl.updateCustomer}) already excludes PAN/Aadhaar
+     * from the mutable field copy, and the API controller rejects requests with
+     * PAN/Aadhaar in the body. But if any future code path (batch job, admin tool,
+     * direct repo save) accidentally modifies these fields, this hook catches it
+     * at the JPA boundary — before the SQL UPDATE is issued.
+     *
+     * <p>Per Finacle CIF_MASTER: immutable fields are enforced by DB triggers.
+     * JPA {@code @PreUpdate} is the closest equivalent in Spring Boot without
+     * requiring DB-vendor-specific DDL.
+     *
+     * <p><b>Mechanism:</b> Stores the original PAN/Aadhaar hashes at load time via
+     * {@code @PostLoad}. On {@code @PreUpdate}, recomputes hashes from current field
+     * values and compares. If changed, throws {@code IllegalStateException} which
+     * aborts the transaction. Uses hashes (not plaintext) because the encrypted
+     * ciphertext changes on every read (random IV), so direct comparison is impossible.
+     */
+    @Transient
+    private String originalPanHash;
+
+    @Transient
+    private String originalAadhaarHash;
+
+    @PostLoad
+    void snapshotImmutableFields() {
+        this.originalPanHash = this.panHash;
+        this.originalAadhaarHash = this.aadhaarHash;
+    }
+
+    @PreUpdate
+    void enforceImmutablePii() {
+        // Only enforce if snapshots were taken (i.e., entity was loaded from DB,
+        // not a freshly created entity going through its first save).
+        if (originalPanHash != null && panHash != null
+                && !originalPanHash.equals(panHash)) {
+            throw new IllegalStateException(
+                    "CBS IMMUTABILITY VIOLATION: PAN number cannot be changed after CIF creation. "
+                            + "Per RBI KYC Master Direction 2016: PAN defines the CIF identity. "
+                            + "Customer: " + customerNumber);
+        }
+        if (originalAadhaarHash != null && aadhaarHash != null
+                && !originalAadhaarHash.equals(aadhaarHash)) {
+            throw new IllegalStateException(
+                    "CBS IMMUTABILITY VIOLATION: Aadhaar number cannot be changed after CIF creation. "
+                            + "Per UIDAI / RBI KYC norms: Aadhaar is immutable post-CIF creation. "
+                            + "Customer: " + customerNumber);
+        }
+    }
+
     // === PII Hash Helpers ===
 
     /**
