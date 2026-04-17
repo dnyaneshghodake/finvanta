@@ -117,10 +117,9 @@
                 <div class="fv-detail-section-title"><i class="bi bi-clock-history"></i> Record Audit Trail</div>
                 <div class="fv-detail-item"><div class="fv-detail-label">Created By</div><div class="fv-detail-value"><c:out value="${customer.createdBy}" default="--" /></div></div>
                 <div class="fv-detail-item"><div class="fv-detail-label">Created Date</div><div class="fv-detail-value"><c:out value="${customer.createdAt}" default="--" /></div></div>
-                <div class="fv-detail-item"><div class="fv-detail-label">Last Modified By</div><div class="fv-detail-value"><c:out value="${customer.lastModifiedBy}" default="--" /></div></div>
-                <div class="fv-detail-item"><div class="fv-detail-label">Last Modified Date</div><div class="fv-detail-value"><c:out value="${customer.lastModifiedAt}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Last Modified By</div><div class="fv-detail-value"><c:out value="${customer.updatedBy}" default="--" /></div></div>
+                <div class="fv-detail-item"><div class="fv-detail-label">Last Modified Date</div><div class="fv-detail-value"><c:out value="${customer.updatedAt}" default="--" /></div></div>
                 <div class="fv-detail-item"><div class="fv-detail-label">Record Version</div><div class="fv-detail-value"><c:out value="${customer.version}" default="0" /></div></div>
-                <div class="fv-detail-item"><div class="fv-detail-label">Audit Hash</div><div class="fv-detail-value"><small class="font-monospace text-muted"><c:out value="${customer.auditHash}" default="--" /></small></div></div>
 
             </div><%-- end fv-detail-grid --%>
         </div>
