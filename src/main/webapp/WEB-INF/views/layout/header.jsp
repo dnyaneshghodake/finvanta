@@ -15,3 +15,9 @@
     <link rel="stylesheet" href="${pageContext.request.contextPath}/css/finvanta-theme.css">
 </head>
 <body>
+<%-- CBS Tier-1: Print-only header for branch file maintenance printouts.
+     Hidden on screen, visible only in @media print. Shows bank name + timestamp. --%>
+<div class="fv-print-header">
+    <h2>FINVANTA — Core Banking System</h2>
+    <small><c:out value="${pageTitle}" default="" /> | Branch: <c:out value="${userBranchCode}" default="--" /> | Printed by: <c:out value="${pageContext.request.userPrincipal.name}" default="" /></small>
+</div>

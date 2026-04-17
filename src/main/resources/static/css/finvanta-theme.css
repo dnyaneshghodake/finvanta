@@ -421,3 +421,45 @@ body {
     .fv-table tbody td { padding: 4px 4px; font-size: 11px; max-width: 150px; }
     .fv-table .btn-sm { padding: 1px 4px; font-size: 10px; }
 }
+
+/* ================================================================
+   CBS PRINT LAYOUT — Per Finacle "Print CIF" / "Print Statement"
+   Branch operations require physical printouts for file maintenance.
+   ================================================================ */
+@media print {
+    .fv-sidebar, .fv-topbar, .fv-footer,
+    .fv-breadcrumb, .btn, button, form,
+    .dataTables_wrapper .dataTables_length,
+    .dataTables_wrapper .dataTables_filter,
+    .dataTables_wrapper .dataTables_paginate,
+    .fv-loading-overlay, .modal { display: none !important; }
+    .fv-main {
+        margin: 0 !important; padding: 10px !important;
+        max-width: 100% !important; font-size: 11px !important;
+    }
+    .fv-print-header {
+        display: block !important; text-align: center;
+        border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px;
+    }
+    .fv-print-header h2 { font-size: 16px; margin: 0; }
+    .fv-print-header small { font-size: 10px; color: #666; }
+    .fv-card { border: 1px solid #999 !important; box-shadow: none !important; page-break-inside: avoid; }
+    .fv-card .card-header {
+        background: #f0f0f0 !important; color: #000 !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .fv-table { font-size: 10px !important; }
+    .fv-table thead th {
+        background: #e0e0e0 !important; color: #000 !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .fv-badge {
+        border: 1px solid #000 !important; background: transparent !important;
+        color: #000 !important;
+    }
+    .fv-detail-grid { grid-template-columns: 1fr 1fr !important; }
+    .fv-detail-label { color: #333 !important; }
+    .fv-detail-value { color: #000 !important; }
+    .fv-section-body { display: block !important; }
+    .fv-tab-pane { display: block !important; }
+}
