@@ -335,6 +335,17 @@ public class AuditService {
             // (see logEvent line that sets eventTimestamp). Both sites MUST use the same
             // precision — SECONDS — so the hash computed at insert is identical to the
             // hash recomputed during verifyChainIntegrity after a DB round-trip.
+            //
+            // BACKWARD COMPATIBILITY NOTE: logEvent has ALWAYS truncated to SECONDS
+            // (since the initial implementation). The previous computeHash used MICROS,
+            // but truncating a SECONDS-precision value to MICROS is a no-op — the
+            // formatted output is identical ("2026-04-01T10:30:45" either way, since
+            // ISO_LOCAL_DATE_TIME omits zero fractional seconds). This change from
+            // MICROS to SECONDS is therefore safe for all existing audit records.
+            // No hash migration is required. This is a greenfield application — the
+            // CbsBootstrapInitializer creates audit records from an empty DB, and all
+            // records have always been written with SECONDS-precision timestamps.
+            //
             // Using ISO_LOCAL_DATE_TIME.format() instead of LocalDateTime.toString()
             // guarantees a stable representation (e.g., "2026-04-01T10:30:00" rather
             // than "2026-04-01T10:30" which toString() emits when seconds are zero).
