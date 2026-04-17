@@ -90,6 +90,10 @@ document.addEventListener('DOMContentLoaded', function () {
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
         }
+        /* Reset dirty flag BEFORE submit — form.submit() bypasses the submit
+           event listener (which normally resets formDirty), so the beforeunload
+           handler would show "You have unsaved changes" and block navigation. */
+        formDirty = false;
         showLoading();
         form.submit();
     }
