@@ -5,12 +5,17 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Loan Accounts</li>
+    </ul>
+
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
 
     <div class="fv-card">
-        <div class="card-header">Active Loan Accounts</div>
+        <div class="card-header"><i class="bi bi-bank"></i> Active Loan Accounts</div>
         <div class="card-body">
             <!-- CBS: Loan Account search per Finacle LOANINQ -->
             <form method="get" action="${pageContext.request.contextPath}/loan/accounts/search" class="row g-2 mb-3">

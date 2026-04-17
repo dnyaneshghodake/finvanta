@@ -5,27 +5,33 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/loan/applications">Loan Applications</a></li>
+        <li class="active">New Application</li>
+    </ul>
+
     <c:if test="${not empty error}">
         <div class="fv-alert alert alert-danger"><c:out value="${error}" /></div>
     </c:if>
 
     <div class="fv-card">
-        <div class="card-header">Loan Application Form</div>
+        <div class="card-header"><i class="bi bi-file-earmark-plus"></i> Loan Application Form <div class="float-end"><a href="${pageContext.request.contextPath}/loan/applications" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/loan/applications"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a></div></div>
         <div class="card-body">
             <form method="post" action="${pageContext.request.contextPath}/loan/apply" class="fv-form" id="loanForm">
                 <div class="row mb-3">
-                    <div class="col-md-6">
-                        <label for="customerId" class="form-label">Customer *</label>
-                        <select name="customerId" id="customerId" class="form-select" required>
+                    <div class="col-md-6 fv-mandatory-group">
+                        <label for="customerId" class="form-label fv-required">Customer</label><span class="fv-help-icon" data-fv-help="Only KYC-verified customers with active CIF are eligible for loan origination per RBI norms.">?</span>
+                        <select name="customerId" id="customerId" class="form-select" required tabindex="1">
                             <option value="">-- Select Customer --</option>
                             <c:forEach var="cust" items="${customers}">
                                 <option value="${cust.id}"><c:out value="${cust.customerNumber}" /> - <c:out value="${cust.fullName}" /></option>
                             </c:forEach>
                         </select>
                     </div>
-                    <div class="col-md-6">
-                        <label for="branchId" class="form-label">Branch *</label>
-                        <select name="branchId" id="branchId" class="form-select" required>
+                    <div class="col-md-6 fv-mandatory-group">
+                        <label for="branchId" class="form-label fv-required">Branch</label>
+                        <select name="branchId" id="branchId" class="form-select" required tabindex="2">
                             <option value="">-- Select Branch --</option>
                             <c:forEach var="branch" items="${branches}">
                                 <option value="${branch.id}"><c:out value="${branch.branchCode}" /> - <c:out value="${branch.branchName}" /></option>
@@ -35,8 +41,8 @@
                 </div>
 
                 <div class="row mb-3">
-                    <div class="col-md-6">
-                        <label for="productType" class="form-label">Product Type *</label>
+                    <div class="col-md-6 fv-mandatory-group">
+                        <label for="productType" class="form-label fv-required">Product Type</label><span class="fv-help-icon" data-fv-help="Per Finacle PDDEF: product determines rate range, tenure limits, penal rate, and interest type (fixed/floating).">?</span>
                         <select name="productType" id="productType" class="form-select" required>
                             <option value="">-- Select Product --</option>
                             <c:forEach var="product" items="${products}">
@@ -55,21 +61,21 @@
                         </select>
                         <small id="productHint" class="form-text text-muted"></small>
                     </div>
-                    <div class="col-md-6">
-                        <label for="requestedAmount" class="form-label">Requested Amount (INR) *</label>
+                    <div class="col-md-6 fv-mandatory-group">
+                        <label for="requestedAmount" class="form-label fv-required">Requested Amount (INR)</label><span class="fv-help-icon" data-fv-help="Per product PDDEF: min/max amount auto-populated. Per RBI exposure norms: subject to borrower's max borrowing limit.">?</span>
                         <input type="number" name="requestedAmount" id="requestedAmount" class="form-control" data-fv-type="amount" min="10000" max="50000000" required placeholder="e.g., 1000000" />
                         <small id="amountHint" class="form-text text-muted"></small>
                     </div>
                 </div>
 
                 <div class="row mb-3">
-                    <div class="col-md-6">
-                        <label for="interestRate" class="form-label">Interest Rate (% p.a.) *</label>
+                    <div class="col-md-6 fv-mandatory-group">
+                        <label for="interestRate" class="form-label fv-required">Interest Rate (% p.a.)</label><span class="fv-help-icon" data-fv-help="Per RBI Fair Practices Code: rate must be within product range. Auto-populated with midpoint on product selection.">?</span>
                         <input type="number" name="interestRate" id="interestRate" class="form-control" data-fv-type="rate" step="0.25" required placeholder="Auto-populated from product" />
                         <small id="rateHint" class="form-text text-muted"></small>
                     </div>
-                    <div class="col-md-6">
-                        <label for="tenureMonths" class="form-label">Tenure (Months) *</label>
+                    <div class="col-md-6 fv-mandatory-group">
+                        <label for="tenureMonths" class="form-label fv-required">Tenure (Months)</label>
                         <input type="number" name="tenureMonths" id="tenureMonths" class="form-control" data-fv-type="tenure" required placeholder="e.g., 120" />
                         <small id="tenureHint" class="form-text text-muted"></small>
                     </div>
@@ -115,8 +121,8 @@
 
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                 <div class="mt-3">
-                    <button type="submit" class="btn btn-fv-primary">Submit Application</button>
-                    <a href="${pageContext.request.contextPath}/loan/applications" class="btn btn-outline-secondary ms-2">Cancel</a>
+                    <button type="submit" class="btn btn-fv-primary"><i class="bi bi-check-circle"></i> Submit Application <span class="fv-kbd">F2</span></button>
+                    <a href="${pageContext.request.contextPath}/loan/applications" class="btn btn-outline-secondary ms-2" data-fv-cancel="${pageContext.request.contextPath}/loan/applications"><i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span></a>
                 </div>
             </form>
         </div>
