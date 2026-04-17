@@ -4,6 +4,11 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/admin/products">Product Master</a></li>
+        <li class="active">Edit Product</li>
+    </ul>
     <c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
     <c:if test="${not empty success}"><div class="alert alert-success"><c:out value="${success}"/></div></c:if>
 

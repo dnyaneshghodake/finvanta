@@ -5,6 +5,11 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/admin/products">Product Master</a></li>
+        <li class="active"><c:out value="${product.productCode}" /></li>
+    </ul>
     <div class="fv-card">
         <div class="card-header">
             Product: <c:out value="${product.productCode}" /> &mdash; <c:out value="${product.productName}" />

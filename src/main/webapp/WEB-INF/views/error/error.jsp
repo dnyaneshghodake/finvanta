@@ -4,6 +4,10 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Error</li>
+    </ul>
     <div class="fv-card">
         <div class="card-body text-center py-5">
             <div style="font-size:4rem;color:var(--fv-danger);margin-bottom:12px;">
