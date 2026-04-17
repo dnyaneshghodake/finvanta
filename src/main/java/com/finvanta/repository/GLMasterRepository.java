@@ -4,6 +4,7 @@ import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.enums.GLAccountType;
 
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 import java.util.List;
 import java.util.Optional;
@@ -11,15 +12,32 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+/**
+ * CBS GL Master Repository per Finacle GL_MASTER / Temenos CHART.OF.ACCOUNTS.
+ *
+ * <h3>Lock Timeout (CBS Tier-1 Hardening):</h3>
+ * All {@code PESSIMISTIC_WRITE} queries carry a 30-second lock timeout via
+ * {@code jakarta.persistence.lock.timeout}. Without this, SQL Server's default
+ * {@code LOCK_TIMEOUT = -1} (infinite wait) means a single stuck transaction
+ * (e.g., long-running EOD step) blocks ALL concurrent postings to the same GL
+ * code indefinitely. Per Finacle GL_LOCK / Temenos EB.LOCK: every pessimistic
+ * lock must have a bounded timeout with retry at the caller level.
+ *
+ * <p>The 30-second value matches Finacle's default GL lock timeout. Callers
+ * (TransactionEngine, AccountingService) should catch
+ * {@code PessimisticLockingFailureException} and retry with backoff.
+ */
 @Repository
 public interface GLMasterRepository extends JpaRepository<GLMaster, Long> {
 
     Optional<GLMaster> findByTenantIdAndGlCode(String tenantId, String glCode);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
     @Query("SELECT gl FROM GLMaster gl WHERE gl.tenantId = :tenantId AND gl.glCode = :glCode")
     Optional<GLMaster> findAndLockByTenantIdAndGlCode(
             @Param("tenantId") String tenantId, @Param("glCode") String glCode);

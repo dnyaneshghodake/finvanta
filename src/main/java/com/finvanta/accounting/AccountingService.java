@@ -373,7 +373,18 @@ public class AccountingService {
      */
     @Transactional
     public void updateGLBalances(String tenantId, List<JournalLineRequest> lines, Branch branch) {
-        for (JournalLineRequest line : lines) {
+        // CBS CRITICAL — GL Lock Ordering per Finacle GL_LOCK / Temenos EB.LOCK:
+        // Sort journal lines by GL code BEFORE acquiring PESSIMISTIC_WRITE locks.
+        // Without ordering, Transaction A (DR 1100 / CR 2010) and Transaction B
+        // (DR 2010 / CR 1100) acquire locks in opposite order — classic ABBA deadlock.
+        // Sorting by glCode ensures all concurrent transactions acquire GL locks in
+        // the same canonical order, eliminating cross-GL deadlocks.
+        // Same pattern as DepositAccountServiceImpl.transfer() which uses alphabetical
+        // account ordering to prevent inter-account deadlocks.
+        List<JournalLineRequest> sortedLines = lines.stream()
+                .sorted(java.util.Comparator.comparing(JournalLineRequest::glCode))
+                .toList();
+        for (JournalLineRequest line : sortedLines) {
             // Step 1: Update tenant-level GLMaster (aggregate balance)
             GLMaster gl = glMasterRepository
                     .findAndLockByTenantIdAndGlCode(tenantId, line.glCode())

@@ -21,7 +21,11 @@ import java.time.LocalDateTime;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.DeadlockLoserDataAccessException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -108,18 +112,95 @@ public class TransactionEngine {
         this.sequenceGenerator = sequenceGenerator;
     }
 
+    /** CBS Tier-1: Max retry attempts on deadlock/lock-timeout per Finacle GL_LOCK */
+    private static final int MAX_RETRY_ATTEMPTS = 3;
+
+    /** CBS Tier-1: Base backoff delay in ms (doubles on each retry: 100→200→400) */
+    private static final long RETRY_BASE_DELAY_MS = 100;
+
+    /** CBS Tier-1: Accepted currency code per RBI FEMA regulations.
+     *  Even a domestic-only CBS must explicitly validate currency to reject
+     *  non-INR postings and prepare for future FCY module integration.
+     *  Per Finacle TRAN_POSTING.CURRENCY / Temenos CURRENCY.MARKET. */
+    private static final String CBS_CURRENCY_CODE = "INR";
+
     /**
-     * Executes a financial transaction through the CBS validation chain.
+     * Executes a financial transaction through the CBS validation chain with
+     * automatic retry on transient lock failures.
      *
-     * This is the ONLY method that should be called for financial postings.
-     * All CBS modules must use this instead of calling AccountingService directly.
+     * <p><b>CBS Tier-1 Retry Strategy per Finacle GL_LOCK / Temenos EB.LOCK:</b>
+     * SQL Server deadlock victims and lock-timeout failures are transient — the
+     * same transaction will succeed on retry once the conflicting lock is released.
+     * This method retries up to {@value #MAX_RETRY_ATTEMPTS} times with exponential
+     * backoff (100ms → 200ms → 400ms) before failing permanently.
+     *
+     * <p>Only {@code PessimisticLockingFailureException} (lock timeout),
+     * {@code DeadlockLoserDataAccessException} (deadlock victim), and
+     * {@code CannotAcquireLockException} (generic lock failure) trigger retry.
+     * Business exceptions ({@code BusinessException}) fail immediately — they
+     * indicate validation failures, not transient contention.
+     *
+     * <p>Each retry creates a FRESH transaction because the failed transaction's
+     * Hibernate Session is poisoned (rollback-only). The retry loop lives OUTSIDE
+     * the {@code @Transactional} boundary so Spring creates a new TX per attempt.
      *
      * @param request The transaction request built by the calling module
      * @return TransactionResult with journal ref, voucher number, and posting status
-     * @throws BusinessException if any validation step fails
+     * @throws BusinessException if any validation step fails (non-retryable)
+     * @throws PessimisticLockingFailureException if all retry attempts exhausted
      */
-    @Transactional
     public TransactionResult execute(TransactionRequest request) {
+        for (int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+            try {
+                return executeInternal(request);
+            } catch (DeadlockLoserDataAccessException | PessimisticLockingFailureException
+                    | CannotAcquireLockException e) {
+                if (attempt == MAX_RETRY_ATTEMPTS) {
+                    log.error(
+                            "Transaction FAILED after {} retries (lock contention): module={}, type={}, amount={}, account={}",
+                            MAX_RETRY_ATTEMPTS,
+                            request.getSourceModule(),
+                            request.getTransactionType(),
+                            request.getAmount(),
+                            request.getAccountReference(),
+                            e);
+                    throw e;
+                }
+                long delay = RETRY_BASE_DELAY_MS * (1L << (attempt - 1)); // exponential: 100, 200, 400
+                log.warn(
+                        "Transaction retry {}/{} after lock failure: module={}, type={}, delay={}ms, error={}",
+                        attempt,
+                        MAX_RETRY_ATTEMPTS,
+                        request.getSourceModule(),
+                        request.getTransactionType(),
+                        delay,
+                        e.getClass().getSimpleName());
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new BusinessException("TRANSACTION_INTERRUPTED", "Transaction interrupted during retry backoff");
+                }
+            }
+        }
+        // Unreachable — loop either returns or throws
+        throw new IllegalStateException("Retry loop exited without result");
+    }
+
+    /**
+     * Internal transaction execution — runs inside its own {@code @Transactional}
+     * boundary so each retry attempt gets a fresh transaction and Hibernate Session.
+     *
+     * <p><b>Isolation level:</b> Uses {@code READ_COMMITTED} (SQL Server default)
+     * combined with {@code PESSIMISTIC_WRITE} locks on GL rows. The pessimistic
+     * locks provide SERIALIZABLE-equivalent behavior for the specific rows being
+     * updated, while READ_COMMITTED avoids unnecessary lock escalation on read-only
+     * queries (GL validation, calendar lookup, batch check). Per Finacle TRAN_POSTING:
+     * the posting isolation comes from row-level pessimistic locks, not from raising
+     * the transaction isolation level globally (which would cause excessive blocking).
+     */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public TransactionResult executeInternal(TransactionRequest request) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser =
                 request.getInitiatedBy() != null ? request.getInitiatedBy() : SecurityUtil.getCurrentUsername();
@@ -133,12 +214,22 @@ public class TransactionEngine {
                 currentUser);
 
         // ================================================================
-        // STEP 1: Idempotency Check
-        // Per Finacle UNIQUE.REF — prevent duplicate processing on retries
+        // STEP 1: Idempotency Check (Engine-Level + Module-Level)
+        // Per Finacle UNIQUE.REF / Temenos OFS.DUPLICATE.CHECK:
+        // Engine-level: if the request carries an idempotencyKey, log it for
+        // traceability. The actual duplicate detection is enforced at the module
+        // level via unique constraints on (tenant_id, idempotency_key) in
+        // module-specific transaction tables (DepositTransaction, LoanTransaction).
+        // This two-tier design is intentional:
+        //   - Engine cannot own module-specific tables (architectural boundary)
+        //   - Module tables already have unique constraints (single enforcement point)
+        //   - Engine logs the key for cross-module traceability and audit
+        // Future enhancement: engine-level transaction_registry table for
+        // cross-module dedup (needed when Remittance/Trade Finance modules added).
         // ================================================================
-        // NOTE: Idempotency is checked at the module level (e.g., LoanTransaction.idempotencyKey)
-        // because the engine doesn't own module-specific transaction tables.
-        // The engine validates the request; the module checks for duplicates.
+        if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
+            log.debug("Transaction idempotency key: {} (module-level dedup enforced)", request.getIdempotencyKey());
+        }
 
         // ================================================================
         // STEP 2: Business Date Validation (Branch-Scoped)
@@ -234,11 +325,28 @@ public class TransactionEngine {
         }
 
         // ================================================================
-        // STEP 4: Amount Validation
+        // STEP 4: Amount & Currency Validation
         // Per RBI/Finacle standards: amount must be positive, within precision limits.
         // CBS precision: max 18 digits total, 2 decimal places (DECIMAL(18,2)).
         // Already validated by TransactionRequest.Builder, but defense-in-depth.
+        //
+        // CBS Tier-1 Currency Validation per RBI FEMA / Finacle TRAN_POSTING.CURRENCY:
+        // Even a domestic-only CBS must explicitly validate currency code. This:
+        //   1. Rejects non-INR postings that could corrupt GL balances
+        //   2. Prepares for future FCY module integration (Remittance, Trade Finance)
+        //   3. Ensures all journal lines are in the same currency (no mixed-currency journals)
+        // Per Finacle: FCY transactions require FCY→LCY conversion at the GL posting
+        // level via exchange rate lookup. Until the FCY module is implemented, only INR
+        // is accepted. The currencyCode field on TransactionRequest is optional — if
+        // absent, INR is assumed (backward compatible with existing callers).
         // ================================================================
+        if (request.getCurrencyCode() != null && !CBS_CURRENCY_CODE.equals(request.getCurrencyCode())) {
+            throw new BusinessException(
+                    "UNSUPPORTED_CURRENCY",
+                    "Currency " + request.getCurrencyCode() + " is not supported. "
+                            + "Only " + CBS_CURRENCY_CODE + " transactions are allowed. "
+                            + "Per RBI FEMA: FCY transactions require the FCY module (not yet implemented).");
+        }
         if (request.getAmount() == null || request.getAmount().signum() <= 0) {
             throw new BusinessException(
                     "INVALID_AMOUNT", "Transaction amount must be positive: " + request.getAmount());

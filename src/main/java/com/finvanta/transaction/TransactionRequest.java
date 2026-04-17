@@ -72,6 +72,14 @@ public class TransactionRequest {
     private final boolean systemGenerated;
 
     /**
+     * CBS Tier-1: Transaction currency code per RBI FEMA / Finacle TRAN_POSTING.CURRENCY.
+     * Defaults to "INR" if not specified (backward compatible with existing callers).
+     * Per Finacle/Temenos: every financial transaction must carry an explicit currency.
+     * Non-INR currencies are rejected until the FCY module is implemented.
+     */
+    private final String currencyCode;
+
+    /**
      * CBS Compound Journal Groups per Finacle TRAN_POSTING multi-leg support.
      *
      * Some CBS operations require multiple balanced journal entries in a single
@@ -102,6 +110,7 @@ public class TransactionRequest {
         this.productType = builder.productType;
         this.idempotencyKey = builder.idempotencyKey;
         this.systemGenerated = builder.systemGenerated;
+        this.currencyCode = builder.currencyCode;
         this.compoundJournalGroups = builder.compoundJournalGroups;
     }
 
