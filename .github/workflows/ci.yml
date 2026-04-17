@@ -1,0 +1,77 @@
+name: CI
+
+# CBS Tier-1 CI gate per RBI IT Governance Direction 2023 §7.2 + §8.3.
+#
+# Every commit into master/integration and every PR must pass:
+#   - Full unit + ArchUnit + Spring Boot context test suite (`mvn clean test`).
+#     ArchUnit rules in CbsArchitectureTest enforce critical invariants:
+#       * AccountingService.postJournalEntry has exactly two callers inside
+#         TransactionEngine (single-posting-point guarantee).
+#       * Non-legacy production code MUST NOT depend on com.finvanta.legacy.*
+#         (prevents divergent code paths during deprecation).
+#       * TenantContext/branch filter invariants on base entities.
+#   - War packaging (`mvn -DskipTests package`) to verify the Tomcat war
+#     assembles without runtime classloader surprises.
+#
+# NOTE: Spotless (Palantir Java Format) is intentionally NOT enforced in CI
+# yet. The `integration` branch currently has ~150 files with pre-existing
+# formatting drift that would fail `mvn spotless:check`. Normalizing that
+# must be a dedicated reformat PR so the diff is reviewable independently
+# from this CI wiring. Spotless will be added as a gate in the follow-up.
+#
+# Java 17 (Temurin) matches pom.xml <java.version>17</java.version>.
+# The Maven repository is cached (keyed on pom.xml) so cold builds run in
+# roughly 2 minutes and warm builds in about 1.
+
+on:
+  push:
+    branches:
+      - master
+      - integration
+  pull_request:
+    branches:
+      - master
+      - integration
+  workflow_dispatch:
+
+# Cancel in-flight runs on the same branch when a new commit lands.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & Test (Java 17, H2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # Full unit + ArchUnit + Spring Boot context test suite against H2.
+      # `clean` avoids stale target/ artifacts after rename refactors (which
+      # is precisely how the ArchUnit regression that became audit finding H1
+      # landed on integration after Phase 1's com.finvanta.legacy package move —
+      # see PR #29).
+      - name: Unit + ArchUnit + Spring context tests
+        run: mvn -B -ntp -U clean test
+
+      # Verify the war packages cleanly. Skips tests (already run above).
+      - name: Package war
+        run: mvn -B -ntp -DskipTests package
+
+      - name: Upload surefire reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-${{ github.run_number }}
+          path: target/surefire-reports/
+          retention-days: 7
