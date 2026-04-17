@@ -5,6 +5,12 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/branch/list">Branches</a></li>
+        <li class="active"><c:out value="${branch.branchCode}" /> &mdash; <c:out value="${branch.branchName}" /></li>
+    </ul>
+
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>

@@ -5,11 +5,17 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-<c:if test="${not empty success}"><div class="alert alert-success"><c:out value="${success}"/></div></c:if>
-<c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+<ul class="fv-breadcrumb">
+    <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+    <li><a href="${pageContext.request.contextPath}/deposit/accounts">CASA Accounts</a></li>
+    <li class="active">Fund Transfer</li>
+</ul>
+
+<c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}"/></div></c:if>
+<c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
 
 <div class="fv-card">
-    <div class="card-header">Internal Fund Transfer <span class="badge bg-info ms-2">Finacle TRAN_POSTING</span></div>
+    <div class="card-header"><i class="bi bi-arrow-left-right"></i> Internal Fund Transfer <span class="badge bg-info ms-2">Finacle TRAN_POSTING</span> <div class="float-end"><a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/deposit/accounts"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a></div></div>
     <div class="card-body">
     <form method="post" action="${pageContext.request.contextPath}/deposit/transfer" class="fv-form" id="transferForm">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>

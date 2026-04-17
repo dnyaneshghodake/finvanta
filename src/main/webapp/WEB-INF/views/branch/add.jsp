@@ -4,11 +4,17 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/branch/list">Branches</a></li>
+        <li class="active">Add Branch</li>
+    </ul>
+
     <c:if test="${not empty error}">
         <div class="fv-alert alert alert-danger"><c:out value="${error}" /></div>
     </c:if>
     <div class="fv-card">
-        <div class="card-header"><i class="bi bi-building-add"></i> Add New Branch <a href="${pageContext.request.contextPath}/branch/list" class="btn btn-sm btn-outline-secondary float-end"><i class="bi bi-arrow-left"></i> Back</a></div>
+        <div class="card-header"><i class="bi bi-building-add"></i> Add New Branch <div class="float-end"><a href="${pageContext.request.contextPath}/branch/list" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/branch/list"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a></div></div>
         <div class="card-body">
             <p class="text-muted small mb-3">Per Finacle BRANCH_MASTER / RBI Banking Regulation Act 1949 Section 23: every branch must be licensed by RBI. Branch code is immutable after creation.</p>
             <form method="post" action="${pageContext.request.contextPath}/branch/add" class="fv-form">

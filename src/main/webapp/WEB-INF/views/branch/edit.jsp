@@ -4,11 +4,18 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/branch/list">Branches</a></li>
+        <li><a href="${pageContext.request.contextPath}/branch/view/${branch.id}"><c:out value="${branch.branchCode}" /></a></li>
+        <li class="active">Edit</li>
+    </ul>
+
     <c:if test="${not empty error}">
         <div class="fv-alert alert alert-danger"><c:out value="${error}" /></div>
     </c:if>
     <div class="fv-card">
-        <div class="card-header"><i class="bi bi-pencil-square"></i> Edit Branch &mdash; <c:out value="${branch.branchCode}" /> <a href="${pageContext.request.contextPath}/branch/view/${branch.id}" class="btn btn-sm btn-outline-secondary float-end"><i class="bi bi-x-circle"></i> Cancel</a></div>
+        <div class="card-header"><i class="bi bi-pencil-square"></i> Edit Branch &mdash; <c:out value="${branch.branchCode}" /> <div class="float-end"><a href="${pageContext.request.contextPath}/branch/view/${branch.id}" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/branch/view/${branch.id}"><i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span></a></div></div>
         <div class="card-body">
             <form method="post" action="${pageContext.request.contextPath}/branch/edit/${branch.id}" class="fv-form">
                 <!-- Section: Identity (branchCode and branchType are IMMUTABLE — shown as disabled) -->
