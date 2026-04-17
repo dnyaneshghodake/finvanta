@@ -313,8 +313,12 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         // OptimisticLockException on flush. Without this, the version on the existing
         // entity is always "current" (just loaded), so the check never fires.
         // Per Finacle CIF_MASTER / RBI Operational Risk: concurrent edits must be rejected.
-        if (updated.getVersion() != null) {
-            existing.setVersion(updated.getVersion());
+        if (updated.getVersion() != null && !updated.getVersion().equals(existing.getVersion())) {
+            throw new BusinessException("CONCURRENT_MODIFICATION",
+                    "This customer record was modified by another user. "
+                            + "Please reload the page and try again. "
+                            + "(Expected version " + updated.getVersion()
+                            + ", current version " + existing.getVersion() + ")");
         }
 
         String beforeState = existing.getFullName() + "|" + existing.getMobileNumber();
