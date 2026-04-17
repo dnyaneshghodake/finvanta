@@ -5,6 +5,12 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/loan/accounts">Loan Accounts</a></li>
+        <li class="active"><c:out value="${account.accountNumber}" /></li>
+    </ul>
+
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
@@ -22,12 +28,13 @@
     </div>
 
     <div class="fv-card">
-        <div class="card-header">Account Information
+        <div class="card-header"><i class="bi bi-bank"></i> Account Information &mdash; <c:out value="${account.accountNumber}" />
             <div class="float-end">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print();" title="Print Account"><i class="bi bi-printer"></i> Print <span class="fv-kbd">Ctrl+P</span></button>
                 <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
                     <a href="${pageContext.request.contextPath}/audit/logs?entityType=LoanAccount&entityId=${account.id}" class="btn btn-sm btn-outline-info me-1"><i class="bi bi-shield-lock"></i> Audit Trail</a>
                 </c:if>
-                <a href="${pageContext.request.contextPath}/loan/accounts" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+                <a href="${pageContext.request.contextPath}/loan/accounts" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/loan/accounts"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a>
             </div>
         </div>
         <div class="card-body">

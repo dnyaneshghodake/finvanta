@@ -5,14 +5,21 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-<c:if test="${not empty success}"><div class="alert alert-success"><c:out value="${success}"/></div></c:if>
-<c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+<ul class="fv-breadcrumb">
+    <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+    <li><a href="${pageContext.request.contextPath}/deposit/accounts">CASA Accounts</a></li>
+    <li class="active"><c:out value="${account.accountNumber}"/></li>
+</ul>
+
+<c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}"/></div></c:if>
+<c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4>Account: <c:out value="${account.accountNumber}"/></h4>
+    <h4><i class="bi bi-wallet2"></i> Account: <c:out value="${account.accountNumber}"/></h4>
     <div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print();" title="Print Account"><i class="bi bi-printer"></i> Print <span class="fv-kbd">Ctrl+P</span></button>
         <span class="badge fs-6 ${account.active ? 'bg-success' : account.frozen ? 'bg-danger' : account.dormant ? 'bg-warning' : 'bg-secondary'}"><c:out value="${account.accountStatus}"/></span>
-        <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-sm btn-outline-secondary ms-2"><i class="bi bi-arrow-left"></i> Back</a>
+        <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-sm btn-outline-secondary ms-2" data-fv-cancel="${pageContext.request.contextPath}/deposit/accounts"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a>
     </div>
 </div>
 
@@ -102,7 +109,7 @@
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
         <input type="hidden" name="freezeType" value="TOTAL_FREEZE"/>
         <input type="hidden" name="reason" value="Admin freeze"/>
-        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Freeze this account?')"><i class="bi bi-lock"></i> Freeze</button>
+        <button type="submit" class="btn btn-danger btn-sm" data-confirm="Freeze this account? All debits will be blocked until unfrozen."><i class="bi bi-lock"></i> Freeze</button>
     </form>
     </c:if>
 </div></div>
@@ -111,7 +118,7 @@
 <div class="card mt-3"><div class="card-body">
     <form method="post" action="${pageContext.request.contextPath}/deposit/unfreeze/${account.accountNumber}" class="d-inline">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-        <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('Unfreeze this account?')"><i class="bi bi-unlock"></i> Unfreeze Account</button>
+        <button type="submit" class="btn btn-success btn-sm" data-confirm="Unfreeze this account? All transaction restrictions will be lifted."><i class="bi bi-unlock"></i> Unfreeze Account</button>
     </form>
 </div></div>
 </c:if>

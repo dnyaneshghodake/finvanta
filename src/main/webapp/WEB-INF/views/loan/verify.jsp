@@ -5,8 +5,14 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/loan/applications">Loan Applications</a></li>
+        <li class="active">Verify &mdash; <c:out value="${application.applicationNumber}" /></li>
+    </ul>
+
     <div class="fv-card">
-        <div class="card-header">Application Details</div>
+        <div class="card-header"><i class="bi bi-clipboard-check"></i> Application Details &mdash; <c:out value="${application.applicationNumber}" /> <div class="float-end"><a href="${pageContext.request.contextPath}/loan/applications" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/loan/applications"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a></div></div>
         <div class="card-body">
             <table class="table fv-table">
                 <tbody>
