@@ -4,6 +4,7 @@ import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.enums.DepositAccountStatus;
 
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -13,6 +14,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -24,7 +26,10 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
 
     Optional<DepositAccount> findByTenantIdAndAccountNumber(String tenantId, String accountNumber);
 
+    /** CBS Tier-1: 30s lock timeout per Finacle ACCT_LOCK. Prevents indefinite blocking
+     *  when concurrent postings contend on the same account (e.g., deposit + withdrawal). */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
     @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId AND da.accountNumber = :accountNumber")
     Optional<DepositAccount> findAndLockByTenantIdAndAccountNumber(
             @Param("tenantId") String tenantId, @Param("accountNumber") String accountNumber);

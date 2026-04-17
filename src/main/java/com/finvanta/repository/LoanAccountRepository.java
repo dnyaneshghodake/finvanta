@@ -4,6 +4,7 @@ import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.LoanStatus;
 
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -20,7 +22,9 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
 
     Optional<LoanAccount> findByTenantIdAndAccountNumber(String tenantId, String accountNumber);
 
+    /** CBS Tier-1: 30s lock timeout per Finacle ACCT_LOCK standard. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
     @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.accountNumber = :accountNumber")
     Optional<LoanAccount> findAndLockByTenantIdAndAccountNumber(
             @Param("tenantId") String tenantId, @Param("accountNumber") String accountNumber);

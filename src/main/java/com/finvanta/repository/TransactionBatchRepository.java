@@ -3,6 +3,7 @@ package com.finvanta.repository;
 import com.finvanta.domain.entity.TransactionBatch;
 
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -11,6 +12,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -38,8 +40,11 @@ public interface TransactionBatchRepository extends JpaRepository<TransactionBat
             @Param("businessDate") LocalDate businessDate,
             @Param("batchName") String batchName);
 
-    /** Lock batch for close operation (pessimistic write) */
+    /** Lock batch for running-totals update and close operation (pessimistic write).
+     *  30s lock timeout per Finacle GL_LOCK standard — prevents indefinite blocking
+     *  if a concurrent posting holds the batch lock during a long GL update. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
     @Query("SELECT tb FROM TransactionBatch tb WHERE tb.id = :id")
     Optional<TransactionBatch> findAndLockById(@Param("id") Long id);
 
