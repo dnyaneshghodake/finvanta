@@ -276,21 +276,36 @@ public class TransactionEngine {
                 currentUser);
 
         // ================================================================
-        // STEP 1: Idempotency Check (Engine-Level + Module-Level)
+        // STEP 1: Engine-Level Idempotency Check (Cross-Module Dedup)
         // Per Finacle UNIQUE.REF / Temenos OFS.DUPLICATE.CHECK:
-        // Engine-level: if the request carries an idempotencyKey, log it for
-        // traceability. The actual duplicate detection is enforced at the module
-        // level via unique constraints on (tenant_id, idempotency_key) in
-        // module-specific transaction tables (DepositTransaction, LoanTransaction).
-        // This two-tier design is intentional:
-        //   - Engine cannot own module-specific tables (architectural boundary)
-        //   - Module tables already have unique constraints (single enforcement point)
-        //   - Engine logs the key for cross-module traceability and audit
-        // Future enhancement: engine-level transaction_registry table for
-        // cross-module dedup (needed when Remittance/Trade Finance modules added).
+        // Every transaction with a non-null idempotencyKey is checked against
+        // the engine-level idempotency_registry table BEFORE any validation
+        // or GL posting. If a duplicate key is found, the previous result is
+        // returned immediately without re-posting — preventing double GL entries.
+        //
+        // Two-tier design:
+        //   1. Engine-level: idempotency_registry (cross-module, checked first)
+        //   2. Module-level: unique constraints on deposit_transactions, etc.
+        // Both layers must pass — defense-in-depth.
         // ================================================================
         if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-            log.debug("Transaction idempotency key: {} (module-level dedup enforced)", request.getIdempotencyKey());
+            var existing = idempotencyRepository.findByTenantIdAndIdempotencyKey(
+                    tenantId, request.getIdempotencyKey());
+            if (existing.isPresent()) {
+                IdempotencyRegistry prev = existing.get();
+                log.info("IDEMPOTENCY HIT: key={}, previousTxnRef={}, status={}",
+                        request.getIdempotencyKey(), prev.getTransactionRef(), prev.getStatus());
+                return new TransactionResult(
+                        prev.getTransactionRef(),
+                        prev.getVoucherNumber(),
+                        prev.getJournalEntryId(),
+                        null, // journalRef not stored in registry — caller uses journalEntryId
+                        request.getAmount(),
+                        request.getAmount(),
+                        request.getValueDate(),
+                        prev.getCreatedAt(),
+                        prev.getStatus());
+            }
         }
 
         // ================================================================
@@ -524,7 +539,7 @@ public class TransactionEngine {
                     request.getAccountReference(),
                     currentUser);
 
-            return new TransactionResult(
+            TransactionResult pendingResult = new TransactionResult(
                     txnRef,
                     null,
                     null,
@@ -534,6 +549,13 @@ public class TransactionEngine {
                     request.getValueDate(),
                     LocalDateTime.now(),
                     postingStatus);
+
+            // CBS Tier-1: Register in idempotency registry for PENDING_APPROVAL too.
+            // If the same request is retried, the engine returns PENDING_APPROVAL
+            // without creating a duplicate ApprovalWorkflow record.
+            registerIdempotency(tenantId, request, pendingResult);
+
+            return pendingResult;
         }
 
         log.debug("Transaction pipeline: STEP 7 (maker-checker) passed — auto-approved. Entering STEP 8 (GL posting). module={}, type={}",
@@ -667,7 +689,7 @@ public class TransactionEngine {
                 request.getTransactionType(),
                 request.getAmount());
 
-        return new TransactionResult(
+        TransactionResult postedResult = new TransactionResult(
                 txnRef,
                 voucherNumber,
                 journalEntry.getId(),
@@ -677,6 +699,13 @@ public class TransactionEngine {
                 request.getValueDate(),
                 postingDate,
                 postingStatus);
+
+        // CBS Tier-1: Register successful posting in idempotency registry.
+        // Future requests with the same idempotencyKey return this result
+        // without re-posting — preventing double GL entries.
+        registerIdempotency(tenantId, request, postedResult);
+
+        return postedResult;
     }
 
     /**
@@ -860,6 +889,41 @@ public class TransactionEngine {
         }
 
         return preview.build();
+    }
+
+    /**
+     * CBS Tier-1: Register a transaction result in the engine-level idempotency registry.
+     * Called after both POSTED and PENDING_APPROVAL paths to prevent duplicate processing
+     * on retried requests. Only registers if the request carries a non-null idempotencyKey.
+     *
+     * <p>Uses logEventInline-style inline save (same TX) so the registry entry commits
+     * or rolls back atomically with the GL posting. If the TX rolls back, the registry
+     * entry is also lost — the next retry will re-execute cleanly.
+     */
+    private void registerIdempotency(String tenantId, TransactionRequest request, TransactionResult result) {
+        if (request.getIdempotencyKey() == null || request.getIdempotencyKey().isBlank()) {
+            return; // System-generated transactions without keys — skip registration
+        }
+        try {
+            IdempotencyRegistry entry = new IdempotencyRegistry();
+            entry.setTenantId(tenantId);
+            entry.setIdempotencyKey(request.getIdempotencyKey());
+            entry.setTransactionRef(result.getTransactionRef());
+            entry.setVoucherNumber(result.getVoucherNumber());
+            entry.setJournalEntryId(result.getJournalEntryId());
+            entry.setStatus(result.getStatus());
+            entry.setSourceModule(request.getSourceModule());
+            entry.setCreatedAt(LocalDateTime.now());
+            idempotencyRepository.save(entry);
+            log.debug("Idempotency registered: key={}, txnRef={}, status={}",
+                    request.getIdempotencyKey(), result.getTransactionRef(), result.getStatus());
+        } catch (Exception e) {
+            // CBS Safety: If registry INSERT fails (e.g., unique constraint on concurrent retry),
+            // log but do NOT fail the posting — the GL posting is already committed/pending.
+            // Module-level idempotency provides the second layer of defense.
+            log.warn("Idempotency registry INSERT failed (non-fatal): key={}, error={}",
+                    request.getIdempotencyKey(), e.getMessage());
+        }
     }
 
     /**
