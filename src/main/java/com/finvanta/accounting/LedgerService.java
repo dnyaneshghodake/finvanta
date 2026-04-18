@@ -135,13 +135,22 @@ public class LedgerService {
             // GL balance verification at any point in time without re-aggregating
             // all prior entries. The running balance is the cumulative net (DR - CR)
             // for this GL code across all ledger entries up to this sequence.
-            // NOTE: This is a per-GL running balance, not a per-account balance.
-            // For the first entry on a GL, we start from the GL's current balance
-            // in GLMaster (which was just updated by AccountingService.updateGLBalances).
-            // For subsequent entries in the same batch, we track incrementally.
-            entry.setRunningBalance(
-                    (entry.getRunningBalance() != null ? entry.getRunningBalance() : BigDecimal.ZERO)
-                            .add(debit).subtract(credit));
+            //
+            // CBS CRITICAL: Running balance is derived from the TenantLedgerState sentinel's
+            // last known cumulative net. The sentinel tracks the global cumulative (DR - CR)
+            // across ALL GL codes. For a per-GL running balance, we would need a per-GL
+            // sentinel — a Phase 2 enhancement. For now, we compute the delta (debit - credit)
+            // for this entry. The running_balance field represents the NET EFFECT of this
+            // individual entry, not a true cumulative running balance.
+            //
+            // NOTE: A true per-GL cumulative running balance requires:
+            //   1. A per-GL sentinel table (gl_running_balance_state)
+            //   2. SELECT FOR UPDATE per GL code to serialize concurrent postings
+            //   3. Cumulative = previous_cumulative + debit - credit
+            // This is tracked as a Phase 2 enhancement. The current implementation
+            // stores the per-entry net (debit - credit) which is still useful for
+            // reconciliation (SUM(running_balance) should equal GL net balance).
+            entry.setRunningBalance(debit.subtract(credit));
 
             // Compute SHA-256 hash for this entry
             String hash = computeHash(entry, previousHash);

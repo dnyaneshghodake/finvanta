@@ -4,7 +4,7 @@ import com.finvanta.batch.ReconciliationService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
 
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,8 +13,20 @@ import org.springframework.stereotype.Service;
 /**
  * CBS Tier-1 Financial Safety Kill Switch per Finacle RISK_CONTROL / Temenos EB.SYSTEM.STATUS.
  *
- * <p><b>Purpose:</b> Blocks ALL financial postings when a critical integrity failure
- * is detected. This is the last line of defense against financial data corruption.
+ * <p><b>Purpose:</b> Blocks financial postings for a specific tenant when a critical
+ * integrity failure is detected. This is the last line of defense against financial
+ * data corruption.
+ *
+ * <p><b>MULTI-TENANT ISOLATION (CBS Tier-1 Mandatory):</b> Restrictions are PER-TENANT.
+ * One tenant's GL imbalance must NOT block other tenants' operations. Per RBI IT
+ * Governance Direction 2023 §8.3 and Finacle RISK_CONTROL: multi-tenant systems
+ * must provide tenant-isolated controls.
+ *
+ * <p><b>Thread safety:</b> Uses {@link ConcurrentHashMap} with immutable
+ * {@link RestrictionState} records. This eliminates the race condition where a
+ * concurrent reader could see the restriction flag as {@code true} but metadata
+ * fields as {@code null} (the old AtomicBoolean + volatile fields pattern had a
+ * happens-before gap between the flag set and the metadata writes).
  *
  * <p><b>Trigger conditions:</b>
  * <ul>
@@ -36,10 +48,9 @@ import org.springframework.stereotype.Service;
  * controls that halt financial operations when data integrity is compromised.
  * Continuing to post on a corrupted ledger compounds the damage exponentially.
  *
- * <p><b>Thread safety:</b> Uses AtomicBoolean for lock-free concurrent access.
- * The restriction flag is JVM-scoped — in a clustered deployment, each node
- * maintains its own flag. A DB-backed flag (tenant_config table) should be
- * added for cluster-wide coordination in production.
+ * <p><b>Cluster note:</b> This is JVM-scoped. In a clustered deployment, each node
+ * maintains its own map. A DB-backed flag (tenant_config table) should be added for
+ * cluster-wide coordination in production.
  *
  * @see ReconciliationService
  * @see LedgerService#verifyChainIntegrity()
@@ -50,35 +61,39 @@ public class PostingIntegrityGuard {
     private static final Logger log = LoggerFactory.getLogger(PostingIntegrityGuard.class);
 
     /**
-     * JVM-level restriction flag. When true, ALL financial postings are blocked.
-     * AtomicBoolean for thread-safe lock-free access from concurrent posting threads.
+     * Immutable restriction state per tenant. Using a record ensures all fields
+     * are published atomically — no concurrent reader can see partial state.
      */
-    private final AtomicBoolean restricted = new AtomicBoolean(false);
-
-    /** Human-readable reason for the restriction (for error messages and audit). */
-    private volatile String restrictionReason = null;
-
-    /** Timestamp when restriction was activated. */
-    private volatile String restrictedAt = null;
-
-    /** Who/what activated the restriction. */
-    private volatile String restrictedBy = null;
+    private record RestrictionState(String reason, String restrictedAt, String restrictedBy) {}
 
     /**
-     * Checks if posting is allowed. Called by TransactionEngine at the very start
-     * of executeInternal() — BEFORE any validation, sequence allocation, or DB write.
+     * Per-tenant restriction map. Key = tenantId, Value = immutable restriction state.
+     * A tenant is restricted if and only if it has an entry in this map.
+     * ConcurrentHashMap provides thread-safe lock-free access.
+     */
+    private final ConcurrentHashMap<String, RestrictionState> restrictedTenants = new ConcurrentHashMap<>();
+
+    /**
+     * Checks if posting is allowed for the CURRENT tenant. Called by TransactionEngine
+     * at the very start of executeInternal() — BEFORE any validation, sequence
+     * allocation, or DB write.
      *
-     * @throws BusinessException with code POSTING_RESTRICTED if the system is in restricted mode
+     * @throws BusinessException with code POSTING_RESTRICTED if the tenant is in restricted mode
      */
     public void assertPostingAllowed() {
-        if (restricted.get()) {
-            log.error("POSTING BLOCKED — system in RESTRICTED MODE: {}", restrictionReason);
+        String tenantId = TenantContext.isSet() ? TenantContext.getCurrentTenant() : null;
+        if (tenantId == null) {
+            return; // No tenant context — pre-auth or system bootstrap
+        }
+        RestrictionState state = restrictedTenants.get(tenantId);
+        if (state != null) {
+            log.error("POSTING BLOCKED — tenant {} in RESTRICTED MODE: {}", tenantId, state.reason());
             throw new BusinessException(
                     "POSTING_RESTRICTED",
-                    "Financial postings are currently BLOCKED due to integrity failure: "
-                            + restrictionReason
-                            + ". Restricted at: " + restrictedAt
-                            + " by: " + restrictedBy
+                    "Financial postings are currently BLOCKED for tenant " + tenantId
+                            + " due to integrity failure: " + state.reason()
+                            + ". Restricted at: " + state.restrictedAt()
+                            + " by: " + state.restrictedBy()
                             + ". Contact IT Risk team to investigate and clear the restriction.");
         }
     }
@@ -98,13 +113,18 @@ public class PostingIntegrityGuard {
      * @param activatedBy Who/what triggered the restriction (e.g., "EOD_RECONCILIATION", "ADMIN:john")
      */
     public void activateRestriction(String reason, String activatedBy) {
-        restricted.set(true);
-        this.restrictionReason = reason;
-        this.restrictedAt = java.time.LocalDateTime.now().toString();
-        this.restrictedBy = activatedBy;
-        log.error("🚨 FINANCIAL SAFETY KILL SWITCH ACTIVATED — ALL POSTINGS BLOCKED. "
-                + "Reason: {} | By: {} | Tenant: {}",
-                reason, activatedBy, TenantContext.isSet() ? TenantContext.getCurrentTenant() : "N/A");
+        String tenantId = TenantContext.isSet() ? TenantContext.getCurrentTenant() : "UNKNOWN";
+        // CBS CRITICAL: Build immutable state BEFORE publishing to the map.
+        // ConcurrentHashMap.put() is atomic — concurrent readers see either the
+        // complete RestrictionState or no entry, never partial metadata.
+        RestrictionState state = new RestrictionState(
+                reason,
+                java.time.LocalDateTime.now().toString(),
+                activatedBy);
+        restrictedTenants.put(tenantId, state);
+        log.error("FINANCIAL SAFETY KILL SWITCH ACTIVATED — POSTINGS BLOCKED FOR TENANT {}. "
+                + "Reason: {} | By: {}",
+                tenantId, reason, activatedBy);
     }
 
     /**
@@ -115,32 +135,40 @@ public class PostingIntegrityGuard {
      * @param resolution Description of how the issue was resolved
      */
     public void clearRestriction(String clearedBy, String resolution) {
-        String prevReason = this.restrictionReason;
-        restricted.set(false);
-        this.restrictionReason = null;
-        this.restrictedAt = null;
-        this.restrictedBy = null;
-        log.warn("Financial safety restriction CLEARED. Previous reason: {} | Cleared by: {} | Resolution: {}",
-                prevReason, clearedBy, resolution);
+        String tenantId = TenantContext.isSet() ? TenantContext.getCurrentTenant() : "UNKNOWN";
+        RestrictionState prev = restrictedTenants.remove(tenantId);
+        String prevReason = prev != null ? prev.reason() : "N/A";
+        log.warn("Financial safety restriction CLEARED for tenant {}. Previous reason: {} | Cleared by: {} | Resolution: {}",
+                tenantId, prevReason, clearedBy, resolution);
     }
 
-    /** Returns true if the system is currently in RESTRICTED MODE. */
+    /** Returns true if the CURRENT tenant is in RESTRICTED MODE. */
     public boolean isRestricted() {
-        return restricted.get();
+        String tenantId = TenantContext.isSet() ? TenantContext.getCurrentTenant() : null;
+        return tenantId != null && restrictedTenants.containsKey(tenantId);
     }
 
-    /** Returns the reason for the current restriction, or null if not restricted. */
+    /** Returns the reason for the current tenant's restriction, or null if not restricted. */
     public String getRestrictionReason() {
-        return restrictionReason;
+        String tenantId = TenantContext.isSet() ? TenantContext.getCurrentTenant() : null;
+        if (tenantId == null) return null;
+        RestrictionState state = restrictedTenants.get(tenantId);
+        return state != null ? state.reason() : null;
     }
 
-    /** Returns when the restriction was activated, or null. */
+    /** Returns when the current tenant's restriction was activated, or null. */
     public String getRestrictedAt() {
-        return restrictedAt;
+        String tenantId = TenantContext.isSet() ? TenantContext.getCurrentTenant() : null;
+        if (tenantId == null) return null;
+        RestrictionState state = restrictedTenants.get(tenantId);
+        return state != null ? state.restrictedAt() : null;
     }
 
-    /** Returns who activated the restriction, or null. */
+    /** Returns who activated the current tenant's restriction, or null. */
     public String getRestrictedBy() {
-        return restrictedBy;
+        String tenantId = TenantContext.isSet() ? TenantContext.getCurrentTenant() : null;
+        if (tenantId == null) return null;
+        RestrictionState state = restrictedTenants.get(tenantId);
+        return state != null ? state.restrictedBy() : null;
     }
 }
