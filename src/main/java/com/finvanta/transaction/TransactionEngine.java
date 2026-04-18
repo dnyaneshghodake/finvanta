@@ -6,8 +6,10 @@ import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.entity.JournalEntry;
+import com.finvanta.domain.entity.IdempotencyRegistry;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
+import com.finvanta.repository.IdempotencyRegistryRepository;
 import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.MakerCheckerService;
@@ -98,6 +100,7 @@ public class TransactionEngine {
     private final AuditService auditService;
     private final SequenceGeneratorService sequenceGenerator;
     private final PostingIntegrityGuard integrityGuard;
+    private final IdempotencyRegistryRepository idempotencyRepository;
 
     /**
      * CBS Tier-1: Self-proxy for @Transactional(REQUIRES_NEW) method invocation.
@@ -121,7 +124,8 @@ public class TransactionEngine {
             TransactionBatchRepository batchRepository,
             AuditService auditService,
             SequenceGeneratorService sequenceGenerator,
-            PostingIntegrityGuard integrityGuard) {
+            PostingIntegrityGuard integrityGuard,
+            IdempotencyRegistryRepository idempotencyRepository) {
         this.accountingService = accountingService;
         this.limitService = limitService;
         this.makerCheckerService = makerCheckerService;
@@ -132,6 +136,7 @@ public class TransactionEngine {
         this.auditService = auditService;
         this.sequenceGenerator = sequenceGenerator;
         this.integrityGuard = integrityGuard;
+        this.idempotencyRepository = idempotencyRepository;
     }
 
     /** CBS Tier-1: Max retry attempts on deadlock/lock-timeout per Finacle GL_LOCK */
