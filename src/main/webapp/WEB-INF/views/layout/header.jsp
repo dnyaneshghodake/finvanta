@@ -21,7 +21,10 @@
     <!-- Finvanta Theme (must load after Bootstrap to override) -->
     <link rel="stylesheet" href="${pageContext.request.contextPath}/css/finvanta-theme.css">
 </head>
-<body>
+<%-- CBS Tier-1: data-fv-session-timeout syncs the JS session countdown with
+     the server-side session timeout (server.servlet.session.timeout). Without this,
+     the JS uses a hardcoded 1800s fallback which diverges from prod (900s/15m). --%>
+<body data-fv-session-timeout="${sessionTimeoutSeconds}">
 <%-- CBS Tier-1: Print-only header for branch file maintenance printouts.
      Hidden on screen, visible only in @media print. Shows bank name + timestamp. --%>
 <div class="fv-print-header">

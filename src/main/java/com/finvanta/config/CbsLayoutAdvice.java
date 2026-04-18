@@ -95,6 +95,31 @@ public class CbsLayoutAdvice {
     }
 
     /**
+     * Server-side session timeout in seconds for the JS session countdown.
+     *
+     * Per Finacle/Temenos Tier-1: the client-side session warning timer MUST
+     * match the server-side session timeout. Without this, the JS uses a
+     * hardcoded fallback (1800s) which diverges from production (15m = 900s),
+     * causing the warning to appear AFTER the server has already expired the
+     * session — making the countdown useless.
+     *
+     * Reads from HttpSession.getMaxInactiveInterval() which reflects the
+     * active profile's server.servlet.session.timeout value.
+     */
+    @ModelAttribute("sessionTimeoutSeconds")
+    public int sessionTimeoutSeconds(HttpServletRequest request) {
+        try {
+            var session = request.getSession(false);
+            if (session != null) {
+                return session.getMaxInactiveInterval();
+            }
+        } catch (Exception e) {
+            // Pre-auth — return default
+        }
+        return 1800; // 30 min fallback
+    }
+
+    /**
      * All active branches for ADMIN branch switch dropdown.
      * Per Finacle SOL_SWITCH: only populated for ADMIN users to avoid
      * unnecessary DB queries for MAKER/CHECKER on every page load.
