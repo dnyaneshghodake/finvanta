@@ -92,7 +92,7 @@
         <span class="text-muted">This account requires checker approval before transactions can be processed.</span>
         <form method="post" action="${pageContext.request.contextPath}/deposit/activate/${account.accountNumber}" class="d-inline ms-auto">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-            <button type="submit" class="btn btn-success btn-sm" data-confirm="Activate this account? It will become operational immediately."><i class="bi bi-check-circle"></i> Activate Account</button>
+            <button type="submit" class="btn btn-fv-success btn-sm" data-confirm="Activate this account? It will become operational immediately."><i class="bi bi-check-circle"></i> Activate Account</button>
         </form>
     </div>
 </div></div>
@@ -100,16 +100,16 @@
 
 <c:if test="${account.active}">
 <div class="card mt-3"><div class="card-body d-flex gap-2 flex-wrap">
-    <a href="${pageContext.request.contextPath}/deposit/deposit/${account.accountNumber}" class="btn btn-success btn-sm"><i class="bi bi-plus-circle"></i> Deposit</a>
-    <a href="${pageContext.request.contextPath}/deposit/withdraw/${account.accountNumber}" class="btn btn-warning btn-sm"><i class="bi bi-dash-circle"></i> Withdraw</a>
-    <a href="${pageContext.request.contextPath}/deposit/transfer" class="btn btn-info btn-sm"><i class="bi bi-arrow-left-right"></i> Transfer</a>
+    <a href="${pageContext.request.contextPath}/deposit/deposit/${account.accountNumber}" class="btn btn-fv-success btn-sm"><i class="bi bi-plus-circle"></i> Deposit</a>
+    <a href="${pageContext.request.contextPath}/deposit/withdraw/${account.accountNumber}" class="btn btn-fv-warning btn-sm"><i class="bi bi-dash-circle"></i> Withdraw</a>
+    <a href="${pageContext.request.contextPath}/deposit/transfer" class="btn btn-fv-primary btn-sm"><i class="bi bi-arrow-left-right"></i> Transfer</a>
     <a href="${pageContext.request.contextPath}/deposit/statement/${account.accountNumber}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-journal-text"></i> Statement</a>
     <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
     <form method="post" action="${pageContext.request.contextPath}/deposit/freeze/${account.accountNumber}" class="d-inline">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
         <input type="hidden" name="freezeType" value="TOTAL_FREEZE"/>
         <input type="hidden" name="reason" value="Admin freeze"/>
-        <button type="submit" class="btn btn-danger btn-sm" data-confirm="Freeze this account? All debits will be blocked until unfrozen."><i class="bi bi-lock"></i> Freeze</button>
+        <button type="submit" class="btn btn-fv-danger btn-sm" data-confirm="Freeze this account? All debits will be blocked until unfrozen."><i class="bi bi-lock"></i> Freeze</button>
     </form>
     </c:if>
 </div></div>
@@ -118,7 +118,7 @@
 <div class="card mt-3"><div class="card-body">
     <form method="post" action="${pageContext.request.contextPath}/deposit/unfreeze/${account.accountNumber}" class="d-inline">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-        <button type="submit" class="btn btn-success btn-sm" data-confirm="Unfreeze this account? All transaction restrictions will be lifted."><i class="bi bi-unlock"></i> Unfreeze Account</button>
+        <button type="submit" class="btn btn-fv-success btn-sm" data-confirm="Unfreeze this account? All transaction restrictions will be lifted."><i class="bi bi-unlock"></i> Unfreeze Account</button>
     </form>
 </div></div>
 </c:if>

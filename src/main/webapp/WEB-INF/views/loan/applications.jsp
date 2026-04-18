@@ -61,7 +61,7 @@
                             <td><span class="fv-badge fv-badge-pending"><c:out value="${app.status}" /></span></td>
                             <td><c:out value="${app.applicationDate}" /></td>
                             <td>
-                                <a href="${pageContext.request.contextPath}/loan/verify/${app.id}" class="btn btn-sm btn-success">Verify</a>
+                                <a href="${pageContext.request.contextPath}/loan/verify/${app.id}" class="btn btn-sm btn-fv-success"><i class="bi bi-clipboard-check"></i> Verify</a>
                             </td>
                         </tr>
                     </c:forEach>
@@ -102,10 +102,10 @@
                                 <form method="post" action="${pageContext.request.contextPath}/loan/reject/${app.id}" class="d-inline">
                                     <input type="hidden" name="reason" value="" class="fv-reason-field" />
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                    <button type="button" class="btn btn-sm btn-danger"
+                                    <button type="button" class="btn btn-sm btn-fv-danger"
                                         data-fv-reason-prompt="Rejection reason (mandatory per RBI Fair Practices Code):"
                                         data-fv-reason-confirm="Reject this loan application?"
-                                        onclick="fvPromptReason(this);">Reject</button>
+                                        onclick="fvPromptReason(this);"><i class="bi bi-x-circle"></i> Reject</button>
                                 </form>
                             </td>
                         </tr>

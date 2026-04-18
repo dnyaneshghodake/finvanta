@@ -337,7 +337,7 @@
                 <!-- Single disbursement: full sanctioned amount -->
                 <form method="post" action="${pageContext.request.contextPath}/loan/disburse/${account.accountNumber}" class="fv-form">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                    <button type="submit" class="btn btn-success" data-confirm="Confirm full disbursement of INR ${account.undisbursedAmount}?">Disburse Full Amount</button>
+                    <button type="submit" class="btn btn-fv-success" data-confirm="Confirm full disbursement of INR ${account.undisbursedAmount}?"><i class="bi bi-cash-stack"></i> Disburse Full Amount</button>
                 </form>
                 </c:if>
 
@@ -355,7 +355,7 @@
                         </div>
                     </div>
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                    <button type="submit" class="btn btn-success" data-confirm="Confirm tranche disbursement?">Disburse Tranche</button>
+                    <button type="submit" class="btn btn-fv-success" data-confirm="Confirm tranche disbursement?"><i class="bi bi-cash-stack"></i> Disburse Tranche</button>
                 </form>
                 <form method="post" action="${pageContext.request.contextPath}/loan/disburse/${account.accountNumber}" class="fv-form d-inline">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
@@ -442,7 +442,7 @@
                 <p>Provisioning Held: <strong class="amount"><fmt:formatNumber value="${account.provisioningAmount}" type="number" maxFractionDigits="2" /> INR</strong></p>
                 <form method="post" action="${pageContext.request.contextPath}/loan/write-off/${account.accountNumber}" class="fv-form">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                    <button type="submit" class="btn btn-danger" data-confirm="CONFIRM WRITE-OFF: This action is irreversible and will remove INR ${account.outstandingPrincipal} from the balance sheet.">Write Off Account</button>
+                    <button type="submit" class="btn btn-fv-danger" data-confirm="CONFIRM WRITE-OFF: This action is irreversible and will remove INR ${account.outstandingPrincipal} from the balance sheet."><i class="bi bi-x-octagon"></i> Write Off Account</button>
                 </form>
             </div>
         </div>
