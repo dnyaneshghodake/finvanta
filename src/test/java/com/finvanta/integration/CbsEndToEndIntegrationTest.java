@@ -146,6 +146,12 @@ class CbsEndToEndIntegrationTest {
     void setUp() {
         TenantContext.setCurrentTenant(TENANT);
         setSecurityContext(0L, "HQ");
+        // CBS: Clean any orphaned audit records from prior test runs.
+        // AuditService.logEvent() uses REQUIRES_NEW propagation which commits
+        // audit records independently of the test's @Transactional rollback.
+        // Stale records break the hash chain for subsequent test runs.
+        auditLogRepository.deleteAll(
+                auditLogRepository.findRecentAuditLogs(TENANT));
     }
 
     private void setSecurityContext(Long branchId, String branchCode) {

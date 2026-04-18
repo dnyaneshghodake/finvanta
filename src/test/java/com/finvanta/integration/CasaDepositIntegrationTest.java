@@ -116,6 +116,7 @@ class CasaDepositIntegrationTest {
 
         createGL("1100", "Bank Account - Ops", GLAccountType.ASSET);
         createGL("2010", "Deposits - Savings", GLAccountType.LIABILITY);
+        createGL("2020", "Deposits - Current", GLAccountType.LIABILITY);
         createGL("5010", "Interest Expense", GLAccountType.EXPENSE);
 
         TransactionBatch batch = new TransactionBatch();
