@@ -87,7 +87,10 @@
     <tr class="table-active"><td class="text-muted"><strong>Available Balance</strong></td><td class="text-end fs-5"><strong><fmt:formatNumber value="${account.effectiveAvailable}" type="currency" currencyCode="INR"/></strong></td></tr>
     </table>
 </div></div>
+</div><%-- end col-md-6 right --%>
+</div><%-- end row --%>
 
+<%-- CBS: Action cards below the two-column layout (full width) --%>
 <c:if test="${account.accountStatus == 'PENDING_ACTIVATION' && (pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN'))}">
 <div class="card mt-3 border-warning"><div class="card-body">
     <div class="d-flex align-items-center gap-3">
@@ -139,7 +142,6 @@
     </form>
 </div></div>
 </c:if>
-</div></div>
 
 <!-- CBS Account Maintenance per Finacle ACCTMOD -->
 <c:if test="${account.active && (pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN'))}">
