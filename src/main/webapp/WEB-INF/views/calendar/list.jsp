@@ -74,7 +74,7 @@
                             </select>
                         </div>
                         <div class="col-auto">
-                            <button type="submit" class="btn btn-fv-primary"><i class="bi bi-plus-circle"></i> Generate</button>
+                            <button type="submit" class="btn btn-fv-primary" data-confirm="Generate calendar entries for the selected month? Existing entries will not be duplicated."><i class="bi bi-plus-circle"></i> Generate</button>
                         </div>
                     </form>
                 </div>
@@ -96,7 +96,7 @@
                             <input type="text" name="description" class="form-control" placeholder="e.g., Independence Day" required />
                         </div>
                         <div class="col-auto">
-                            <button type="submit" class="btn btn-fv-warning"><i class="bi bi-exclamation-triangle"></i> Add Holiday</button>
+                            <button type="submit" class="btn btn-fv-warning" data-confirm="Mark this date as a holiday? Transactions will be blocked on this date."><i class="bi bi-exclamation-triangle"></i> Add Holiday</button>
                         </div>
                     </form>
                     <form method="post" action="${pageContext.request.contextPath}/calendar/remove-holiday" class="row g-2 align-items-end">
@@ -106,7 +106,7 @@
                             <input type="date" name="date" class="form-control fv-input-md" required />
                         </div>
                         <div class="col-auto">
-                            <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-calendar-check"></i> Remove Holiday</button>
+                            <button type="submit" class="btn btn-outline-secondary" data-confirm="Remove holiday marking from this date? The date will become available for transactions."><i class="bi bi-calendar-check"></i> Remove Holiday</button>
                         </div>
                     </form>
                 </div>
