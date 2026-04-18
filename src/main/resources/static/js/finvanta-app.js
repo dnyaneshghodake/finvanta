@@ -667,7 +667,7 @@ document.addEventListener('DOMContentLoaded', function () {
                    at the application context root. */
                 var ctx = document.querySelector('meta[name="ctx"]');
                 var base = ctx ? ctx.getAttribute('content') : '';
-                window.location.href = base + '/login?expired=true';
+                window.location.href = base + '/login?timeout=true';
             }
         }, 1000);
     }

@@ -20,6 +20,9 @@
         <c:if test="${param.error != null && empty error}">
             <div class="fv-alert alert alert-danger" role="alert">Invalid username or password. Please check your credentials and try again.</div>
         </c:if>
+        <c:if test="${param.timeout != null}">
+            <div class="fv-alert alert alert-warning" role="alert"><i class="bi bi-clock-history"></i> Your session has expired due to inactivity. Please sign in again.</div>
+        </c:if>
         <c:if test="${param.expired != null}">
             <div class="fv-alert alert alert-warning" role="alert"><i class="bi bi-exclamation-triangle"></i> Your session has been terminated because you logged in from another browser or device. Only one active session is allowed per RBI policy.</div>
         </c:if>
