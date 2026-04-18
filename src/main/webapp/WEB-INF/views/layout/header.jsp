@@ -8,9 +8,12 @@
     <meta name="robots" content="noindex, nofollow">
     <meta name="ctx" content="${pageContext.request.contextPath}" />
     <title>Finvanta CBS - <c:out value="${pageTitle}" default="Banking System" /></title>
-    <%-- CBS Tier-1: Favicon per bank branding standards. SVG for modern browsers, ICO fallback. --%>
+    <%-- CBS Tier-1: Favicon per bank branding standards. SVG for all modern browsers.
+         ICO fallback removed — the .ico file format requires binary generation tooling
+         that cannot be committed as a text file. SVG is supported by Chrome 80+,
+         Firefox 41+, Edge 80+, Safari 15.4+ — covers all CBS branch workstations.
+         Browsers that don't support SVG favicons will show the default browser icon. --%>
     <link rel="icon" type="image/svg+xml" href="${pageContext.request.contextPath}/img/favicon.svg">
-    <link rel="icon" type="image/x-icon" href="${pageContext.request.contextPath}/img/favicon.ico">
     <!-- Offline Vendor CSS -->
     <link rel="stylesheet" href="${pageContext.request.contextPath}/css/bootstrap.min.css">
     <link rel="stylesheet" href="${pageContext.request.contextPath}/css/bootstrap-icons.css">
