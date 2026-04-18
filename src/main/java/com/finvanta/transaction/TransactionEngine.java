@@ -31,6 +31,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -97,10 +98,11 @@ public class TransactionEngine {
     private final SequenceGeneratorService sequenceGenerator;
 
     /**
-     * CBS Tier-1: Self-proxy for @Transactional method invocation.
+     * CBS Tier-1: Self-proxy for @Transactional(REQUIRES_NEW) method invocation.
      * Spring AOP proxies do NOT intercept self-calls (this.executeInternal()).
-     * Without this, the @Transactional on executeInternal() is ignored and each
-     * retry attempt reuses the same (potentially rollback-only) Hibernate Session.
+     * Without this, the @Transactional(REQUIRES_NEW) on executeInternal() is
+     * ignored — it would join the caller's transaction instead of creating a new
+     * one, making the retry mechanism non-functional on lock failures.
      * Same pattern as BatchService.self and StandingInstructionServiceImpl.self.
      */
     @Lazy
@@ -156,9 +158,10 @@ public class TransactionEngine {
      * Business exceptions ({@code BusinessException}) fail immediately — they
      * indicate validation failures, not transient contention.
      *
-     * <p>Each retry creates a FRESH transaction because the failed transaction's
-     * Hibernate Session is poisoned (rollback-only). The retry loop lives OUTSIDE
-     * the {@code @Transactional} boundary so Spring creates a new TX per attempt.
+     * <p>Each retry creates a FRESH transaction via {@code REQUIRES_NEW} propagation
+     * on {@code executeInternal()}. The failed transaction's Hibernate Session is
+     * poisoned (rollback-only), but {@code REQUIRES_NEW} suspends the caller's TX
+     * and creates an independent one — so each retry gets a clean Session and TX.
      *
      * @param request The transaction request built by the calling module
      * @return TransactionResult with journal ref, voucher number, and posting status
@@ -205,8 +208,23 @@ public class TransactionEngine {
     }
 
     /**
-     * Internal transaction execution — runs inside its own {@code @Transactional}
-     * boundary so each retry attempt gets a fresh transaction and Hibernate Session.
+     * Internal transaction execution — runs inside its own {@code REQUIRES_NEW}
+     * transaction so each retry attempt gets a fresh, independent transaction
+     * and Hibernate Session.
+     *
+     * <p><b>Why REQUIRES_NEW (not REQUIRED):</b> All callers of
+     * {@code TransactionEngine.execute()} are themselves {@code @Transactional}
+     * (e.g., {@code DepositAccountServiceImpl.deposit()}). With default
+     * {@code REQUIRED} propagation, {@code executeInternal()} would JOIN the
+     * caller's transaction. If a {@code PessimisticLockingFailureException}
+     * occurs inside the GL posting, the caller's transaction is marked
+     * rollback-only by Spring's {@code TransactionInterceptor}. The retry loop
+     * in {@code execute()} catches the exception and retries, but with
+     * {@code REQUIRED} the retry joins the SAME poisoned transaction — the
+     * Hibernate Session is in an inconsistent state, and the transaction will
+     * roll back at commit regardless. {@code REQUIRES_NEW} suspends the caller's
+     * transaction and creates an independent one for each attempt, making the
+     * retry mechanism actually functional.
      *
      * <p><b>Isolation level:</b> Uses {@code READ_COMMITTED} (SQL Server default)
      * combined with {@code PESSIMISTIC_WRITE} locks on GL rows. The pessimistic
@@ -215,8 +233,16 @@ public class TransactionEngine {
      * queries (GL validation, calendar lookup, batch check). Per Finacle TRAN_POSTING:
      * the posting isolation comes from row-level pessimistic locks, not from raising
      * the transaction isolation level globally (which would cause excessive blocking).
+     *
+     * <p><b>Trade-off:</b> The caller's account PESSIMISTIC_WRITE lock (from
+     * {@code findAndLock}) is held during the REQUIRES_NEW suspension. This is safe:
+     * the account lock prevents concurrent mutations on the SAME account, while the
+     * engine's GL locks target DIFFERENT rows (GLMaster, GLBranchBalance). Lock
+     * ordering (GL sorted by code) prevents cross-GL deadlocks. If this TX rolls
+     * back, the caller catches the exception and can decide whether to retry or
+     * propagate — the caller's own TX remains uncommitted but valid.
      */
-    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public TransactionResult executeInternal(TransactionRequest request) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser =
@@ -588,7 +614,7 @@ public class TransactionEngine {
         LocalDateTime postingDate = LocalDateTime.now();
 
         // CBS CRITICAL: Use logEventInline (Propagation.REQUIRED) — NOT logEvent (REQUIRES_NEW).
-        // TransactionEngine.execute() is @Transactional and holds PESSIMISTIC_WRITE locks
+        // executeInternal() is @Transactional(REQUIRES_NEW) and holds PESSIMISTIC_WRITE locks
         // acquired during Step 8 (GL balance update, ledger sentinel). logEvent(REQUIRES_NEW)
         // would suspend this TX, open a new connection, and deadlock on SQL Server when the
         // audit INSERT contends with the held GL locks. logEventInline joins THIS transaction.
