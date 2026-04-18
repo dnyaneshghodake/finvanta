@@ -19,7 +19,11 @@ public interface LoanApplicationRepository extends JpaRepository<LoanApplication
 
     Optional<LoanApplication> findByTenantIdAndApplicationNumber(String tenantId, String applicationNumber);
 
-    List<LoanApplication> findByTenantIdAndStatus(String tenantId, ApplicationStatus status);
+    /** JOIN FETCH customer+branch for JSP rendering (OSIV disabled). */
+    @Query("SELECT la FROM LoanApplication la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId AND la.status = :status")
+    List<LoanApplication> findByTenantIdAndStatus(
+            @Param("tenantId") String tenantId, @Param("status") ApplicationStatus status);
 
     List<LoanApplication> findByTenantIdAndCustomerId(String tenantId, Long customerId);
 

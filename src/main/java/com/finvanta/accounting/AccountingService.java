@@ -55,7 +55,6 @@ public class AccountingService {
     private final AuditService auditService;
     private final LedgerService ledgerService;
     private final TransactionBatchRepository batchRepository;
-    private final GLBranchBalanceBootstrap glBranchBalanceBootstrap;
 
     /**
      * CBS Engine Context Guard — cryptographic token-based trust boundary.
@@ -109,8 +108,7 @@ public class AccountingService {
             BranchRepository branchRepository,
             AuditService auditService,
             LedgerService ledgerService,
-            TransactionBatchRepository batchRepository,
-            GLBranchBalanceBootstrap glBranchBalanceBootstrap) {
+            TransactionBatchRepository batchRepository) {
         this.journalEntryRepository = journalEntryRepository;
         this.glMasterRepository = glMasterRepository;
         this.glBranchBalanceRepository = glBranchBalanceRepository;
@@ -118,7 +116,6 @@ public class AccountingService {
         this.auditService = auditService;
         this.ledgerService = ledgerService;
         this.batchRepository = batchRepository;
-        this.glBranchBalanceBootstrap = glBranchBalanceBootstrap;
     }
 
     /**

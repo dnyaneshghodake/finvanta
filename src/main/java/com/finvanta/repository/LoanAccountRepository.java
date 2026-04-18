@@ -68,8 +68,12 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
     java.math.BigDecimal calculateTotalOutstandingByBranch(
             @Param("tenantId") String tenantId, @Param("branchId") Long branchId);
 
-    /** CBS Branch Portfolio: all loan accounts at a specific branch */
-    List<LoanAccount> findByTenantIdAndBranchId(String tenantId, Long branchId);
+    /** CBS Branch Portfolio: all loan accounts at a specific branch.
+     *  JOIN FETCH customer for branch/view.jsp (OSIV disabled). */
+    @Query("SELECT la FROM LoanAccount la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId AND la.branch.id = :branchId")
+    List<LoanAccount> findByTenantIdAndBranchId(
+            @Param("tenantId") String tenantId, @Param("branchId") Long branchId);
 
     // === CBS LOANINQ: Loan Account Search per Finacle LOANINQ / Temenos AA.ARRANGEMENT.ENQUIRY ===
 
