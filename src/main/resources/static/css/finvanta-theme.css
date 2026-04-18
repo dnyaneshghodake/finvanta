@@ -119,6 +119,13 @@ body {
 }
 .fv-topbar .fv-page-title { font-size: 14px; font-weight: 500; margin: 0; }
 .fv-topbar .fv-topbar-right { display: flex; align-items: center; gap: 14px; font-size: 12px; }
+/* CBS Tier-1: Tenant ID badge — always visible per RBI IT Governance §8.3.
+   Distinct from branch code (green) — uses amber/gold to signal "context" vs "location". */
+.fv-topbar .fv-tenant-id {
+    background: rgba(255,183,77,0.2); color: #ffcc80;
+    padding: 2px 8px; border-radius: 3px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+}
 .fv-topbar .fv-branch-code {
     background: rgba(76,175,80,0.2); color: #a5d6a7;
     padding: 2px 8px; border-radius: 3px;
@@ -509,6 +516,13 @@ body {
     .fv-detail-grid.fv-detail-3col { grid-template-columns: 1fr 1fr; }
     /* Session warning spans full width on collapsed sidebar */
     .fv-session-warning { left: 60px; }
+    /* Hide tenant ID label on collapsed sidebar to save topbar space */
+    .fv-topbar .fv-tenant-id { font-size: 9px; }
+}
+/* CBS Tier-1: Detail grid collapses to 1-col on narrow viewports (tablet / small laptop).
+   Prevents label-value pairs from being too cramped on ≤768px widths. */
+@media (max-width: 768px) {
+    .fv-detail-grid, .fv-detail-grid.fv-detail-3col { grid-template-columns: 1fr; }
 }
 
 /* ================================================================

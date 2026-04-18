@@ -95,6 +95,10 @@
 <div class="fv-topbar">
     <h2 class="fv-page-title"><c:out value="${pageTitle}" default="Dashboard" /></h2>
     <div class="fv-topbar-right">
+        <%-- CBS Tier-1: Tenant ID always visible per RBI IT Governance §8.3.
+             Multi-tenant systems must display the active tenant so operators confirm context.
+             Matches Finacle TENANT_BANNER / Temenos COMPANY.ID header display. --%>
+        <span class="fv-tenant-id" title="Tenant"><i class="bi bi-shield-check"></i> <c:out value="${currentTenantId}" default="--" /></span>
         <!-- CBS Branch Context: Per Finacle SOL_SWITCH — ADMIN can switch branch -->
         <c:choose>
             <c:when test="${pageContext.request.isUserInRole('ROLE_ADMIN') && not empty allBranches}">

@@ -17,6 +17,7 @@ import jakarta.servlet.http.HttpServletRequest;
  * CBS Layout Model Advice — populates global model attributes for the topbar/sidebar.
  *
  * Per Finacle/Temenos Tier-1 CBS standards: every page must display:
+ * - Current tenant ID (per RBI IT Governance §8.3 multi-tenant visibility)
  * - Current branch code (with switch capability for ADMIN)
  * - Current business date (from DAY_OPEN calendar entry)
  * - User role
@@ -36,6 +37,24 @@ public class CbsLayoutAdvice {
     public CbsLayoutAdvice(BusinessDateService businessDateService, BranchRepository branchRepository) {
         this.businessDateService = businessDateService;
         this.branchRepository = branchRepository;
+    }
+
+    /**
+     * Current tenant ID for topbar display.
+     * Per RBI IT Governance Direction 2023 §8.3: multi-tenant systems must always
+     * display the active tenant so operators confirm they are in the correct context.
+     * Matches Finacle TENANT_BANNER / Temenos COMPANY.ID header display.
+     */
+    @ModelAttribute("currentTenantId")
+    public String currentTenantId() {
+        try {
+            if (TenantContext.isSet()) {
+                return TenantContext.getCurrentTenant();
+            }
+        } catch (Exception e) {
+            // Pre-auth — return default
+        }
+        return "--";
     }
 
     /** Current effective branch code (switched or home) */

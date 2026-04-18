@@ -18,6 +18,7 @@
  *   <input data-fv-type="ifsc"       />  IFSC: ABCD0123456
  *   <input data-fv-type="mobile"     />  Indian mobile: 10 digits starting 6-9
  *   <input data-fv-type="email"      />  Email format
+ *   <input data-fv-type="aadhaar"    />  Aadhaar: 12 digits starting 2-9
  *   <input data-fv-type="pincode"    />  Indian PIN: 6 digits
  *   <input data-fv-type="account-no" />  Alphanumeric, no spaces
  *   <input data-fv-type="no-special" />  Alphanumeric + spaces only
