@@ -35,6 +35,13 @@ public class AuditController {
     /** CBS: Max audit results per search to prevent OOM on large audit tables */
     private static final int MAX_AUDIT_RESULTS = 500;
 
+    /** CBS: Known entity types for audit trail — whitelist per defense-in-depth. */
+    private static final java.util.Set<String> KNOWN_ENTITY_TYPES = java.util.Set.of(
+            "Customer", "DepositAccount", "LoanAccount", "LoanApplication",
+            "Transaction", "JournalEntry", "Branch", "ProductMaster",
+            "StandingInstruction", "ApprovalWorkflow", "TransactionLimit",
+            "ChargeConfig", "BusinessCalendar", "User");
+
     private final AuditLogRepository auditLogRepository;
     private final AuditService auditService;
 
@@ -89,6 +96,16 @@ public class AuditController {
     public ModelAndView entityAuditTrail(
             @RequestParam String entityType,
             @RequestParam Long entityId) {
+        // CBS: Validate entityType against known types to prevent arbitrary strings
+        // in audit queries and log output. entityId must be non-negative.
+        if (entityType == null || !KNOWN_ENTITY_TYPES.contains(entityType)) {
+            throw new com.finvanta.util.BusinessException("INVALID_ENTITY_TYPE",
+                    "Unknown entity type for audit trail: " + entityType);
+        }
+        if (entityId == null || entityId < 0) {
+            throw new com.finvanta.util.BusinessException("INVALID_ENTITY_ID",
+                    "Entity ID must be a non-negative number");
+        }
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("audit/logs");
         mav.addObject("auditLogs",
