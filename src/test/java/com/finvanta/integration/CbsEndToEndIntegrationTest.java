@@ -85,6 +85,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @SpringBootTest
 @ActiveProfiles("test")
+@org.junit.jupiter.api.TestMethodOrder(org.junit.jupiter.api.MethodOrderer.OrderAnnotation.class)
 class CbsEndToEndIntegrationTest {
 
     @Autowired
@@ -354,6 +355,7 @@ class CbsEndToEndIntegrationTest {
 
     @Test
     @Transactional
+    @org.junit.jupiter.api.Order(1)
     @DisplayName("End-to-end CBS happy path: deposit → withdraw → charge levy → reverse — "
             + "trial balance balanced, ledger + audit chains intact, reconciliation balanced")
     void endToEndHappyPath() {
@@ -575,6 +577,7 @@ class CbsEndToEndIntegrationTest {
      */
     @Test
     @Transactional
+    @org.junit.jupiter.api.Order(2)
     @DisplayName("TransactionEngine 20-step chain: deposit produces journal, ledger links, "
             + "voucher, transaction ref, and symmetric GL postings")
     void transactionEngineProducesAllArtifacts() {
