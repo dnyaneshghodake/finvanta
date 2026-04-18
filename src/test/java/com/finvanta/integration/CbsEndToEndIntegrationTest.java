@@ -142,6 +142,9 @@ class CbsEndToEndIntegrationTest {
     private Long customerId;
     private String accountNumber;
 
+    /** Guard: reference data is seeded once per class, not per test method. */
+    private static boolean referenceDataSeeded = false;
+
     @BeforeEach
     void setUp() {
         TenantContext.setCurrentTenant(TENANT);
@@ -155,6 +158,14 @@ class CbsEndToEndIntegrationTest {
         auditLogRepository.deleteAll(
                 auditLogRepository.findAllByTenantIdOrderByIdAsc(
                         TENANT, org.springframework.data.domain.PageRequest.of(0, Integer.MAX_VALUE)));
+        // Seed reference data once per class
+        if (!referenceDataSeeded) {
+            setupReferenceData();
+            referenceDataSeeded = true;
+        }
+        if (branchId != null) {
+            setSecurityContext(branchId, "E2E01");
+        }
     }
 
     private void setSecurityContext(Long branchId, String branchCode) {
@@ -358,8 +369,8 @@ class CbsEndToEndIntegrationTest {
     void endToEndHappyPath() {
         // ----------------------------------------------------------------
         // 1. Bootstrap: tenant + branch + customer + calendar + batch + GL
+        //    (seeded once in @BeforeEach via referenceDataSeeded guard)
         // ----------------------------------------------------------------
-        setupReferenceData();
         assertTrialBalanced("bootstrap (empty GLs)");
 
         // ----------------------------------------------------------------
@@ -568,7 +579,6 @@ class CbsEndToEndIntegrationTest {
     @DisplayName("TransactionEngine 20-step chain: deposit produces journal, ledger links, "
             + "voucher, transaction ref, and symmetric GL postings")
     void transactionEngineProducesAllArtifacts() {
-        setupReferenceData();
         DepositAccount account = seedActiveSavingsAccount();
 
         BigDecimal amt = new BigDecimal("50000.00");

@@ -57,10 +57,23 @@ class CasaDepositIntegrationTest {
     private static final LocalDate BIZ_DATE = LocalDate.of(2026, 4, 1);
     private Long testBranchId;
 
+    /** Guard: reference data is seeded once per class, not per test method. */
+    private static boolean referenceDataSeeded = false;
+
     @BeforeEach
     void setUp() {
         TenantContext.setCurrentTenant(TENANT);
         setSecurityContext(0L, "HQ", "ROLE_ADMIN");
+        // Without @Transactional, setupReferenceData() commits permanently.
+        // Call once per class; subsequent tests reuse the committed data.
+        if (!referenceDataSeeded) {
+            setupReferenceData();
+            referenceDataSeeded = true;
+        }
+        // Update security context with real branch ID for all tests
+        if (testBranchId != null) {
+            setSecurityContext(testBranchId, "BR001", "ROLE_ADMIN");
+        }
     }
 
     @AfterEach
@@ -167,7 +180,6 @@ class CasaDepositIntegrationTest {
     @Test
     @DisplayName("Deposit: GL double-entry + voucher + ledger hash-chain + balance")
     void depositFullLifecycle() {
-        setupReferenceData();
         DepositAccount acct = createActiveAccount();
 
         DepositTransaction txn = depositService.deposit(
@@ -196,7 +208,6 @@ class CasaDepositIntegrationTest {
     @Test
     @DisplayName("Withdrawal: balance debit + GL integrity")
     void withdrawalLifecycle() {
-        setupReferenceData();
         DepositAccount acct = createActiveAccount();
         depositService.deposit(acct.getAccountNumber(),
                 new BigDecimal("50000.00"), BIZ_DATE, "Seed", null, "BRANCH");
@@ -217,7 +228,6 @@ class CasaDepositIntegrationTest {
     @Test
     @DisplayName("Insufficient funds: rejected with no GL impact")
     void withdrawalInsufficientFunds() {
-        setupReferenceData();
         DepositAccount acct = createActiveAccount();
         depositService.deposit(acct.getAccountNumber(),
                 new BigDecimal("5000.00"), BIZ_DATE, "Seed", null, "BRANCH");
@@ -247,7 +257,6 @@ class CasaDepositIntegrationTest {
     @Test
     @DisplayName("Transfer: atomic debit/credit across two accounts")
     void transferLifecycle() {
-        setupReferenceData();
         DepositAccount src = createActiveAccount();
         depositService.deposit(src.getAccountNumber(),
                 new BigDecimal("100000.00"), BIZ_DATE, "Seed", null, "BRANCH");
@@ -268,7 +277,6 @@ class CasaDepositIntegrationTest {
     @Test
     @DisplayName("Frozen account: debit blocked, GL untouched")
     void frozenAccountRejectsDebit() {
-        setupReferenceData();
         DepositAccount acct = createActiveAccount();
         depositService.deposit(acct.getAccountNumber(),
                 new BigDecimal("50000.00"), BIZ_DATE, "Seed", null, "BRANCH");
@@ -285,7 +293,6 @@ class CasaDepositIntegrationTest {
     @Test
     @DisplayName("Multiple deposits: cumulative GL + sequential vouchers + hash-chain")
     void multipleDepositsSequentialVouchers() {
-        setupReferenceData();
         DepositAccount acct = createActiveAccount();
 
         DepositTransaction t1 = depositService.deposit(acct.getAccountNumber(),

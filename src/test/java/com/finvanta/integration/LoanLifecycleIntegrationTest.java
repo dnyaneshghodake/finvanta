@@ -70,13 +70,22 @@ class LoanLifecycleIntegrationTest {
     /** Branch ID assigned during setupReferenceData — used for security context. */
     private Long testBranchId;
 
+    /** Guard: reference data is seeded once per class, not per test method. */
+    private static boolean referenceDataSeeded = false;
+
     @BeforeEach
     void setUp() {
         TenantContext.setCurrentTenant(TENANT);
-        // CBS Tier-1: Use BranchAwareUserDetails so SecurityUtil.getCurrentUserBranchId() works.
-        // Initial branchId=0L (placeholder) — updated to real ID after setupReferenceData() creates the branch.
-        // ADMIN role bypasses BranchAccessValidator, but BusinessDateService needs branchId for calendar lookup.
         setSecurityContext(0L, "HQ");
+        // Without @Transactional, setupReferenceData() commits permanently.
+        // Call once per class; subsequent tests reuse the committed data.
+        if (!referenceDataSeeded) {
+            setupReferenceData();
+            referenceDataSeeded = true;
+        }
+        if (testBranchId != null) {
+            setSecurityContext(testBranchId, "TST01");
+        }
     }
 
     /** Sets up security context with BranchAwareUserDetails for the given branch. */
@@ -227,7 +236,6 @@ class LoanLifecycleIntegrationTest {
     @Test
     @DisplayName("Full lifecycle: Create → Disburse → Accrue → Repay → Verify GL integrity")
     void fullLoanLifecycle() {
-        setupReferenceData();
         LoanApplication app = createApprovedApplication();
 
         // --- Create Account ---
@@ -329,7 +337,6 @@ class LoanLifecycleIntegrationTest {
     @Test
     @DisplayName("Duplicate disbursement is rejected")
     void disbursementIdempotency() {
-        setupReferenceData();
         LoanApplication app = createApprovedApplication();
         LoanAccount account = loanAccountService.createLoanAccount(app.getId());
         loanAccountService.disburseLoan(account.getAccountNumber());
@@ -340,7 +347,6 @@ class LoanLifecycleIntegrationTest {
     @Test
     @DisplayName("Duplicate account creation is rejected")
     void accountCreationIdempotency() {
-        setupReferenceData();
         LoanApplication app = createApprovedApplication();
         loanAccountService.createLoanAccount(app.getId());
 
