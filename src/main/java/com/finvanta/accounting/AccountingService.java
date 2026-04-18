@@ -18,9 +18,6 @@ import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -58,9 +55,7 @@ public class AccountingService {
     private final AuditService auditService;
     private final LedgerService ledgerService;
     private final TransactionBatchRepository batchRepository;
-
-    @PersistenceContext
-    private EntityManager entityManager;
+    private final GLBranchBalanceBootstrap glBranchBalanceBootstrap;
 
     /**
      * CBS Engine Context Guard — cryptographic token-based trust boundary.
@@ -114,7 +109,8 @@ public class AccountingService {
             BranchRepository branchRepository,
             AuditService auditService,
             LedgerService ledgerService,
-            TransactionBatchRepository batchRepository) {
+            TransactionBatchRepository batchRepository,
+            GLBranchBalanceBootstrap glBranchBalanceBootstrap) {
         this.journalEntryRepository = journalEntryRepository;
         this.glMasterRepository = glMasterRepository;
         this.glBranchBalanceRepository = glBranchBalanceRepository;
@@ -122,6 +118,7 @@ public class AccountingService {
         this.auditService = auditService;
         this.ledgerService = ledgerService;
         this.batchRepository = batchRepository;
+        this.glBranchBalanceBootstrap = glBranchBalanceBootstrap;
     }
 
     /**
@@ -423,48 +420,34 @@ public class AccountingService {
             // postings both see empty, both try to INSERT, one wins and the other gets a
             // DataIntegrityViolationException on uq idx_glbb_tenant_branch_gl.
             //
-            // Resolution: catch the constraint violation, re-lock the now-existing row,
-            // and proceed. Same pattern as LedgerService.ensureAndLockSentinel().
-            // The save() that triggered the violation is rolled back by Spring's proxy
-            // at the repository level (not at our @Transactional level), so the
-            // persistence context is safe to continue.
+            // Resolution: delegate the INSERT to GLBranchBalanceBootstrap (REQUIRES_NEW)
+            // so a constraint violation only rolls back the inner TX, not the outer posting.
+            // Same pattern as LedgerService.ensureAndLockSentinel() + TenantLedgerStateBootstrap.
             if (branch != null) {
                 GLBranchBalance branchBalance = glBranchBalanceRepository
                         .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
                         .orElse(null);
 
                 if (branchBalance == null) {
-                    // Auto-create branch balance row on first posting to this branch+GL.
-                    // Race-safe: if a concurrent TX inserts first, we catch the constraint
-                    // violation and re-lock the winner's row.
+                    // REQUIRES_NEW: a constraint collision here rolls back ONLY the nested
+                    // bootstrap transaction, not our posting transaction. The exception MUST
+                    // be caught here (the caller side of the REQUIRES_NEW boundary) — catching
+                    // it inside the bootstrap would cause UnexpectedRollbackException.
+                    // See GLBranchBalanceBootstrap javadoc for the full explanation.
                     try {
-                        branchBalance = new GLBranchBalance();
-                        branchBalance.setTenantId(tenantId);
-                        branchBalance.setBranch(branch);
-                        branchBalance.setGlCode(line.glCode());
-                        branchBalance.setGlName(gl.getGlName());
-                        branchBalance = glBranchBalanceRepository.saveAndFlush(branchBalance);
+                        glBranchBalanceBootstrap.insertIfAbsent(tenantId, branch, line.glCode(), gl.getGlName());
                     } catch (org.springframework.dao.DataIntegrityViolationException concurrent) {
-                        // Another thread won the insert race — re-lock the now-existing row.
-                        // CBS CRITICAL: Clear the persistence context to evict the failed entity.
-                        // saveAndFlush() registered the new GLBranchBalance in the first-level
-                        // cache before the flush failed. Without clear(), the subsequent
-                        // findAndLock would return the stale managed entity (with id=null,
-                        // version=null) instead of the DB row inserted by the winning thread.
-                        // Per Hibernate spec: after a failed flush, the Session state is
-                        // undefined — clear() is the only safe recovery path within the same TX.
-                        // This also evicts the GLMaster entity locked in Step 1, but that's safe
-                        // because we already updated and saved it above — the clear() does not
-                        // roll back the SQL UPDATE, only the in-memory cache.
-                        entityManager.clear();
+                        // Another thread won the insert race — the inner REQUIRES_NEW TX
+                        // rolled back cleanly; we re-lock the now-present row below.
                         log.debug("GLBranchBalance race resolved: branch={}, gl={}", branch.getBranchCode(), line.glCode());
-                        branchBalance = glBranchBalanceRepository
-                                .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
-                                .orElseThrow(() -> new BusinessException(
-                                        "GL_BRANCH_BALANCE_MISSING",
-                                        "GLBranchBalance row disappeared after concurrent insert: "
-                                                + branch.getBranchCode() + "/" + line.glCode()));
                     }
+                    // Re-lock the row (whether we just inserted it or the winner did)
+                    branchBalance = glBranchBalanceRepository
+                            .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
+                            .orElseThrow(() -> new BusinessException(
+                                    "GL_BRANCH_BALANCE_MISSING",
+                                    "GLBranchBalance row disappeared after bootstrap: "
+                                            + branch.getBranchCode() + "/" + line.glCode()));
                 }
 
                 if (line.debitCredit() == DebitCredit.DEBIT) {
