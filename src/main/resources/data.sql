@@ -334,7 +334,7 @@ VALUES ('DEFAULT', 'MAKER', 'WRITE_OFF', 0.00, 0.00, 1, 'Makers cannot perform w
 -- Per Finacle DAYCTRL: all operational branches must have DAY_OPEN for EOD to run.
 UPDATE business_calendar
 SET day_status = 'DAY_OPEN', day_opened_by = 'SYSTEM', day_opened_at = CURRENT_TIMESTAMP
-WHERE tenant_id = 'DEFAULT' AND business_date = '2026-04-01' AND is_holiday = 0;
+WHERE tenant_id = 'DEFAULT' AND business_date = '2026-04-01' AND is_holiday = FALSE;
 
 -- 2. Default transaction batches for April 1 — one per branch (required by TransactionEngine Step 5.5)
 -- Per Finacle BATCH_MASTER / BusinessDateService.openDay(): when a day is opened,
@@ -547,6 +547,6 @@ INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_t
 -- CHECKER: Can VERIFY/APPROVE but NOT CREATE (segregation of duties)
 INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','CHECKER',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND permission_code IN ('LOAN_VERIFY','LOAN_APPROVE','LOAN_DISBURSE','LOAN_VIEW','DEPOSIT_ACTIVATE','DEPOSIT_CLOSE','DEPOSIT_REVERSE','DEPOSIT_VIEW','CUSTOMER_KYC_VERIFY','CUSTOMER_VIEW','CLEARING_APPROVE','CLEARING_SETTLE','CLEARING_REVERSE','GL_VIEW','REPORT_VIEW');
 -- ADMIN: ALL permissions (self-approval blocked by workflow engine, not by permission matrix)
-INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','ADMIN',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND is_active=1;
+INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','ADMIN',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND is_active=TRUE;
 -- AUDITOR: Read-only permissions only (no financial operations)
 INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','AUDITOR',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND permission_code IN ('LOAN_VIEW','DEPOSIT_VIEW','CUSTOMER_VIEW','GL_VIEW','REPORT_VIEW','AUDIT_VIEW');
