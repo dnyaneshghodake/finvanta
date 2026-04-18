@@ -24,7 +24,7 @@
         <h6 class="mb-3 text-primary"><i class="bi bi-box-arrow-right"></i> Source (Debit)</h6>
         <div class="row mb-3">
             <div class="col-md-8">
-                <label for="fromAccount" class="form-label">From Account <span class="text-danger">*</span></label>
+                <label for="fromAccount" class="form-label fv-required">From Account</label>
                 <select name="fromAccount" id="fromAccount" class="form-select" required>
                     <option value="">-- Select Source Account --</option>
                     <c:forEach var="a" items="${accounts}">
@@ -45,7 +45,7 @@
         <h6 class="mb-3 text-primary"><i class="bi bi-box-arrow-in-left"></i> Target (Credit)</h6>
         <div class="row mb-3">
             <div class="col-md-8">
-                <label for="toAccount" class="form-label">To Account <span class="text-danger">*</span></label>
+                <label for="toAccount" class="form-label fv-required">To Account</label>
                 <select name="toAccount" id="toAccount" class="form-select" required>
                     <option value="">-- Select Target Account --</option>
                     <c:forEach var="a" items="${accounts}">
@@ -65,7 +65,7 @@
         <h6 class="mb-3 text-primary"><i class="bi bi-cash-stack"></i> Transaction Details</h6>
         <div class="row mb-3">
             <div class="col-md-4">
-                <label for="amount" class="form-label">Transfer Amount (INR) <span class="text-danger">*</span></label>
+                <label for="amount" class="form-label fv-required">Transfer Amount (INR)</label>
                 <input type="number" name="amount" id="amount" class="form-control" data-fv-type="amount" min="0.01" step="0.01" required placeholder="0.00"/>
             </div>
             <div class="col-md-4">
@@ -84,8 +84,8 @@
         <hr/>
 
         <div class="mt-3">
-            <button type="submit" class="btn btn-fv-primary" id="transferBtn" data-confirm="Confirm fund transfer? This will debit the source and credit the target immediately."><i class="bi bi-arrow-left-right"></i> Execute Transfer</button>
-            <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-outline-secondary ms-2">Cancel</a>
+            <button type="submit" class="btn btn-fv-primary" id="transferBtn" data-confirm="Confirm fund transfer? This will debit the source and credit the target immediately."><i class="bi bi-arrow-left-right"></i> Execute Transfer <span class="fv-kbd">F2</span></button>
+            <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-outline-secondary ms-2" data-fv-cancel="${pageContext.request.contextPath}/deposit/accounts"><i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span></a>
         </div>
     </form>
     </div>
