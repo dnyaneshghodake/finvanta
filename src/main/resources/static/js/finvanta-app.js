@@ -316,7 +316,7 @@ document.addEventListener('DOMContentLoaded', function () {
     //   F2 / Alt+S  = Save/Submit
     //   F3 / Alt+C  = Cancel/Back
     //   Alt+N       = New/Add
-    //   Alt+F       = Focus search
+    //   F4 / Alt+F  = Lookup/Search (Finacle F4=LOV)
     //   Alt+A       = Approve (maker-checker)
     //   Alt+R       = Reject (maker-checker)
     //   Ctrl+Enter  = Submit focused form
@@ -352,8 +352,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 || document.querySelector('a[href*="/open"]');
             if (newBtn) window.location.href = newBtn.href;
         }
-        /* Alt+F = Focus the first search/filter input on the page */
-        if (e.altKey && (e.key === 'f' || e.key === 'F')) {
+        /* F4 or Alt+F = Lookup / Focus search input per Finacle F4=LOV */
+        if (e.key === 'F4' || (e.altKey && (e.key === 'f' || e.key === 'F'))) {
             e.preventDefault();
             var searchInput = document.querySelector('input[name="q"]')
                 || document.querySelector('.dataTables_filter input')
