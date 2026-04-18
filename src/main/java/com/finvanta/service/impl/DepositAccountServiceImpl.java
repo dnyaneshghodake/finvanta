@@ -848,7 +848,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         if (tgt.isDormant()) {
             tgt.setAccountStatus(DepositAccountStatus.ACTIVE);
             tgt.setDormantDate(null);
-            auditService.logEvent(
+            // CBS CRITICAL: Use logEventInline (REQUIRED) — NOT logEvent (REQUIRES_NEW).
+            // At this point we hold PESSIMISTIC_WRITE locks on BOTH source and target
+            // accounts (locked at lines 756-757). logEvent(REQUIRES_NEW) would suspend
+            // this TX without releasing those locks — deadlock vector on SQL Server.
+            auditService.logEventInline(
                     "DepositAccount",
                     tgt.getId(),
                     "DORMANCY_REACTIVATED",
