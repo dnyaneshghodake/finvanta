@@ -289,7 +289,7 @@ public class DepositController {
     @ResponseBody
     public TransactionPreview previewTransaction(
             @PathVariable String accountNumber,
-            @RequestParam java.math.BigDecimal amount,
+            @RequestParam BigDecimal amount,
             @RequestParam String txnType,
             @RequestParam(required = false) String narration) {
         try {

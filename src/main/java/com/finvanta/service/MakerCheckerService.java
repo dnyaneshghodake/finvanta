@@ -11,6 +11,7 @@ import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,7 +66,7 @@ public class MakerCheckerService {
      * to pocket the difference). Per Finacle TRAN_REVERSAL: reversal requires
      * dual authorization even for amounts below the normal threshold.
      */
-    private static final java.util.Set<String> ALWAYS_REQUIRE_APPROVAL = java.util.Set.of(
+    private static final Set<String> ALWAYS_REQUIRE_APPROVAL = Set.of(
             "REVERSAL", "WRITE_OFF", "WRITE_OFF_RECOVERY");
 
     /**

@@ -24,6 +24,7 @@ import jakarta.persistence.PersistenceContext;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -388,7 +389,7 @@ public class AccountingService {
         // Same pattern as DepositAccountServiceImpl.transfer() which uses alphabetical
         // account ordering to prevent inter-account deadlocks.
         List<JournalLineRequest> sortedLines = lines.stream()
-                .sorted(java.util.Comparator.comparing(JournalLineRequest::glCode))
+                .sorted(Comparator.comparing(JournalLineRequest::glCode))
                 .toList();
         for (JournalLineRequest line : sortedLines) {
             // Step 1: Update tenant-level GLMaster (aggregate balance)
