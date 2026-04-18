@@ -9,19 +9,20 @@
         <li><a href="${pageContext.request.contextPath}/admin/products">Product Master</a></li>
         <li class="active">Create Product</li>
     </ul>
-    <c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+    <c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
 
     <div class="fv-card">
-        <div class="card-header"><i class="bi bi-box-seam"></i> Create New Product (Finacle PDDEF)</div>
+        <div class="card-header"><i class="bi bi-box-seam"></i> Create New Product (Finacle PDDEF) <div class="float-end"><a href="${pageContext.request.contextPath}/admin/products" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/admin/products"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a></div></div>
         <div class="card-body">
             <form method="post" action="${pageContext.request.contextPath}/admin/products/create" class="fv-form">
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
 
-                <h6 class="mb-3 text-primary">Product Identity</h6>
+                <div class="fv-section-header" onclick=""><i class="bi bi-tag"></i> Product Identity <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
                 <div class="row mb-3">
-                    <div class="col-md-2"><label class="form-label">Product Code *</label><input type="text" name="productCode" class="form-control" required data-fv-type="code" placeholder="e.g., VEHICLE_LOAN" value="<c:out value='${product.productCode}'/>" style="text-transform:uppercase;"/></div>
-                    <div class="col-md-3"><label class="form-label">Product Name *</label><input type="text" name="productName" class="form-control" required data-fv-type="name" placeholder="e.g., Vehicle Loan - Secured" value="<c:out value='${product.productName}'/>"/></div>
-                    <div class="col-md-2"><label class="form-label">Category *</label>
+                    <div class="col-md-2 fv-mandatory-group"><label class="form-label fv-required">Product Code</label><input type="text" name="productCode" class="form-control" required data-fv-type="code" placeholder="e.g., VEHICLE_LOAN" value="<c:out value='${product.productCode}'/>"/></div>
+                    <div class="col-md-3 fv-mandatory-group"><label class="form-label fv-required">Product Name</label><input type="text" name="productName" class="form-control" required data-fv-type="name" placeholder="e.g., Vehicle Loan - Secured" value="<c:out value='${product.productName}'/>"/></div>
+                    <div class="col-md-2 fv-mandatory-group"><label class="form-label fv-required">Category</label>
                         <select name="productCategory" class="form-select" required>
                             <option value="TERM_LOAN" ${product.productCategory == 'TERM_LOAN' ? 'selected' : ''}>Term Loan</option>
                             <option value="DEMAND_LOAN" ${product.productCategory == 'DEMAND_LOAN' ? 'selected' : ''}>Demand Loan</option>
@@ -35,8 +36,10 @@
                     <div class="col-md-2"><label class="form-label">Currency *</label><select name="currencyCode" class="form-select"><option value="INR" ${empty product.currencyCode or product.currencyCode == 'INR' ? 'selected' : ''}>INR</option><option value="USD" ${product.currencyCode == 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${product.currencyCode == 'EUR' ? 'selected' : ''}>EUR</option><option value="GBP" ${product.currencyCode == 'GBP' ? 'selected' : ''}>GBP</option></select></div>
                     <div class="col-md-3"><label class="form-label">Description</label><input type="text" name="description" class="form-control" maxlength="500" value="<c:out value='${product.description}'/>"/></div>
                 </div>
+                </div><%-- end Product Identity section body --%>
 
-                <h6 class="mb-3 text-primary">Interest Configuration</h6>
+                <div class="fv-section-header" onclick=""><i class="bi bi-percent"></i> Interest Configuration <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
                 <div class="row mb-3">
                     <div class="col-md-2"><label class="form-label">Method</label><select name="interestMethod" class="form-select"><option value="ACTUAL_365" ${empty product.interestMethod or product.interestMethod == 'ACTUAL_365' ? 'selected' : ''}>Actual/365</option><option value="ACTUAL_360" ${product.interestMethod == 'ACTUAL_360' ? 'selected' : ''}>Actual/360</option><option value="ACTUAL_ACTUAL" ${product.interestMethod == 'ACTUAL_ACTUAL' ? 'selected' : ''}>Actual/Actual</option><option value="THIRTY_360" ${product.interestMethod == 'THIRTY_360' ? 'selected' : ''}>30/360</option></select></div>
                     <div class="col-md-2"><label class="form-label">Type</label><select name="interestType" class="form-select"><option value="FIXED" ${empty product.interestType or product.interestType == 'FIXED' ? 'selected' : ''}>Fixed</option><option value="FLOATING" ${product.interestType == 'FLOATING' ? 'selected' : ''}>Floating</option></select></div>
@@ -50,9 +53,10 @@
                     <div class="col-md-3"><label class="form-label">Processing Fee %</label><input type="number" name="processingFeePct" class="form-control" data-fv-type="rate" step="0.01" value="0.00"/></div>
                     <div class="col-md-3"><label class="form-label">Prepayment Penalty</label><div class="form-check mt-2"><input type="hidden" name="_prepaymentPenaltyApplicable" value="on" /><input type="checkbox" name="prepaymentPenaltyApplicable" value="true" class="form-check-input" id="prepayCheck"/><label class="form-check-label" for="prepayCheck">Applicable (per RBI: not for floating rate)</label></div></div>
                 </div>
+                </div><%-- end Interest Configuration section body --%>
 
-                <%-- CBS Sprint 1.4: Floating Rate & CASA Tiering Configuration --%>
-                <h6 class="mb-3 text-primary">Floating Rate Configuration (RBI EBLR/MCLR)</h6>
+                <div class="fv-section-header" onclick=""><i class="bi bi-graph-up-arrow"></i> Floating Rate Configuration (RBI EBLR/MCLR) <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
                 <div class="row mb-3">
                     <div class="col-md-2"><label class="form-label">Benchmark</label><select name="defaultBenchmarkName" class="form-select"><option value="">-- None (Fixed) --</option><option value="EBLR">EBLR</option><option value="MCLR">MCLR</option><option value="RLLR">RLLR</option><option value="T_BILL">T-Bill</option></select></div>
                     <div class="col-md-2"><label class="form-label">Reset Frequency</label><select name="defaultRateResetFrequency" class="form-select"><option value="">-- N/A --</option><option value="QUARTERLY">Quarterly</option><option value="HALF_YEARLY">Half Yearly</option><option value="YEARLY">Yearly</option></select></div>
@@ -60,16 +64,20 @@
                     <div class="col-md-2"><label class="form-label">CASA Tiering</label><div class="form-check mt-2"><input type="checkbox" name="interestTieringEnabled" value="true" class="form-check-input" id="tieringCheck"/><label class="form-check-label" for="tieringCheck">Enable Balance Tiering</label></div></div>
                     <div class="col-md-4"><label class="form-label">Tiering JSON</label><input type="text" name="interestTieringJson" class="form-control" placeholder='[{"min":0,"max":100000,"rate":3.0}]'/></div>
                 </div>
+                </div><%-- end Floating Rate section body --%>
 
-                <h6 class="mb-3 text-primary">Amount &amp; Tenure Limits</h6>
+                <div class="fv-section-header" onclick=""><i class="bi bi-sliders"></i> Amount &amp; Tenure Limits <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
                 <div class="row mb-3">
                     <div class="col-md-3"><label class="form-label">Min Amount (INR) *</label><input type="number" name="minLoanAmount" class="form-control" required data-fv-type="amount" data-fv-max-field="maxLoanAmount" data-fv-label="Min Amount" value="${not empty product.minLoanAmount ? product.minLoanAmount : '50000'}"/></div>
                     <div class="col-md-3"><label class="form-label">Max Amount (INR) *</label><input type="number" name="maxLoanAmount" class="form-control" required data-fv-type="amount" data-fv-label="Max Amount" value="${not empty product.maxLoanAmount ? product.maxLoanAmount : '5000000'}"/></div>
                     <div class="col-md-3"><label class="form-label">Min Tenure (months) *</label><input type="number" name="minTenureMonths" class="form-control" required data-fv-type="tenure" data-fv-max-field="maxTenureMonths" data-fv-label="Min Tenure" value="${not empty product.minTenureMonths ? product.minTenureMonths : '6'}"/></div>
                     <div class="col-md-3"><label class="form-label">Max Tenure (months) *</label><input type="number" name="maxTenureMonths" class="form-control" required data-fv-type="tenure" data-fv-label="Max Tenure" value="${not empty product.maxTenureMonths ? product.maxTenureMonths : '84'}"/></div>
                 </div>
+                </div><%-- end Amount & Tenure section body --%>
 
-                <h6 class="mb-3 text-primary">GL Code Mapping (Product &rarr; GL)</h6>
+                <div class="fv-section-header" onclick=""><i class="bi bi-journal-bookmark"></i> GL Code Mapping (Product &rarr; GL) <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
                 <p class="text-muted small mb-2">
                     <i class="bi bi-info-circle"></i> GL labels and defaults change based on product category.
                     <strong>Loan:</strong> Asset/Income semantics. <strong>CASA/FD:</strong> Liability/Expense semantics per Finacle PDDEF.
@@ -167,9 +175,12 @@
                 })();
                 </script>
 
-                <hr/>
-                <button type="submit" class="btn btn-fv-primary" data-confirm="Create this product? GL mapping will be used for all future transactions."><i class="bi bi-plus-circle"></i> Create Product</button>
-                <a href="${pageContext.request.contextPath}/admin/products" class="btn btn-outline-secondary ms-2">Cancel</a>
+                </div><%-- end GL Code Mapping section body --%>
+
+                <div class="mt-3">
+                    <button type="submit" class="btn btn-fv-primary" data-confirm="Create this product? GL mapping will be used for all future transactions."><i class="bi bi-plus-circle"></i> Create Product <span class="fv-kbd">F2</span></button>
+                    <a href="${pageContext.request.contextPath}/admin/products" class="btn btn-outline-secondary ms-2" data-fv-cancel="${pageContext.request.contextPath}/admin/products"><i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span></a>
+                </div>
 
                 <%-- CBS: Cross-field validation (min<=max) is now handled by the centralized
                      FV.Validation library via data-fv-max-field attributes on the min fields.
