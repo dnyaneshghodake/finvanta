@@ -55,7 +55,7 @@ class CasaDepositIntegrationTest {
 
     private static final String TENANT = "TEST_CASA";
     private static final LocalDate BIZ_DATE = LocalDate.of(2026, 4, 1);
-    private Long testBranchId;
+    private static Long testBranchId;
 
     /** Guard: reference data is seeded once per class, not per test method. */
     private static boolean referenceDataSeeded = false;

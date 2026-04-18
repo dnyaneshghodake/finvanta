@@ -138,8 +138,8 @@ class CbsEndToEndIntegrationTest {
     private static final String TENANT = "E2E_TEST_TENANT";
     private static final LocalDate BIZ_DATE = LocalDate.of(2026, 4, 1);
 
-    private Long branchId;
-    private Long customerId;
+    private static Long branchId;
+    private static Long customerId;
     private String accountNumber;
 
     /** Guard: reference data is seeded once per class, not per test method. */

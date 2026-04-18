@@ -68,7 +68,7 @@ class LoanLifecycleIntegrationTest {
     private static final LocalDate BIZ_DATE = LocalDate.of(2026, 4, 1);
 
     /** Branch ID assigned during setupReferenceData — used for security context. */
-    private Long testBranchId;
+    private static Long testBranchId;
 
     /** Guard: reference data is seeded once per class, not per test method. */
     private static boolean referenceDataSeeded = false;
@@ -203,6 +203,9 @@ class LoanLifecycleIntegrationTest {
         glMasterRepository.save(gl);
     }
 
+    /** Counter for unique application numbers across test methods within the class. */
+    private static int appCounter = 0;
+
     private LoanApplication createApprovedApplication() {
         Branch branch = branchRepository.findAll().stream()
                 .filter(b -> b.getTenantId().equals(TENANT))
@@ -213,9 +216,10 @@ class LoanLifecycleIntegrationTest {
                 .findFirst()
                 .orElseThrow();
 
+        appCounter++;
         LoanApplication app = new LoanApplication();
         app.setTenantId(TENANT);
-        app.setApplicationNumber("APP-TEST-001");
+        app.setApplicationNumber("APP-TEST-" + String.format("%03d", appCounter));
         app.setCustomer(customer);
         app.setBranch(branch);
         app.setProductType("TERM_LOAN");
