@@ -159,11 +159,12 @@ public class AccountingController {
             }
             mav.addObject("searchQuery", q);
         } else {
-            // CBS Tier-1: cap date-range query at MAX_JOURNAL_RESULTS to prevent OOM
-            // on busy systems. Same limit as the search path above.
-            entries = journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to);
-            if (entries.size() > MAX_JOURNAL_RESULTS) {
-                entries = entries.subList(0, MAX_JOURNAL_RESULTS);
+            // CBS Tier-1: limit at DB level via Pageable to prevent OOM on busy date ranges.
+            // The previous approach loaded ALL rows then truncated with subList() — on busy
+            // systems with 100K+ entries, the full result set caused OOM before the cap.
+            entries = journalEntryRepository.findByTenantIdAndValueDateBetweenPaged(
+                    tenantId, from, to, PageRequest.of(0, MAX_JOURNAL_RESULTS));
+            if (entries.size() >= MAX_JOURNAL_RESULTS) {
                 mav.addObject("warning", "Results capped at " + MAX_JOURNAL_RESULTS
                         + " entries. Narrow the date range or use search for specific entries.");
             }
@@ -196,11 +197,11 @@ public class AccountingController {
             mav.addObject("error", "Invalid date format. Showing default 30-day range.");
         }
 
+        // CBS Tier-1: limit at DB level via Pageable to prevent OOM on busy date ranges.
         List<com.finvanta.domain.entity.JournalEntry> entries =
-                journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to);
-        // CBS Tier-1: cap results to prevent OOM / excessive DOM on busy date ranges
-        if (entries.size() > MAX_JOURNAL_RESULTS) {
-            entries = entries.subList(0, MAX_JOURNAL_RESULTS);
+                journalEntryRepository.findByTenantIdAndValueDateBetweenPaged(
+                        tenantId, from, to, PageRequest.of(0, MAX_JOURNAL_RESULTS));
+        if (entries.size() >= MAX_JOURNAL_RESULTS) {
             mav.addObject("warning", "Results capped at " + MAX_JOURNAL_RESULTS
                     + " entries. Narrow the date range for complete data.");
         }

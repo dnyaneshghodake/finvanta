@@ -26,6 +26,19 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
             @Param("fromDate") LocalDate fromDate,
             @Param("toDate") LocalDate toDate);
 
+    /**
+     * CBS Tier-1: Pageable date-range query to prevent OOM on busy date ranges.
+     * Limits results at the DB level via SQL TOP/LIMIT instead of loading all rows
+     * into memory and truncating in Java. Used by AccountingController journal views.
+     */
+    @Query("SELECT je FROM JournalEntry je WHERE je.tenantId = :tenantId "
+            + "AND je.valueDate BETWEEN :fromDate AND :toDate ORDER BY je.postingDate DESC")
+    List<JournalEntry> findByTenantIdAndValueDateBetweenPaged(
+            @Param("tenantId") String tenantId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate,
+            org.springframework.data.domain.Pageable pageable);
+
     List<JournalEntry> findByTenantIdAndSourceModuleAndSourceRef(
             String tenantId, String sourceModule, String sourceRef);
 
