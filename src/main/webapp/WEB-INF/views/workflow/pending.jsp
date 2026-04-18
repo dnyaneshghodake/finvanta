@@ -56,11 +56,18 @@
                                         <i class="bi bi-check-circle"></i> Approve
                                     </button>
                                 </form>
+                                <%-- CBS Tier-1: Reject MUST collect a mandatory reason per RBI IT
+                                     Governance §8.3 maker-checker audit trail. Uses fvPromptReason
+                                     modal instead of simple data-confirm so the checker's rationale
+                                     is captured in the workflow record. --%>
                                 <form method="post" action="${pageContext.request.contextPath}/workflow/reject/${item.id}" class="d-inline">
-                                    <input type="hidden" name="remarks" value="Rejected" />
+                                    <input type="hidden" name="remarks" value="" class="fv-reason-field" />
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                    <button type="submit" class="btn btn-sm btn-fv-danger"
-                                            data-confirm="Reject ${fn:escapeXml(item.entityType)} ${fn:escapeXml(item.entityId)} (${fn:escapeXml(item.actionType)})?">
+                                    <button type="button" class="btn btn-sm btn-fv-danger"
+                                            data-fv-reason-prompt="Rejection reason for ${fn:escapeXml(item.entityType)} ${fn:escapeXml(item.entityId)} (mandatory):"
+                                            data-fv-reason-confirm="Reject ${fn:escapeXml(item.entityType)} ${fn:escapeXml(item.entityId)} (${fn:escapeXml(item.actionType)})?"
+                                            data-fv-reason-minlength="3"
+                                            onclick="fvPromptReason(this);">
                                         <i class="bi bi-x-circle"></i> Reject
                                     </button>
                                 </form>

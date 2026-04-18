@@ -102,10 +102,9 @@
         <!-- CBS Branch Context: Per Finacle SOL_SWITCH — ADMIN can switch branch -->
         <c:choose>
             <c:when test="${pageContext.request.isUserInRole('ROLE_ADMIN') && not empty allBranches}">
-                <form method="post" action="${pageContext.request.contextPath}/admin/switch-branch" class="d-inline" style="margin-right:8px;">
+                <form method="post" action="${pageContext.request.contextPath}/admin/switch-branch" class="d-inline fv-branch-switch-form">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                    <select name="branchId" onchange="this.form.submit()" class="form-select form-select-sm d-inline-block"
-                            style="width:auto;background:#1e293b;color:#90caf9;border:1px solid #334155;font-size:12px;padding:2px 24px 2px 8px;">
+                    <select name="branchId" onchange="this.form.submit()" class="form-select form-select-sm d-inline-block fv-branch-switch">
                         <c:forEach var="br" items="${allBranches}">
                             <option value="${br.id}" ${br.branchCode == userBranchCode ? 'selected' : ''}>
                                 <c:out value="${br.branchCode}" /> &mdash; <c:out value="${br.branchName}" />
@@ -121,10 +120,10 @@
         <span class="fv-biz-date"><c:out value="${businessDate}" default="--" /></span>
         <span class="fv-user-role"><c:out value="${userRole}" default="USER" /></span>
         <span><c:out value="${pageContext.request.userPrincipal.name}" default="" /></span>
-        <a href="${pageContext.request.contextPath}/password/change" style="color:#90caf9;font-size:12px;text-decoration:none;margin-right:8px;" title="Change Password"><i class="bi bi-key"></i></a>
+        <a href="${pageContext.request.contextPath}/password/change" class="fv-topbar-action" title="Change Password"><i class="bi bi-key"></i></a>
         <form method="post" action="${pageContext.request.contextPath}/logout" class="d-inline">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-            <button type="submit" class="btn btn-sm" style="color:#90caf9;background:none;border:none;cursor:pointer;font-size:12px;padding:0;">Logout</button>
+            <button type="submit" class="btn btn-sm fv-topbar-action">Logout</button>
         </form>
     </div>
 </div>

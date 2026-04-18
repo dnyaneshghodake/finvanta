@@ -159,7 +159,14 @@ public class AccountingController {
             }
             mav.addObject("searchQuery", q);
         } else {
+            // CBS Tier-1: cap date-range query at MAX_JOURNAL_RESULTS to prevent OOM
+            // on busy systems. Same limit as the search path above.
             entries = journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to);
+            if (entries.size() > MAX_JOURNAL_RESULTS) {
+                entries = entries.subList(0, MAX_JOURNAL_RESULTS);
+                mav.addObject("warning", "Results capped at " + MAX_JOURNAL_RESULTS
+                        + " entries. Narrow the date range or use search for specific entries.");
+            }
         }
         mav.addObject("entries", entries);
         addJournalTotals(mav, entries);
@@ -191,6 +198,12 @@ public class AccountingController {
 
         List<com.finvanta.domain.entity.JournalEntry> entries =
                 journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to);
+        // CBS Tier-1: cap results to prevent OOM / excessive DOM on busy date ranges
+        if (entries.size() > MAX_JOURNAL_RESULTS) {
+            entries = entries.subList(0, MAX_JOURNAL_RESULTS);
+            mav.addObject("warning", "Results capped at " + MAX_JOURNAL_RESULTS
+                    + " entries. Narrow the date range for complete data.");
+        }
         mav.addObject("entries", entries);
         addJournalTotals(mav, entries);
         mav.addObject("fromDate", from);

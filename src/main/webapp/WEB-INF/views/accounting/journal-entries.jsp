@@ -46,6 +46,10 @@
         </div>
     </div>
 
+    <c:if test="${not empty warning}">
+        <div class="fv-alert alert alert-warning"><i class="bi bi-exclamation-triangle"></i> <c:out value="${warning}" /></div>
+    </c:if>
+
     <div class="fv-card">
         <div class="card-header">Journal Entries</div>
         <div class="card-body">

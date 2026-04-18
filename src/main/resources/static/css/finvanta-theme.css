@@ -143,6 +143,21 @@ body {
 }
 .fv-topbar .fv-topbar-right a { color: #90caf9; text-decoration: none; font-size: 12px; }
 .fv-topbar .fv-topbar-right a:hover { color: #ffffff; }
+/* CBS Tier-1: Topbar action buttons/links — replaces inline styles on password/logout.
+   Per Phase 14 audit: no inline styles on layout elements rendered on every page. */
+.fv-topbar-action {
+    color: #90caf9; font-size: 12px; text-decoration: none;
+    background: none; border: none; cursor: pointer; padding: 0;
+}
+.fv-topbar-action:hover { color: #ffffff; }
+/* CBS Tier-1: Branch switch dropdown — ADMIN only, per Finacle SOL_SWITCH.
+   Replaces inline styles on the topbar branch select element. */
+.fv-branch-switch-form { margin-right: 8px; }
+.fv-branch-switch {
+    width: auto; background: #1e293b; color: #90caf9;
+    border: 1px solid #334155; font-size: 12px;
+    padding: 2px 24px 2px 8px;
+}
 
 /* Main Content
  * CBS Tier-1: cap content width so tables/forms stay readable on ultra-wide monitors

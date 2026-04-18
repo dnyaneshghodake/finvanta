@@ -75,7 +75,7 @@
                             <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
                             <form method="post" action="${pageContext.request.contextPath}/customer/verify-kyc/${customer.id}" class="d-inline ms-2">
                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                <button type="submit" class="btn btn-sm btn-success" data-confirm="Confirm KYC verification for this customer?"><i class="bi bi-patch-check"></i> Verify KYC</button>
+                                <button type="submit" class="btn btn-sm btn-fv-success" data-confirm="Confirm KYC verification for this customer?"><i class="bi bi-patch-check"></i> Verify KYC</button>
                             </form>
                             </c:if>
                         </c:otherwise>
@@ -334,13 +334,13 @@
                                     <form method="post" action="${pageContext.request.contextPath}/customer/document/verify/${doc.id}" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                         <input type="hidden" name="action" value="VERIFY" />
-                                        <button type="submit" class="btn btn-sm btn-success me-1" title="Verify document" data-confirm="Verify this document?"><i class="bi bi-patch-check"></i> Verify</button>
+                                        <button type="submit" class="btn btn-sm btn-fv-success me-1" title="Verify document" data-confirm="Verify this document?"><i class="bi bi-patch-check"></i> Verify</button>
                                     </form>
                                     <form method="post" action="${pageContext.request.contextPath}/customer/document/verify/${doc.id}" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                         <input type="hidden" name="action" value="REJECT" />
                                         <input type="hidden" name="rejectionReason" value="" class="fv-reason-field" />
-                                        <button type="button" class="btn btn-sm btn-danger" title="Reject document"
+                                        <button type="button" class="btn btn-sm btn-fv-danger" title="Reject document"
                                             data-fv-reason-prompt="Rejection reason (mandatory):"
                                             data-fv-reason-confirm="Reject this document?"
                                             onclick="fvPromptReason(this);">
@@ -397,7 +397,7 @@
                 <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
                 <form method="post" action="${pageContext.request.contextPath}/customer/deactivate/${customer.id}" class="d-inline">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                    <button type="submit" class="btn btn-sm btn-danger" data-confirm="Deactivate this customer? This action cannot be undone."><i class="bi bi-person-x"></i> Deactivate Customer</button>
+                    <button type="submit" class="btn btn-sm btn-fv-danger" data-confirm="Deactivate this customer? This action cannot be undone."><i class="bi bi-person-x"></i> Deactivate Customer</button>
                 </form>
                 </c:if>
             </c:if>
