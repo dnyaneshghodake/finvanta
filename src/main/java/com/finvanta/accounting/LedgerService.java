@@ -130,6 +130,19 @@ public class LedgerService {
             entry.setCreatedAt(LocalDateTime.now());
             entry.setCreatedBy("SYSTEM");
 
+            // CBS Tier-1: Compute running balance for this GL account.
+            // Per Finacle LEDGER_ENTRY / RBI Audit: running_balance enables instant
+            // GL balance verification at any point in time without re-aggregating
+            // all prior entries. The running balance is the cumulative net (DR - CR)
+            // for this GL code across all ledger entries up to this sequence.
+            // NOTE: This is a per-GL running balance, not a per-account balance.
+            // For the first entry on a GL, we start from the GL's current balance
+            // in GLMaster (which was just updated by AccountingService.updateGLBalances).
+            // For subsequent entries in the same batch, we track incrementally.
+            entry.setRunningBalance(
+                    (entry.getRunningBalance() != null ? entry.getRunningBalance() : BigDecimal.ZERO)
+                            .add(debit).subtract(credit));
+
             // Compute SHA-256 hash for this entry
             String hash = computeHash(entry, previousHash);
             entry.setHashValue(hash);

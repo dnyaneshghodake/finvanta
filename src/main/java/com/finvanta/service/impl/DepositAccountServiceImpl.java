@@ -873,6 +873,9 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                     "INTERNAL",
                     to);
         }
+        // CBS Tier-1: Capture balance BEFORE mutation for both accounts
+        BigDecimal srcBalanceBefore = src.getLedgerBalance();
+        BigDecimal tgtBalanceBefore = tgt.getLedgerBalance();
         src.setLedgerBalance(src.getLedgerBalance().subtract(amount));
         recomputeAvailable(src);
         src.setLastTransactionDate(bd);
@@ -915,9 +918,10 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 creditTxnRef,
                 null,
                 "INTERNAL",
-                from);
+                from,
+                tgtBalanceBefore);
         return buildTxn(
-                src, amount, "TRANSFER_DEBIT", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, "INTERNAL", to);
+                src, amount, "TRANSFER_DEBIT", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, "INTERNAL", to, srcBalanceBefore);
     }
 
     // === Interest Accrual (EOD daily) ===

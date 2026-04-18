@@ -1,6 +1,7 @@
 package com.finvanta.transaction;
 
 import com.finvanta.accounting.AccountingService;
+import com.finvanta.accounting.PostingIntegrityGuard;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.GLMaster;
@@ -96,6 +97,7 @@ public class TransactionEngine {
     private final TransactionBatchRepository batchRepository;
     private final AuditService auditService;
     private final SequenceGeneratorService sequenceGenerator;
+    private final PostingIntegrityGuard integrityGuard;
 
     /**
      * CBS Tier-1: Self-proxy for @Transactional(REQUIRES_NEW) method invocation.
@@ -118,7 +120,8 @@ public class TransactionEngine {
             BranchRepository branchRepository,
             TransactionBatchRepository batchRepository,
             AuditService auditService,
-            SequenceGeneratorService sequenceGenerator) {
+            SequenceGeneratorService sequenceGenerator,
+            PostingIntegrityGuard integrityGuard) {
         this.accountingService = accountingService;
         this.limitService = limitService;
         this.makerCheckerService = makerCheckerService;
@@ -128,6 +131,7 @@ public class TransactionEngine {
         this.batchRepository = batchRepository;
         this.auditService = auditService;
         this.sequenceGenerator = sequenceGenerator;
+        this.integrityGuard = integrityGuard;
     }
 
     /** CBS Tier-1: Max retry attempts on deadlock/lock-timeout per Finacle GL_LOCK */
@@ -244,6 +248,16 @@ public class TransactionEngine {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public TransactionResult executeInternal(TransactionRequest request) {
+        // ================================================================
+        // STEP 0: Financial Safety Kill Switch (BEFORE any DB touch)
+        // Per Tier-1 CBS blueprint / RBI IT Governance §8.3:
+        // If the system is in RESTRICTED MODE (GL imbalance, hash chain break,
+        // batch mismatch), ALL postings are blocked. This check runs BEFORE
+        // any validation, sequence allocation, or DB write to prevent
+        // compounding damage on a corrupted ledger.
+        // ================================================================
+        integrityGuard.assertPostingAllowed();
+
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser =
                 request.getInitiatedBy() != null ? request.getInitiatedBy() : SecurityUtil.getCurrentUsername();
