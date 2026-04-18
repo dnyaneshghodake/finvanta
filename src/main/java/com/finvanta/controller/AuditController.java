@@ -78,6 +78,29 @@ public class AuditController {
     }
 
     /**
+     * CBS Per-Entity Audit Trail per Finacle AUDIT_INQUIRY / RBI IT Governance §8.3.
+     * Linked from detail screens (customer/view, deposit/view, loan/account-details)
+     * via "View Audit Trail" button. Shows all audit records for a specific entity.
+     *
+     * Per RBI IT Governance Direction 2023 §8.3: inspectors must be able to view
+     * the complete change history of any individual entity (customer, account, loan).
+     */
+    @GetMapping("/entity")
+    public ModelAndView entityAuditTrail(
+            @RequestParam String entityType,
+            @RequestParam Long entityId) {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("audit/logs");
+        mav.addObject("auditLogs",
+                auditLogRepository.findByTenantIdAndEntityTypeAndEntityIdOrderByEventTimestampDesc(
+                        tenantId, entityType, entityId));
+        mav.addObject("chainIntegrity",
+                auditService.verifyRecentChainIntegrity(tenantId));
+        mav.addObject("entityFilter", entityType + " #" + entityId);
+        return mav;
+    }
+
+    /**
      * CBS Audit Trail Search per Finacle AUDIT_INQUIRY / RBI IT Governance §8.3.
      * Searches by entity type, action, user, module, or description.
      * Optional date range filter for RBI inspection period queries.

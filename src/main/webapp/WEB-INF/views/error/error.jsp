@@ -29,12 +29,23 @@
                     &mdash; Contact your administrator if you need access to this function.
                 </p>
             </c:if>
-            <a href="${pageContext.request.contextPath}/dashboard" class="btn btn-sm btn-fv-primary me-2">
-                <i class="bi bi-house"></i> Dashboard
-            </a>
-            <button onclick="history.back()" class="btn btn-sm btn-outline-secondary">
-                <i class="bi bi-arrow-left"></i> Go Back
-            </button>
+            <%-- CBS Tier-1: Correlation ID for support escalation per RBI IT Governance §7.4.
+                 Every error page displays a unique request reference that maps to the MDC
+                 requestId in server logs. Users quote this to IT support for incident triage. --%>
+            <c:if test="${not empty correlationId}">
+                <p class="text-muted small mt-2">
+                    <i class="bi bi-tag"></i> Reference ID: <code class="user-select-all"><c:out value="${correlationId}" /></code>
+                    <br/><small>Please quote this reference when contacting IT support.</small>
+                </p>
+            </c:if>
+            <div class="mt-3">
+                <a href="${pageContext.request.contextPath}/dashboard" class="btn btn-sm btn-fv-primary me-2">
+                    <i class="bi bi-house"></i> Dashboard
+                </a>
+                <button onclick="history.back()" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Go Back
+                </button>
+            </div>
         </div>
     </div>
 </div>

@@ -61,6 +61,15 @@ public class TenantFilter implements Filter {
     private static final String MDC_USER = "username";
 
     /**
+     * CBS Tier-1: Request correlation ID per RBI IT Governance Direction 2023 §7.4.
+     * Unique per HTTP request for SIEM correlation and support escalation.
+     * Exposed to error pages via request attribute so users can quote it to support.
+     * Per Finacle TRAN_REF / Temenos OFS.ID: every operation has a traceable reference.
+     */
+    private static final String MDC_REQUEST_ID = "requestId";
+    private static final String REQUEST_ATTR_REQUEST_ID = "fvRequestId";
+
+    /**
      * Populate username and branchCode MDC keys from the HTTP session's SecurityContext.
      *
      * Per Finacle/Temenos: reads SPRING_SECURITY_CONTEXT directly from the session
@@ -162,6 +171,15 @@ public class TenantFilter implements Filter {
             // === Set MDC for structured logging ===
             // Tenant ID is always available at this point (resolved above).
             MDC.put(MDC_TENANT, tenantId);
+
+            // CBS Tier-1: Generate unique request ID for correlation.
+            // Format: yyyyMMddHHmmss-XXXX (compact, sortable, human-readable).
+            // Exposed as request attribute for error pages and as MDC key for log lines.
+            String requestId = java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                    + "-" + Integer.toHexString(System.identityHashCode(request)).toUpperCase();
+            MDC.put(MDC_REQUEST_ID, requestId);
+            httpRequest.setAttribute(REQUEST_ATTR_REQUEST_ID, requestId);
 
             // CBS: Username and branch MDC are set BEFORE chain.doFilter().
             // For the FIRST request (login POST), SecurityContext is empty here
