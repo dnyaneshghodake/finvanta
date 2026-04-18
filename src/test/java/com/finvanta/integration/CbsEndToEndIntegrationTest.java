@@ -146,12 +146,15 @@ class CbsEndToEndIntegrationTest {
     void setUp() {
         TenantContext.setCurrentTenant(TENANT);
         setSecurityContext(0L, "HQ");
-        // CBS: Clean any orphaned audit records from prior test runs.
+        // CBS: Clean ALL orphaned audit records for this test tenant.
         // AuditService.logEvent() uses REQUIRES_NEW propagation which commits
         // audit records independently of the test's @Transactional rollback.
         // Stale records break the hash chain for subsequent test runs.
+        // Must use findAllByTenantIdOrderByIdAsc (unbounded) not findRecentAuditLogs
+        // (capped at 500) to ensure complete cleanup.
         auditLogRepository.deleteAll(
-                auditLogRepository.findRecentAuditLogs(TENANT));
+                auditLogRepository.findAllByTenantIdOrderByIdAsc(
+                        TENANT, org.springframework.data.domain.PageRequest.of(0, Integer.MAX_VALUE)));
     }
 
     private void setSecurityContext(Long branchId, String branchCode) {
