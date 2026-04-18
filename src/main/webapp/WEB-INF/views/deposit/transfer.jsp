@@ -46,9 +46,11 @@
         <div class="row mb-3">
             <div class="col-md-8">
                 <label for="toAccount" class="form-label fv-required">To Account</label>
+                <%-- CBS Tier-1: Target uses ${allAccounts} (all branches) because inter-branch
+                     transfers are allowed. Source uses ${accounts} (branch-scoped). --%>
                 <select name="toAccount" id="toAccount" class="form-select" required>
                     <option value="">-- Select Target Account --</option>
-                    <c:forEach var="a" items="${accounts}">
+                    <c:forEach var="a" items="${allAccounts}">
                     <option value="<c:out value='${a.accountNumber}'/>" data-cust="<c:out value='${a.customer.firstName}'/> <c:out value='${a.customer.lastName}'/>" data-type="<c:out value='${a.accountType}'/>" data-branch="<c:out value='${a.branch.branchCode}'/>"><c:out value="${a.accountNumber}"/> &mdash; <c:out value="${a.customer.firstName}"/> <c:out value="${a.customer.lastName}"/> | <c:out value="${a.accountType}"/> | <c:out value="${a.branch.branchCode}"/></option>
                     </c:forEach>
                 </select>

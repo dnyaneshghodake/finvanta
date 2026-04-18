@@ -57,6 +57,10 @@ public class DepositController {
 
     private static final Logger log = LoggerFactory.getLogger(DepositController.class);
 
+    /** CBS: Allowed transaction types for the preview endpoint — whitelist per OWASP. */
+    private static final java.util.Set<String> PREVIEW_TXN_TYPES = java.util.Set.of(
+            "CASH_DEPOSIT", "CASH_WITHDRAWAL");
+
     private final DepositAccountService depositService;
     private final BusinessDateService businessDateService;
     private final CustomerRepository customerRepository;
@@ -285,7 +289,19 @@ public class DepositController {
             @RequestParam String txnType,
             @RequestParam(required = false) String narration) {
         try {
+            // CBS: Whitelist txnType to prevent arbitrary strings flowing into
+            // TransactionRequest, audit trail narrations, and log files.
+            if (!PREVIEW_TXN_TYPES.contains(txnType)) {
+                throw new BusinessException("INVALID_TXN_TYPE",
+                        "Unsupported transaction type for preview: " + txnType);
+            }
             DepositAccount account = depositService.getAccount(accountNumber);
+            // CBS Tier-1: Branch access validation — preview exposes account balance,
+            // customer name, and branch details. Without this check, a MAKER at Branch A
+            // could view account details at Branch B via the preview AJAX endpoint.
+            // The actual deposit/withdraw service methods validate branch access, but
+            // the preview would leak data before the operator even clicks Post.
+            branchAccessValidator.validateAccess(account.getBranch());
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();
 
             // Resolve GL codes based on transaction type
@@ -385,6 +401,27 @@ public class DepositController {
                             e.getMessage() != null ? e.getMessage() : "Unexpected error — contact support")
                     .build();
         }
+    }
+
+    /**
+     * CBS: Sanitize a string for CSV output per OWASP CSV Injection guidelines.
+     * If the value starts with =, +, -, @, \t, or \r, prefix with a single quote
+     * to prevent Excel/LibreOffice from interpreting it as a formula.
+     * Also escapes embedded double-quotes per RFC 4180.
+     * Per RBI Inspection Manual: inspectors open CSV exports in Excel — formula
+     * injection in narration fields could execute arbitrary commands on their machines.
+     */
+    private static String csvSafe(String value) {
+        if (value == null) return "";
+        String escaped = value.replace("\"", "\"\"");
+        if (!escaped.isEmpty()) {
+            char first = escaped.charAt(0);
+            if (first == '=' || first == '+' || first == '-' || first == '@'
+                    || first == '\t' || first == '\r') {
+                escaped = "'" + escaped;
+            }
+        }
+        return escaped;
     }
 
     /** Resolve deposit GL code for preview — mirrors DepositAccountServiceImpl.glForAccount() */
@@ -650,10 +687,10 @@ public class DepositController {
         csv.append("Date,Transaction Ref,Type,Channel,Narration,Debit,Credit,Balance,Voucher\n");
         for (DepositTransaction t : txns) {
             csv.append(t.getValueDate()).append(',');
-            csv.append('"').append(t.getTransactionRef() != null ? t.getTransactionRef().replace("\"", "\"\"") : "").append("\",");
+            csv.append('"').append(csvSafe(t.getTransactionRef())).append("\",");
             csv.append(t.getTransactionType()).append(',');
-            csv.append(t.getChannel() != null ? t.getChannel() : "").append(',');
-            csv.append('"').append(t.getNarration() != null ? t.getNarration().replace("\"", "\"\"") : "").append("\",");
+            csv.append(csvSafe(t.getChannel())).append(',');
+            csv.append('"').append(csvSafe(t.getNarration())).append("\",");
             // CBS: Debit/Credit split per RBI passbook format
             if ("DEBIT".equals(t.getDebitCredit())) {
                 csv.append(t.getAmount()).append(",,");
@@ -661,7 +698,7 @@ public class DepositController {
                 csv.append(',').append(t.getAmount()).append(',');
             }
             csv.append(t.getBalanceAfter()).append(',');
-            csv.append(t.getVoucherNumber() != null ? t.getVoucherNumber() : "");
+            csv.append(csvSafe(t.getVoucherNumber()));
             csv.append('\n');
         }
 
