@@ -35,7 +35,8 @@ public interface LoanApplicationRepository extends JpaRepository<LoanApplication
      * verification, approval, and RBI inspection queries.
      * All branches visible (ADMIN/AUDITOR). Branch-scoped variant below.
      */
-    @Query("SELECT la FROM LoanApplication la WHERE la.tenantId = :tenantId "
+    @Query("SELECT la FROM LoanApplication la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId "
             + "AND la.status IN ('SUBMITTED', 'VERIFIED', 'APPROVED') AND ("
             + "la.applicationNumber LIKE CONCAT('%', :query, '%') OR "
             + "la.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "
@@ -51,8 +52,9 @@ public interface LoanApplicationRepository extends JpaRepository<LoanApplication
         return searchApplications(tenantId, query, org.springframework.data.domain.PageRequest.of(0, 500));
     }
 
-    /** Branch-scoped application search for MAKER/CHECKER per Finacle BRANCH_CONTEXT */
-    @Query("SELECT la FROM LoanApplication la WHERE la.tenantId = :tenantId "
+    /** Branch-scoped application search. JOIN FETCH for JSP (OSIV disabled). */
+    @Query("SELECT la FROM LoanApplication la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId "
             + "AND la.branch.id = :branchId "
             + "AND la.status IN ('SUBMITTED', 'VERIFIED', 'APPROVED') AND ("
             + "la.applicationNumber LIKE CONCAT('%', :query, '%') OR "

@@ -17,7 +17,9 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     Optional<Customer> findByTenantIdAndCustomerNumber(String tenantId, String customerNumber);
 
-    List<Customer> findByTenantIdAndActiveTrue(String tenantId);
+    /** JOIN FETCH branch for JSP rendering (OSIV disabled). customer/list.jsp accesses cust.branch.branchCode. */
+    @Query("SELECT c FROM Customer c JOIN FETCH c.branch WHERE c.tenantId = :tenantId AND c.active = true")
+    List<Customer> findByTenantIdAndActiveTrue(@Param("tenantId") String tenantId);
 
     boolean existsByTenantIdAndCustomerNumber(String tenantId, String customerNumber);
 
@@ -25,7 +27,9 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     long countByTenantIdAndActiveTrue(String tenantId);
 
-    List<Customer> findByTenantIdAndBranchIdAndActiveTrue(String tenantId, Long branchId);
+    /** JOIN FETCH branch for JSP rendering (OSIV disabled). */
+    @Query("SELECT c FROM Customer c JOIN FETCH c.branch WHERE c.tenantId = :tenantId AND c.branch.id = :branchId AND c.active = true")
+    List<Customer> findByTenantIdAndBranchIdAndActiveTrue(@Param("tenantId") String tenantId, @Param("branchId") Long branchId);
 
     // === P1 Gap 5.1: Customer Search (essential for branch operations) ===
 
@@ -40,7 +44,7 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
      *
      * NOTE: This searches ALL branches — use searchCustomersByBranch for MAKER/CHECKER.
      */
-    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId AND c.active = true AND ("
+    @Query("SELECT c FROM Customer c JOIN FETCH c.branch WHERE c.tenantId = :tenantId AND c.active = true AND ("
             + "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "c.customerNumber LIKE CONCAT('%', :query, '%') OR "
@@ -52,7 +56,7 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
      * MAKER/CHECKER users can only search customers at their home branch.
      * Same search logic as searchCustomers but with branch filter.
      */
-    @Query("SELECT c FROM Customer c WHERE c.tenantId = :tenantId AND c.active = true "
+    @Query("SELECT c FROM Customer c JOIN FETCH c.branch WHERE c.tenantId = :tenantId AND c.active = true "
             + "AND c.branch.id = :branchId AND ("
             + "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
             + "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR "
