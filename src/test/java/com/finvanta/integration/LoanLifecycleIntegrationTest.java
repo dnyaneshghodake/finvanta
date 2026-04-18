@@ -18,6 +18,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -68,24 +69,12 @@ class LoanLifecycleIntegrationTest {
     private static final LocalDate BIZ_DATE = LocalDate.of(2026, 4, 1);
 
     /** Branch ID assigned during setupReferenceData — used for security context. */
-    private static Long testBranchId;
-
-    /** Guard: reference data is seeded once per class, not per test method. */
-    private static boolean referenceDataSeeded = false;
+    private Long testBranchId;
 
     @BeforeEach
     void setUp() {
         TenantContext.setCurrentTenant(TENANT);
         setSecurityContext(0L, "HQ");
-        // Without @Transactional, setupReferenceData() commits permanently.
-        // Call once per class; subsequent tests reuse the committed data.
-        if (!referenceDataSeeded) {
-            setupReferenceData();
-            referenceDataSeeded = true;
-        }
-        if (testBranchId != null) {
-            setSecurityContext(testBranchId, "TST01");
-        }
     }
 
     /** Sets up security context with BranchAwareUserDetails for the given branch. */

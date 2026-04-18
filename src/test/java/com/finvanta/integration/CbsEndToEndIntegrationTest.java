@@ -138,12 +138,9 @@ class CbsEndToEndIntegrationTest {
     private static final String TENANT = "E2E_TEST_TENANT";
     private static final LocalDate BIZ_DATE = LocalDate.of(2026, 4, 1);
 
-    private static Long branchId;
-    private static Long customerId;
+    private Long branchId;
+    private Long customerId;
     private String accountNumber;
-
-    /** Guard: reference data is seeded once per class, not per test method. */
-    private static boolean referenceDataSeeded = false;
 
     @BeforeEach
     void setUp() {
@@ -158,14 +155,6 @@ class CbsEndToEndIntegrationTest {
         auditLogRepository.deleteAll(
                 auditLogRepository.findAllByTenantIdOrderByIdAsc(
                         TENANT, org.springframework.data.domain.PageRequest.of(0, Integer.MAX_VALUE)));
-        // Seed reference data once per class
-        if (!referenceDataSeeded) {
-            setupReferenceData();
-            referenceDataSeeded = true;
-        }
-        if (branchId != null) {
-            setSecurityContext(branchId, "E2E01");
-        }
     }
 
     private void setSecurityContext(Long branchId, String branchCode) {
@@ -364,13 +353,14 @@ class CbsEndToEndIntegrationTest {
     // ========================================================================
 
     @Test
+    @Transactional
     @DisplayName("End-to-end CBS happy path: deposit → withdraw → charge levy → reverse — "
             + "trial balance balanced, ledger + audit chains intact, reconciliation balanced")
     void endToEndHappyPath() {
         // ----------------------------------------------------------------
         // 1. Bootstrap: tenant + branch + customer + calendar + batch + GL
-        //    (seeded once in @BeforeEach via referenceDataSeeded guard)
         // ----------------------------------------------------------------
+        setupReferenceData();
         assertTrialBalanced("bootstrap (empty GLs)");
 
         // ----------------------------------------------------------------
@@ -576,9 +566,11 @@ class CbsEndToEndIntegrationTest {
      * journal + voucher back-pointers (Step 20 transaction↔journal link).
      */
     @Test
+    @Transactional
     @DisplayName("TransactionEngine 20-step chain: deposit produces journal, ledger links, "
             + "voucher, transaction ref, and symmetric GL postings")
     void transactionEngineProducesAllArtifacts() {
+        setupReferenceData();
         DepositAccount account = seedActiveSavingsAccount();
 
         BigDecimal amt = new BigDecimal("50000.00");
