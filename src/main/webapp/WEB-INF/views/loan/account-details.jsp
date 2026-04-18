@@ -32,7 +32,7 @@
             <div class="float-end">
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print();" title="Print Account"><i class="bi bi-printer"></i> Print <span class="fv-kbd">Ctrl+P</span></button>
                 <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
-                    <a href="${pageContext.request.contextPath}/audit/logs?entityType=LoanAccount&entityId=${account.id}" class="btn btn-sm btn-outline-info me-1"><i class="bi bi-shield-lock"></i> Audit Trail</a>
+                    <a href="${pageContext.request.contextPath}/audit/entity?entityType=LoanAccount&entityId=${account.id}" class="btn btn-sm btn-outline-info me-1"><i class="bi bi-journal-check"></i> Audit Trail</a>
                 </c:if>
                 <a href="${pageContext.request.contextPath}/loan/accounts" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/loan/accounts"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a>
             </div>

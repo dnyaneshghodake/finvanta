@@ -43,6 +43,16 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ================================================================
+    // WCAG 2.1 AA — scope="col" on all <th> in <thead>
+    // Per WCAG SC 1.3.1 (Info and Relationships): table headers must
+    // programmatically identify the cells they relate to. Setting
+    // scope="col" centrally avoids editing every JSP table header.
+    // ================================================================
+    document.querySelectorAll('.fv-table thead th, .fv-datatable thead th').forEach(function (th) {
+        if (!th.hasAttribute('scope')) th.setAttribute('scope', 'col');
+    });
+
+    // ================================================================
     // CONFIRMATION MODAL — Per Finacle styled modal dialogs
     // Replaces browser confirm() for [data-confirm] buttons.
     // WCAG: aria-labelledby + aria-describedby for screen readers.

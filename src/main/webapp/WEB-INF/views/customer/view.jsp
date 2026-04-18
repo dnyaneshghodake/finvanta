@@ -23,6 +23,12 @@
         <div class="card-header"><i class="bi bi-person-badge"></i> Customer Details &mdash; <c:out value="${customer.customerNumber}" />
             <div class="float-end">
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print();" title="Print CIF"><i class="bi bi-printer"></i> Print <span class="fv-kbd">Ctrl+P</span></button>
+                <%-- CBS Tier-1: Per-entity audit trail button per RBI IT Governance §8.3.
+                     Links to /audit/entity?entityType=Customer&entityId=N to show all
+                     change history for this specific customer record. --%>
+                <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+                <a href="${pageContext.request.contextPath}/audit/entity?entityType=Customer&entityId=${customer.id}" class="btn btn-sm btn-outline-info" title="View change history"><i class="bi bi-journal-check"></i> Audit Trail</a>
+                </c:if>
                 <a href="${pageContext.request.contextPath}/customer/list" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/customer/list"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a>
                 <c:if test="${pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
                 <a href="${pageContext.request.contextPath}/customer/edit/${customer.id}" class="btn btn-sm btn-fv-primary"><i class="bi bi-pencil"></i> Edit</a>
