@@ -7,10 +7,12 @@ import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.domain.entity.IdempotencyRegistry;
+import com.finvanta.domain.entity.TransactionOutbox;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.IdempotencyRegistryRepository;
 import com.finvanta.repository.TransactionBatchRepository;
+import com.finvanta.repository.TransactionOutboxRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.MakerCheckerService;
 import com.finvanta.service.SequenceGeneratorService;
@@ -101,6 +103,8 @@ public class TransactionEngine {
     private final SequenceGeneratorService sequenceGenerator;
     private final PostingIntegrityGuard integrityGuard;
     private final IdempotencyRegistryRepository idempotencyRepository;
+    private final TransactionValidationService validationService;
+    private final TransactionOutboxRepository outboxRepository;
 
     /**
      * CBS Tier-1: Self-proxy for @Transactional(REQUIRES_NEW) method invocation.
@@ -125,7 +129,9 @@ public class TransactionEngine {
             AuditService auditService,
             SequenceGeneratorService sequenceGenerator,
             PostingIntegrityGuard integrityGuard,
-            IdempotencyRegistryRepository idempotencyRepository) {
+            IdempotencyRegistryRepository idempotencyRepository,
+            TransactionValidationService validationService,
+            TransactionOutboxRepository outboxRepository) {
         this.accountingService = accountingService;
         this.limitService = limitService;
         this.makerCheckerService = makerCheckerService;
@@ -137,6 +143,8 @@ public class TransactionEngine {
         this.sequenceGenerator = sequenceGenerator;
         this.integrityGuard = integrityGuard;
         this.idempotencyRepository = idempotencyRepository;
+        this.validationService = validationService;
+        this.outboxRepository = outboxRepository;
     }
 
     /** CBS Tier-1: Max retry attempts on deadlock/lock-timeout per Finacle GL_LOCK */
@@ -306,6 +314,22 @@ public class TransactionEngine {
                         prev.getCreatedAt(),
                         prev.getStatus());
             }
+        }
+
+        // ================================================================
+        // STEP 1.5: Tenant Validation + RBI Compliance Flagging
+        // Per RBI IT Governance Direction 2023 §8.3:
+        //   - Suspended/unlicensed tenant → hard reject (no posting)
+        //   - Cash transactions ≥ ₹10L → CTR flag for FIU-IND reporting
+        //   - Any transaction ≥ ₹50L → large value flag for enhanced monitoring
+        // Per RBI PMLA 2002: CTR flagging is NON-BLOCKING (tipping-off offense).
+        // ================================================================
+        validationService.validateTenant();
+        int rbiFlags = validationService.evaluateRbiComplianceFlags(
+                request.getAmount(), request.getTransactionType(), request.getAccountReference());
+        if (rbiFlags != 0) {
+            log.info("RBI compliance flags: {} for {} INR {} on {}",
+                    rbiFlags, request.getTransactionType(), request.getAmount(), request.getAccountReference());
         }
 
         // ================================================================
