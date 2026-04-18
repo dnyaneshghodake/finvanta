@@ -167,6 +167,19 @@ class CbsEndToEndIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        // CBS: Clean up audit records committed via REQUIRES_NEW that survive
+        // the test's @Transactional rollback. Must run AFTER each test to prevent
+        // stale records from breaking the hash chain in subsequent tests.
+        // With executeInternal() using REQUIRES_NEW, ALL audit records created
+        // inside the engine pipeline (logEventInline) are committed independently.
+        try {
+            TenantContext.setCurrentTenant(TENANT);
+            auditLogRepository.deleteAll(
+                    auditLogRepository.findAllByTenantIdOrderByIdAsc(
+                            TENANT, org.springframework.data.domain.PageRequest.of(0, Integer.MAX_VALUE)));
+        } catch (Exception e) {
+            // Best-effort cleanup — don't fail teardown
+        }
         TenantContext.clear();
         SecurityContextHolder.clearContext();
     }
