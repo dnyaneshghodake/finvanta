@@ -357,6 +357,14 @@ class CbsEndToEndIntegrationTest {
     @DisplayName("End-to-end CBS happy path: deposit → withdraw → charge levy → reverse — "
             + "trial balance balanced, ledger + audit chains intact, reconciliation balanced")
     void endToEndHappyPath() {
+        // CBS: Force-clean any stale audit records from prior test methods in this class.
+        // logEvent(REQUIRES_NEW) in the PENDING_APPROVAL path survives @Transactional rollback.
+        // The @BeforeEach cleanup may miss records created by transactionEngineProducesAllArtifacts
+        // if test execution order puts that test first.
+        auditLogRepository.deleteAll(
+                auditLogRepository.findAllByTenantIdOrderByIdAsc(
+                        TENANT, org.springframework.data.domain.PageRequest.of(0, Integer.MAX_VALUE)));
+
         // ----------------------------------------------------------------
         // 1. Bootstrap: tenant + branch + customer + calendar + batch + GL
         // ----------------------------------------------------------------
