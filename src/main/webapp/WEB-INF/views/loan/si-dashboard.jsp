@@ -47,7 +47,7 @@
                         <td>
                             <form method="post" action="${pageContext.request.contextPath}/loan/si/approve/${si.siReference}" class="d-inline">
                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                <button type="submit" class="btn btn-sm btn-success" data-confirm="Approve SI ${si.siReference}? It will become active immediately."><i class="bi bi-check-circle"></i> Approve</button>
+                                <button type="submit" class="btn btn-sm btn-fv-success" data-confirm="Approve SI ${si.siReference}? It will become active immediately."><i class="bi bi-check-circle"></i> Approve</button>
                             </form>
                             <form method="post" action="${pageContext.request.contextPath}/loan/si/reject/${si.siReference}" class="d-inline">
                                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />

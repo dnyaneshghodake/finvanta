@@ -163,7 +163,7 @@
                                         <input type="hidden" name="businessDate" value="${cal.businessDate}" />
                                         <input type="hidden" name="branchId" value="${currentBranchId}" />
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                        <button type="submit" class="btn btn-sm btn-success" data-confirm="Open business day ${cal.businessDate}?">Open Day</button>
+                                        <button type="submit" class="btn btn-sm btn-fv-success" data-confirm="Open business day ${cal.businessDate}?"><i class="bi bi-play-circle"></i> Open Day</button>
                                     </form>
                                 </c:if>
                                 <%-- CBS: Close Day button appears when EOD is complete, regardless of whether
@@ -175,7 +175,7 @@
                                         <input type="hidden" name="businessDate" value="${cal.businessDate}" />
                                         <input type="hidden" name="branchId" value="${currentBranchId}" />
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                        <button type="submit" class="btn btn-sm btn-danger" data-confirm="Close business day ${cal.businessDate}? This is irreversible.">Close Day</button>
+                                        <button type="submit" class="btn btn-sm btn-fv-danger" data-confirm="Close business day ${cal.businessDate}? This is irreversible."><i class="bi bi-stop-circle"></i> Close Day</button>
                                     </form>
                                 </c:if>
                             </td>

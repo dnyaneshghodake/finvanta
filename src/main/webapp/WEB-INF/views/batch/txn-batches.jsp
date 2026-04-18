@@ -95,7 +95,7 @@
                                     <form method="post" action="${pageContext.request.contextPath}/batch/txn/close/${b.id}" class="d-inline">
                                         <input type="hidden" name="businessDate" value="${businessDate}" />
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                        <button type="submit" class="btn btn-sm btn-danger" data-confirm="Close this batch? This action is irreversible.">Close Batch</button>
+                                        <button type="submit" class="btn btn-sm btn-fv-danger" data-confirm="Close this batch? This action is irreversible."><i class="bi bi-stop-circle"></i> Close Batch</button>
                                     </form>
                                 </c:if>
                             </td>

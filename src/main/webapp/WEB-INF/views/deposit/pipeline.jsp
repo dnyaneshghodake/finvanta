@@ -56,7 +56,7 @@
                             <td>
                                 <form method="post" action="${pageContext.request.contextPath}/deposit/activate/${a.accountNumber}" class="d-inline">
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                    <button type="submit" class="btn btn-sm btn-success" data-confirm="Activate this account? It will become operational immediately."><i class="bi bi-check-circle"></i> Activate</button>
+                                    <button type="submit" class="btn btn-sm btn-fv-success" data-confirm="Activate this account? It will become operational immediately."><i class="bi bi-check-circle"></i> Activate</button>
                                 </form>
                                 <a href="${pageContext.request.contextPath}/deposit/view/${a.accountNumber}" class="btn btn-sm btn-outline-secondary">View</a>
                             </td>
