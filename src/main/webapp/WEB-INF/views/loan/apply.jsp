@@ -121,7 +121,7 @@
 
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                 <div class="mt-3">
-                    <button type="submit" class="btn btn-fv-primary"><i class="bi bi-check-circle"></i> Submit Application <span class="fv-kbd">F2</span></button>
+                    <button type="submit" class="btn btn-fv-primary" data-confirm="Submit this loan application? It will enter the verification and approval pipeline."><i class="bi bi-check-circle"></i> Submit Application <span class="fv-kbd">F2</span></button>
                     <a href="${pageContext.request.contextPath}/loan/applications" class="btn btn-outline-secondary ms-2" data-fv-cancel="${pageContext.request.contextPath}/loan/applications"><i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span></a>
                 </div>
             </form>
