@@ -78,6 +78,16 @@ public class DepositTransaction extends BaseEntity {
     @Column(name = "amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal amount;
 
+    /**
+     * CBS Tier-1: Balance BEFORE this transaction.
+     * Per RBI IT Governance Direction 2023 §8.3 and Finacle TRAN_DETAIL:
+     * every transaction record must carry both before and after balance
+     * for the complete audit trail. Without balance_before, RBI auditors
+     * cannot verify that balance_after = balance_before ± amount.
+     */
+    @Column(name = "balance_before", precision = 18, scale = 2)
+    private BigDecimal balanceBefore;
+
     /** Balance after this transaction */
     @Column(name = "balance_after", nullable = false, precision = 18, scale = 2)
     private BigDecimal balanceAfter;

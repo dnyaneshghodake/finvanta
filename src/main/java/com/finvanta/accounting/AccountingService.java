@@ -122,8 +122,21 @@ public class AccountingService {
     }
 
     /**
-     * Posts a journal entry with branch attribution.
-     * Overload that accepts branchCode for Tier-1 branch-level accounting.
+     * Posts a journal entry with branch attribution and voucher/txnRef linkage.
+     *
+     * <p><b>CBS Tier-1 Linkage Chain:</b> Transaction ↔ Journal ↔ Voucher ↔ Ledger.
+     * The voucherNumber and transactionRef are pre-allocated by TransactionEngine
+     * (Step 8.0) and stamped on the JournalEntry so RBI auditors can trace any
+     * voucher to its journal, and any journal to its originating transaction.
+     *
+     * @param valueDate      CBS business date for the posting
+     * @param narration      Transaction narration
+     * @param sourceModule   Originating module (DEPOSIT, LOAN, CLEARING, etc.)
+     * @param sourceRef      Module-specific reference (account number)
+     * @param lines          Balanced DR/CR journal lines
+     * @param branchCode     Posting branch code
+     * @param voucherNumber  Pre-allocated voucher (nullable for backward compat)
+     * @param transactionRef Pre-allocated transaction ref (nullable for backward compat)
      */
     @Transactional
     public JournalEntry postJournalEntry(
@@ -132,9 +145,19 @@ public class AccountingService {
             String sourceModule,
             String sourceRef,
             List<JournalLineRequest> lines,
-            String branchCode) {
+            String branchCode,
+            String voucherNumber,
+            String transactionRef) {
         String tenantId = TenantContext.getCurrentTenant();
         JournalEntry entry = postJournalEntryInternal(valueDate, narration, sourceModule, sourceRef, lines, tenantId);
+
+        // CBS Tier-1: Stamp voucher + txnRef on journal for linkage chain
+        if (voucherNumber != null) {
+            entry.setVoucherNumber(voucherNumber);
+        }
+        if (transactionRef != null) {
+            entry.setTransactionRef(transactionRef);
+        }
 
         // CBS Tier-1: Set branch attribution on the journal entry
         if (branchCode != null && !branchCode.isBlank()) {
@@ -218,7 +241,22 @@ public class AccountingService {
     }
 
     /**
-     * Backward-compatible postJournalEntry without explicit branchCode.
+     * Backward-compatible overload: branchCode only (no voucher/txnRef).
+     * Used by callers that don't have pre-allocated voucher numbers.
+     */
+    @Transactional
+    public JournalEntry postJournalEntry(
+            LocalDate valueDate,
+            String narration,
+            String sourceModule,
+            String sourceRef,
+            List<JournalLineRequest> lines,
+            String branchCode) {
+        return postJournalEntry(valueDate, narration, sourceModule, sourceRef, lines, branchCode, null, null);
+    }
+
+    /**
+     * Backward-compatible overload: no branchCode, no voucher/txnRef.
      * Resolves branch from current user's security context.
      */
     @Transactional
@@ -229,7 +267,7 @@ public class AccountingService {
             String sourceRef,
             List<JournalLineRequest> lines) {
         String branchCode = SecurityUtil.getCurrentUserBranchCode();
-        return postJournalEntry(valueDate, narration, sourceModule, sourceRef, lines, branchCode);
+        return postJournalEntry(valueDate, narration, sourceModule, sourceRef, lines, branchCode, null, null);
     }
 
     /** Finds the first OPEN batch for a business date, or null. */

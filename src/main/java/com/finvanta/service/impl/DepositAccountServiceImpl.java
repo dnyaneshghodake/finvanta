@@ -320,10 +320,17 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     /**
      * Build and persist a DepositTransaction record.
      *
-     * @param debitCredit Explicit "DEBIT" or "CREDIT" — caller determines direction.
-     *                    Per Finacle TRAN_DETAIL: debit/credit indicator must be set by
-     *                    the posting logic, not inferred from transaction type name strings.
-     *                    This prevents misclassification of REVERSAL transactions.
+     * <p><b>CBS Tier-1: Before/After Balance Tracking</b>
+     * Per RBI IT Governance Direction 2023 §8.3 and Finacle TRAN_DETAIL:
+     * every transaction record must carry both balance_before and balance_after.
+     * This enables RBI auditors to verify: balance_after = balance_before ± amount.
+     *
+     * <p>The caller MUST capture balanceBefore BEFORE mutating acct.ledgerBalance.
+     * After mutation, acct.getLedgerBalance() = balance_after (set by buildTxn).
+     *
+     * @param debitCredit   Explicit "DEBIT" or "CREDIT" — caller determines direction.
+     * @param balanceBefore Ledger balance BEFORE this transaction was applied.
+     *                      Must be captured by the caller before balance mutation.
      */
     private DepositTransaction buildTxn(
             DepositAccount acct,
@@ -336,7 +343,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             String txnRef,
             String idempotencyKey,
             String channel,
-            String counterparty) {
+            String counterparty,
+            BigDecimal balanceBefore) {
         DepositTransaction txn = new DepositTransaction();
         txn.setTenantId(acct.getTenantId());
         txn.setTransactionRef(txnRef);
@@ -351,6 +359,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         txn.setValueDate(valueDate);
         txn.setPostingDate(LocalDateTime.now());
         txn.setDebitCredit(debitCredit);
+        // CBS Tier-1: Before/after balance for complete audit trail
+        txn.setBalanceBefore(balanceBefore);
         txn.setBalanceAfter(acct.getLedgerBalance());
         txn.setNarration(narration);
         txn.setJournalEntryId(result.getJournalEntryId());
@@ -361,6 +371,27 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         txn.setCreatedBy(SecurityUtil.getCurrentUsername());
         txn.setUpdatedBy(SecurityUtil.getCurrentUsername());
         return transactionRepository.save(txn);
+    }
+
+    /**
+     * Backward-compatible buildTxn without explicit balanceBefore.
+     * Uses current ledger balance as both before and after (for PENDING_APPROVAL
+     * transactions where balance has not been mutated).
+     */
+    private DepositTransaction buildTxn(
+            DepositAccount acct,
+            BigDecimal amount,
+            String txnType,
+            String debitCredit,
+            LocalDate valueDate,
+            String narration,
+            TransactionResult result,
+            String txnRef,
+            String idempotencyKey,
+            String channel,
+            String counterparty) {
+        return buildTxn(acct, amount, txnType, debitCredit, valueDate, narration,
+                result, txnRef, idempotencyKey, channel, counterparty, acct.getLedgerBalance());
     }
 
     // === Account Opening ===
@@ -595,6 +626,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                     channel,
                     null);
         }
+        // CBS Tier-1: Capture balance BEFORE mutation for audit trail
+        BigDecimal balanceBefore = acct.getLedgerBalance();
         acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
@@ -630,7 +663,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 r.getTransactionRef(),
                 idempotencyKey,
                 channel,
-                null);
+                null,
+                balanceBefore);
     }
 
     // === Withdrawal ===
@@ -727,13 +761,15 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                     channel,
                     null);
         }
+        // CBS Tier-1: Capture balance BEFORE mutation for audit trail
+        BigDecimal balanceBefore = acct.getLedgerBalance();
         acct.setLedgerBalance(acct.getLedgerBalance().subtract(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(bd);
         acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
         return buildTxn(
-                acct, amount, "CASH_WITHDRAWAL", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, channel, null);
+                acct, amount, "CASH_WITHDRAWAL", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, channel, null, balanceBefore);
     }
 
     // === Transfer ===

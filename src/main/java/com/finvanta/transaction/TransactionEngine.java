@@ -573,7 +573,9 @@ public class TransactionEngine {
                             request.getSourceModule(),
                             request.getAccountReference(),
                             group.lines(),
-                            request.getBranchCode());
+                            request.getBranchCode(),
+                            voucherNumber,
+                            txnRef);
                     if (firstEntry == null) {
                         firstEntry = entry;
                     }
@@ -591,7 +593,9 @@ public class TransactionEngine {
                         request.getSourceModule(),
                         request.getAccountReference(),
                         request.getJournalLines(),
-                        request.getBranchCode());
+                        request.getBranchCode(),
+                        voucherNumber,
+                        txnRef);
             }
         } finally {
             // Always clear the engine context token — prevents stale tokens on thread pool reuse
