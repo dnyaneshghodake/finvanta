@@ -209,6 +209,31 @@ public interface DepositAccountService {
     List<DepositTransaction> getStatement(String accountNumber, LocalDate fromDate, LocalDate toDate);
 
     /**
+     * CBS Tier-1: Apply subledger balance update after maker-checker GL posting.
+     *
+     * <p>When a CHECKER approves a PENDING_APPROVAL deposit/withdrawal, the
+     * TransactionReExecutionService posts the GL via the engine. This method
+     * applies the corresponding account balance update (subledger).
+     *
+     * <p>Must be called AFTER TransactionReExecutionService.reExecuteApprovedTransaction()
+     * returns successfully. The TransactionResult carries the journal/voucher references
+     * needed to link the subledger record.
+     *
+     * @param accountNumber The deposit account to update
+     * @param amount Transaction amount
+     * @param transactionType CASH_DEPOSIT, CASH_WITHDRAWAL, etc.
+     * @param result The TransactionResult from the re-executed engine posting
+     * @param businessDate The business date for the posting
+     * @return The created DepositTransaction subledger record
+     */
+    DepositTransaction applyApprovedTransaction(
+            String accountNumber,
+            BigDecimal amount,
+            String transactionType,
+            com.finvanta.transaction.TransactionResult result,
+            LocalDate businessDate);
+
+    /**
      * Reverse a deposit transaction per Finacle TRAN_REVERSAL.
      * Creates contra GL entries via TransactionEngine and marks original as reversed.
      * Per CBS audit rules: original transaction is never deleted, only marked reversed.

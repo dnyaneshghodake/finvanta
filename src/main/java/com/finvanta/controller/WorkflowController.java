@@ -1,9 +1,14 @@
 package com.finvanta.controller;
 
 import com.finvanta.domain.entity.ApprovalWorkflow;
+import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.DepositAccountService;
 import com.finvanta.transaction.TransactionReExecutionService;
 import com.finvanta.transaction.TransactionResult;
 import com.finvanta.workflow.ApprovalWorkflowService;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,12 +38,21 @@ public class WorkflowController {
 
     private final ApprovalWorkflowService workflowService;
     private final TransactionReExecutionService reExecutionService;
+    private final DepositAccountService depositService;
+    private final BusinessDateService businessDateService;
+    private final ObjectMapper objectMapper;
 
     public WorkflowController(
             ApprovalWorkflowService workflowService,
-            TransactionReExecutionService reExecutionService) {
+            TransactionReExecutionService reExecutionService,
+            DepositAccountService depositService,
+            BusinessDateService businessDateService,
+            ObjectMapper objectMapper) {
         this.workflowService = workflowService;
         this.reExecutionService = reExecutionService;
+        this.depositService = depositService;
+        this.businessDateService = businessDateService;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping("/pending")
@@ -60,6 +74,34 @@ public class WorkflowController {
             if ("Transaction".equals(workflow.getEntityType())) {
                 try {
                     TransactionResult result = reExecutionService.reExecuteApprovedTransaction(id);
+
+                    // CBS Tier-1: Apply subledger (account balance) update for DEPOSIT module.
+                    // The GL is posted by reExecutionService; now apply the account balance effect.
+                    // Parse the workflow payload to extract accountReference, amount, transactionType.
+                    try {
+                        String payload = workflow.getPayloadSnapshot();
+                        if (payload != null && payload.startsWith("{")) {
+                            JsonNode root = objectMapper.readTree(payload);
+                            String sourceModule = root.has("sourceModule") ? root.get("sourceModule").asText() : null;
+                            if ("DEPOSIT".equals(sourceModule)) {
+                                String accountRef = root.get("accountReference").asText();
+                                java.math.BigDecimal amount = new java.math.BigDecimal(root.get("amount").asText());
+                                String txnType = root.get("transactionType").asText();
+                                java.time.LocalDate valueDate = java.time.LocalDate.parse(root.get("valueDate").asText());
+                                depositService.applyApprovedTransaction(accountRef, amount, txnType, result, valueDate);
+                                log.info("Subledger applied for DEPOSIT approval: account={}, type={}, amount={}",
+                                        accountRef, txnType, amount);
+                            }
+                            // Future: add LOAN, CLEARING module handlers here
+                        }
+                    } catch (Exception subledgerError) {
+                        // CBS CRITICAL: GL is already posted but subledger failed.
+                        // Log as ERROR for immediate investigation. The GL↔subledger
+                        // reconciliation will catch this during EOD.
+                        log.error("GL posted but SUBLEDGER UPDATE FAILED for workflow {}: {}",
+                                id, subledgerError.getMessage(), subledgerError);
+                    }
+
                     redirectAttributes.addFlashAttribute("success",
                             "Approved and POSTED: Txn " + result.getTransactionRef()
                                     + " | Voucher: " + result.getVoucherNumber()

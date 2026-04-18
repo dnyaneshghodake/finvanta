@@ -1289,6 +1289,69 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         return saved;
     }
 
+    // === Maker-Checker Subledger Update ===
+    // CBS Tier-1: Apply account balance effect after checker-approved GL posting.
+    // Called by WorkflowController after TransactionReExecutionService posts the GL.
+    @Override
+    @Transactional
+    public DepositTransaction applyApprovedTransaction(
+            String accountNumber,
+            BigDecimal amount,
+            String transactionType,
+            TransactionResult result,
+            LocalDate businessDate) {
+        String tid = TenantContext.getCurrentTenant();
+        DepositAccount acct = lockAccount(tid, accountNumber);
+
+        // Determine debit/credit direction from transaction type
+        boolean isCredit = "CASH_DEPOSIT".equals(transactionType)
+                || "TRANSFER_CREDIT".equals(transactionType)
+                || "INTEREST_CREDIT".equals(transactionType);
+
+        // CBS Tier-1: Capture balance BEFORE mutation for audit trail
+        BigDecimal balanceBefore = acct.getLedgerBalance();
+
+        // Apply balance effect
+        if (isCredit) {
+            acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
+        } else {
+            // CASH_WITHDRAWAL, TRANSFER_DEBIT, TDS_DEBIT, CHARGE_DEBIT
+            if (!acct.hasSufficientFunds(amount)) {
+                throw new BusinessException("INSUFFICIENT_BALANCE",
+                        "Approved transaction cannot be applied: insufficient funds. "
+                                + "Available: " + acct.getEffectiveAvailable() + ", Required: " + amount);
+            }
+            acct.setLedgerBalance(acct.getLedgerBalance().subtract(amount));
+        }
+        recomputeAvailable(acct);
+        acct.setLastTransactionDate(businessDate);
+
+        // CBS: Dormancy reactivation on credit (same as deposit())
+        if (isCredit && acct.isDormant()) {
+            acct.setAccountStatus(DepositAccountStatus.ACTIVE);
+            acct.setDormantDate(null);
+            auditService.logEventInline(
+                    "DepositAccount", acct.getId(), "DORMANCY_REACTIVATED",
+                    "DORMANT", "ACTIVE", "DEPOSIT",
+                    "Account reactivated via approved " + transactionType + ": " + accountNumber);
+        }
+
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        accountRepository.save(acct);
+
+        String debitCredit = isCredit ? "CREDIT" : "DEBIT";
+        String narration = "Maker-checker approved " + transactionType
+                + " | Voucher: " + result.getVoucherNumber();
+
+        log.info("Maker-checker subledger applied: account={}, type={}, amount={}, direction={}, "
+                + "balanceBefore={}, balanceAfter={}",
+                accountNumber, transactionType, amount, debitCredit, balanceBefore, acct.getLedgerBalance());
+
+        return buildTxn(
+                acct, amount, transactionType, debitCredit, businessDate, narration,
+                result, result.getTransactionRef(), null, "MAKER_CHECKER", null, balanceBefore);
+    }
+
     // === Dormancy (EOD batch) ===
     // Per RBI Master Direction on KYC 2016, Section 38:
     // Accounts with no customer-initiated transaction for 24+ months → DORMANT.
