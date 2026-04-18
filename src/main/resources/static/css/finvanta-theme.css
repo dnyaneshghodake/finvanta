@@ -29,8 +29,9 @@
     --fv-mandatory-color: #c62828;
     --fv-mandatory-border: #e57373;
     /* CBS Tier-1: single field height across filter/body forms per Finacle field-height std.
+       36px per enterprise blueprint (label 12px + input 13px + 8px padding × 2 + border).
        Override to 28px on `.form-control-sm` / `.form-select-sm` for topbar / filter strips. */
-    --fv-field-height: 32px;
+    --fv-field-height: 36px;
     /* CBS Tier-1: cap content width at 1600px for ultra-wide monitors (1920px+ / 2560px).
        Below this, content fills available space. Matches Finacle Client / Temenos Transact. */
     --fv-content-max-width: 1600px;
@@ -141,6 +142,20 @@ body {
     padding: 2px 8px; border-radius: 3px;
     font-size: 10px; font-weight: 600; text-transform: uppercase;
 }
+/* CBS Tier-1: Alerts indicator per Finacle ALERT_BANNER / Temenos NOTIFICATION.
+   Displays a bell icon with a count badge for pending workflow items.
+   Count populated by CbsLayoutAdvice.pendingAlertCount() model attribute. */
+.fv-topbar .fv-alerts {
+    position: relative; color: #90caf9; font-size: 16px; cursor: pointer;
+}
+.fv-topbar .fv-alerts:hover { color: #ffffff; }
+.fv-topbar .fv-alert-count {
+    position: absolute; top: -6px; right: -8px;
+    background: var(--fv-danger); color: #ffffff;
+    font-size: 9px; font-weight: 700; min-width: 16px; height: 16px;
+    border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    padding: 0 4px; line-height: 1;
+}
 .fv-topbar .fv-topbar-right a { color: #90caf9; text-decoration: none; font-size: 12px; }
 .fv-topbar .fv-topbar-right a:hover { color: #ffffff; }
 /* CBS Tier-1: Topbar action buttons/links — replaces inline styles on password/logout.
@@ -236,6 +251,17 @@ body {
 }
 .fv-table tbody tr:hover { background: #f5f7fa; }
 .fv-table .amount { font-family: 'Courier New', Consolas, monospace; font-weight: 600; text-align: right; white-space: nowrap; }
+/* CBS Tier-1: Sticky first column per Finacle GRID_FREEZE / enterprise blueprint.
+   When table is inside .table-responsive and horizontally scrollable, the first
+   column (typically Account No / Entity ID) stays pinned so the user always sees
+   which row they're looking at. Uses CSS position:sticky — no JS plugin needed. */
+.fv-table thead th:first-child,
+.fv-table tbody td:first-child {
+    position: sticky; left: 0; z-index: 1;
+}
+.fv-table thead th:first-child { background: #e8eaf6; z-index: 2; }
+.fv-table tbody td:first-child { background: var(--fv-card-bg); }
+.fv-table tbody tr:hover td:first-child { background: #f5f7fa; }
 /* Prevent action button columns from expanding excessively */
 .fv-table td:last-child { white-space: nowrap; }
 /* Ensure table-responsive container clips overflow properly */

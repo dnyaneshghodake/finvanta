@@ -119,6 +119,18 @@
         </c:choose>
         <span class="fv-biz-date"><c:out value="${businessDate}" default="--" /></span>
         <span class="fv-user-role"><c:out value="${userRole}" default="USER" /></span>
+        <%-- CBS Tier-1: Alerts indicator per Finacle ALERT_BANNER / enterprise blueprint.
+             Shows pending workflow items count for CHECKER/ADMIN roles.
+             Bell icon with red badge count — links to the approval queue. --%>
+        <c:if test="${pendingAlertCount != null && pendingAlertCount > 0}">
+        <a href="${pageContext.request.contextPath}/workflow/pending" class="fv-alerts" title="${pendingAlertCount} item(s) pending approval">
+            <i class="bi bi-bell-fill"></i>
+            <span class="fv-alert-count"><c:out value="${pendingAlertCount}" /></span>
+        </a>
+        </c:if>
+        <c:if test="${pendingAlertCount == null || pendingAlertCount == 0}">
+        <span class="fv-alerts" title="No pending alerts"><i class="bi bi-bell"></i></span>
+        </c:if>
         <span><c:out value="${pageContext.request.userPrincipal.name}" default="" /></span>
         <a href="${pageContext.request.contextPath}/password/change" class="fv-topbar-action" title="Change Password"><i class="bi bi-key"></i></a>
         <form method="post" action="${pageContext.request.contextPath}/logout" class="d-inline">
