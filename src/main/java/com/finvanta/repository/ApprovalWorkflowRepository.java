@@ -14,6 +14,10 @@ public interface ApprovalWorkflowRepository extends JpaRepository<ApprovalWorkfl
 
     List<ApprovalWorkflow> findByTenantIdAndStatus(String tenantId, ApprovalStatus status);
 
+    /** CBS Tier-1: Lightweight count for topbar alerts indicator.
+     *  Avoids loading full entities into memory on every page load. */
+    long countByTenantIdAndStatus(String tenantId, ApprovalStatus status);
+
     Optional<ApprovalWorkflow> findByTenantIdAndEntityTypeAndEntityIdAndStatus(
             String tenantId, String entityType, Long entityId, ApprovalStatus status);
 

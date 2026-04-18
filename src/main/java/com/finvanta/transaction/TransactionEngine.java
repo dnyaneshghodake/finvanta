@@ -26,6 +26,8 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -94,6 +96,17 @@ public class TransactionEngine {
     private final AuditService auditService;
     private final SequenceGeneratorService sequenceGenerator;
 
+    /**
+     * CBS Tier-1: Self-proxy for @Transactional method invocation.
+     * Spring AOP proxies do NOT intercept self-calls (this.executeInternal()).
+     * Without this, the @Transactional on executeInternal() is ignored and each
+     * retry attempt reuses the same (potentially rollback-only) Hibernate Session.
+     * Same pattern as BatchService.self and StandingInstructionServiceImpl.self.
+     */
+    @Lazy
+    @Autowired
+    private TransactionEngine self;
+
     public TransactionEngine(
             AccountingService accountingService,
             TransactionLimitService limitService,
@@ -155,7 +168,7 @@ public class TransactionEngine {
     public TransactionResult execute(TransactionRequest request) {
         for (int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
             try {
-                return executeInternal(request);
+                return self.executeInternal(request);
             } catch (PessimisticLockingFailureException e) {
                 // Catches all lock-related failures including DeadlockLoserDataAccessException
                 // and CannotAcquireLockException (both are subclasses of PessimisticLockingFailureException).
