@@ -38,8 +38,11 @@
                                value="<c:out value='${trialDate}' />" />
                     </div>
                     <div class="col-md-4">
-                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                        <button type="submit" class="btn btn-fv-primary"><i class="bi bi-search"></i> Run Trial (Validate)</button>
+                        <label class="form-label">&nbsp;</label>
+                        <div>
+                            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
+                            <button type="submit" class="btn btn-fv-primary"><i class="bi bi-search"></i> Run Trial (Validate) <span class="fv-kbd">F2</span></button>
+                        </div>
                     </div>
                 </div>
             </form>
@@ -97,14 +100,14 @@
                         <form method="post" action="${pageContext.request.contextPath}/batch/eod/apply">
                             <input type="hidden" name="businessDate" value="<c:out value='${trialDate}' />" />
                             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                            <button type="submit" class="btn btn-fv-warning btn-lg"
+                            <button type="submit" class="btn btn-fv-warning"
                                     data-confirm="Execute EOD for <c:out value='${trialDate}' />? This will classify all accounts, post provisioning, and advance the business date. This action cannot be undone.">
                                 <i class="bi bi-play-circle"></i> Apply EOD for <c:out value="${trialDate}" />
                             </button>
                         </form>
                     </c:when>
                     <c:otherwise>
-                        <button class="btn btn-outline-secondary btn-lg" disabled title="Resolve all BLOCKER checks before Apply">
+                        <button class="btn btn-outline-secondary" disabled title="Resolve all BLOCKER checks before Apply">
                             <i class="bi bi-lock"></i> Apply EOD (Blocked &mdash; resolve issues above)
                         </button>
                     </c:otherwise>
