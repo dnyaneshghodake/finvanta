@@ -17,7 +17,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface LoanApplicationRepository extends JpaRepository<LoanApplication, Long> {
 
-    Optional<LoanApplication> findByTenantIdAndApplicationNumber(String tenantId, String applicationNumber);
+    /** JOIN FETCH customer+branch for verify/approve JSP pages (OSIV disabled). */
+    @Query("SELECT la FROM LoanApplication la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId AND la.applicationNumber = :applicationNumber")
+    Optional<LoanApplication> findByTenantIdAndApplicationNumber(
+            @Param("tenantId") String tenantId, @Param("applicationNumber") String applicationNumber);
 
     /** JOIN FETCH customer+branch for JSP rendering (OSIV disabled). */
     @Query("SELECT la FROM LoanApplication la JOIN FETCH la.customer JOIN FETCH la.branch "

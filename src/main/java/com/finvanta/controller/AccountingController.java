@@ -329,7 +329,6 @@ public class AccountingController {
      * Essential for branch-level daily reconciliation.
      */
     @GetMapping("/voucher-register")
-    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public ModelAndView voucherRegister(@RequestParam(required = false) String businessDate) {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("accounting/voucher-register");

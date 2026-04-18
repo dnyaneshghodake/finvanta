@@ -20,7 +20,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> {
 
-    Optional<LoanAccount> findByTenantIdAndAccountNumber(String tenantId, String accountNumber);
+    /** JOIN FETCH customer+branch for JSP rendering on account-details page (OSIV disabled). */
+    @Query("SELECT la FROM LoanAccount la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId AND la.accountNumber = :accountNumber")
+    Optional<LoanAccount> findByTenantIdAndAccountNumber(
+            @Param("tenantId") String tenantId, @Param("accountNumber") String accountNumber);
 
     /** CBS Tier-1: 30s lock timeout per Finacle ACCT_LOCK standard. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

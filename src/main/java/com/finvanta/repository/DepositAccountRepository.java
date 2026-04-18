@@ -24,7 +24,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface DepositAccountRepository extends JpaRepository<DepositAccount, Long> {
 
-    Optional<DepositAccount> findByTenantIdAndAccountNumber(String tenantId, String accountNumber);
+    /** JOIN FETCH customer+branch for JSP rendering on view/deposit/withdraw/statement pages (OSIV disabled). */
+    @Query("SELECT da FROM DepositAccount da JOIN FETCH da.customer JOIN FETCH da.branch "
+            + "WHERE da.tenantId = :tenantId AND da.accountNumber = :accountNumber")
+    Optional<DepositAccount> findByTenantIdAndAccountNumber(
+            @Param("tenantId") String tenantId, @Param("accountNumber") String accountNumber);
 
     /** CBS Tier-1: 30s lock timeout per Finacle ACCT_LOCK. Prevents indefinite blocking
      *  when concurrent postings contend on the same account (e.g., deposit + withdrawal). */

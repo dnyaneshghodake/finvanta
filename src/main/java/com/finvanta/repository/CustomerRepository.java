@@ -15,7 +15,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
-    Optional<Customer> findByTenantIdAndCustomerNumber(String tenantId, String customerNumber);
+    /** JOIN FETCH branch for customer/view.jsp (OSIV disabled). */
+    @Query("SELECT c FROM Customer c JOIN FETCH c.branch WHERE c.tenantId = :tenantId AND c.customerNumber = :customerNumber")
+    Optional<Customer> findByTenantIdAndCustomerNumber(
+            @Param("tenantId") String tenantId, @Param("customerNumber") String customerNumber);
 
     /** JOIN FETCH branch for JSP rendering (OSIV disabled). customer/list.jsp accesses cust.branch.branchCode. */
     @Query("SELECT c FROM Customer c JOIN FETCH c.branch WHERE c.tenantId = :tenantId AND c.active = true")
