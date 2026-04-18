@@ -13,8 +13,15 @@
         <div class="col-auto">
             <div class="fv-stat-card ${chainIntegrity ? 'stat-success' : 'stat-danger'}">
                 <div class="stat-value"><c:choose><c:when test="${chainIntegrity}">INTACT</c:when><c:otherwise>VIOLATED</c:otherwise></c:choose></div>
-                <div class="stat-label">Chain Integrity</div>
+                <div class="stat-label">Chain Integrity <c:if test="${fullChainVerified}">(Full Walk)</c:if><c:if test="${not fullChainVerified}">(Recent Window)</c:if></div>
             </div>
+        </div>
+        <div class="col-auto d-flex align-items-center">
+            <%-- CBS Tier-1: Full chain verification trigger per RBI IT Governance §8.3.
+                 The page-load check is a bounded recent-window scan (<100ms).
+                 Full O(N) walk can take minutes on production-sized tables —
+                 must be an explicit admin action, not automatic. --%>
+            <a href="${pageContext.request.contextPath}/audit/verify" class="btn btn-sm btn-outline-primary" data-confirm="Run full audit chain verification? This walks every record and may take several minutes on large datasets."><i class="bi bi-shield-check"></i> Verify Full Chain</a>
         </div>
     </div>
 
@@ -32,18 +39,22 @@
         <div class="card-header">Audit Trail</div>
         <div class="card-body">
             <!-- CBS: Audit Trail search per RBI IT Governance Direction 2023 §8.3 -->
-            <form method="get" action="${pageContext.request.contextPath}/audit/search" class="row g-2 mb-3">
+            <form method="get" action="${pageContext.request.contextPath}/audit/search" class="row g-2 align-items-end mb-3">
                 <div class="col-auto">
+                    <label class="form-label small">Search</label>
                     <input type="text" name="q" class="form-control form-control-sm fv-search-input" placeholder="Search by entity, action, user, module..." value="<c:out value='${searchQuery}'/>" minlength="2" />
                 </div>
                 <div class="col-auto">
+                    <label class="form-label small">From</label>
                     <input type="date" name="fromDate" class="form-control form-control-sm fv-input-md" value="<c:out value='${fromDate}'/>" title="From date" />
                 </div>
                 <div class="col-auto">
+                    <label class="form-label small">To</label>
                     <input type="date" name="toDate" class="form-control form-control-sm fv-input-md" value="<c:out value='${toDate}'/>" title="To date" />
                 </div>
                 <div class="col-auto">
-                    <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>
+                    <label class="form-label small">&nbsp;</label>
+                    <div><button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button></div>
                 </div>
                 <c:if test="${not empty searchQuery}">
                 <div class="col-auto">
