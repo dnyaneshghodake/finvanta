@@ -79,7 +79,7 @@
                                                     <p class="text-muted">Per RBI audit norms: reason is mandatory for MFA disable.</p>
                                                     <div class="mb-3"><label class="form-label">Reason *</label><textarea name="reason" class="form-control" rows="2" required></textarea></div>
                                                 </div>
-                                                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Disable MFA</button></div>
+                                                <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-fv-danger"><i class="bi bi-unlock"></i> Disable MFA</button></div>
                                             </form>
                                         </div></div>
                                     </div>

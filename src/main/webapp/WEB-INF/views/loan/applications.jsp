@@ -147,7 +147,7 @@
                             <td>
                                 <form method="post" action="${pageContext.request.contextPath}/loan/create-account/${app.id}" class="d-inline">
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                    <button type="submit" class="btn btn-sm btn-success">Create Account</button>
+                                    <button type="submit" class="btn btn-sm btn-fv-success" data-confirm="Create loan account for this approved application?"><i class="bi bi-bank"></i> Create Account</button>
                                 </form>
                             </td>
                         </tr>
