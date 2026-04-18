@@ -603,7 +603,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             acct.setDormantDate(null);
             // CBS: Audit trail for dormancy reactivation per RBI IT Governance Direction 2023.
             // Per RBI KYC 2016 Sec 38: deposit on dormant account reactivates it.
-            auditService.logEvent(
+            // CBS CRITICAL: Use logEventInline (REQUIRED) — NOT logEvent (REQUIRES_NEW).
+            // At this point we hold PESSIMISTIC_WRITE lock on the deposit account row
+            // (acquired via lockAccount). logEvent(REQUIRES_NEW) would suspend this TX
+            // without releasing the lock — same deadlock vector as AccountingService.
+            auditService.logEventInline(
                     "DepositAccount",
                     acct.getId(),
                     "DORMANCY_REACTIVATED",

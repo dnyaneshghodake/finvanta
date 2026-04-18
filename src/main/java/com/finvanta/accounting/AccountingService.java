@@ -429,15 +429,24 @@ public class AccountingService {
                         .orElse(null);
 
                 if (branchBalance == null) {
-                    // Auto-create branch balance row on first posting to this branch+GL.
-                    // Insert inline (same TX) so the branch FK is visible.
-                    // saveAndFlush ensures the row is in the DB before proceeding.
-                    GLBranchBalance newBb = new GLBranchBalance();
-                    newBb.setTenantId(tenantId);
-                    newBb.setBranch(branch);
-                    newBb.setGlCode(line.glCode());
-                    newBb.setGlName(gl.getGlName());
-                    branchBalance = glBranchBalanceRepository.saveAndFlush(newBb);
+                    // CBS CRITICAL: First-posting race condition — delegate INSERT to
+                    // GLBranchBalanceBootstrap (REQUIRES_NEW) so a unique constraint
+                    // collision only rolls back the inner TX, not the outer posting.
+                    // Same pattern as LedgerService.ensureAndLockSentinel().
+                    try {
+                        glBranchBalanceBootstrap.insertIfAbsent(tenantId, branch, line.glCode(), gl.getGlName());
+                    } catch (org.springframework.dao.DataIntegrityViolationException concurrent) {
+                        // Another thread won the race — the inner REQUIRES_NEW TX
+                        // rolled back cleanly; we re-lock the now-present row below.
+                        log.debug("GLBranchBalance race resolved: branch={}, gl={}",
+                                branch.getBranchCode(), line.glCode());
+                    }
+                    // Re-lock the row (now guaranteed to exist) for balance update
+                    branchBalance = glBranchBalanceRepository
+                            .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "GLBranchBalance row disappeared after bootstrap: "
+                                            + branch.getBranchCode() + "/" + line.glCode()));
                 }
 
                 if (line.debitCredit() == DebitCredit.DEBIT) {

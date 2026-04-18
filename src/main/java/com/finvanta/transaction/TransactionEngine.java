@@ -242,7 +242,7 @@ public class TransactionEngine {
      * back, the caller catches the exception and can decide whether to retry or
      * propagate — the caller's own TX remains uncommitted but valid.
      */
-    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public TransactionResult executeInternal(TransactionRequest request) {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser =
