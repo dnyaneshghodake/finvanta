@@ -16,7 +16,6 @@ import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
-
 import com.finvanta.domain.enums.DebitCredit;
 
 import java.math.BigDecimal;
@@ -80,11 +79,11 @@ public class TransactionEngine {
     private static final Logger log = LoggerFactory.getLogger(TransactionEngine.class);
 
     /** Configurable value date window: max days back from current business date */
-    @org.springframework.beans.factory.annotation.Value("${cbs.value-date.back-days:2}")
+    @org.springframework.beans.factory.annotation.Value("${cbs.value-date.back-days:2}") // NOSONAR — inline FQCN avoids import collision with lombok.Value
     private int valueDateBackDays;
 
     /** Configurable value date window: max days forward from current business date */
-    @org.springframework.beans.factory.annotation.Value("${cbs.value-date.forward-days:0}")
+    @org.springframework.beans.factory.annotation.Value("${cbs.value-date.forward-days:0}") // NOSONAR — inline FQCN avoids import collision with lombok.Value
     private int valueDateForwardDays;
 
     private final AccountingService accountingService;
@@ -779,7 +778,7 @@ public class TransactionEngine {
                 var glOpt = accountingService.getGlMasterRepository()
                         .findByTenantIdAndGlCode(tenantId, line.glCode());
                 boolean valid = glOpt.isPresent() && glOpt.get().isActive() && !glOpt.get().isHeaderAccount();
-                String glName = glOpt.map(com.finvanta.domain.entity.GLMaster::getGlName).orElse("UNKNOWN");
+                String glName = glOpt.map(GLMaster::getGlName).orElse("UNKNOWN");
                 glLines.add(new TransactionPreview.JournalLinePreview(
                         line.glCode(), glName, line.debitCredit().name(), line.amount(), line.narration()));
                 if (!valid) allGlValid = false;
