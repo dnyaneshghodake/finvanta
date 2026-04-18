@@ -26,8 +26,6 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.CannotAcquireLockException;
-import org.springframework.dao.DeadlockLoserDataAccessException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -158,8 +156,9 @@ public class TransactionEngine {
         for (int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
             try {
                 return executeInternal(request);
-            } catch (DeadlockLoserDataAccessException | PessimisticLockingFailureException
-                    | CannotAcquireLockException e) {
+            } catch (PessimisticLockingFailureException e) {
+                // Catches all lock-related failures including DeadlockLoserDataAccessException
+                // and CannotAcquireLockException (both are subclasses of PessimisticLockingFailureException).
                 if (attempt == MAX_RETRY_ATTEMPTS) {
                     log.error(
                             "Transaction FAILED after {} retries (lock contention): module={}, type={}, amount={}, account={}",
