@@ -260,6 +260,74 @@ public class InterBranchSettlementService {
                     entry.getKey(), entry.getValue().abs(), direction);
         }
 
+        // ================================================================
+        // CBS Tier-1: Generate IB NETTING JOURNAL to clear IB GLs.
+        // Per Finacle IB_NETTING / Temenos IB.SETTLEMENT:
+        // After marking all transactions as SETTLED, post a netting journal
+        // that zeros out the IB Receivable (1300) and IB Payable (2300) GLs.
+        // Without this, IB GLs accumulate indefinitely and the trial balance
+        // shows ever-growing IB positions that obscure real branch exposures.
+        //
+        // Netting journal per branch pair:
+        //   DR Inter-Branch Payable (2300)  — clear the payable
+        //   CR Inter-Branch Receivable (1300) — clear the receivable
+        //
+        // This is posted as a system-generated transaction via TransactionEngine
+        // so it goes through the full GL posting pipeline (journal, ledger, hash chain).
+        // ================================================================
+        if (allBalanced && !branchNetPositions.isEmpty()) {
+            try {
+                // Calculate total IB volume to clear (sum of absolute positions / 2)
+                BigDecimal totalNettingAmount = BigDecimal.ZERO;
+                for (BigDecimal pos : branchNetPositions.values()) {
+                    totalNettingAmount = totalNettingAmount.add(pos.abs());
+                }
+                // Each transaction creates +X receivable and +X payable, so total to clear
+                // is the sum of all settled transaction amounts
+                BigDecimal totalSettledAmount = pendingTransactions.stream()
+                        .filter(t -> "SETTLED".equals(t.getSettlementStatus()))
+                        .map(InterBranchTransaction::getAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                if (totalSettledAmount.signum() > 0) {
+                    // Post netting journal: DR IB Payable / CR IB Receivable
+                    List<JournalLineRequest> nettingLines = List.of(
+                            new JournalLineRequest(
+                                    GLConstants.INTER_BRANCH_PAYABLE, DebitCredit.DEBIT, totalSettledAmount,
+                                    "IB netting settlement " + businessDate + " — clear payable"),
+                            new JournalLineRequest(
+                                    GLConstants.INTER_BRANCH_RECEIVABLE, DebitCredit.CREDIT, totalSettledAmount,
+                                    "IB netting settlement " + businessDate + " — clear receivable"));
+
+                    // Use HQ branch for the netting journal (HO-level settlement)
+                    String hqBranch = branchNetPositions.keySet().iterator().next(); // First branch as fallback
+                    TransactionResult nettingResult = transactionEngine.execute(TransactionRequest.builder()
+                            .sourceModule("INTER_BRANCH")
+                            .transactionType("IB_NETTING")
+                            .accountReference("IB-NETTING-" + businessDate)
+                            .amount(totalSettledAmount)
+                            .valueDate(businessDate)
+                            .branchCode(hqBranch)
+                            .narration("Inter-branch netting settlement for " + businessDate
+                                    + " | " + pendingTransactions.size() + " transactions"
+                                    + " | Batch: " + settlementBatchRef)
+                            .journalLines(nettingLines)
+                            .systemGenerated(true)
+                            .initiatedBy("SYSTEM_EOD")
+                            .build());
+
+                    log.info("IB NETTING JOURNAL posted: date={}, amount={}, journal={}, voucher={}",
+                            businessDate, totalSettledAmount,
+                            nettingResult.getJournalRef(), nettingResult.getVoucherNumber());
+                }
+            } catch (Exception e) {
+                // CBS: Netting journal failure is serious but should not rollback the settlement.
+                // The IB GLs will show non-zero balances — caught by EOD reconciliation.
+                log.error("IB NETTING JOURNAL FAILED for {}: {}. IB GLs not cleared — manual correction required.",
+                        businessDate, e.getMessage(), e);
+            }
+        }
+
         if (!allBalanced) {
             log.warn("Inter-branch settlement completed with errors for {}. Manual review required.", businessDate);
         } else {
