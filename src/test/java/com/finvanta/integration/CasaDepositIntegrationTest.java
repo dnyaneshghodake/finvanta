@@ -20,7 +20,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -166,7 +165,6 @@ class CasaDepositIntegrationTest {
     }
 
     @Test
-    @Transactional
     @DisplayName("Deposit: GL double-entry + voucher + ledger hash-chain + balance")
     void depositFullLifecycle() {
         setupReferenceData();
@@ -196,7 +194,6 @@ class CasaDepositIntegrationTest {
     }
 
     @Test
-    @Transactional
     @DisplayName("Withdrawal: balance debit + GL integrity")
     void withdrawalLifecycle() {
         setupReferenceData();
@@ -218,7 +215,6 @@ class CasaDepositIntegrationTest {
     }
 
     @Test
-    @Transactional
     @DisplayName("Insufficient funds: rejected with no GL impact")
     void withdrawalInsufficientFunds() {
         setupReferenceData();
@@ -249,7 +245,6 @@ class CasaDepositIntegrationTest {
     }
 
     @Test
-    @Transactional
     @DisplayName("Transfer: atomic debit/credit across two accounts")
     void transferLifecycle() {
         setupReferenceData();
@@ -271,7 +266,6 @@ class CasaDepositIntegrationTest {
     }
 
     @Test
-    @Transactional
     @DisplayName("Frozen account: debit blocked, GL untouched")
     void frozenAccountRejectsDebit() {
         setupReferenceData();
@@ -289,7 +283,6 @@ class CasaDepositIntegrationTest {
     }
 
     @Test
-    @Transactional
     @DisplayName("Multiple deposits: cumulative GL + sequential vouchers + hash-chain")
     void multipleDepositsSequentialVouchers() {
         setupReferenceData();

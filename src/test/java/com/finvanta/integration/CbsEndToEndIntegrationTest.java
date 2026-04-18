@@ -353,7 +353,6 @@ class CbsEndToEndIntegrationTest {
     // ========================================================================
 
     @Test
-    @Transactional
     @DisplayName("End-to-end CBS happy path: deposit → withdraw → charge levy → reverse — "
             + "trial balance balanced, ledger + audit chains intact, reconciliation balanced")
     void endToEndHappyPath() {
@@ -566,7 +565,6 @@ class CbsEndToEndIntegrationTest {
      * journal + voucher back-pointers (Step 20 transaction↔journal link).
      */
     @Test
-    @Transactional
     @DisplayName("TransactionEngine 20-step chain: deposit produces journal, ledger links, "
             + "voucher, transaction ref, and symmetric GL postings")
     void transactionEngineProducesAllArtifacts() {

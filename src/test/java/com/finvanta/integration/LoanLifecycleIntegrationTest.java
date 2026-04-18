@@ -18,7 +18,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -226,7 +225,6 @@ class LoanLifecycleIntegrationTest {
     // ========================================================================
 
     @Test
-    @Transactional
     @DisplayName("Full lifecycle: Create → Disburse → Accrue → Repay → Verify GL integrity")
     void fullLoanLifecycle() {
         setupReferenceData();
@@ -329,7 +327,6 @@ class LoanLifecycleIntegrationTest {
     }
 
     @Test
-    @Transactional
     @DisplayName("Duplicate disbursement is rejected")
     void disbursementIdempotency() {
         setupReferenceData();
@@ -341,7 +338,6 @@ class LoanLifecycleIntegrationTest {
     }
 
     @Test
-    @Transactional
     @DisplayName("Duplicate account creation is rejected")
     void accountCreationIdempotency() {
         setupReferenceData();
