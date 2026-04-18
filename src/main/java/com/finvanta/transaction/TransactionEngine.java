@@ -508,16 +508,55 @@ public class TransactionEngine {
         // ================================================================
         String postingStatus = "POSTED";
         if (!request.isSystemGenerated()
+                && !request.isPreApproved()
                 && makerCheckerService.requiresApproval(request.getAmount(), request.getTransactionType())) {
             postingStatus = "PENDING_APPROVAL";
 
-            // Create approval workflow -- no GL posting yet
+            // Create approval workflow with JSON-serialized TransactionRequest payload.
+            // CBS Tier-1: The payload must be deserializable back into a TransactionRequest
+            // by TransactionReExecutionService when the checker approves. The old pipe-delimited
+            // format was not deserializable — this JSON format enables full re-execution.
+            String jsonPayload;
+            try {
+                // Build a serializable map of the request (TransactionRequest is immutable, not a bean)
+                var payloadMap = new java.util.LinkedHashMap<String, Object>();
+                payloadMap.put("sourceModule", request.getSourceModule());
+                payloadMap.put("transactionType", request.getTransactionType());
+                payloadMap.put("accountReference", request.getAccountReference());
+                payloadMap.put("amount", request.getAmount());
+                payloadMap.put("valueDate", request.getValueDate().toString());
+                payloadMap.put("branchCode", request.getBranchCode());
+                payloadMap.put("narration", request.getNarration());
+                payloadMap.put("productType", request.getProductType());
+                payloadMap.put("idempotencyKey", request.getIdempotencyKey());
+                payloadMap.put("currencyCode", request.getCurrencyCode());
+                payloadMap.put("initiatedBy", currentUser);
+                // Serialize journal lines
+                if (request.getJournalLines() != null) {
+                    var lines = new java.util.ArrayList<java.util.Map<String, Object>>();
+                    for (var line : request.getJournalLines()) {
+                        var lineMap = new java.util.LinkedHashMap<String, Object>();
+                        lineMap.put("glCode", line.glCode());
+                        lineMap.put("debitCredit", line.debitCredit().name());
+                        lineMap.put("amount", line.amount());
+                        lineMap.put("narration", line.narration());
+                        lines.add(lineMap);
+                    }
+                    payloadMap.put("journalLines", lines);
+                }
+                jsonPayload = new com.fasterxml.jackson.databind.ObjectMapper()
+                        .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+                        .writeValueAsString(payloadMap);
+            } catch (Exception e) {
+                log.warn("Failed to serialize TransactionRequest to JSON, using fallback: {}", e.getMessage());
+                jsonPayload = request.getSourceModule() + "|" + request.getAccountReference()
+                        + "|" + request.getAmount() + "|" + request.getTransactionType();
+            }
             makerCheckerService.createPendingApproval(
                     "Transaction",
                     0L,
                     request.getTransactionType(),
-                    request.getSourceModule() + "|" + request.getAccountReference() + "|" + request.getAmount() + "|"
-                            + request.getTransactionType());
+                    jsonPayload);
 
             String txnRef = ReferenceGenerator.generateTransactionRef();
             auditService.logEvent(
