@@ -32,7 +32,7 @@
             <!-- CBS: Journal Entry search per Finacle JRNL_INQUIRY -->
             <form method="get" action="${pageContext.request.contextPath}/accounting/journal-entries/search" class="row g-2 mt-2">
                 <div class="col-auto">
-                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by journal ref, narration, source module, source ref, branch..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:400px;" />
+                    <input type="text" name="q" class="form-control form-control-sm fv-search-input-lg" placeholder="Search by journal ref, narration, source module, source ref, branch..." value="<c:out value='${searchQuery}'/>" minlength="2" />
                 </div>
                 <div class="col-auto">
                     <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>

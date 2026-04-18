@@ -65,7 +65,7 @@
             <!-- CBS: User search per Finacle USER_INQUIRY / RBI IT Governance §8.2 -->
             <form method="get" action="${pageContext.request.contextPath}/admin/users/search" class="row g-2 mb-3">
                 <div class="col-auto">
-                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by username, name, email, role, branch..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:340px;" />
+                    <input type="text" name="q" class="form-control form-control-sm fv-search-input" placeholder="Search by username, name, email, role, branch..." value="<c:out value='${searchQuery}'/>" minlength="2" />
                 </div>
                 <div class="col-auto">
                     <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>

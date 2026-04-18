@@ -20,7 +20,7 @@
     <!-- CBS: Loan Application search per Finacle APPINQ -->
     <form method="get" action="${pageContext.request.contextPath}/loan/applications/search" class="row g-2 mb-3">
         <div class="col-auto">
-            <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by app no, CIF, customer name..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:320px;" />
+            <input type="text" name="q" class="form-control form-control-sm fv-search-input" placeholder="Search by app no, CIF, customer name..." value="<c:out value='${searchQuery}'/>" minlength="2" />
         </div>
         <div class="col-auto">
             <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>

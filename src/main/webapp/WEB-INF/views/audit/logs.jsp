@@ -24,13 +24,13 @@
             <!-- CBS: Audit Trail search per RBI IT Governance Direction 2023 §8.3 -->
             <form method="get" action="${pageContext.request.contextPath}/audit/search" class="row g-2 mb-3">
                 <div class="col-auto">
-                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by entity, action, user, module..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:320px;" />
+                    <input type="text" name="q" class="form-control form-control-sm fv-search-input" placeholder="Search by entity, action, user, module..." value="<c:out value='${searchQuery}'/>" minlength="2" />
                 </div>
                 <div class="col-auto">
-                    <input type="date" name="fromDate" class="form-control form-control-sm" value="<c:out value='${fromDate}'/>" title="From date" style="width:150px;" />
+                    <input type="date" name="fromDate" class="form-control form-control-sm fv-input-md" value="<c:out value='${fromDate}'/>" title="From date" />
                 </div>
                 <div class="col-auto">
-                    <input type="date" name="toDate" class="form-control form-control-sm" value="<c:out value='${toDate}'/>" title="To date" style="width:150px;" />
+                    <input type="date" name="toDate" class="form-control form-control-sm fv-input-md" value="<c:out value='${toDate}'/>" title="To date" />
                 </div>
                 <div class="col-auto">
                     <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>

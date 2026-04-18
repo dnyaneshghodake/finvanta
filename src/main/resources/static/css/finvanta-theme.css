@@ -479,6 +479,20 @@ body {
     line-height: 1.4;
 }
 
+/* ================================================================
+   CBS INLINE-STYLE REPLACEMENT UTILITIES — Per Phase 14 audit
+   Replaces style="width:Npx" on search inputs, form fields, and
+   detail table label columns with reusable CSS classes.
+   ================================================================ */
+.fv-search-input { width: 320px; max-width: 100%; }
+.fv-search-input-lg { width: 400px; max-width: 100%; }
+.fv-input-xs { width: 100px; }
+.fv-input-sm { width: 130px; }
+.fv-input-md { width: 160px; }
+.fv-label-col { width: 200px; }
+.fv-label-col-lg { width: 250px; }
+.fv-label-col-pct { width: 40%; }
+
 /* CBS AMOUNT INPUT FORMATTING — INR with thousand separators */
 .fv-amount-display {
     font-family: 'Courier New', Consolas, monospace;
