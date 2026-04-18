@@ -24,13 +24,13 @@
         <div class="card-body">
             <c:choose>
                 <c:when test="${not empty openDay}">
-                    <div class="fv-stat-card stat-success" style="display:inline-block;padding:12px 24px;">
+                    <div class="fv-stat-card stat-success d-inline-block" style="padding:12px 24px;">
                         <div class="stat-value"><c:out value="${openDay.businessDate}" /></div>
                         <div class="stat-label">DAY OPEN</div>
                     </div>
                 </c:when>
                 <c:otherwise>
-                    <div class="fv-stat-card stat-danger" style="display:inline-block;padding:12px 24px;">
+                    <div class="fv-stat-card stat-danger d-inline-block" style="padding:12px 24px;">
                         <div class="stat-value">NO DAY OPEN</div>
                         <div class="stat-label">Open a day to allow transactions</div>
                     </div>
@@ -50,11 +50,11 @@
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <div class="col-auto">
                             <label class="form-label">Year</label>
-                            <input type="number" name="year" class="form-control" value="2026" min="2024" max="2030" required style="width:100px;" />
+                            <input type="number" name="year" class="form-control fv-input-xs" value="2026" min="2024" max="2030" required />
                         </div>
                         <div class="col-auto">
                             <label class="form-label">Month</label>
-                            <select name="month" class="form-select" required style="width:130px;">
+                            <select name="month" class="form-select fv-input-sm" required>
                                 <option value="1">January</option><option value="2">February</option>
                                 <option value="3">March</option><option value="4" selected>April</option>
                                 <option value="5">May</option><option value="6">June</option>
@@ -79,21 +79,21 @@
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <div class="col-auto">
                             <label class="form-label">Date</label>
-                            <input type="date" name="date" class="form-control" required style="width:160px;" />
+                            <input type="date" name="date" class="form-control fv-input-md" required />
                         </div>
                         <div class="col">
                             <label class="form-label">Description</label>
                             <input type="text" name="description" class="form-control" placeholder="e.g., Independence Day" required />
                         </div>
                         <div class="col-auto">
-                            <button type="submit" class="btn btn-warning"><i class="bi bi-exclamation-triangle"></i> Add Holiday</button>
+                            <button type="submit" class="btn btn-fv-warning"><i class="bi bi-exclamation-triangle"></i> Add Holiday</button>
                         </div>
                     </form>
                     <form method="post" action="${pageContext.request.contextPath}/calendar/remove-holiday" class="row g-2 align-items-end">
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <div class="col-auto">
                             <label class="form-label">Date</label>
-                            <input type="date" name="date" class="form-control" required style="width:160px;" />
+                            <input type="date" name="date" class="form-control fv-input-md" required />
                         </div>
                         <div class="col-auto">
                             <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-calendar-check"></i> Remove Holiday</button>
