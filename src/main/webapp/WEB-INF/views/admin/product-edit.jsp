@@ -9,12 +9,12 @@
         <li><a href="${pageContext.request.contextPath}/admin/products">Product Master</a></li>
         <li class="active">Edit Product</li>
     </ul>
-    <c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
-    <c:if test="${not empty success}"><div class="alert alert-success"><c:out value="${success}"/></div></c:if>
+    <c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
+    <c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}"/></div></c:if>
 
     <div class="fv-card">
         <div class="card-header"><i class="bi bi-pencil-square"></i> Edit Product &mdash; <c:out value="${product.productCode}" />
-            <a href="${pageContext.request.contextPath}/admin/products/${product.id}" class="btn btn-sm btn-outline-secondary float-end"><i class="bi bi-x-circle"></i> Cancel</a>
+            <a href="${pageContext.request.contextPath}/admin/products/${product.id}" class="btn btn-sm btn-outline-secondary float-end" data-fv-cancel="${pageContext.request.contextPath}/admin/products/${product.id}"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a>
         </div>
         <div class="card-body">
             <c:if test="${activeAccountCount > 0}">
@@ -98,7 +98,7 @@
 
                 <hr/>
                 <button type="submit" class="btn btn-fv-primary" data-confirm="Save product changes? GL cache will be auto-evicted."><i class="bi bi-check-circle"></i> Save Changes</button>
-                <a href="${pageContext.request.contextPath}/admin/products/${product.id}" class="btn btn-outline-secondary ms-2">Cancel</a>
+                <a href="${pageContext.request.contextPath}/admin/products/${product.id}" class="btn btn-outline-secondary ms-2" data-fv-cancel="${pageContext.request.contextPath}/admin/products/${product.id}"><i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span></a>
 
                 <%-- CBS: Cross-field validation (min<=max) is now handled by the centralized
                      FV.Validation library via data-fv-max-field attributes on the min fields.
