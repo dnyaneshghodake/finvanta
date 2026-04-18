@@ -1,7 +1,10 @@
 package com.finvanta.controller;
 
+import com.finvanta.accounting.AccountingService.JournalLineRequest;
+import com.finvanta.accounting.GLConstants;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
+import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DepositAccountRepository;
@@ -21,6 +24,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,7 +62,7 @@ public class DepositController {
     private static final Logger log = LoggerFactory.getLogger(DepositController.class);
 
     /** CBS: Allowed transaction types for the preview endpoint — whitelist per OWASP. */
-    private static final java.util.Set<String> PREVIEW_TXN_TYPES = java.util.Set.of(
+    private static final Set<String> PREVIEW_TXN_TYPES = Set.of(
             "CASH_DEPOSIT", "CASH_WITHDRAWAL");
 
     private final DepositAccountService depositService;
@@ -277,7 +281,7 @@ public class DepositController {
      *
      * @param accountNumber Account to validate against
      * @param amount        Transaction amount
-     * @param txnType       Transaction type (CASH_DEPOSIT, CASH_WITHDRAWAL, TRANSFER_DEBIT)
+     * @param txnType       Transaction type (CASH_DEPOSIT, CASH_WITHDRAWAL)
      * @param narration     Optional narration
      * @return JSON TransactionPreview
      */
@@ -306,24 +310,24 @@ public class DepositController {
 
             // Resolve GL codes based on transaction type
             String depositGl = resolveDepositGl(account);
-            java.util.List<com.finvanta.accounting.AccountingService.JournalLineRequest> lines;
+            List<JournalLineRequest> lines;
             if ("CASH_DEPOSIT".equals(txnType)) {
-                lines = java.util.List.of(
-                        new com.finvanta.accounting.AccountingService.JournalLineRequest(
-                                com.finvanta.accounting.GLConstants.BANK_OPERATIONS,
-                                com.finvanta.domain.enums.DebitCredit.DEBIT, amount, "Cash deposit"),
-                        new com.finvanta.accounting.AccountingService.JournalLineRequest(
-                                depositGl, com.finvanta.domain.enums.DebitCredit.CREDIT, amount,
+                lines = List.of(
+                        new JournalLineRequest(
+                                GLConstants.BANK_OPERATIONS,
+                                DebitCredit.DEBIT, amount, "Cash deposit"),
+                        new JournalLineRequest(
+                                depositGl, DebitCredit.CREDIT, amount,
                                 "Credit " + accountNumber));
             } else {
                 // CASH_WITHDRAWAL
-                lines = java.util.List.of(
-                        new com.finvanta.accounting.AccountingService.JournalLineRequest(
-                                depositGl, com.finvanta.domain.enums.DebitCredit.DEBIT, amount,
+                lines = List.of(
+                        new JournalLineRequest(
+                                depositGl, DebitCredit.DEBIT, amount,
                                 "Debit " + accountNumber),
-                        new com.finvanta.accounting.AccountingService.JournalLineRequest(
-                                com.finvanta.accounting.GLConstants.BANK_OPERATIONS,
-                                com.finvanta.domain.enums.DebitCredit.CREDIT, amount, "Cash withdrawal"));
+                        new JournalLineRequest(
+                                GLConstants.BANK_OPERATIONS,
+                                DebitCredit.CREDIT, amount, "Cash withdrawal"));
             }
 
             TransactionRequest request = TransactionRequest.builder()
@@ -377,7 +381,7 @@ public class DepositController {
                         hasFunds ? "Available: INR " + account.getEffectiveAvailable()
                                 : "Insufficient: available INR " + account.getEffectiveAvailable() + " < requested INR " + amount);
                 if (account.getMinimumBalance() != null && account.getMinimumBalance().signum() > 0) {
-                    java.math.BigDecimal postBalance = account.getLedgerBalance().subtract(amount);
+                    BigDecimal postBalance = account.getLedgerBalance().subtract(amount);
                     boolean minBalOk = postBalance.compareTo(account.getMinimumBalance()) >= 0;
                     enriched.addCheck("MINIMUM_BALANCE", "Account",
                             "Post-withdrawal balance INR " + postBalance + " ≥ minimum INR " + account.getMinimumBalance(),
@@ -428,8 +432,8 @@ public class DepositController {
     private String resolveDepositGl(DepositAccount account) {
         // Simple resolution — matches the service layer logic
         return account.isSavings()
-                ? com.finvanta.accounting.GLConstants.SB_DEPOSITS
-                : com.finvanta.accounting.GLConstants.CA_DEPOSITS;
+                ? GLConstants.SB_DEPOSITS
+                : GLConstants.CA_DEPOSITS;
     }
 
     @GetMapping("/deposit/{accountNumber}")

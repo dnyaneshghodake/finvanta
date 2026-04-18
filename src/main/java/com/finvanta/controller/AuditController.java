@@ -2,10 +2,12 @@ package com.finvanta.controller;
 
 import com.finvanta.audit.AuditService;
 import com.finvanta.repository.AuditLogRepository;
+import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Set;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Controller;
@@ -36,7 +38,7 @@ public class AuditController {
     private static final int MAX_AUDIT_RESULTS = 500;
 
     /** CBS: Known entity types for audit trail — whitelist per defense-in-depth. */
-    private static final java.util.Set<String> KNOWN_ENTITY_TYPES = java.util.Set.of(
+    private static final Set<String> KNOWN_ENTITY_TYPES = Set.of(
             "Customer", "DepositAccount", "LoanAccount", "LoanApplication",
             "Transaction", "JournalEntry", "Branch", "ProductMaster",
             "StandingInstruction", "ApprovalWorkflow", "TransactionLimit",
@@ -99,11 +101,11 @@ public class AuditController {
         // CBS: Validate entityType against known types to prevent arbitrary strings
         // in audit queries and log output. entityId must be non-negative.
         if (entityType == null || !KNOWN_ENTITY_TYPES.contains(entityType)) {
-            throw new com.finvanta.util.BusinessException("INVALID_ENTITY_TYPE",
+            throw new BusinessException("INVALID_ENTITY_TYPE",
                     "Unknown entity type for audit trail: " + entityType);
         }
         if (entityId == null || entityId < 0) {
-            throw new com.finvanta.util.BusinessException("INVALID_ENTITY_ID",
+            throw new BusinessException("INVALID_ENTITY_ID",
                     "Entity ID must be a non-negative number");
         }
         String tenantId = TenantContext.getCurrentTenant();
