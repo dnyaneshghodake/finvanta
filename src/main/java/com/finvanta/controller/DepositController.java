@@ -2,6 +2,7 @@ package com.finvanta.controller;
 
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
+import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.domain.enums.DebitCredit;
@@ -74,6 +75,7 @@ public class DepositController {
     private final ProductMasterRepository productMasterRepository;
     private final BranchAccessValidator branchAccessValidator;
     private final TransactionEngine transactionEngine;
+    private final ProductGLResolver glResolver;
 
     public DepositController(
             DepositAccountService depositService,
@@ -84,7 +86,8 @@ public class DepositController {
             StandingInstructionRepository siRepository,
             ProductMasterRepository productMasterRepository,
             BranchAccessValidator branchAccessValidator,
-            TransactionEngine transactionEngine) {
+            TransactionEngine transactionEngine,
+            ProductGLResolver glResolver) {
         this.depositService = depositService;
         this.businessDateService = businessDateService;
         this.customerRepository = customerRepository;
@@ -94,6 +97,7 @@ public class DepositController {
         this.productMasterRepository = productMasterRepository;
         this.branchAccessValidator = branchAccessValidator;
         this.transactionEngine = transactionEngine;
+        this.glResolver = glResolver;
     }
 
     /**
@@ -428,9 +432,19 @@ public class DepositController {
         return escaped;
     }
 
-    /** Resolve deposit GL code for preview — mirrors DepositAccountServiceImpl.glForAccount() */
+    /**
+     * Resolve deposit GL code for preview — mirrors DepositAccountServiceImpl.glForAccount().
+     * CBS CRITICAL: Must use ProductGLResolver (same as service layer) to show correct GL
+     * codes in the preview. Hardcoded fallback would show wrong GL for product-configured
+     * accounts, undermining the preview's purpose of operator verification before posting.
+     */
     private String resolveDepositGl(DepositAccount account) {
-        // Simple resolution — matches the service layer logic
+        // CBS: Type-safe product existence check via ProductGLResolver (same logic as service layer)
+        var product = glResolver.getProduct(account.getProductCode());
+        if (product != null && product.getGlLoanAsset() != null) {
+            return product.getGlLoanAsset();
+        }
+        // Product not configured — fall back to type-based GL
         return account.isSavings()
                 ? GLConstants.SB_DEPOSITS
                 : GLConstants.CA_DEPOSITS;
