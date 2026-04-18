@@ -64,7 +64,7 @@
                             </select>
                         </div>
                         <div class="col-auto">
-                            <button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Generate</button>
+                            <button type="submit" class="btn btn-fv-primary"><i class="bi bi-plus-circle"></i> Generate</button>
                         </div>
                     </form>
                 </div>

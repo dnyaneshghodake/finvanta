@@ -16,7 +16,7 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h4><i class="bi bi-wallet2"></i> CASA Accounts</h4>
     <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
-    <a href="${pageContext.request.contextPath}/deposit/open" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle"></i> Open Account</a>
+    <a href="${pageContext.request.contextPath}/deposit/open" class="btn btn-fv-primary btn-sm"><i class="bi bi-plus-circle"></i> Open Account</a>
     </c:if>
 </div>
 

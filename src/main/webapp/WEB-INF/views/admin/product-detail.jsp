@@ -19,7 +19,7 @@
             <h6 class="mb-3">Product Configuration</h6>
             <table class="table fv-table">
                 <tbody>
-                <tr><td class="fw-bold" style="width:250px">Product Code</td><td><c:out value="${product.productCode}" /></td></tr>
+                <tr><td class="fw-bold fv-label-col-lg">Product Code</td><td><c:out value="${product.productCode}" /></td></tr>
                 <tr><td class="fw-bold">Product Name</td><td><c:out value="${product.productName}" /></td></tr>
                 <tr><td class="fw-bold">Category</td><td><c:out value="${product.productCategory}" /></td></tr>
                 <tr><td class="fw-bold">Currency</td><td><c:out value="${product.currencyCode}" /></td></tr>

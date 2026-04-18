@@ -15,7 +15,7 @@
                     <input type="text" name="q" class="form-control" placeholder="Enter TXN ref, VCH voucher, or JRN journal ref..." value="${lookupValue}" required />
                 </div>
                 <div class="col-md-2">
-                    <button type="submit" class="btn btn-primary w-100">Search</button>
+                    <button type="submit" class="btn btn-fv-primary w-100"><i class="bi bi-search"></i> Search</button>
                 </div>
                 <div class="col-md-2 text-muted small">
                     Prefix: TXN... | VCH/... | JRN...
@@ -42,7 +42,7 @@
             <div class="row">
                 <div class="col-md-6">
                     <table class="table fv-table mb-0">
-                        <tr><td class="fw-bold" style="width:200px">Transaction Ref</td><td class="font-monospace"><c:out value="${transaction.transactionRef}" /></td></tr>
+                        <tr><td class="fw-bold fv-label-col">Transaction Ref</td><td class="font-monospace"><c:out value="${transaction.transactionRef}" /></td></tr>
                         <tr><td class="fw-bold">Type</td><td><c:out value="${transaction.transactionType}" /></td></tr>
                         <tr><td class="fw-bold">Amount</td><td class="amount fw-bold"><fmt:formatNumber value="${transaction.amount}" type="number" maxFractionDigits="2" /> INR</td></tr>
                         <tr><td class="fw-bold">Value Date</td><td><c:out value="${transaction.valueDate}" /></td></tr>
@@ -52,7 +52,7 @@
                 </div>
                 <div class="col-md-6">
                     <table class="table fv-table mb-0">
-                        <tr><td class="fw-bold" style="width:200px">Voucher Number</td><td class="font-monospace"><c:out value="${transaction.voucherNumber}" default="--" /></td></tr>
+                        <tr><td class="fw-bold fv-label-col">Voucher Number</td><td class="font-monospace"><c:out value="${transaction.voucherNumber}" default="--" /></td></tr>
                         <tr><td class="fw-bold">Journal Entry ID</td><td><c:out value="${transaction.journalEntryId}" default="--" /></td></tr>
                         <tr><td class="fw-bold">Balance After</td><td class="amount"><fmt:formatNumber value="${transaction.balanceAfter}" type="number" maxFractionDigits="2" /></td></tr>
                         <tr><td class="fw-bold">Idempotency Key</td><td class="font-monospace small"><c:out value="${transaction.idempotencyKey}" default="--" /></td></tr>
@@ -95,7 +95,7 @@
             <div class="row">
                 <div class="col-md-6">
                     <table class="table fv-table mb-0">
-                        <tr><td class="fw-bold" style="width:200px">Account Number</td><td><a href="${pageContext.request.contextPath}/loan/account/${account.accountNumber}"><c:out value="${account.accountNumber}" /></a></td></tr>
+                        <tr><td class="fw-bold fv-label-col">Account Number</td><td><a href="${pageContext.request.contextPath}/loan/account/${account.accountNumber}"><c:out value="${account.accountNumber}" /></a></td></tr>
                         <tr><td class="fw-bold">Product Type</td><td><c:out value="${account.productType}" /></td></tr>
                         <tr><td class="fw-bold">Status</td><td>
                             <c:choose>
@@ -109,7 +109,7 @@
                 </div>
                 <div class="col-md-6">
                     <table class="table fv-table mb-0">
-                        <tr><td class="fw-bold" style="width:200px">Customer</td><td><a href="${pageContext.request.contextPath}/customer/view/${customer.id}"><c:out value="${customer.firstName}" /> <c:out value="${customer.lastName}" /></a> (<c:out value="${customer.customerNumber}" />)</td></tr>
+                        <tr><td class="fw-bold fv-label-col">Customer</td><td><a href="${pageContext.request.contextPath}/customer/view/${customer.id}"><c:out value="${customer.firstName}" /> <c:out value="${customer.lastName}" /></a> (<c:out value="${customer.customerNumber}" />)</td></tr>
                         <tr><td class="fw-bold">Branch</td><td><a href="${pageContext.request.contextPath}/branch/view/${branch.id}"><c:out value="${branch.branchCode}" /> - <c:out value="${branch.branchName}" /></a></td></tr>
                         <tr><td class="fw-bold">Currency</td><td><c:out value="${account.currencyCode}" /></td></tr>
                         <tr><td class="fw-bold">DPD</td><td><c:out value="${account.daysPastDue}" /></td></tr>

@@ -105,7 +105,7 @@
         <div class="card-header"><i class="bi bi-journal-text"></i> Journal Entry (Double-Entry)</div>
         <div class="card-body">
             <table class="table fv-table table-sm mb-0">
-                <tr><td class="text-muted" style="width:200px;">Journal Ref</td><td class="font-monospace"><c:out value="${journalEntry.journalRef}" /></td></tr>
+                <tr><td class="text-muted fv-label-col">Journal Ref</td><td class="font-monospace"><c:out value="${journalEntry.journalRef}" /></td></tr>
                 <tr><td class="text-muted">Value Date</td><td><c:out value="${journalEntry.valueDate}" /></td></tr>
                 <tr><td class="text-muted">Source Module</td><td><c:out value="${journalEntry.sourceModule}" /></td></tr>
                 <tr><td class="text-muted">Source Ref</td><td class="font-monospace"><c:out value="${journalEntry.sourceRef}" default="--" /></td></tr>
