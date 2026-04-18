@@ -192,9 +192,6 @@ class LoanLifecycleIntegrationTest {
         glMasterRepository.save(gl);
     }
 
-    /** Counter for unique application numbers across test methods within the class. */
-    private static int appCounter = 0;
-
     private LoanApplication createApprovedApplication() {
         Branch branch = branchRepository.findAll().stream()
                 .filter(b -> b.getTenantId().equals(TENANT))
@@ -205,10 +202,9 @@ class LoanLifecycleIntegrationTest {
                 .findFirst()
                 .orElseThrow();
 
-        appCounter++;
         LoanApplication app = new LoanApplication();
         app.setTenantId(TENANT);
-        app.setApplicationNumber("APP-TEST-" + String.format("%03d", appCounter));
+        app.setApplicationNumber("APP-TEST-001");
         app.setCustomer(customer);
         app.setBranch(branch);
         app.setProductType("TERM_LOAN");
@@ -227,8 +223,10 @@ class LoanLifecycleIntegrationTest {
     // ========================================================================
 
     @Test
+    @Transactional
     @DisplayName("Full lifecycle: Create → Disburse → Accrue → Repay → Verify GL integrity")
     void fullLoanLifecycle() {
+        setupReferenceData();
         LoanApplication app = createApprovedApplication();
 
         // --- Create Account ---
@@ -328,8 +326,10 @@ class LoanLifecycleIntegrationTest {
     }
 
     @Test
+    @Transactional
     @DisplayName("Duplicate disbursement is rejected")
     void disbursementIdempotency() {
+        setupReferenceData();
         LoanApplication app = createApprovedApplication();
         LoanAccount account = loanAccountService.createLoanAccount(app.getId());
         loanAccountService.disburseLoan(account.getAccountNumber());
@@ -338,8 +338,10 @@ class LoanLifecycleIntegrationTest {
     }
 
     @Test
+    @Transactional
     @DisplayName("Duplicate account creation is rejected")
     void accountCreationIdempotency() {
+        setupReferenceData();
         LoanApplication app = createApprovedApplication();
         loanAccountService.createLoanAccount(app.getId());
 
