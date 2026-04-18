@@ -10,9 +10,12 @@ import com.finvanta.domain.enums.UserRole;
 import com.finvanta.repository.AppUserRepository;
 import com.finvanta.util.BusinessException;
 
+import com.finvanta.util.TenantContext;
+
 import java.time.LocalDate;
 import java.util.Optional;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -44,6 +47,7 @@ class MfaServiceTest {
 
     @BeforeEach
     void setUp() {
+        TenantContext.setCurrentTenant("DEFAULT");
         testUser = new AppUser();
         testUser.setId(1L);
         testUser.setTenantId("DEFAULT");
@@ -52,6 +56,11 @@ class MfaServiceTest {
         testUser.setMfaEnabled(false);
         testUser.setMfaSecret(null);
         testUser.setMfaEnrolledDate(null);
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
     }
 
     @Test
@@ -234,9 +243,7 @@ class MfaServiceTest {
     @Test
     @DisplayName("disableMfa throws when reason is missing")
     void disableMfa_noReason_throwsException() {
-        when(userRepository.findByTenantIdAndUsername(anyString(), eq("testuser")))
-                .thenReturn(Optional.of(testUser));
-
+        // CBS: Reason validation happens before user lookup — no repo stub needed.
         assertThrows(BusinessException.class,
                 () -> mfaService.disableMfa("testuser", ""));
         assertThrows(BusinessException.class,
@@ -246,7 +253,8 @@ class MfaServiceTest {
     @Test
     @DisplayName("User not found throws BusinessException")
     void anyOperation_userNotFound_throwsException() {
-        when(userRepository.findByTenantIdAndUsername(anyString(), eq("unknown")))
+        // CBS: Each method call hits the repo — lenient stub for multiple invocations.
+        lenient().when(userRepository.findByTenantIdAndUsername(anyString(), eq("unknown")))
                 .thenReturn(Optional.empty());
 
         assertThrows(BusinessException.class, () -> mfaService.enableMfa("unknown"));

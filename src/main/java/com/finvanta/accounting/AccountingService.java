@@ -451,40 +451,48 @@ public class AccountingService {
             // Per Finacle GL_BRANCH: concurrent postings to same branch+GL are serialized
             // via PESSIMISTIC_WRITE lock to prevent lost-update on running balances.
             //
-            // CBS CRITICAL — First-posting race condition:
-            // On the first-ever posting to a branch+GL combination, findAndLock returns
-            // empty (SELECT FOR UPDATE on a non-existent row is a no-op on most DB engines
-            // — it does NOT acquire a gap lock in READ_COMMITTED). Two concurrent first-
-            // postings both see empty, both try to INSERT, one wins and the other gets a
+            // CBS: First-posting race condition on branch+GL combination.
+            // On the first-ever posting, findAndLock returns empty. Two concurrent
+            // first-postings both see empty, both try INSERT, one gets
             // DataIntegrityViolationException on uq idx_glbb_tenant_branch_gl.
-            //
-            // Resolution: delegate the INSERT to GLBranchBalanceBootstrap (REQUIRES_NEW)
-            // so a constraint violation only rolls back the inner TX, not the outer posting.
-            // Same pattern as LedgerService.ensureAndLockSentinel() + TenantLedgerStateBootstrap.
+            // Resolution: inline saveAndFlush with catch for constraint violation.
             if (branch != null) {
                 GLBranchBalance branchBalance = glBranchBalanceRepository
                         .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
                         .orElse(null);
 
                 if (branchBalance == null) {
-                    // CBS CRITICAL: First-posting race condition — delegate INSERT to
-                    // GLBranchBalanceBootstrap (REQUIRES_NEW) so a unique constraint
-                    // collision only rolls back the inner TX, not the outer posting.
-                    // Same pattern as LedgerService.ensureAndLockSentinel().
+                    // CBS: First-ever posting to this branch+GL — create inline (same TX).
+                    // With REQUIRED propagation on TransactionEngine.executeInternal(),
+                    // the Branch entity exists in THIS transaction's persistence context.
+                    // Using GLBranchBalanceBootstrap (REQUIRES_NEW) would fail because
+                    // the Branch FK is not yet committed to the DB — the nested TX
+                    // cannot see the uncommitted Branch row, causing FK violation.
+                    //
+                    // Inline saveAndFlush is safe here: the unique constraint on
+                    // (tenant_id, branch_id, gl_code) prevents duplicates. In a
+                    // concurrent scenario (two threads first-posting to same branch+GL),
+                    // one wins and the other gets DataIntegrityViolationException —
+                    // which is caught and the existing row is re-locked below.
                     try {
-                        glBranchBalanceBootstrap.insertIfAbsent(tenantId, branch, line.glCode(), gl.getGlName());
+                        GLBranchBalance newBb = new GLBranchBalance();
+                        newBb.setTenantId(tenantId);
+                        newBb.setBranch(branch);
+                        newBb.setGlCode(line.glCode());
+                        newBb.setGlName(gl.getGlName());
+                        branchBalance = glBranchBalanceRepository.saveAndFlush(newBb);
+                        log.debug("GLBranchBalance created inline: branch={}, gl={}",
+                                branch.getBranchCode(), line.glCode());
                     } catch (org.springframework.dao.DataIntegrityViolationException concurrent) {
-                        // Another thread won the race — the inner REQUIRES_NEW TX
-                        // rolled back cleanly; we re-lock the now-present row below.
+                        // Another thread won the race — re-lock the now-present row.
                         log.debug("GLBranchBalance race resolved: branch={}, gl={}",
                                 branch.getBranchCode(), line.glCode());
+                        branchBalance = glBranchBalanceRepository
+                                .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
+                                .orElseThrow(() -> new IllegalStateException(
+                                        "GLBranchBalance row disappeared after race: "
+                                                + branch.getBranchCode() + "/" + line.glCode()));
                     }
-                    // Re-lock the row (now guaranteed to exist) for balance update
-                    branchBalance = glBranchBalanceRepository
-                            .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
-                            .orElseThrow(() -> new IllegalStateException(
-                                    "GLBranchBalance row disappeared after bootstrap: "
-                                            + branch.getBranchCode() + "/" + line.glCode()));
                 }
 
                 if (line.debitCredit() == DebitCredit.DEBIT) {
