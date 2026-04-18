@@ -320,6 +320,7 @@ document.addEventListener('DOMContentLoaded', function () {
     //   Alt+A       = Approve (maker-checker)
     //   Alt+R       = Reject (maker-checker)
     //   Ctrl+Enter  = Submit focused form
+    //   Alt+M       = Toggle sidebar
     //   Ctrl+P      = Print
     // ================================================================
     document.addEventListener('keydown', function (e) {
@@ -386,6 +387,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 var formSubmitBtn = focusedForm.querySelector('[type="submit"]');
                 if (formSubmitBtn && !formSubmitBtn.disabled) formSubmitBtn.click();
             }
+        }
+        /* Alt+M = Toggle sidebar collapse/expand */
+        if (e.altKey && (e.key === 'm' || e.key === 'M')) {
+            e.preventDefault();
+            var sidebarToggle = document.getElementById('fvSidebarToggle');
+            if (sidebarToggle) sidebarToggle.click();
         }
         /* Ctrl+P = Print (browser default, but we ensure overlay is hidden) */
         if (e.ctrlKey && e.key === 'p') {
@@ -587,6 +594,25 @@ document.addEventListener('DOMContentLoaded', function () {
             if (n === null || n === undefined) return '--';
             return typeof window.fvFormatINR === 'function' ? window.fvFormatINR(n) : Number(n).toFixed(2);
         }
+    })();
+
+    // ================================================================
+    // SIDEBAR TOGGLE — Per Finacle/Temenos: hamburger collapse/expand
+    // Persists preference in localStorage so it survives page navigation.
+    // Alt+M keyboard shortcut for power users.
+    // ================================================================
+    (function initSidebarToggle() {
+        var toggleBtn = document.getElementById('fvSidebarToggle');
+        if (!toggleBtn) return;
+        /* Restore persisted state on page load */
+        if (localStorage.getItem('fv-sidebar-collapsed') === 'true') {
+            document.body.classList.add('fv-sidebar-collapsed');
+        }
+        toggleBtn.addEventListener('click', function () {
+            document.body.classList.toggle('fv-sidebar-collapsed');
+            localStorage.setItem('fv-sidebar-collapsed',
+                document.body.classList.contains('fv-sidebar-collapsed'));
+        });
     })();
 
     // ================================================================

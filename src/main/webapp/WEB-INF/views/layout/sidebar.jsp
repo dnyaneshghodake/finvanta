@@ -93,7 +93,12 @@
 
 <!-- Top Navbar — Per Finacle/Temenos: always shows branch context + business date -->
 <div class="fv-topbar">
-    <h2 class="fv-page-title"><c:out value="${pageTitle}" default="Dashboard" /></h2>
+    <%-- CBS Tier-1: Hamburger toggle per Finacle/Temenos — collapse/expand sidebar
+         at any screen width. Preference persisted in localStorage. --%>
+    <div class="d-flex align-items-center">
+        <button type="button" class="fv-sidebar-toggle" id="fvSidebarToggle" title="Toggle sidebar (Alt+M)" aria-label="Toggle sidebar"><i class="bi bi-list"></i></button>
+        <h2 class="fv-page-title"><c:out value="${pageTitle}" default="Dashboard" /></h2>
+    </div>
     <div class="fv-topbar-right">
         <%-- CBS Tier-1: Tenant ID always visible per RBI IT Governance §8.3.
              Multi-tenant systems must display the active tenant so operators confirm context.

@@ -553,7 +553,33 @@ body {
 .fv-login-card h1 { text-align: center; color: var(--fv-primary); font-size: 24px; margin-bottom: 4px; letter-spacing: 1px; }
 .fv-login-card .subtitle { text-align: center; color: var(--fv-text-muted); font-size: 12px; margin-bottom: 28px; }
 
-/* Responsive */
+/* ================================================================
+   CBS SIDEBAR TOGGLE — Per Finacle/Temenos: hamburger button to
+   manually collapse/expand sidebar at any screen width. Operator
+   preference persisted in localStorage across page navigations.
+   Toggled via body.fv-sidebar-collapsed class set by JS.
+   ================================================================ */
+body.fv-sidebar-collapsed .fv-sidebar { width: 60px; }
+body.fv-sidebar-collapsed .fv-sidebar .nav-text,
+body.fv-sidebar-collapsed .fv-sidebar .nav-section,
+body.fv-sidebar-collapsed .fv-sidebar-brand small { display: none; }
+body.fv-sidebar-collapsed .fv-sidebar-brand h1 { font-size: 14px; }
+body.fv-sidebar-collapsed .fv-sidebar .nav-link { justify-content: center; padding: 10px 0; }
+body.fv-sidebar-collapsed .fv-sidebar .nav-link i { margin-right: 0; font-size: 16px; }
+body.fv-sidebar-collapsed .fv-topbar { left: 60px; }
+body.fv-sidebar-collapsed .fv-main { margin-left: 60px; max-width: calc(100vw - 60px); }
+body.fv-sidebar-collapsed .fv-footer { margin-left: 60px; }
+body.fv-sidebar-collapsed .fv-session-warning { left: 60px; }
+body.fv-sidebar-collapsed .fv-topbar .fv-tenant-id { font-size: 9px; }
+/* CBS: Hamburger toggle button in topbar */
+.fv-sidebar-toggle {
+    background: none; border: none; color: #ffffff; font-size: 18px;
+    cursor: pointer; padding: 4px 8px; margin-right: 8px;
+    border-radius: 3px; transition: background 0.15s ease;
+}
+.fv-sidebar-toggle:hover { background: rgba(255,255,255,0.12); }
+
+/* Responsive: auto-collapse below 992px (overrides manual toggle) */
 @media (max-width: 992px) {
     .fv-sidebar { width: 60px; }
     .fv-sidebar .nav-text, .fv-sidebar .nav-section, .fv-sidebar-brand small { display: none; }
@@ -573,6 +599,8 @@ body {
     .fv-session-warning { left: 60px; }
     /* Hide tenant ID label on collapsed sidebar to save topbar space */
     .fv-topbar .fv-tenant-id { font-size: 9px; }
+    /* Hide toggle button on small screens — sidebar is always collapsed */
+    .fv-sidebar-toggle { display: none; }
 }
 /* CBS Tier-1: Detail grid collapses to 1-col on narrow viewports (tablet / small laptop).
    Prevents label-value pairs from being too cramped on ≤768px widths. */
