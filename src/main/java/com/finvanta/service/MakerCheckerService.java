@@ -57,18 +57,6 @@ public class MakerCheckerService {
     }
 
     /**
-     * Determines if a transaction requires checker approval based on amount
-     * and the user's role-specific per-transaction limit.
-     *
-     * Transactions AT or BELOW the limit are auto-approved.
-     * Transactions ABOVE the limit require checker approval.
-     * If no limit is configured, the transaction is auto-approved (backward compatible).
-     *
-     * @param amount          Transaction amount
-     * @param transactionType Transaction type (DISBURSEMENT, REPAYMENT, etc.)
-     * @return true if checker approval is required
-     */
-    /**
      * CBS Tier-1: Transaction types that ALWAYS require maker-checker approval
      * regardless of amount threshold. Per Finacle TRAN_AUTH / RBI Internal Controls:
      * reversals and write-offs are higher-risk than original postings because they
@@ -80,6 +68,22 @@ public class MakerCheckerService {
     private static final java.util.Set<String> ALWAYS_REQUIRE_APPROVAL = java.util.Set.of(
             "REVERSAL", "WRITE_OFF", "WRITE_OFF_RECOVERY");
 
+    /**
+     * Determines if a transaction requires checker approval based on amount
+     * and the user's role-specific per-transaction limit.
+     *
+     * <p>Transactions AT or BELOW the limit are auto-approved.
+     * Transactions ABOVE the limit require checker approval.
+     * If no limit is configured, the transaction is auto-approved (backward compatible).
+     *
+     * <p>Transaction types in {@link #ALWAYS_REQUIRE_APPROVAL} (REVERSAL, WRITE_OFF)
+     * always return {@code true} regardless of amount — these are high-risk operations
+     * that require dual authorization per RBI Internal Controls.
+     *
+     * @param amount          Transaction amount
+     * @param transactionType Transaction type (DISBURSEMENT, REPAYMENT, REVERSAL, etc.)
+     * @return true if checker approval is required
+     */
     public boolean requiresApproval(BigDecimal amount, String transactionType) {
         String tenantId = TenantContext.getCurrentTenant();
         String role = SecurityUtil.getCurrentUserRole();

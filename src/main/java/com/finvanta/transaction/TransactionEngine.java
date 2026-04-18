@@ -3,6 +3,7 @@ package com.finvanta.transaction;
 import com.finvanta.accounting.AccountingService;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.BusinessCalendar;
+import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.domain.entity.JournalEntry;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
@@ -16,8 +17,13 @@ import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
+import com.finvanta.domain.enums.DebitCredit;
+
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -237,16 +243,7 @@ public class TransactionEngine {
         // Per Finacle DAYCTRL: calendar is per-branch — a date can be a holiday at
         // Branch A (state holiday) but a working day at Branch B.
         // ================================================================
-        Long branchId = null;
-        if (request.getBranchCode() != null && !request.getBranchCode().isBlank()) {
-            var branchOpt = branchRepository.findByTenantIdAndBranchCode(tenantId, request.getBranchCode());
-            if (branchOpt.isPresent()) {
-                branchId = branchOpt.get().getId();
-            }
-        }
-        if (branchId == null) {
-            branchId = SecurityUtil.getCurrentUserBranchId();
-        }
+        Long branchId = resolveBranchId(tenantId, request);
 
         BusinessCalendar calendar;
         if (branchId != null) {
@@ -355,7 +352,7 @@ public class TransactionEngine {
         // BigDecimal("1000.000").scale()=3 but is logically 0 decimal places.
         // BigDecimal("100.10").stripTrailingZeros().scale()=1, which is valid.
         // Without this, amounts constructed from JSON/String with trailing zeros are rejected.
-        java.math.BigDecimal normalizedAmount = request.getAmount().stripTrailingZeros();
+        BigDecimal normalizedAmount = request.getAmount().stripTrailingZeros();
         if (normalizedAmount.scale() > 2) {
             throw new BusinessException(
                     "INVALID_AMOUNT_PRECISION",
@@ -664,16 +661,7 @@ public class TransactionEngine {
                 .narration(request.getNarration());
 
         // --- Step 2: Business Date Validation ---
-        Long branchId = null;
-        if (request.getBranchCode() != null && !request.getBranchCode().isBlank()) {
-            var branchOpt = branchRepository.findByTenantIdAndBranchCode(tenantId, request.getBranchCode());
-            if (branchOpt.isPresent()) {
-                branchId = branchOpt.get().getId();
-            }
-        }
-        if (branchId == null) {
-            branchId = SecurityUtil.getCurrentUserBranchId();
-        }
+        Long branchId = resolveBranchId(tenantId, request);
 
         BusinessCalendar calendar = null;
         try {
@@ -727,7 +715,7 @@ public class TransactionEngine {
         boolean amountValid = request.getAmount() != null && request.getAmount().signum() > 0;
         boolean precisionValid = true;
         if (amountValid) {
-            java.math.BigDecimal norm = request.getAmount().stripTrailingZeros();
+            BigDecimal norm = request.getAmount().stripTrailingZeros();
             precisionValid = norm.scale() <= 2 && (norm.precision() - norm.scale()) <= 16;
         }
         boolean currencyValid = request.getCurrencyCode() == null || CBS_CURRENCY_CODE.equals(request.getCurrencyCode());
@@ -782,20 +770,20 @@ public class TransactionEngine {
         }
 
         // --- GL Validation (read-only — no posting) ---
-        java.util.List<TransactionPreview.JournalLinePreview> glLines = new java.util.ArrayList<>();
+        List<TransactionPreview.JournalLinePreview> glLines = new ArrayList<>();
         if (request.getJournalLines() != null && request.getJournalLines().size() >= 2) {
-            java.math.BigDecimal totalDr = java.math.BigDecimal.ZERO;
-            java.math.BigDecimal totalCr = java.math.BigDecimal.ZERO;
+            BigDecimal totalDr = BigDecimal.ZERO;
+            BigDecimal totalCr = BigDecimal.ZERO;
             boolean allGlValid = true;
             for (var line : request.getJournalLines()) {
                 var glOpt = accountingService.getGlMasterRepository()
                         .findByTenantIdAndGlCode(tenantId, line.glCode());
                 boolean valid = glOpt.isPresent() && glOpt.get().isActive() && !glOpt.get().isHeaderAccount();
-                String glName = glOpt.map(gl -> gl.getGlName()).orElse("UNKNOWN");
+                String glName = glOpt.map(com.finvanta.domain.entity.GLMaster::getGlName).orElse("UNKNOWN");
                 glLines.add(new TransactionPreview.JournalLinePreview(
                         line.glCode(), glName, line.debitCredit().name(), line.amount(), line.narration()));
                 if (!valid) allGlValid = false;
-                if (line.debitCredit() == com.finvanta.domain.enums.DebitCredit.DEBIT) {
+                if (line.debitCredit() == DebitCredit.DEBIT) {
                     totalDr = totalDr.add(line.amount());
                 } else {
                     totalCr = totalCr.add(line.amount());
@@ -812,6 +800,25 @@ public class TransactionEngine {
         }
 
         return preview.build();
+    }
+
+    /**
+     * Resolves the branch ID for a transaction request.
+     * Checks request.branchCode first, falls back to current user's branch.
+     * Extracted to eliminate duplication between executeInternal() and validate().
+     */
+    private Long resolveBranchId(String tenantId, TransactionRequest request) {
+        Long branchId = null;
+        if (request.getBranchCode() != null && !request.getBranchCode().isBlank()) {
+            var branchOpt = branchRepository.findByTenantIdAndBranchCode(tenantId, request.getBranchCode());
+            if (branchOpt.isPresent()) {
+                branchId = branchOpt.get().getId();
+            }
+        }
+        if (branchId == null) {
+            branchId = SecurityUtil.getCurrentUserBranchId();
+        }
+        return branchId;
     }
 
     /**
