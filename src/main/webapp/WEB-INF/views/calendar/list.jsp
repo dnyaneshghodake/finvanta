@@ -50,17 +50,27 @@
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <div class="col-auto">
                             <label class="form-label">Year</label>
-                            <input type="number" name="year" class="form-control fv-input-xs" value="2026" min="2024" max="2030" required />
+                            <% int currentYear = java.time.LocalDate.now().getYear(); %>
+                            <input type="number" name="year" class="form-control fv-input-xs" value="<%= currentYear %>" min="<%= currentYear - 1 %>" max="<%= currentYear + 4 %>" required />
                         </div>
                         <div class="col-auto">
                             <label class="form-label">Month</label>
+                            <%-- CBS Tier-1: Default to current month, not hardcoded April.
+                                 Uses JSP expression to get current month number. --%>
+                            <% int currentMonth = java.time.LocalDate.now().getMonthValue(); %>
                             <select name="month" class="form-select fv-input-sm" required>
-                                <option value="1">January</option><option value="2">February</option>
-                                <option value="3">March</option><option value="4" selected>April</option>
-                                <option value="5">May</option><option value="6">June</option>
-                                <option value="7">July</option><option value="8">August</option>
-                                <option value="9">September</option><option value="10">October</option>
-                                <option value="11">November</option><option value="12">December</option>
+                                <option value="1" <%= currentMonth == 1 ? "selected" : "" %>>January</option>
+                                <option value="2" <%= currentMonth == 2 ? "selected" : "" %>>February</option>
+                                <option value="3" <%= currentMonth == 3 ? "selected" : "" %>>March</option>
+                                <option value="4" <%= currentMonth == 4 ? "selected" : "" %>>April</option>
+                                <option value="5" <%= currentMonth == 5 ? "selected" : "" %>>May</option>
+                                <option value="6" <%= currentMonth == 6 ? "selected" : "" %>>June</option>
+                                <option value="7" <%= currentMonth == 7 ? "selected" : "" %>>July</option>
+                                <option value="8" <%= currentMonth == 8 ? "selected" : "" %>>August</option>
+                                <option value="9" <%= currentMonth == 9 ? "selected" : "" %>>September</option>
+                                <option value="10" <%= currentMonth == 10 ? "selected" : "" %>>October</option>
+                                <option value="11" <%= currentMonth == 11 ? "selected" : "" %>>November</option>
+                                <option value="12" <%= currentMonth == 12 ? "selected" : "" %>>December</option>
                             </select>
                         </div>
                         <div class="col-auto">

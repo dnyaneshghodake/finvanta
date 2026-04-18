@@ -23,10 +23,31 @@
                     <div class="col-md-2"><label class="form-label small">Charge Code *</label><input type="text" name="chargeCode" class="form-control form-control-sm" required data-fv-type="code" placeholder="e.g., CHEQUE_RETURN"/></div>
                     <div class="col-md-3"><label class="form-label small">Charge Name *</label><input type="text" name="chargeName" class="form-control form-control-sm" required data-fv-type="name" maxlength="200"/></div>
                     <div class="col-md-2"><label class="form-label small">Event Trigger *</label>
+                        <%-- CBS Tier-1: Event types must match ChargeEventType enum exactly.
+                             Grouped by module per Finacle CHG_MASTER / RBI Schedule of Charges. --%>
                         <select name="eventTrigger" class="form-select form-select-sm" required>
-                            <option value="DISBURSEMENT">Disbursement</option><option value="OVERDUE_EMI">Overdue EMI</option>
-                            <option value="CHEQUE_RETURN">Cheque Return</option><option value="ACCOUNT_CLOSURE">Account Closure</option>
-                            <option value="STATEMENT_REQUEST">Statement Request</option><option value="MANUAL">Manual</option>
+                            <optgroup label="Clearing / Remittance">
+                                <option value="NEFT_OUTWARD">NEFT Outward</option>
+                                <option value="RTGS_OUTWARD">RTGS Outward</option>
+                                <option value="IMPS_OUTWARD">IMPS Outward</option>
+                                <option value="UPI_OUTWARD">UPI Outward</option>
+                            </optgroup>
+                            <optgroup label="CASA">
+                                <option value="CASH_WITHDRAWAL_OTHER_BRANCH">Cash Withdrawal (Other Branch)</option>
+                                <option value="CHEQUE_BOOK_ISSUANCE">Cheque Book Issuance</option>
+                                <option value="DD_ISSUANCE">DD Issuance</option>
+                                <option value="STATEMENT_REQUEST">Statement Request</option>
+                                <option value="MIN_BALANCE_PENALTY">Min Balance Penalty</option>
+                                <option value="SMS_ALERT_FEE">SMS Alert Fee</option>
+                                <option value="DEBIT_CARD_ANNUAL_FEE">Debit Card Annual Fee</option>
+                            </optgroup>
+                            <optgroup label="Loan">
+                                <option value="LOAN_PROCESSING_FEE">Loan Processing Fee</option>
+                                <option value="LOAN_PREPAYMENT_PENALTY">Loan Prepayment Penalty</option>
+                                <option value="LOAN_LATE_PAYMENT_FEE">Loan Late Payment Fee</option>
+                                <option value="LOAN_DOCUMENTATION_FEE">Loan Documentation Fee</option>
+                                <option value="CREDIT_REPORT_FEE">Credit Report (CIBIL) Fee</option>
+                            </optgroup>
                         </select>
                     </div>
                     <div class="col-md-2"><label class="form-label small">Calculation *</label>
