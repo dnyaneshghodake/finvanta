@@ -429,25 +429,15 @@ public class AccountingService {
                         .orElse(null);
 
                 if (branchBalance == null) {
-                    // REQUIRES_NEW: a constraint collision here rolls back ONLY the nested
-                    // bootstrap transaction, not our posting transaction. The exception MUST
-                    // be caught here (the caller side of the REQUIRES_NEW boundary) — catching
-                    // it inside the bootstrap would cause UnexpectedRollbackException.
-                    // See GLBranchBalanceBootstrap javadoc for the full explanation.
-                    try {
-                        glBranchBalanceBootstrap.insertIfAbsent(tenantId, branch, line.glCode(), gl.getGlName());
-                    } catch (org.springframework.dao.DataIntegrityViolationException concurrent) {
-                        // Another thread won the insert race — the inner REQUIRES_NEW TX
-                        // rolled back cleanly; we re-lock the now-present row below.
-                        log.debug("GLBranchBalance race resolved: branch={}, gl={}", branch.getBranchCode(), line.glCode());
-                    }
-                    // Re-lock the row (whether we just inserted it or the winner did)
-                    branchBalance = glBranchBalanceRepository
-                            .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
-                            .orElseThrow(() -> new BusinessException(
-                                    "GL_BRANCH_BALANCE_MISSING",
-                                    "GLBranchBalance row disappeared after bootstrap: "
-                                            + branch.getBranchCode() + "/" + line.glCode()));
+                    // Auto-create branch balance row on first posting to this branch+GL.
+                    // Insert inline (same TX) so the branch FK is visible.
+                    // saveAndFlush ensures the row is in the DB before proceeding.
+                    GLBranchBalance newBb = new GLBranchBalance();
+                    newBb.setTenantId(tenantId);
+                    newBb.setBranch(branch);
+                    newBb.setGlCode(line.glCode());
+                    newBb.setGlName(gl.getGlName());
+                    branchBalance = glBranchBalanceRepository.saveAndFlush(newBb);
                 }
 
                 if (line.debitCredit() == DebitCredit.DEBIT) {
