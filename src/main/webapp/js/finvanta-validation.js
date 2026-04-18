@@ -102,6 +102,12 @@ FV.Validation = (function() {
             msg: 'Valid email address',
             a: { maxlength: 200 }
         },
+        'aadhaar': {
+            re: /^[2-9][0-9]{11}$/,
+            strip: /[^0-9]/g,
+            msg: 'Aadhaar: 12 digits starting with 2-9',
+            a: { minlength: 12, maxlength: 12 }
+        },
         'pincode': {
             re: /^[1-9][0-9]{5}$/,
             strip: /[^0-9]/g,

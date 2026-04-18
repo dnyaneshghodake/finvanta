@@ -32,19 +32,33 @@ document.addEventListener('DOMContentLoaded', function () {
     window.fvHideLoading = hideLoading;
 
     // ================================================================
+    // WCAG 2.1 AA — role="alert" on all .fv-alert elements
+    // Per RBI Accessibility / WCAG SC 4.1.3: status messages must be
+    // programmatically exposed to assistive technologies. login.jsp has
+    // role="alert" but other JSPs omit it. Setting it centrally here
+    // ensures all server-rendered alerts are announced by screen readers.
+    // ================================================================
+    document.querySelectorAll('.fv-alert').forEach(function (el) {
+        if (!el.hasAttribute('role')) el.setAttribute('role', 'alert');
+    });
+
+    // ================================================================
     // CONFIRMATION MODAL — Per Finacle styled modal dialogs
     // Replaces browser confirm() for [data-confirm] buttons.
+    // WCAG: aria-labelledby + aria-describedby for screen readers.
     // ================================================================
     var confirmModal = document.createElement('div');
     confirmModal.className = 'modal fade fv-confirm-modal';
     confirmModal.id = 'fvConfirmModal';
     confirmModal.setAttribute('tabindex', '-1');
+    confirmModal.setAttribute('aria-labelledby', 'fvConfirmTitle');
+    confirmModal.setAttribute('aria-describedby', 'fvConfirmMessage');
     confirmModal.innerHTML =
         '<div class="modal-dialog modal-dialog-centered modal-sm">'
         + '<div class="modal-content">'
         + '<div class="modal-header">'
-        + '<h6 class="modal-title"><i class="bi bi-exclamation-triangle-fill me-1"></i> Confirm Action</h6>'
-        + '<button type="button" class="btn-close" data-bs-dismiss="modal"></button>'
+        + '<h6 class="modal-title" id="fvConfirmTitle"><i class="bi bi-exclamation-triangle-fill me-1"></i> Confirm Action</h6>'
+        + '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>'
         + '</div>'
         + '<div class="modal-body">'
         + '<div class="fv-confirm-icon"><i class="bi bi-question-circle"></i></div>'
@@ -98,26 +112,27 @@ document.addEventListener('DOMContentLoaded', function () {
         form.submit();
     }
 
-    /* Bind [data-confirm] buttons to styled modal instead of browser confirm() */
-    document.querySelectorAll('[data-confirm]').forEach(function (btn) {
-        btn.addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            initConfirmModal();
-            var message = this.getAttribute('data-confirm');
-            document.getElementById('fvConfirmMessage').textContent = message;
-            var targetBtn = this;
-            pendingConfirmAction = function () {
-                /* If button is inside a form, submit the form */
-                var form = targetBtn.closest('form');
-                if (form) {
-                    safeFormSubmit(form);
-                } else if (targetBtn.tagName === 'A') {
-                    window.location.href = targetBtn.href;
-                }
-            };
-            if (bsConfirmModal) bsConfirmModal.show();
-        });
+    /* Bind [data-confirm] buttons to styled modal instead of browser confirm().
+       CBS Tier-1: uses event delegation on document.body so dynamically-added
+       [data-confirm] buttons (e.g., via AJAX pagination) are also handled. */
+    document.body.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-confirm]');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        initConfirmModal();
+        var message = btn.getAttribute('data-confirm');
+        document.getElementById('fvConfirmMessage').textContent = message;
+        pendingConfirmAction = function () {
+            /* If button is inside a form, submit the form */
+            var form = btn.closest('form');
+            if (form) {
+                safeFormSubmit(form);
+            } else if (btn.tagName === 'A') {
+                window.location.href = btn.href;
+            }
+        };
+        if (bsConfirmModal) bsConfirmModal.show();
     });
 
     // ================================================================
@@ -287,9 +302,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // ================================================================
     // KEYBOARD SHORTCUTS — Per Finacle F2=Save, F3=Cancel, Ctrl+P=Print
-    // CBS Tier-1: Added Alt+S (Save), Alt+N (New), Alt+F (Search) for
-    // broader browser compatibility. F2/F3 conflict with browser defaults
-    // in some environments (F2=edit cell, F3=find in Firefox).
+    // CBS Tier-1: Full enterprise shortcut set per audit blueprint:
+    //   F2 / Alt+S  = Save/Submit
+    //   F3 / Alt+C  = Cancel/Back
+    //   Alt+N       = New/Add
+    //   Alt+F       = Focus search
+    //   Alt+A       = Approve (maker-checker)
+    //   Alt+R       = Reject (maker-checker)
+    //   Ctrl+Enter  = Submit focused form
+    //   Ctrl+P      = Print
     // ================================================================
     document.addEventListener('keydown', function (e) {
         /* F2 or Alt+S = Submit the first visible .fv-form */
@@ -327,6 +348,34 @@ document.addEventListener('DOMContentLoaded', function () {
                 || document.querySelector('.dataTables_filter input')
                 || document.querySelector('input[type="search"]');
             if (searchInput) searchInput.focus();
+        }
+        /* Alt+A = Approve — clicks the first visible Approve button on maker-checker screens.
+           Per Finacle/Temenos: approval is a high-frequency action for CHECKER role.
+           The button's data-confirm will still trigger the styled modal before execution. */
+        if (e.altKey && (e.key === 'a' || e.key === 'A')) {
+            e.preventDefault();
+            var approveBtn = document.querySelector('[data-fv-approve]')
+                || document.querySelector('button.btn-fv-success[data-confirm]');
+            if (approveBtn && !approveBtn.disabled) approveBtn.click();
+        }
+        /* Alt+R = Reject — clicks the first visible Reject button.
+           The button's data-confirm or fvPromptReason will still fire. */
+        if (e.altKey && (e.key === 'r' || e.key === 'R')) {
+            e.preventDefault();
+            var rejectBtn = document.querySelector('[data-fv-reject]')
+                || document.querySelector('button.btn-fv-danger[data-confirm]');
+            if (rejectBtn && !rejectBtn.disabled) rejectBtn.click();
+        }
+        /* Ctrl+Enter = Submit the form that contains the currently focused element.
+           Per CBS enterprise standard: Ctrl+Enter submits from any field in the form
+           without requiring Tab to the submit button. */
+        if (e.ctrlKey && e.key === 'Enter') {
+            e.preventDefault();
+            var focusedForm = document.activeElement ? document.activeElement.closest('form') : null;
+            if (focusedForm) {
+                var formSubmitBtn = focusedForm.querySelector('[type="submit"]');
+                if (formSubmitBtn && !formSubmitBtn.disabled) formSubmitBtn.click();
+            }
         }
         /* Ctrl+P = Print (browser default, but we ensure overlay is hidden) */
         if (e.ctrlKey && e.key === 'p') {
