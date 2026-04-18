@@ -144,8 +144,8 @@ public class CbsLayoutAdvice {
             if (!TenantContext.isSet()) return 0;
             if (!SecurityUtil.hasRole("CHECKER") && !SecurityUtil.hasRole("ADMIN")) return 0;
             String tenantId = TenantContext.getCurrentTenant();
-            return (int) workflowRepository.countByTenantIdAndStatus(
-                    tenantId, ApprovalStatus.PENDING_APPROVAL);
+            return Math.toIntExact(workflowRepository.countByTenantIdAndStatus(
+                    tenantId, ApprovalStatus.PENDING_APPROVAL));
         } catch (Exception e) {
             // Pre-auth or no tenant — return 0
             return 0;
