@@ -508,7 +508,10 @@ document.addEventListener('DOMContentLoaded', function () {
             var url = basePath + '/deposit/preview/' + encodeURIComponent(accNo)
                 + '?amount=' + amount + '&txnType=' + encodeURIComponent(type);
             fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
-                .then(function (resp) { return resp.json(); })
+                .then(function (resp) {
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    return resp.json();
+                })
                 .then(function (preview) { renderPreview(preview); })
                 .catch(function (err) {
                     panel.innerHTML = '<div class="alert alert-warning small"><i class="bi bi-exclamation-triangle"></i> Preview unavailable: ' + err.message + '</div>';

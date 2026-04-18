@@ -402,7 +402,14 @@ public class AccountingService {
             } else {
                 gl.setCreditBalance(gl.getCreditBalance().add(line.amount()));
             }
-            glMasterRepository.save(gl);
+            // CBS CRITICAL: Use saveAndFlush (not save) to force the SQL UPDATE to the DB
+            // BEFORE entering the branch-balance section below. If the branch-balance
+            // first-posting race condition triggers entityManager.clear(), any unflushed
+            // GLMaster updates from THIS or PREVIOUS loop iterations would be silently
+            // discarded (clear() evicts the write-behind cache without rolling back
+            // already-flushed SQL). saveAndFlush ensures the GL update is durable in the
+            // DB transaction log before we risk a clear().
+            glMasterRepository.saveAndFlush(gl);
 
             // Step 2: Update branch-level GLBranchBalance (per-branch running balance)
             // Per Finacle GL_BRANCH: concurrent postings to same branch+GL are serialized

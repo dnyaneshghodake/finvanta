@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
 import org.slf4j.MDC;
@@ -68,6 +69,9 @@ public class TenantFilter implements Filter {
      */
     private static final String MDC_REQUEST_ID = "requestId";
     private static final String REQUEST_ATTR_REQUEST_ID = "fvRequestId";
+
+    /** Monotonic counter for unique request IDs — survives servlet request object reuse. */
+    private static final AtomicLong REQUEST_COUNTER = new AtomicLong(0);
 
     /**
      * Populate username and branchCode MDC keys from the HTTP session's SecurityContext.
@@ -173,11 +177,13 @@ public class TenantFilter implements Filter {
             MDC.put(MDC_TENANT, tenantId);
 
             // CBS Tier-1: Generate unique request ID for correlation.
-            // Format: yyyyMMddHHmmss-XXXX (compact, sortable, human-readable).
+            // Format: yyyyMMddHHmmss-NNNNN (compact, sortable, human-readable, guaranteed unique).
+            // Uses AtomicLong counter instead of System.identityHashCode because servlet
+            // containers reuse request objects from a pool — identityHashCode is NOT unique.
             // Exposed as request attribute for error pages and as MDC key for log lines.
             String requestId = java.time.LocalDateTime.now()
                     .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-                    + "-" + Integer.toHexString(System.identityHashCode(request)).toUpperCase();
+                    + "-" + Long.toHexString(REQUEST_COUNTER.incrementAndGet()).toUpperCase();
             MDC.put(MDC_REQUEST_ID, requestId);
             httpRequest.setAttribute(REQUEST_ATTR_REQUEST_ID, requestId);
 

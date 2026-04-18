@@ -372,11 +372,17 @@ public class DepositController {
 
             return enriched.build();
         } catch (Exception e) {
-            // Return a single-check preview with the error
+            log.warn("Transaction preview failed: account={}, type={}, error={}", accountNumber, txnType, e.getMessage());
+            // Return a preview with a single FAILED check so the UI shows the error
+            // instead of silently hiding the panel (empty checks = hidden).
             return TransactionPreview.builder()
                     .amount(amount)
                     .transactionType(txnType)
                     .accountNumber(accountNumber)
+                    .addCheck("PREVIEW_ERROR", "System",
+                            "Transaction preview could not be completed",
+                            false,
+                            e.getMessage() != null ? e.getMessage() : "Unexpected error — contact support")
                     .build();
         }
     }
