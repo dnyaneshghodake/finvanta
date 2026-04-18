@@ -636,7 +636,6 @@ document.addEventListener('DOMContentLoaded', function () {
     // ================================================================
     var sessionTimeout = parseInt(document.body.getAttribute('data-fv-session-timeout') || '1800', 10);
     var warningAt = (sessionTimeout - 120) * 1000; /* 2 minutes before expiry */
-    var expiryAt = sessionTimeout * 1000;
 
     var sessionBanner = document.createElement('div');
     sessionBanner.className = 'fv-session-warning';

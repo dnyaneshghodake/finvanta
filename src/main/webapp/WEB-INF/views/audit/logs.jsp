@@ -18,6 +18,16 @@
         </div>
     </div>
 
+    <%-- CBS Tier-1: Entity filter indicator when viewing per-entity audit trail
+         via /audit/entity?entityType=X&entityId=N. Shows which entity is filtered
+         and provides a "Clear Filter" link back to the full audit log. --%>
+    <c:if test="${not empty entityFilter}">
+        <div class="fv-alert alert alert-info">
+            <i class="bi bi-funnel"></i> Showing audit trail for: <strong><c:out value="${entityFilter}" /></strong>
+            <a href="${pageContext.request.contextPath}/audit/logs" class="btn btn-sm btn-outline-secondary ms-2">Clear Filter</a>
+        </div>
+    </c:if>
+
     <div class="fv-card">
         <div class="card-header">Audit Trail</div>
         <div class="card-body">
