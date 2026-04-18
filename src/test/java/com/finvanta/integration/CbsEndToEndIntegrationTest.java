@@ -148,9 +148,9 @@ class CbsEndToEndIntegrationTest {
         TenantContext.setCurrentTenant(TENANT);
         setSecurityContext(0L, "HQ");
         // CBS: Clean ALL orphaned audit records for this test tenant.
-        // AuditService.logEvent() uses REQUIRES_NEW propagation which commits
-        // audit records independently of the test's @Transactional rollback.
-        // Stale records break the hash chain for subsequent test runs.
+        // AuditService.logEvent() uses REQUIRES_NEW propagation for standalone audit
+        // calls (e.g., PENDING_APPROVAL path) which commits independently of the
+        // test's @Transactional rollback. Stale records break the hash chain.
         // Must use findAllByTenantIdOrderByIdAsc (unbounded) not findRecentAuditLogs
         // (capped at 500) to ensure complete cleanup.
         auditLogRepository.deleteAll(
@@ -168,11 +168,10 @@ class CbsEndToEndIntegrationTest {
 
     @AfterEach
     void tearDown() {
-        // CBS: Clean up audit records committed via REQUIRES_NEW that survive
-        // the test's @Transactional rollback. Must run AFTER each test to prevent
-        // stale records from breaking the hash chain in subsequent tests.
-        // With executeInternal() using REQUIRES_NEW, ALL audit records created
-        // inside the engine pipeline (logEventInline) are committed independently.
+        // CBS: Clean up audit records committed via REQUIRES_NEW (standalone audit
+        // calls in the PENDING_APPROVAL path) that survive the test's @Transactional
+        // rollback. Must run AFTER each test to prevent stale records from breaking
+        // the hash chain in subsequent tests.
         try {
             TenantContext.setCurrentTenant(TENANT);
             auditLogRepository.deleteAll(

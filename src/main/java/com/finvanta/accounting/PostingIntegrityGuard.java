@@ -99,7 +99,8 @@ public class PostingIntegrityGuard {
     }
 
     /**
-     * Activates RESTRICTED MODE — blocks all financial postings.
+     * Activates RESTRICTED MODE for the current tenant — blocks financial postings
+     * for this tenant only. Other tenants are unaffected.
      *
      * <p>Called by:
      * <ul>
@@ -128,7 +129,7 @@ public class PostingIntegrityGuard {
     }
 
     /**
-     * Clears RESTRICTED MODE — resumes financial postings.
+     * Clears RESTRICTED MODE for the current tenant — resumes financial postings.
      * Should only be called after the integrity issue has been investigated and resolved.
      *
      * @param clearedBy Who cleared the restriction (must be ADMIN role)

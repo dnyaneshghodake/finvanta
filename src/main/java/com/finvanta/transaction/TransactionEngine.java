@@ -112,11 +112,10 @@ public class TransactionEngine {
     private final TransactionOutboxRepository outboxRepository;
 
     /**
-     * CBS Tier-1: Self-proxy for @Transactional(REQUIRES_NEW) method invocation.
+     * CBS Tier-1: Self-proxy for @Transactional method invocation.
      * Spring AOP proxies do NOT intercept self-calls (this.executeInternal()).
-     * Without this, the @Transactional(REQUIRES_NEW) on executeInternal() is
-     * ignored — it would join the caller's transaction instead of creating a new
-     * one, making the retry mechanism non-functional on lock failures.
+     * Without this, the @Transactional on executeInternal() is ignored — the
+     * isolation level and transaction demarcation would not be applied.
      * Same pattern as BatchService.self and StandingInstructionServiceImpl.self.
      */
     @Lazy
@@ -180,10 +179,12 @@ public class TransactionEngine {
      * Business exceptions ({@code BusinessException}) fail immediately — they
      * indicate validation failures, not transient contention.
      *
-     * <p>Each retry creates a FRESH transaction via {@code REQUIRES_NEW} propagation
-     * on {@code executeInternal()}. The failed transaction's Hibernate Session is
-     * poisoned (rollback-only), but {@code REQUIRES_NEW} suspends the caller's TX
-     * and creates an independent one — so each retry gets a clean Session and TX.
+     * <p><b>Retry scope:</b> The retry mechanism is effective for system-generated
+     * transactions (EOD batch, Standing Instructions) that call {@code execute()}
+     * directly without an enclosing caller transaction. For user-initiated
+     * transactions (deposit, withdrawal), the caller's {@code @Transactional}
+     * method is the atomic boundary — a lock failure poisons the caller's TX,
+     * and retry must happen at the caller level (controller/service).
      *
      * @param request The transaction request built by the calling module
      * @return TransactionResult with journal ref, voucher number, and posting status
@@ -230,23 +231,30 @@ public class TransactionEngine {
     }
 
     /**
-     * Internal transaction execution — runs inside its own {@code REQUIRES_NEW}
-     * transaction so each retry attempt gets a fresh, independent transaction
-     * and Hibernate Session.
+     * Internal transaction execution — the core 11-step CBS validation + GL posting pipeline.
      *
-     * <p><b>Why REQUIRES_NEW (not REQUIRED):</b> All callers of
-     * {@code TransactionEngine.execute()} are themselves {@code @Transactional}
-     * (e.g., {@code DepositAccountServiceImpl.deposit()}). With default
-     * {@code REQUIRED} propagation, {@code executeInternal()} would JOIN the
-     * caller's transaction. If a {@code PessimisticLockingFailureException}
-     * occurs inside the GL posting, the caller's transaction is marked
-     * rollback-only by Spring's {@code TransactionInterceptor}. The retry loop
-     * in {@code execute()} catches the exception and retries, but with
-     * {@code REQUIRED} the retry joins the SAME poisoned transaction — the
-     * Hibernate Session is in an inconsistent state, and the transaction will
-     * roll back at commit regardless. {@code REQUIRES_NEW} suspends the caller's
-     * transaction and creates an independent one for each attempt, making the
-     * retry mechanism actually functional.
+     * <p><b>CBS Tier-1 CRITICAL — Financial Atomicity (REQUIRED propagation):</b>
+     * This method uses {@code Propagation.REQUIRED} (joins the caller's transaction)
+     * to guarantee GL↔Subledger atomicity. The GL posting and the caller's subledger
+     * update (e.g., account balance in DepositAccountServiceImpl.deposit()) MUST
+     * commit or roll back as a single atomic unit. Without this:
+     * <ul>
+     *   <li>REQUIRES_NEW would commit GL independently — if the caller's subledger
+     *       update fails afterward, GL is committed but account balance is not →
+     *       permanent financial inconsistency (GL shows deposit, account doesn't)</li>
+     *   <li>This violates Tier-1 CBS Foundational Principle #1: "Financial atomicity
+     *       across modules" — GL and subledger MUST be in the same TX boundary</li>
+     * </ul>
+     *
+     * <p><b>Retry mechanism:</b> The retry loop in {@code execute()} catches
+     * {@code PessimisticLockingFailureException} and retries. With REQUIRED propagation,
+     * a lock failure inside this method poisons the caller's transaction (marked
+     * rollback-only). The retry in {@code execute()} will fail because it joins the
+     * same poisoned TX. This is the CORRECT behavior — the caller (e.g.,
+     * DepositAccountServiceImpl) must catch the exception at its own level and retry
+     * the entire operation (lock account + engine.execute + save balance). The retry
+     * loop in {@code execute()} serves as a defense-in-depth for system-generated
+     * transactions that have no caller-level retry.
      *
      * <p><b>Isolation level:</b> Uses {@code READ_COMMITTED} (SQL Server default)
      * combined with {@code PESSIMISTIC_WRITE} locks on GL rows. The pessimistic
@@ -256,15 +264,11 @@ public class TransactionEngine {
      * the posting isolation comes from row-level pessimistic locks, not from raising
      * the transaction isolation level globally (which would cause excessive blocking).
      *
-     * <p><b>Trade-off:</b> The caller's account PESSIMISTIC_WRITE lock (from
-     * {@code findAndLock}) is held during the REQUIRES_NEW suspension. This is safe:
-     * the account lock prevents concurrent mutations on the SAME account, while the
-     * engine's GL locks target DIFFERENT rows (GLMaster, GLBranchBalance). Lock
-     * ordering (GL sorted by code) prevents cross-GL deadlocks. If this TX rolls
-     * back, the caller catches the exception and can decide whether to retry or
-     * propagate — the caller's own TX remains uncommitted but valid.
+     * <p><b>Per Tier-1 CBS Blueprint §4 (Posting Engine):</b> "All inside ONE DB
+     * transaction" — account balance update, GL running balance, ledger entry,
+     * subledger, and exposure table must be in a single atomic commit.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public TransactionResult executeInternal(TransactionRequest request) {
         // ================================================================
         // STEP 0: Financial Safety Kill Switch (BEFORE any DB touch)
@@ -727,13 +731,13 @@ public class TransactionEngine {
         LocalDateTime postingDate = LocalDateTime.now();
 
         // CBS CRITICAL: Use logEventInline (Propagation.REQUIRED) — NOT logEvent (REQUIRES_NEW).
-        // executeInternal() is @Transactional(REQUIRES_NEW) and holds PESSIMISTIC_WRITE locks
-        // acquired during Step 8 (GL balance update, ledger sentinel). logEvent(REQUIRES_NEW)
-        // would suspend this TX, open a new connection, and deadlock on SQL Server when the
-        // audit INSERT contends with the held GL locks. logEventInline joins THIS transaction.
-        // If this TX rolls back, the audit record is lost — acceptable because the posting
-        // never committed (nothing to audit). Failed attempts are caught at the controller
-        // level which calls logEvent(REQUIRES_NEW) outside the failed TX.
+        // At this point the transaction holds PESSIMISTIC_WRITE locks acquired during Step 8
+        // (GL balance update, ledger sentinel). logEvent(REQUIRES_NEW) would suspend this TX
+        // without releasing those locks, then open a new connection whose INSERT into
+        // audit_logs contends with the held locks — a guaranteed deadlock on SQL Server.
+        // logEventInline joins THIS transaction so the audit INSERT sees the same lock scope.
+        // If this TX rolls back, the audit record is also lost — acceptable because a
+        // rolled-back posting never happened (nothing to audit).
         auditService.logEventInline(
                 "Transaction",
                 journalEntry.getId(),
