@@ -110,9 +110,12 @@ public class AuditController {
         }
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("audit/logs");
+        // CBS: Paginate entity audit trail to prevent OOM on high-activity entities.
+        // Same MAX_AUDIT_RESULTS cap as search endpoint for consistency.
         mav.addObject("auditLogs",
-                auditLogRepository.findByTenantIdAndEntityTypeAndEntityIdOrderByEventTimestampDesc(
-                        tenantId, entityType, entityId));
+                auditLogRepository.findByTenantIdAndEntityTypeAndEntityId(
+                        tenantId, entityType, entityId,
+                        PageRequest.of(0, MAX_AUDIT_RESULTS)));
         mav.addObject("chainIntegrity",
                 auditService.verifyRecentChainIntegrity(tenantId));
         mav.addObject("entityFilter", entityType + " #" + entityId);

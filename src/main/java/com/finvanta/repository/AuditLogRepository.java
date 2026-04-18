@@ -19,6 +19,16 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     List<AuditLog> findByTenantIdAndEntityTypeAndEntityIdOrderByEventTimestampDesc(
             String tenantId, String entityType, Long entityId);
 
+    /** Paginated per-entity audit trail — prevents OOM on high-activity entities (OSIV disabled). */
+    @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId "
+            + "AND al.entityType = :entityType AND al.entityId = :entityId "
+            + "ORDER BY al.eventTimestamp DESC")
+    List<AuditLog> findByTenantIdAndEntityTypeAndEntityId(
+            @Param("tenantId") String tenantId,
+            @Param("entityType") String entityType,
+            @Param("entityId") Long entityId,
+            Pageable pageable);
+
     /**
      * CBS Tier-1 CRITICAL: orders by {@code id DESC}, NOT by {@code eventTimestamp DESC}.
      *

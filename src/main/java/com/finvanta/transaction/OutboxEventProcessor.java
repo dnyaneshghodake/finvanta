@@ -1,6 +1,8 @@
 package com.finvanta.transaction;
 
+import com.finvanta.domain.entity.Tenant;
 import com.finvanta.domain.entity.TransactionOutbox;
+import com.finvanta.repository.TenantRepository;
 import com.finvanta.repository.TransactionOutboxRepository;
 import com.finvanta.util.TenantContext;
 
@@ -52,9 +54,12 @@ public class OutboxEventProcessor {
     private static final int MAX_RETRIES = 3;
 
     private final TransactionOutboxRepository outboxRepository;
+    private final TenantRepository tenantRepository;
 
-    public OutboxEventProcessor(TransactionOutboxRepository outboxRepository) {
+    public OutboxEventProcessor(TransactionOutboxRepository outboxRepository,
+                                TenantRepository tenantRepository) {
         this.outboxRepository = outboxRepository;
+        this.tenantRepository = tenantRepository;
     }
 
     /**
@@ -66,14 +71,25 @@ public class OutboxEventProcessor {
      */
     @Scheduled(fixedDelay = 30000, initialDelay = 60000) // 30s interval, 60s startup delay
     public void processOutboxEvents() {
-        // CBS: Process for DEFAULT tenant. In production, iterate over all tenants.
+        // CBS Tier-1: Process ALL active tenants, not just DEFAULT.
+        // Per RBI PMLA: CTR-reportable events for every tenant must be dispatched
+        // within 15 days. A DEFAULT-only processor would leave non-default tenants'
+        // CTR events in PENDING state indefinitely — regulatory violation.
         try {
-            TenantContext.setCurrentTenant("DEFAULT");
-            processForTenant("DEFAULT");
+            List<Tenant> activeTenants = tenantRepository.findByActiveTrue();
+            for (Tenant tenant : activeTenants) {
+                try {
+                    TenantContext.setCurrentTenant(tenant.getTenantCode());
+                    processForTenant(tenant.getTenantCode());
+                } catch (Exception e) {
+                    log.debug("Outbox processor skipped for tenant {}: {}",
+                            tenant.getTenantCode(), e.getMessage());
+                } finally {
+                    TenantContext.clear();
+                }
+            }
         } catch (Exception e) {
             log.debug("Outbox processor cycle skipped: {}", e.getMessage());
-        } finally {
-            TenantContext.clear();
         }
     }
 

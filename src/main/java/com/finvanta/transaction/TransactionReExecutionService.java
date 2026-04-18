@@ -151,7 +151,11 @@ public class TransactionReExecutionService {
         workflowRepository.save(workflow);
 
         // Step 5: Audit the re-execution
-        auditService.logEvent(
+        // CBS CRITICAL: Use logEventInline (REQUIRED) — NOT logEvent (REQUIRES_NEW).
+        // transactionEngine.execute() at Step 3 joins THIS transaction (REQUIRED propagation)
+        // and acquires PESSIMISTIC_WRITE locks on GL rows. logEvent(REQUIRES_NEW) would
+        // suspend this TX without releasing those locks — deadlock on SQL Server.
+        auditService.logEventInline(
                 "Transaction",
                 result.getJournalEntryId() != null ? result.getJournalEntryId() : 0L,
                 "MAKER_CHECKER_POSTED",
