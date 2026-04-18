@@ -37,7 +37,9 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
             "SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF') AND la.daysPastDue >= :threshold")
     List<LoanAccount> findNpaCandidates(@Param("tenantId") String tenantId, @Param("threshold") int threshold);
 
-    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
+    /** JOIN FETCH customer+branch for JSP rendering (OSIV disabled). */
+    @Query("SELECT la FROM LoanAccount la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
     List<LoanAccount> findAllActiveAccounts(@Param("tenantId") String tenantId);
 
     /** CBS: DB-level COUNT for product active account check — avoids loading entire portfolio into memory */
@@ -77,7 +79,8 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
      * repayment processing, NPA follow-up, and RBI inspection queries.
      * All branches visible (ADMIN/AUDITOR). Branch-scoped variant below.
      */
-    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId "
+    @Query("SELECT la FROM LoanAccount la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId "
             + "AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF') AND ("
             + "la.accountNumber LIKE CONCAT('%', :query, '%') OR "
             + "la.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "
@@ -93,8 +96,9 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
         return searchAccounts(tenantId, query, org.springframework.data.domain.PageRequest.of(0, 500));
     }
 
-    /** Branch-scoped loan search for MAKER/CHECKER per Finacle BRANCH_CONTEXT */
-    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId "
+    /** Branch-scoped loan search for MAKER/CHECKER. JOIN FETCH for JSP (OSIV disabled). */
+    @Query("SELECT la FROM LoanAccount la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId "
             + "AND la.branch.id = :branchId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF') AND ("
             + "la.accountNumber LIKE CONCAT('%', :query, '%') OR "
             + "la.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "

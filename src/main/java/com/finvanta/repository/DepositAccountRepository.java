@@ -34,8 +34,11 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
     Optional<DepositAccount> findAndLockByTenantIdAndAccountNumber(
             @Param("tenantId") String tenantId, @Param("accountNumber") String accountNumber);
 
-    /** All ACTIVE deposit accounts for a tenant (for EOD interest accrual — ACTIVE only) */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId AND da.accountStatus = 'ACTIVE'")
+    /** All ACTIVE deposit accounts for a tenant (for EOD interest accrual — ACTIVE only).
+     *  JOIN FETCH customer+branch so JSP views can access a.customer.firstName, a.branch.branchCode
+     *  without LazyInitializationException (OSIV is disabled per Tier-1 CBS standards). */
+    @Query("SELECT da FROM DepositAccount da JOIN FETCH da.customer JOIN FETCH da.branch "
+            + "WHERE da.tenantId = :tenantId AND da.accountStatus = 'ACTIVE'")
     List<DepositAccount> findAllActiveAccounts(@Param("tenantId") String tenantId);
 
     /**
@@ -43,9 +46,10 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
      * Per Finacle CUSTACCT: the account list shows all accounts in any operational state
      * (PENDING_ACTIVATION, ACTIVE, DORMANT, FROZEN) — only CLOSED accounts are excluded.
      * This is distinct from findAllActiveAccounts which is used by EOD and returns ACTIVE only.
+     * JOIN FETCH customer+branch for JSP rendering (OSIV disabled).
      */
-    @Query(
-            "SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId AND da.accountStatus <> 'CLOSED' ORDER BY da.accountNumber")
+    @Query("SELECT da FROM DepositAccount da JOIN FETCH da.customer JOIN FETCH da.branch "
+            + "WHERE da.tenantId = :tenantId AND da.accountStatus <> 'CLOSED' ORDER BY da.accountNumber")
     List<DepositAccount> findAllNonClosedAccounts(@Param("tenantId") String tenantId);
 
     /**
@@ -83,7 +87,8 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
      * customer number use exact-prefix LIKE; names use case-insensitive LIKE.
      * PAN search is NOT included — PAN is encrypted, use Customer CIF_SEARCH instead.
      */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+    @Query("SELECT da FROM DepositAccount da JOIN FETCH da.customer JOIN FETCH da.branch "
+            + "WHERE da.tenantId = :tenantId "
             + "AND da.accountStatus <> 'CLOSED' AND ("
             + "da.accountNumber LIKE CONCAT('%', :query, '%') OR "
             + "da.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "
@@ -99,8 +104,10 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
         return searchAccounts(tenantId, query, org.springframework.data.domain.PageRequest.of(0, 500));
     }
 
-    /** Branch-scoped CASA search for MAKER/CHECKER per Finacle BRANCH_CONTEXT */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+    /** Branch-scoped CASA search for MAKER/CHECKER per Finacle BRANCH_CONTEXT.
+     *  JOIN FETCH for JSP rendering (OSIV disabled). */
+    @Query("SELECT da FROM DepositAccount da JOIN FETCH da.customer JOIN FETCH da.branch "
+            + "WHERE da.tenantId = :tenantId "
             + "AND da.branch.id = :branchId AND da.accountStatus <> 'CLOSED' AND ("
             + "da.accountNumber LIKE CONCAT('%', :query, '%') OR "
             + "da.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "
@@ -122,8 +129,9 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
     /** Accounts by branch (for branch isolation) */
     List<DepositAccount> findByTenantIdAndBranchId(String tenantId, Long branchId);
 
-    /** Active accounts by branch */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+    /** Active accounts by branch. JOIN FETCH for JSP rendering (OSIV disabled). */
+    @Query("SELECT da FROM DepositAccount da JOIN FETCH da.customer JOIN FETCH da.branch "
+            + "WHERE da.tenantId = :tenantId "
             + "AND da.branch.id = :branchId AND da.accountStatus NOT IN ('CLOSED')")
     List<DepositAccount> findActiveByBranch(@Param("tenantId") String tenantId, @Param("branchId") Long branchId);
 
@@ -158,20 +166,22 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
 
     // === CASA Pipeline Queries (per Finacle ACCTOPN workflow stages) ===
 
-    /** Stage 1: Accounts pending activation (maker submitted, checker approval required) */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+    /** Stage 1: Accounts pending activation. JOIN FETCH for JSP (OSIV disabled). */
+    @Query("SELECT da FROM DepositAccount da JOIN FETCH da.customer JOIN FETCH da.branch "
+            + "WHERE da.tenantId = :tenantId "
             + "AND da.accountStatus = 'PENDING_ACTIVATION' ORDER BY da.createdAt DESC")
     List<DepositAccount> findPendingActivation(@Param("tenantId") String tenantId);
 
-    /** Stage 2: Active accounts (operational) */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+    /** Stage 2: Active accounts (operational). JOIN FETCH for JSP (OSIV disabled). */
+    @Query("SELECT da FROM DepositAccount da JOIN FETCH da.customer JOIN FETCH da.branch "
+            + "WHERE da.tenantId = :tenantId "
             + "AND da.accountStatus = 'ACTIVE' ORDER BY da.accountNumber")
     List<DepositAccount> findActiveAccounts(@Param("tenantId") String tenantId);
 
-    /** Stage 3: Accounts requiring attention (dormant, frozen, inoperative) */
-    @Query(
-            "SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
-                    + "AND da.accountStatus IN ('DORMANT', 'FROZEN', 'INOPERATIVE') ORDER BY da.accountStatus, da.accountNumber")
+    /** Stage 3: Attention required accounts. JOIN FETCH for JSP (OSIV disabled). */
+    @Query("SELECT da FROM DepositAccount da JOIN FETCH da.customer JOIN FETCH da.branch "
+            + "WHERE da.tenantId = :tenantId "
+            + "AND da.accountStatus IN ('DORMANT', 'FROZEN', 'INOPERATIVE') ORDER BY da.accountStatus, da.accountNumber")
     List<DepositAccount> findAttentionRequired(@Param("tenantId") String tenantId);
 
     // === CBS UDGAM: Unclaimed Deposits Reporting per RBI Direction 2024 ===
@@ -183,7 +193,8 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
      * Returns accounts with non-zero balance (zero-balance INOPERATIVE accounts
      * are not reportable — no funds to claim).
      */
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId "
+    @Query("SELECT da FROM DepositAccount da JOIN FETCH da.customer JOIN FETCH da.branch "
+            + "WHERE da.tenantId = :tenantId "
             + "AND da.accountStatus = 'INOPERATIVE' AND da.ledgerBalance > 0 "
             + "ORDER BY da.lastTransactionDate ASC")
     List<DepositAccount> findUnclaimedDeposits(@Param("tenantId") String tenantId);
