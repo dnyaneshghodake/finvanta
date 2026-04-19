@@ -43,7 +43,7 @@ import org.springframework.web.bind.annotation.*;
  * </ul>
  */
 @RestController
-@RequestMapping("/v1/workflow")
+@RequestMapping("/api/v1/workflow")
 public class WorkflowApiController {
 
     private final ApprovalWorkflowService workflowService;
