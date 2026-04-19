@@ -1,5 +1,6 @@
 package com.finvanta.api;
 
+import com.finvanta.config.BranchAwareUserDetails;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.service.BusinessDateService;
@@ -16,6 +17,8 @@ import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -202,6 +205,51 @@ public class DepositAccountController {
         return ResponseEntity.ok(ApiResponse.success(items));
     }
 
+    /**
+     * CBS CASA Account List per Finacle CUSTACCT_LOOKUP / Temenos ENQUIRY.ACCOUNT.
+     *
+     * <p>Branch-isolated list of deposit accounts for the authenticated
+     * operator's home branch (per SOL-level data isolation). HO users
+     * may pass an explicit branchId query parameter to cross branches;
+     * the authorization check is enforced by `TenantFilter` + `SecurityConfig`.
+     *
+     * <p>Returned payload is status-filtered to non-CLOSED accounts so
+     * CHECKERs can see PENDING_ACTIVATION entries needing activation.
+     * CLOSED accounts remain accessible via the per-account lookup.
+     *
+     * <p>Pagination is applied in-memory (CASA books are typically
+     * under 50k per branch; upgrade to keyset pagination if a tenant
+     * surpasses that threshold).
+     */
+    @GetMapping
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<PageResponse<AccountResponse>>>
+            listAccounts(@RequestParam(required = false) Long branchId,
+                    @RequestParam(defaultValue = "0") int page,
+                    @RequestParam(defaultValue = "20") int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(size, 1), 200);
+
+        Long effectiveBranch = branchId;
+        if (effectiveBranch == null) {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof BranchAwareUserDetails principal) {
+                effectiveBranch = principal.getBranchId();
+            }
+        }
+
+        List<DepositAccount> all = effectiveBranch != null
+                ? depositService.getAccountsByBranch(effectiveBranch)
+                : depositService.getAllAccounts();
+
+        int total = all.size();
+        int from = Math.min(safePage * safeSize, total);
+        int to = Math.min(from + safeSize, total);
+        var items = all.subList(from, to).stream().map(AccountResponse::from).toList();
+        return ResponseEntity.ok(ApiResponse.success(
+                new PageResponse<>(items, safePage, safeSize, total)));
+    }
+
     // === Request DTOs ===
 
     public record OpenAccountRequest(
@@ -291,4 +339,11 @@ public class DepositAccountController {
             String fromDate, String toDate,
             BigDecimal ledgerBalance, BigDecimal availableBalance,
             int transactionCount, List<TxnResponse> transactions) {}
+
+    /**
+     * Generic page wrapper used by list endpoints; matches Spring Data
+     * Page semantics without leaking JPA types to the UI contract.
+     */
+    public record PageResponse<T>(
+            List<T> content, int page, int size, int totalElements) {}
 }

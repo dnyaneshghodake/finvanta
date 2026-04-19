@@ -26,6 +26,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -86,6 +87,7 @@ public class AuthController {
      * checks account status, and returns access + refresh token pair.
      */
     @PostMapping("/token")
+    @Transactional
     public ResponseEntity<ApiResponse<TokenResponse>>
             authenticate(
                     @Valid @RequestBody TokenRequest req) {
@@ -191,6 +193,7 @@ public class AuthController {
      * so an OTP consumed on one channel cannot be replayed on another.
      */
     @PostMapping("/mfa/verify")
+    @Transactional
     public ResponseEntity<ApiResponse<TokenResponse>>
             mfaVerify(
                     @Valid @RequestBody MfaVerifyRequest req) {
