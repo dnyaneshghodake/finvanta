@@ -367,7 +367,9 @@ public class AuthController {
                     "AppUser", user.getId(),
                     "MFA_VERIFICATION_FAILED", null, "invalid_code",
                     "AUTH",
-                    "API MFA step-up failed: " + username);
+                    "API MFA step-up failed: " + username
+                            + " | attempts=" + user.getFailedLoginAttempts()
+                            + " | locked=" + locked);
             if (locked) {
                 log.warn("Account locked after MFA failures: user={}",
                         username);
