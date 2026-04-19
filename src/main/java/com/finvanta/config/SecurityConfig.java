@@ -408,7 +408,10 @@ public class SecurityConfig {
             "Content-Type",
             "Authorization",        // JWT token
             "X-Tenant-Id",         // Tenant context
-            "X-Request-ID",        // Request tracing
+            "X-Request-ID",        // Request tracing (legacy)
+            "X-Correlation-Id",    // End-to-end correlation id (BFF/browser)
+            "X-Idempotency-Key",   // Financial POST idempotency (RBI §8.4)
+            "X-Branch-Code",       // Branch context override for HO users only
             "X-Client-Version",    // Client version
             "Accept",
             "Accept-Language",
@@ -417,7 +420,8 @@ public class SecurityConfig {
         // Exposed headers (visible to JavaScript)
         config.setExposedHeaders(java.util.Arrays.asList(
             "Authorization",       // New access token
-            "X-Request-ID",       // For error reporting
+            "X-Request-ID",       // For error reporting (legacy)
+            "X-Correlation-Id",   // Echoed by CorrelationIdMdcFilter
             "X-Total-Count",      // Pagination total
             "X-Total-Pages",      // Pagination pages
             "X-Current-Page",     // Pagination current

@@ -1,8 +1,8 @@
 package com.finvanta.api;
 
-import java.time.LocalDateTime;
-
 import com.fasterxml.jackson.annotation.JsonInclude;
+
+import java.time.LocalDateTime;
 
 /**
  * CBS Standardized API Response Envelope per Finacle API / Temenos IRIS.
@@ -25,8 +25,7 @@ public class ApiResponse<T> {
     private final String message;
     private final LocalDateTime timestamp;
 
-    private ApiResponse(String status, T data,
-            String errorCode, String message) {
+    private ApiResponse(String status, T data, String errorCode, String message) {
         this.status = status;
         this.data = data;
         this.errorCode = errorCode;
@@ -35,25 +34,45 @@ public class ApiResponse<T> {
     }
 
     public static <T> ApiResponse<T> success(T data) {
-        return new ApiResponse<>("SUCCESS", data,
-                null, null);
+        return new ApiResponse<>("SUCCESS", data, null, null);
     }
 
-    public static <T> ApiResponse<T> success(
-            T data, String message) {
-        return new ApiResponse<>("SUCCESS", data,
-                null, message);
+    public static <T> ApiResponse<T> success(T data, String message) {
+        return new ApiResponse<>("SUCCESS", data, null, message);
     }
 
-    public static <T> ApiResponse<T> error(
-            String errorCode, String message) {
-        return new ApiResponse<>("ERROR", null,
-                errorCode, message);
+    public static <T> ApiResponse<T> error(String errorCode, String message) {
+        return new ApiResponse<>("ERROR", null, errorCode, message);
     }
 
-    public String getStatus() { return status; }
-    public T getData() { return data; }
-    public String getErrorCode() { return errorCode; }
-    public String getMessage() { return message; }
-    public LocalDateTime getTimestamp() { return timestamp; }
+    /**
+     * CBS error with machine-readable data payload (e.g. MFA_REQUIRED
+     * returns the opaque challengeId so the Next.js BFF can resume the
+     * original action after step-up verification). Per RBI IT Governance
+     * Direction 2023 §8.5: error envelopes MAY carry additional structured
+     * fields provided they contain no PII.
+     */
+    public static <T> ApiResponse<T> errorWithData(String errorCode, String message, T data) {
+        return new ApiResponse<>("ERROR", data, errorCode, message);
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public T getData() {
+        return data;
+    }
+
+    public String getErrorCode() {
+        return errorCode;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public LocalDateTime getTimestamp() {
+        return timestamp;
+    }
 }
