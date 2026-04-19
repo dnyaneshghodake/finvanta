@@ -30,6 +30,19 @@ public interface TransactionLimitRepository extends JpaRepository<TransactionLim
             + "AND tl.role = :role AND tl.transactionType = 'ALL' AND tl.active = true")
     Optional<TransactionLimit> findByRoleForAllTypes(@Param("tenantId") String tenantId, @Param("role") String role);
 
+    /**
+     * All active limits for a role (for login COC hydration).
+     * Per Finacle TRAN_AUTH: returns all configured limits so the UI can
+     * pre-validate amounts before submission. The server re-validates
+     * via TransactionLimitService on every transaction.
+     * Indexed on (tenant_id, role, transaction_type).
+     */
+    @Query("SELECT tl FROM TransactionLimit tl WHERE tl.tenantId = :tenantId "
+            + "AND tl.role = :role AND tl.active = true "
+            + "ORDER BY tl.transactionType ASC")
+    List<TransactionLimit> findActiveByTenantIdAndRole(
+            @Param("tenantId") String tenantId, @Param("role") String role);
+
     /** All limits for a tenant (for admin management UI) */
     List<TransactionLimit> findByTenantIdOrderByRoleAscTransactionTypeAsc(String tenantId);
 }

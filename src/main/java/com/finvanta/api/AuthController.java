@@ -7,6 +7,7 @@ import com.finvanta.domain.entity.RevokedRefreshToken;
 import com.finvanta.repository.AppUserRepository;
 import com.finvanta.repository.RevokedRefreshTokenRepository;
 import com.finvanta.service.MfaService;
+import com.finvanta.service.SessionContextService;
 import com.finvanta.service.auth.RefreshTokenRotationService;
 import com.finvanta.util.MfaRequiredException;
 import com.finvanta.util.TenantContext;
@@ -63,6 +64,7 @@ public class AuthController {
     private final RefreshTokenRotationService refreshTokenRotationService;
     private final AuditService auditService;
     private final MfaService mfaService;
+    private final SessionContextService sessionContextService;
 
     public AuthController(
             JwtTokenService jwtTokenService,
@@ -71,7 +73,8 @@ public class AuthController {
             RevokedRefreshTokenRepository revokedRefreshTokenRepository,
             RefreshTokenRotationService refreshTokenRotationService,
             AuditService auditService,
-            MfaService mfaService) {
+            MfaService mfaService,
+            SessionContextService sessionContextService) {
         this.jwtTokenService = jwtTokenService;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -79,6 +82,7 @@ public class AuthController {
         this.refreshTokenRotationService = refreshTokenRotationService;
         this.auditService = auditService;
         this.mfaService = mfaService;
+        this.sessionContextService = sessionContextService;
     }
 
     /**
@@ -88,7 +92,7 @@ public class AuthController {
      */
     @PostMapping("/token")
     @Transactional
-    public ResponseEntity<ApiResponse<TokenResponse>>
+    public ResponseEntity<ApiResponse<LoginSessionContext>>
             authenticate(
                     @Valid @RequestBody TokenRequest req) {
         String tenantId = TenantContext.getCurrentTenant();
@@ -194,7 +198,7 @@ public class AuthController {
      */
     @PostMapping("/mfa/verify")
     @Transactional
-    public ResponseEntity<ApiResponse<TokenResponse>>
+    public ResponseEntity<ApiResponse<LoginSessionContext>>
             mfaVerify(
                     @Valid @RequestBody MfaVerifyRequest req) {
         Claims claims =
@@ -340,11 +344,21 @@ public class AuthController {
     }
 
     /**
-     * Shared access + refresh token issuance path. Centralised to avoid
+     * Shared token issuance + COC assembly path. Centralised to avoid
      * drift between {@link #authenticate(TokenRequest)} and
      * {@link #mfaVerify(MfaVerifyRequest)}.
+     *
+     * <p>Per Finacle USER_SESSION / Temenos EB.USER.CONTEXT: the login
+     * response must establish the full Controlled Operational Context
+     * (identity, branch, business day, role/permission matrix, financial
+     * authority limits, operational config) in a single round-trip so the
+     * Next.js BFF can hydrate its server-side session without N+1 calls.
+     *
+     * <p>Token issuance (JWT generation + login recording) remains here;
+     * COC assembly is delegated to {@link SessionContextService} which
+     * runs in a read-only transaction against the domain model.
      */
-    private TokenResponse issueTokens(AppUser user, String tenantId,
+    private LoginSessionContext issueTokens(AppUser user, String tenantId,
             String flow) {
         String role = user.getRole().name();
         String branchCode = user.getBranch() != null
@@ -361,18 +375,23 @@ public class AuthController {
         user.recordSuccessfulLogin("API");
         userRepository.save(user);
 
+        long expiresAt = jwtTokenService
+                .parseToken(accessToken)
+                .getExpiration()
+                .getTime() / 1000;
+
         log.info("API token issued: user={}, role={}, branch={}, "
                 + "refreshJti={}, flow={}",
                 user.getUsername(), role, branchCode,
                 refresh.jti(), flow);
 
-        return new TokenResponse(
-                accessToken, refresh.token(), "Bearer",
-                jwtTokenService
-                        .parseToken(accessToken)
-                        .getExpiration()
-                        .getTime()
-                        / 1000);
+        // CBS Tier-1: assemble the full Controlled Operational Context
+        // (identity + branch + business day + permissions + limits + config)
+        // alongside the tokens so the BFF gets everything in one response.
+        return sessionContextService.assemble(
+                user, tenantId,
+                accessToken, refresh.token(),
+                expiresAt, flow);
     }
 
     /**
