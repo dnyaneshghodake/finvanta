@@ -283,30 +283,66 @@ public class DepositAccountController {
 
     // === Response DTOs (no JPA entity exposure) ===
 
+    /**
+     * CBS CASA Account Response per Finacle CUSTACCT / Temenos ACCOUNT.
+     *
+     * <p>Every field that the Next.js BFF needs to render the account
+     * detail screen, freeze/close modals, and customer 360° view.
+     * Per RBI passbook norms: customer name, nominee, and balance
+     * breakdown are mandatory display fields.
+     */
     public record AccountResponse(
             Long id, String accountNumber, String accountType,
             String productCode, String status, String branchCode,
-            String currencyCode, BigDecimal ledgerBalance,
-            BigDecimal availableBalance, BigDecimal holdAmount,
-            BigDecimal odLimit, BigDecimal interestRate,
-            BigDecimal accruedInterest, String openedDate,
-            String lastTransactionDate, String nomineeName,
-            boolean chequeBookEnabled, boolean debitCardEnabled) {
+            String currencyCode,
+            // --- Balances (complete breakdown per Finacle BAL_INQ) ---
+            BigDecimal ledgerBalance, BigDecimal availableBalance,
+            BigDecimal holdAmount, BigDecimal unclearedAmount,
+            BigDecimal odLimit, BigDecimal effectiveAvailable,
+            BigDecimal minimumBalance,
+            // --- Interest ---
+            BigDecimal interestRate, BigDecimal accruedInterest,
+            String lastInterestCreditDate,
+            // --- Customer (CIF linkage per Finacle CUSTACCT) ---
+            Long customerId, String customerNumber, String customerName,
+            // --- Lifecycle ---
+            String openedDate, String closedDate, String closureReason,
+            String lastTransactionDate,
+            // --- Freeze (per PMLA / RBI Freeze Guidelines) ---
+            String freezeType, String freezeReason,
+            // --- Nomination (per RBI nomination guidelines) ---
+            String nomineeName, String nomineeRelationship,
+            String jointHolderMode,
+            // --- Facilities ---
+            boolean chequeBookEnabled, boolean debitCardEnabled,
+            BigDecimal dailyWithdrawalLimit, BigDecimal dailyTransferLimit) {
         static AccountResponse from(DepositAccount a) {
             return new AccountResponse(
                     a.getId(), a.getAccountNumber(),
                     a.getAccountType().name(), a.getProductCode(),
                     a.getAccountStatus().name(),
                     a.getBranch() != null ? a.getBranch().getBranchCode() : null,
-                    a.getCurrencyCode(), a.getLedgerBalance(),
-                    a.getAvailableBalance(), a.getHoldAmount(),
-                    a.getOdLimit(), a.getInterestRate(),
-                    a.getAccruedInterest(),
+                    a.getCurrencyCode(),
+                    a.getLedgerBalance(), a.getAvailableBalance(),
+                    a.getHoldAmount(), a.getUnclearedAmount(),
+                    a.getOdLimit(), a.getEffectiveAvailable(),
+                    a.getMinimumBalance(),
+                    a.getInterestRate(), a.getAccruedInterest(),
+                    a.getLastInterestCreditDate() != null
+                            ? a.getLastInterestCreditDate().toString() : null,
+                    a.getCustomer() != null ? a.getCustomer().getId() : null,
+                    a.getCustomer() != null ? a.getCustomer().getCustomerNumber() : null,
+                    a.getCustomer() != null ? a.getCustomer().getFullName() : null,
                     a.getOpenedDate() != null ? a.getOpenedDate().toString() : null,
+                    a.getClosedDate() != null ? a.getClosedDate().toString() : null,
+                    a.getClosureReason(),
                     a.getLastTransactionDate() != null
                             ? a.getLastTransactionDate().toString() : null,
-                    a.getNomineeName(),
-                    a.isChequeBookEnabled(), a.isDebitCardEnabled());
+                    a.getFreezeType(), a.getFreezeReason(),
+                    a.getNomineeName(), a.getNomineeRelationship(),
+                    a.getJointHolderMode(),
+                    a.isChequeBookEnabled(), a.isDebitCardEnabled(),
+                    a.getDailyWithdrawalLimit(), a.getDailyTransferLimit());
         }
     }
 
@@ -316,22 +352,35 @@ public class DepositAccountController {
             BigDecimal holdAmount, BigDecimal unclearedAmount,
             BigDecimal odLimit, BigDecimal effectiveAvailable) {}
 
+    /**
+     * CBS Transaction Response per Finacle TRAN_DETAIL / Temenos STMT.ENTRY.
+     *
+     * <p>Per RBI IT Governance Direction 2023 §8.3: every transaction record
+     * must carry both balance_before and balance_after for complete audit trail.
+     * Counterparty name is required for statement display per RBI passbook norms.
+     */
     public record TxnResponse(
             Long id, String transactionRef, String transactionType,
-            String debitCredit, BigDecimal amount, BigDecimal balanceAfter,
+            String debitCredit, BigDecimal amount,
+            BigDecimal balanceBefore, BigDecimal balanceAfter,
             String valueDate, String postingDate, String narration,
-            String counterpartyAccount, String channel,
-            String voucherNumber, String branchCode, boolean reversed) {
+            String counterpartyAccount, String counterpartyName,
+            String channel, String chequeNumber,
+            String voucherNumber, String branchCode,
+            boolean reversed, String reversedByRef,
+            String idempotencyKey) {
         static TxnResponse from(DepositTransaction t) {
             return new TxnResponse(
                     t.getId(), t.getTransactionRef(),
                     t.getTransactionType(), t.getDebitCredit(),
-                    t.getAmount(), t.getBalanceAfter(),
+                    t.getAmount(), t.getBalanceBefore(), t.getBalanceAfter(),
                     t.getValueDate() != null ? t.getValueDate().toString() : null,
                     t.getPostingDate() != null ? t.getPostingDate().toString() : null,
                     t.getNarration(), t.getCounterpartyAccount(),
-                    t.getChannel(), t.getVoucherNumber(),
-                    t.getBranchCode(), t.isReversed());
+                    t.getCounterpartyName(), t.getChannel(),
+                    t.getChequeNumber(), t.getVoucherNumber(),
+                    t.getBranchCode(), t.isReversed(),
+                    t.getReversedByRef(), t.getIdempotencyKey());
         }
     }
 

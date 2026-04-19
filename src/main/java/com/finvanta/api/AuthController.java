@@ -51,7 +51,7 @@ import org.springframework.web.bind.annotation.*;
  * It is rate-limited and audited. Brute-force protection via account lockout.
  */
 @RestController
-@RequestMapping("/v1/auth")
+@RequestMapping("/api/v1/auth")
 public class AuthController {
 
     private static final Logger log =
