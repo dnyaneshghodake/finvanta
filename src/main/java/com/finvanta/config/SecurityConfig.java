@@ -16,6 +16,9 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.logout.LogoutSuccessEventPublishingLogoutHandler;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
  * CBS Security Configuration — Role-Based Access Control per Finacle/Temenos standards.
@@ -52,6 +55,9 @@ public class SecurityConfig {
     @Value("${spring.profiles.active:prod}")
     private String activeProfile;
 
+    @Value("${spring.boot.app.cors.allowed-origins:http://localhost:3000}")
+    private String corsAllowedOrigins;
+
     private boolean isDevProfile() {
         return activeProfile != null && activeProfile.contains("dev");
     }
@@ -79,6 +85,7 @@ public class SecurityConfig {
             AuthRateLimitFilter authRateLimitFilter)
             throws Exception {
         http.securityMatcher("/api/v1/**")
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/api/v1/auth/**")
@@ -374,9 +381,63 @@ public class SecurityConfig {
     }
 
     /**
-     * CBS Password Encoder — BCrypt with 12 rounds per RBI IT Governance Direction 2023.
+     * CORS Configuration for React + Next.js Frontend
      *
-     * Per RBI IT Governance §8.2 and NIST SP 800-63B:
+     * Per RBI IT Governance Direction 2023 §8.1:
+     * - CORS origins must be explicitly whitelisted (no wildcards in production)
+     * - Allowed methods restricted to needed HTTP verbs
+     * - Credentials not needed (stateless JWT)
+     * - Max age 24 hours for preflight caching
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+
+        // Parse comma-separated allowed origins
+        String[] origins = corsAllowedOrigins.split(",");
+        config.setAllowedOrigins(java.util.Arrays.stream(origins)
+            .map(String::trim)
+            .toList());
+
+        // Allowed HTTP methods for React frontend
+        config.setAllowedMethods(java.util.Arrays.asList(
+            "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+
+        // Allowed headers
+        config.setAllowedHeaders(java.util.Arrays.asList(
+            "Content-Type",
+            "Authorization",        // JWT token
+            "X-Tenant-Id",         // Tenant context
+            "X-Request-ID",        // Request tracing
+            "X-Client-Version",    // Client version
+            "Accept",
+            "Accept-Language",
+            "X-CSRF-Token"));      // For forms
+
+        // Exposed headers (visible to JavaScript)
+        config.setExposedHeaders(java.util.Arrays.asList(
+            "Authorization",       // New access token
+            "X-Request-ID",       // For error reporting
+            "X-Total-Count",      // Pagination total
+            "X-Total-Pages",      // Pagination pages
+            "X-Current-Page",     // Pagination current
+            "X-Page-Size"));      // Pagination size
+
+        // Don't allow credentials (stateless JWT)
+        config.setAllowCredentials(false);
+
+        // Max age of preflight response (24 hours)
+        config.setMaxAge(86400L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
+    }
+
+    /**
+     * Password Encoder for CBS User Authentication
+     *
+     * Per RBI IT Governance Direction 2023 §8.3:
      * - BCrypt minimum 12 rounds for banking-grade password hashing
      * - Spring Security default is 10 rounds — insufficient for Tier-1 CBS
      * - 12 rounds provides ~4x the computational cost of 10 rounds
