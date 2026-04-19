@@ -1,9 +1,9 @@
 # Finvanta CBS — Login API Contract for Frontend Integration
 
-> **Version:** 1.0
-> **Backend Commit:** `8284d59`
+> **Version:** 2.0
+> **Backend Commit:** `7823bf3`
 > **Compliance:** RBI IT Governance Direction 2023 §8.1, §8.3, §8.4
-> **Architecture:** Finacle USER_SESSION / Temenos EB.USER.CONTEXT pattern
+> **Architecture:** Tier-1 CBS (Finacle/T24/Flexcube) — Auth ≠ Context ≠ Dashboard
 
 ---
 
@@ -12,29 +12,58 @@
 1. [Overview](#1-overview)
 2. [Base Configuration](#2-base-configuration)
 3. [Required Headers](#3-required-headers)
-4. [Endpoint 1: POST /v1/auth/token](#4-endpoint-1-post-v1authtoken)
-5. [Endpoint 2: POST /v1/auth/mfa/verify](#5-endpoint-2-post-v1authmfaverify)
-6. [Endpoint 3: POST /v1/auth/refresh](#6-endpoint-3-post-v1authrefresh)
-7. [Complete Error Code Reference](#7-complete-error-code-reference)
-8. [BFF Authentication State Machine](#8-bff-authentication-state-machine)
-9. [Sequence Diagrams](#9-sequence-diagrams)
-10. [JWT Token Structures](#10-jwt-token-structures)
-11. [LoginSessionContext TypeScript Interface](#11-loginsessioncontext-typescript-interface)
-12. [CORS Configuration](#12-cors-configuration)
-13. [Filter Chain Execution Order](#13-filter-chain-execution-order)
-14. [Critical Frontend Rules](#14-critical-frontend-rules)
+4. [Endpoint 1: POST /api/v1/auth/token](#4-endpoint-1-post-apiv1authtoken)
+5. [Endpoint 2: POST /api/v1/auth/mfa/verify](#5-endpoint-2-post-apiv1authmfaverify)
+6. [Endpoint 3: POST /api/v1/auth/refresh](#6-endpoint-3-post-apiv1authrefresh)
+7. [Endpoint 4: GET /api/v1/context/bootstrap](#7-endpoint-4-get-apiv1contextbootstrap)
+8. [Complete Error Code Reference](#8-complete-error-code-reference)
+9. [BFF Authentication State Machine](#9-bff-authentication-state-machine)
+10. [Sequence Diagrams](#10-sequence-diagrams)
+11. [JWT Token Structures](#11-jwt-token-structures)
+12. [TypeScript Interfaces](#12-typescript-interfaces)
+13. [CORS Configuration](#13-cors-configuration)
+14. [Filter Chain Execution Order](#14-filter-chain-execution-order)
+15. [Critical Frontend Rules](#15-critical-frontend-rules)
 
 ---
 
 ## 1. Overview
 
-The Finvanta CBS login API implements a **two-phase authentication flow** per RBI IT Governance Direction 2023:
+The Finvanta CBS login API implements a **three-phase post-login hydration** per Tier-1 CBS standards (Finacle/T24/Flexcube) and RBI IT Governance Direction 2023:
 
-- **Phase 1 (Password):** `POST /v1/auth/token` — validates credentials, returns either full session context (non-MFA users) or a 428 MFA challenge (MFA-enrolled users).
-- **Phase 2 (MFA):** `POST /v1/auth/mfa/verify` — exchanges the challenge token + TOTP code for full session context. Only reached if Phase 1 returns 428.
-- **Token Refresh:** `POST /v1/auth/refresh` — rotates access + refresh tokens. Returns bare token pair (no session context — BFF already has it from login).
+- **Phase 1 (Password):** `POST /api/v1/auth/token` — validates credentials, returns **identity + tokens ONLY** (non-MFA users) or a 428 MFA challenge (MFA-enrolled users). **No operational context.**
+- **Phase 2 (MFA):** `POST /api/v1/auth/mfa/verify` — exchanges the challenge token + TOTP code for identity + tokens. Only reached if Phase 1 returns 428.
+- **Phase 3 (Bootstrap):** `GET /api/v1/context/bootstrap` — fetches the full Controlled Operational Context (branch, business day, permissions, limits, config). Called AFTER login, BEFORE dashboard.
+- **Token Refresh:** `POST /api/v1/auth/refresh` — rotates access + refresh tokens. Returns bare token pair.
+- **Dashboard:** `GET /api/v1/dashboard/widgets/*` — independent widget endpoints fetched in parallel. See `API_REFERENCE.md` Section 17.
 
-On successful login (either phase), the backend returns a **Controlled Operational Context (COC)** containing tokens + user identity + branch + business day + role/permission matrix + financial authority limits + operational config — all in a single response. The Next.js BFF hydrates its server-side session from this single round-trip.
+### Tier-1 CBS Golden Rule
+
+> **Login returns ONLY identity + authorization + tokens.**
+> **Operational context is ALWAYS fetched separately via dedicated APIs.**
+
+Why:
+1. Login must be ultra-fast (<300ms) — authentication only
+2. Context data is heavy, aggregated, dynamic (changes on branch switch, day close)
+3. Session payload must be minimal (security principle of least privilege)
+4. Auth service and Context service scale independently
+5. RBI expects clear separation of authentication and business logic modules
+
+### BFF Hydration Flow
+
+```
+POST /api/v1/auth/token          → JWT + minimal identity (<300ms)
+  ↓
+Store JWT in BFF server memory (NEVER browser localStorage)
+  ↓
+GET /api/v1/context/bootstrap    → branch + businessDay + permissions + limits + config
+  ↓
+Hydrate BFF server-side session
+  ↓
+GET /api/v1/dashboard/widgets/*  → parallel widget fetch (skeleton-first)
+  ↓
+Render dashboard
+```
 
 ### Security Invariants
 
@@ -49,7 +78,7 @@ On successful login (either phase), the backend returns a **Controlled Operation
 
 | Setting | Value | Source |
 |---|---|---|
-| Base URL | `/v1/auth` | `AuthController.java:54` |
+| Base URL | `/api/v1/auth` | `AuthController.java:54` |
 | Access Token Expiry | 15 minutes | `application.properties:25` |
 | Refresh Token Expiry | 8 hours | `application.properties:26` |
 | MFA Challenge Expiry | 5 minutes | `JwtTokenService.java:55` |
@@ -105,14 +134,14 @@ On successful login (either phase), the backend returns a **Controlled Operation
 
 ---
 
-## 4. Endpoint 1: POST /v1/auth/token
+## 4. Endpoint 1: POST /api/v1/auth/token
 
-**Purpose:** Password authentication. Returns full COC on success, or 428 MFA challenge if user has MFA enabled.
+**Purpose:** Password authentication. Returns **identity + tokens ONLY** on success, or 428 MFA challenge if user has MFA enabled. **No operational context** — that is fetched via `GET /api/v1/context/bootstrap` AFTER login.
 
 ### Request
 
 ```
-POST /v1/auth/token HTTP/1.1
+POST /api/v1/auth/token HTTP/1.1
 Content-Type: application/json
 X-Tenant-Id: DEFAULT
 X-Correlation-Id: 7f3c1e40-52ea-4c7a-9b8d-19f2a51bf4d9
@@ -247,124 +276,70 @@ Source: `AuthController.java:231-248` → throws `MfaRequiredException` → `Api
 
 ### Response: Login Success — No MFA (HTTP 200)
 
-Full Controlled Operational Context returned when password is correct and user does NOT have MFA enrolled.
+**Slim `AuthResponse`** returned when password is correct and user does NOT have MFA enrolled. Contains **ONLY identity + tokens** — no branch, no business day, no permissions, no limits.
 
 ```json
 {
   "status": "SUCCESS",
   "data": {
-    "token": {
-      "accessToken": "eyJhbGciOiJIUzI1NiJ9...",
-      "refreshToken": "eyJhbGciOiJIUzI1NiJ9...",
-      "tokenType": "Bearer",
-      "expiresAt": 1713520800
-    },
+    "accessToken": "eyJhbGciOiJIUzI1NiJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiJ9...",
+    "tokenType": "Bearer",
+    "expiresAt": 1713520800,
     "user": {
       "userId": 2,
       "username": "maker1",
       "displayName": "Rajesh Kumar",
-      "authenticationLevel": "PASSWORD",
-      "loginTimestamp": "2026-04-19T15:30:00",
-      "lastLoginTimestamp": "2026-04-18T09:15:00",
-      "passwordExpiryDate": "2026-07-18",
-      "mfaEnabled": false
-    },
-    "branch": {
-      "branchId": 2,
-      "branchCode": "MUM001",
-      "branchName": "Mumbai Main Branch",
-      "ifscCode": "FNVT0MUM001",
-      "branchType": "BRANCH",
-      "zoneCode": "WEST",
-      "regionCode": "MH",
-      "headOffice": false
-    },
-    "businessDay": {
-      "businessDate": "2026-04-19",
-      "dayStatus": "DAY_OPEN",
-      "isHoliday": false,
-      "previousBusinessDate": "2026-04-18",
-      "nextBusinessDate": "2026-04-21"
-    },
-    "role": {
       "role": "MAKER",
-      "makerCheckerRole": "MAKER",
-      "permissionsByModule": {
-        "LOAN": ["LOAN_CREATE", "LOAN_REPAYMENT", "LOAN_VIEW"],
-        "DEPOSIT": ["DEPOSIT_OPEN", "DEPOSIT_DEPOSIT", "DEPOSIT_WITHDRAW", "DEPOSIT_TRANSFER", "DEPOSIT_VIEW"],
-        "CUSTOMER": ["CUSTOMER_CREATE", "CUSTOMER_VIEW"],
-        "CLEARING": ["CLEARING_INITIATE"]
-      },
-      "allowedModules": ["LOAN", "DEPOSIT", "CUSTOMER", "CLEARING"]
-    },
-    "limits": {
-      "transactionLimits": [
-        {
-          "transactionType": "ALL",
-          "channel": null,
-          "perTransactionLimit": 1000000,
-          "dailyAggregateLimit": 5000000
-        }
-      ]
-    },
-    "operationalConfig": {
-      "baseCurrency": "INR",
-      "decimalPrecision": 2,
-      "roundingMode": "HALF_UP",
-      "fiscalYearStartMonth": 4,
-      "businessDayPolicy": "MON_TO_SAT"
+      "branchCode": "MUM001",
+      "authenticationLevel": "PASSWORD",
+      "mfaEnabled": false
     }
   },
   "timestamp": "2026-04-19T15:30:00"
 }
 ```
 
-Source: `AuthController.java:251-252` → `issueTokens()` → `SessionContextService.assemble()`
+Source: `AuthController.java:251-252` → `issueTokens()` → `new AuthResponse(...)`
 
-**COC Field Reference:**
+**AuthResponse Field Reference:**
 
-| Section | Key Fields | UI Usage |
+| Field | Type | UI Usage |
 |---|---|---|
-| `token` | `accessToken`, `refreshToken`, `expiresAt` | BFF session storage (never browser) |
-| `user` | `displayName`, `authenticationLevel`, `lastLoginTimestamp`, `passwordExpiryDate` | Dashboard header, password expiry warning |
-| `branch` | `branchCode`, `branchName`, `branchType`, `headOffice` | Header bar, branch context display |
-| `businessDay` | `businessDate`, `dayStatus`, `isHoliday` | Transaction date, day-status banner |
-| `role` | `role`, `makerCheckerRole`, `permissionsByModule`, `allowedModules` | Sidebar menu, button visibility, maker/checker screens |
-| `limits` | `transactionLimits[].perTransactionLimit`, `dailyAggregateLimit` | Amount field pre-validation, limit warnings |
-| `operationalConfig` | `baseCurrency`, `decimalPrecision`, `roundingMode` | Currency formatting, amount input precision |
+| `accessToken` | string | BFF server-side session (NEVER browser) |
+| `refreshToken` | string | BFF server-side session (NEVER browser) |
+| `tokenType` | string | Always `"Bearer"` |
+| `expiresAt` | long | Unix epoch seconds — schedule proactive refresh at `expiresAt - 60` |
+| `user.userId` | long | Internal user ID |
+| `user.username` | string | Display in header, audit correlation |
+| `user.displayName` | string | Dashboard header greeting |
+| `user.role` | string | `MAKER` / `CHECKER` / `ADMIN` / `AUDITOR` — determines which dashboard widgets to fetch |
+| `user.branchCode` | string | Display in header bar |
+| `user.authenticationLevel` | string | `PASSWORD` or `MFA` — display in session info |
+| `user.mfaEnabled` | boolean | Show MFA status indicator |
 
-**`businessDay.dayStatus` → UI Behavior:**
+### What is NOT in the login response (fetched via GET /api/v1/context/bootstrap):
 
-| Value | UI Action |
+| Data | Why Separate |
 |---|---|
-| `DAY_OPEN` | Normal operations — all transaction buttons enabled |
-| `EOD_RUNNING` | Banner "End-of-day in progress" — disable transaction buttons |
-| `DAY_CLOSED` | Disable all posting buttons — read-only mode |
-| `NOT_OPENED` | Banner "Business day not opened — contact administrator" |
+| Branch details (name, IFSC, type, zone) | Heavy, changes on branch switch |
+| Business day (date, status, holiday) | Changes on day open/close/EOD |
+| Permission matrix (permissionsByModule) | Heavy, role-dependent |
+| Transaction limits | Branch + role dependent |
+| Operational config (currency, precision) | Tenant-level, rarely changes |
 
-**`role.makerCheckerRole` → UI Behavior:**
-
-| Value | Derived From | UI Action |
-|---|---|---|
-| `MAKER` | Has CREATE/INITIATE, no APPROVE/VERIFY | Show "Submit for Approval", hide approval screens |
-| `CHECKER` | Has APPROVE/VERIFY, no CREATE/INITIATE | Show approval screens, hide create screens |
-| `BOTH` | Has both (ADMIN) | Show all (self-approval blocked server-side) |
-| `VIEWER` | Has neither (AUDITOR) | Read-only — hide all action buttons |
-
-**`branch` can be `null`:** HO/system users without branch assignment. When null, `businessDay` is also null. Show branch-selector for these users.
-
-**Frontend action:** Store tokens in BFF server-side session. Store full COC in React context / Zustand for UI rendering. **Never store tokens in localStorage or sessionStorage.**
+**Frontend action:** Store tokens in BFF server-side session. Store `user` identity in React context. **Immediately call `GET /api/v1/context/bootstrap`** to hydrate the full operational context before rendering the dashboard. **Never store tokens in localStorage or sessionStorage.**
 
 ---
 
-## 5. Endpoint 2: POST /v1/auth/mfa/verify
+## 5. Endpoint 2: POST /api/v1/auth/mfa/verify
 
-**Purpose:** Complete MFA step-up by exchanging the challenge token + TOTP code for full login session context.
+**Purpose:** Complete MFA step-up by exchanging the challenge token + TOTP code for identity + tokens. Same slim `AuthResponse` as `/auth/token` — **no operational context**.
 
 ### Request
 
 ```
-POST /v1/auth/mfa/verify HTTP/1.1
+POST /api/v1/auth/mfa/verify HTTP/1.1
 Content-Type: application/json
 X-Tenant-Id: DEFAULT
 X-Correlation-Id: 7f3c1e40-52ea-4c7a-9b8d-19f2a51bf4d9
@@ -454,56 +429,48 @@ Source: `AuthController.java:360-379`
 
 **Frontend action:** Show "Invalid OTP" error on the OTP modal. Allow retry with the **same `challengeId`**. Track attempt count client-side (server does not return remaining attempts).
 
-### Response: OTP Correct — Full Login Success (HTTP 200)
+### Response: OTP Correct — Login Success (HTTP 200)
 
-Same `LoginSessionContext` structure as the non-MFA success response, but with `authenticationLevel: "MFA"`:
+Same slim `AuthResponse` as the non-MFA success, but with `authenticationLevel: "MFA"`:
 
 ```json
 {
   "status": "SUCCESS",
   "data": {
-    "token": {
-      "accessToken": "eyJ...",
-      "refreshToken": "eyJ...",
-      "tokenType": "Bearer",
-      "expiresAt": 1713520800
-    },
+    "accessToken": "eyJ...",
+    "refreshToken": "eyJ...",
+    "tokenType": "Bearer",
+    "expiresAt": 1713520800,
     "user": {
       "userId": 2,
       "username": "maker1",
       "displayName": "Rajesh Kumar",
+      "role": "MAKER",
+      "branchCode": "MUM001",
       "authenticationLevel": "MFA",
-      "loginTimestamp": "2026-04-19T15:35:00",
-      "lastLoginTimestamp": "2026-04-18T09:15:00",
-      "passwordExpiryDate": "2026-07-18",
       "mfaEnabled": true
-    },
-    "branch": { "...": "same structure as Section 4" },
-    "businessDay": { "...": "same structure as Section 4" },
-    "role": { "...": "same structure as Section 4" },
-    "limits": { "...": "same structure as Section 4" },
-    "operationalConfig": { "...": "same structure as Section 4" }
+    }
   },
   "timestamp": "2026-04-19T15:35:00"
 }
 ```
 
-Source: `AuthController.java:408-409` → `issueTokens()` → `SessionContextService.assemble()`
+Source: `AuthController.java:408-409` → `issueTokens()` → `new AuthResponse(...)`
 
-**Frontend action:** Same as non-MFA success — store tokens in BFF session, hydrate COC into React context, redirect to dashboard.
+**Frontend action:** Same as non-MFA — store tokens in BFF session, store identity in React context, then **immediately call `GET /api/v1/context/bootstrap`** to hydrate operational context before dashboard.
 
 ---
 
-## 6. Endpoint 3: POST /v1/auth/refresh
+## 6. Endpoint 3: POST /api/v1/auth/refresh
 
 **Purpose:** Exchange a valid refresh token for a new access + refresh token pair. Implements RFC 6749 §10.4 rotation — old refresh token is burned on use.
 
-**NOTE:** Returns bare `TokenResponse`, NOT `LoginSessionContext`. Refresh is a token rotation, not a login — the BFF already has the COC from the original login.
+**NOTE:** Returns bare `TokenResponse`, NOT `AuthResponse`. Refresh is a token rotation, not a login — the BFF already has identity from the original login and COC from bootstrap.
 
 ### Request
 
 ```
-POST /v1/auth/refresh HTTP/1.1
+POST /api/v1/auth/refresh HTTP/1.1
 Content-Type: application/json
 X-Tenant-Id: DEFAULT
 X-Correlation-Id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
@@ -625,7 +592,137 @@ Source: `AuthController.java:521-539`
 
 ---
 
-## 7. Complete Error Code Reference
+## 7. Endpoint 4: GET /api/v1/context/bootstrap
+
+**Purpose:** Fetch the full Controlled Operational Context (COC) for the authenticated user. Called AFTER login, BEFORE dashboard rendering. This is the "session activation" step per Finacle USER_SESSION / Temenos EB.USER.CONTEXT.
+
+**Auth:** JWT Bearer required (not `permitAll`)
+
+### Request
+
+```
+GET /api/v1/context/bootstrap HTTP/1.1
+Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
+X-Tenant-Id: DEFAULT
+X-Correlation-Id: 7f3c1e40-52ea-4c7a-9b8d-19f2a51bf4d9
+```
+
+No request body.
+
+### Response: Bootstrap Success (HTTP 200)
+
+```json
+{
+  "status": "SUCCESS",
+  "data": {
+    "token": null,
+    "user": {
+      "userId": 2,
+      "username": "maker1",
+      "displayName": "Rajesh Kumar",
+      "authenticationLevel": "SESSION",
+      "loginTimestamp": "2026-04-19T15:30:00",
+      "lastLoginTimestamp": "2026-04-18T09:15:00",
+      "passwordExpiryDate": "2026-07-18",
+      "mfaEnabled": true
+    },
+    "branch": {
+      "branchId": 2,
+      "branchCode": "MUM001",
+      "branchName": "Mumbai Main Branch",
+      "ifscCode": "FNVT0MUM001",
+      "branchType": "BRANCH",
+      "zoneCode": "WEST",
+      "regionCode": "MH",
+      "headOffice": false
+    },
+    "businessDay": {
+      "businessDate": "2026-04-19",
+      "dayStatus": "DAY_OPEN",
+      "isHoliday": false,
+      "previousBusinessDate": "2026-04-18",
+      "nextBusinessDate": "2026-04-21"
+    },
+    "role": {
+      "role": "MAKER",
+      "makerCheckerRole": "MAKER",
+      "permissionsByModule": {
+        "LOAN": ["LOAN_CREATE", "LOAN_REPAYMENT", "LOAN_VIEW"],
+        "DEPOSIT": ["DEPOSIT_OPEN", "DEPOSIT_DEPOSIT", "DEPOSIT_WITHDRAW", "DEPOSIT_TRANSFER", "DEPOSIT_VIEW"],
+        "CUSTOMER": ["CUSTOMER_CREATE", "CUSTOMER_VIEW"],
+        "CLEARING": ["CLEARING_INITIATE"]
+      },
+      "allowedModules": ["LOAN", "DEPOSIT", "CUSTOMER", "CLEARING"]
+    },
+    "limits": {
+      "transactionLimits": [
+        {
+          "transactionType": "ALL",
+          "channel": null,
+          "perTransactionLimit": 1000000,
+          "dailyAggregateLimit": 5000000
+        }
+      ]
+    },
+    "operationalConfig": {
+      "baseCurrency": "INR",
+      "decimalPrecision": 2,
+      "roundingMode": "HALF_UP",
+      "fiscalYearStartMonth": 4,
+      "businessDayPolicy": "MON_TO_SAT"
+    }
+  },
+  "timestamp": "2026-04-19T15:30:01"
+}
+```
+
+Source: `ContextBootstrapController.java:72-77` → `SessionContextService.assembleFromSecurityContext()`
+
+**Key differences from the old login response:**
+- `token` is `null` — BFF already has tokens from login
+- `user.authenticationLevel` is `"SESSION"` (not PASSWORD/MFA)
+- All operational context sections (branch, businessDay, role, limits, config) are populated
+
+**COC Field Reference:**
+
+| Section | Key Fields | UI Usage |
+|---|---|---|
+| `user` | `displayName`, `lastLoginTimestamp`, `passwordExpiryDate` | Dashboard header, password expiry warning |
+| `branch` | `branchCode`, `branchName`, `branchType`, `headOffice` | Header bar, branch context display |
+| `businessDay` | `businessDate`, `dayStatus`, `isHoliday` | Transaction date, day-status banner |
+| `role` | `role`, `makerCheckerRole`, `permissionsByModule`, `allowedModules` | Sidebar menu, button visibility, widget registry |
+| `limits` | `transactionLimits[].perTransactionLimit`, `dailyAggregateLimit` | Amount field pre-validation, limit warnings |
+| `operationalConfig` | `baseCurrency`, `decimalPrecision`, `roundingMode` | Currency formatting, amount input precision |
+
+**`businessDay.dayStatus` → UI Behavior:**
+
+| Value | UI Action |
+|---|---|
+| `DAY_OPEN` | Normal operations — all transaction buttons enabled |
+| `EOD_RUNNING` | Banner "End-of-day in progress" — disable transaction buttons |
+| `DAY_CLOSED` | Disable all posting buttons — read-only mode |
+| `NOT_OPENED` | Banner "Business day not opened — contact administrator" |
+
+**`role.makerCheckerRole` → UI Behavior:**
+
+| Value | Derived From | UI Action |
+|---|---|---|
+| `MAKER` | Has CREATE/INITIATE, no APPROVE/VERIFY | Show "Submit for Approval", hide approval screens |
+| `CHECKER` | Has APPROVE/VERIFY, no CREATE/INITIATE | Show approval screens, hide create screens |
+| `BOTH` | Has both (ADMIN) | Show all (self-approval blocked server-side) |
+| `VIEWER` | Has neither (AUDITOR) | Read-only — hide all action buttons |
+
+**`branch` can be `null`:** HO/system users without branch assignment. When null, `businessDay` is also null. Show branch-selector for these users.
+
+**When to re-fetch bootstrap:**
+- After initial login (once)
+- After branch switch (ADMIN switches operating branch)
+- After token refresh (role/branch may have changed)
+- On day status change event (DAY_OPEN → EOD_RUNNING → DAY_CLOSED)
+
+---
+
+## 8. Complete Error Code Reference
 
 | errorCode | HTTP | Endpoint | Frontend Action |
 |---|---|---|---|
@@ -650,7 +747,7 @@ Source: `AuthController.java:521-539`
 
 ---
 
-## 8. BFF Authentication State Machine
+## 9. BFF Authentication State Machine
 
 ```
 ┌─────────────┐
@@ -704,7 +801,7 @@ POST /v1/auth/refresh
 
 ---
 
-## 9. Sequence Diagrams
+## 10. Sequence Diagrams
 
 ### Flow A: Non-MFA Login (Password Only)
 
@@ -852,7 +949,7 @@ Browser              Next.js BFF              Spring Boot CBS
 
 ---
 
-## 10. JWT Token Structures
+## 11. JWT Token Structures
 
 ### Access Token Claims
 
@@ -905,7 +1002,7 @@ Source: `JwtTokenService.java:197-208` — Expiry: 5 minutes. Single-use: `jti` 
 
 ---
 
-## 11. LoginSessionContext TypeScript Interface
+## 12. TypeScript Interfaces
 
 ```typescript
 // === API Envelope ===
@@ -918,20 +1015,33 @@ interface ApiResponse<T> {
   timestamp: string;
 }
 
-// === Login Success Response (200 from /token or /mfa/verify) ===
+// === Login Response (200 from /token or /mfa/verify) — identity + tokens ONLY ===
 
-interface LoginSessionContext {
-  token: {
-    accessToken: string;
-    refreshToken: string;
-    tokenType: 'Bearer';
-    expiresAt: number;           // Unix epoch seconds
-  };
+interface AuthResponse {
+  accessToken: string;
+  refreshToken: string;
+  tokenType: 'Bearer';
+  expiresAt: number;             // Unix epoch seconds
   user: {
     userId: number;
     username: string;
     displayName: string;
+    role: 'MAKER' | 'CHECKER' | 'ADMIN' | 'AUDITOR';
+    branchCode: string | null;
     authenticationLevel: 'PASSWORD' | 'MFA';
+    mfaEnabled: boolean;
+  };
+}
+
+// === Bootstrap Context (200 from GET /context/bootstrap) — operational context ===
+
+interface LoginSessionContext {
+  token: null;                   // BFF already has tokens from login
+  user: {
+    userId: number;
+    username: string;
+    displayName: string;
+    authenticationLevel: 'SESSION';
     loginTimestamp: string;       // ISO 8601
     lastLoginTimestamp: string | null;
     passwordExpiryDate: string | null;  // YYYY-MM-DD
