@@ -465,7 +465,7 @@ public class AuthController {
                 accessToken, refresh.token(), "Bearer", expiresAt,
                 new AuthResponse.UserIdentity(
                         user.getId(), user.getUsername(),
-                        user.getFirstName() + " " + user.getLastName(),
+                        user.getFullName(),
                         role, branchCode,
                         flow, user.isMfaEnabled()));
     }

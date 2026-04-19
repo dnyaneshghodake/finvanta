@@ -100,7 +100,9 @@ Every response uses `ApiResponse<T>`:
 
 ### 2.1 `POST /auth/token` — Login
 
-Authenticates user and issues JWT tokens. If MFA is enabled, returns 428 with a challenge token.
+Authenticates user and issues JWT tokens. Returns **ONLY identity + tokens** (no operational context). If MFA is enabled, returns 428 with a challenge token.
+
+**Tier-1 CBS Principle:** Login must be ultra-fast (<300ms). Operational context (branch status, business day, permissions, limits) is fetched via `GET /api/v1/context/bootstrap` AFTER login.
 
 **Request:**
 
@@ -109,17 +111,25 @@ Authenticates user and issues JWT tokens. If MFA is enabled, returns 428 with a 
 | `username` | string | **Yes** | `@NotBlank` |
 | `password` | string | **Yes** | `@NotBlank` |
 
-**Response (200) — MFA disabled — `LoginSessionContext`:**
+**Response (200) — MFA disabled — `AuthResponse`:**
 
-| Section | Fields |
-|---------|--------|
-| `token` | `accessToken`, `refreshToken`, `tokenType` ("Bearer"), `expiresAt` (epoch seconds) |
-| `user` | `userId`, `username`, `displayName`, `authenticationLevel` (PASSWORD or MFA), `loginTimestamp`, `lastLoginTimestamp`, `passwordExpiryDate`, `mfaEnabled` |
-| `branch` | `branchId`, `branchCode`, `branchName`, `ifscCode`, `branchType`, `zoneCode`, `regionCode`, `headOffice` |
-| `businessDay` | `businessDate`, `dayStatus` (DAY_OPEN / EOD_RUNNING / DAY_CLOSED / NOT_OPENED), `isHoliday`, `previousBusinessDate`, `nextBusinessDate` |
-| `role` | `role`, `makerCheckerRole` (MAKER / CHECKER / BOTH / VIEWER), `permissionsByModule` (map of module to permission list), `allowedModules` (list) |
-| `limits` | `transactionLimits[]` each with `transactionType`, `channel`, `perTransactionLimit`, `dailyAggregateLimit` |
-| `operationalConfig` | `baseCurrency` (INR), `decimalPrecision` (2), `roundingMode` (HALF_UP), `fiscalYearStartMonth` (4), `businessDayPolicy` |
+```json
+{
+  "accessToken": "eyJhbG...",
+  "refreshToken": "eyJhbG...",
+  "tokenType": "Bearer",
+  "expiresAt": 1713600000,
+  "user": {
+    "userId": 1,
+    "username": "maker01",
+    "displayName": "Rajesh Kumar",
+    "role": "MAKER",
+    "branchCode": "HQ001",
+    "authenticationLevel": "PASSWORD",
+    "mfaEnabled": false
+  }
+}
+```
 
 **Response (428) — MFA enabled:**
 
@@ -153,7 +163,7 @@ Exchanges the 428 challenge token plus a valid TOTP code for JWT tokens. Challen
 | `challengeId` | string | **Yes** | Challenge JWT from the 428 response |
 | `otp` | string | **Yes** | 6-digit TOTP code from authenticator app |
 
-**Response (200):** Same `LoginSessionContext` structure as `/auth/token` with `authenticationLevel: "MFA"`.
+**Response (200):** Same `AuthResponse` structure as `/auth/token` with `authenticationLevel: "MFA"`.
 
 **Error Codes:**
 
@@ -197,6 +207,33 @@ Rotates refresh token per RFC 6749 section 10.4. Old token is denylisted; replay
 | `REFRESH_TOKEN_REUSED` | 401 | Stolen token replay detected (SOC alert) |
 | `LEGACY_REFRESH_TOKEN` | 401 | Pre-rotation token, must re-authenticate |
 | `ACCOUNT_INVALID` | 401 | Account disabled/locked since token issuance |
+
+### 2.4 `GET /context/bootstrap` — Operational Context (Post-Login)
+
+**Base:** `/api/v1/context` · **Auth:** JWT required · **When:** Immediately after login, after branch switch, after token refresh
+
+Loads the full Controlled Operational Context (COC) for the authenticated user. This is the "session activation" step — the BFF calls it once after login and caches the result in its server-side session.
+
+**Response (200) — `LoginSessionContext`:**
+
+| Section | Fields |
+|---------|--------|
+| `token` | `null` (BFF already has tokens from login) |
+| `user` | `userId`, `username`, `displayName`, `authenticationLevel`, `loginTimestamp`, `lastLoginTimestamp`, `passwordExpiryDate`, `mfaEnabled` |
+| `branch` | `branchId`, `branchCode`, `branchName`, `ifscCode`, `branchType`, `zoneCode`, `regionCode`, `headOffice` |
+| `businessDay` | `businessDate`, `dayStatus` (DAY_OPEN / EOD_RUNNING / DAY_CLOSED / NOT_OPENED), `isHoliday`, `previousBusinessDate`, `nextBusinessDate` |
+| `role` | `role`, `makerCheckerRole` (MAKER / CHECKER / BOTH / VIEWER), `permissionsByModule` {module→[perms]}, `allowedModules` |
+| `limits` | `transactionLimits[]` → `transactionType`, `channel`, `perTransactionLimit`, `dailyAggregateLimit` |
+| `operationalConfig` | `baseCurrency`, `decimalPrecision`, `roundingMode`, `fiscalYearStartMonth`, `businessDayPolicy` |
+
+**BFF refresh triggers:** initial login, branch switch, token refresh, day status change event
+
+**Tier-1 BFF Flow:**
+```
+POST /auth/token → store JWT in memory
+  → GET /context/bootstrap → hydrate server-side session
+  → GET /dashboard/widgets/* → render dashboard
+```
 
 ---
 
