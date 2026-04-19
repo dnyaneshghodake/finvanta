@@ -15,6 +15,7 @@ import com.finvanta.domain.entity.BusinessCalendar;
 import com.finvanta.domain.entity.RolePermission;
 import com.finvanta.domain.entity.Tenant;
 import com.finvanta.domain.entity.TransactionLimit;
+import com.finvanta.repository.AppUserRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
 import com.finvanta.repository.RolePermissionRepository;
 import com.finvanta.repository.TenantRepository;
@@ -62,16 +63,19 @@ public class SessionContextService {
 
     private static final Logger log = LoggerFactory.getLogger(SessionContextService.class);
 
+    private final AppUserRepository userRepository;
     private final TenantRepository tenantRepository;
     private final BusinessCalendarRepository calendarRepository;
     private final RolePermissionRepository rolePermissionRepository;
     private final TransactionLimitRepository transactionLimitRepository;
 
     public SessionContextService(
+            AppUserRepository userRepository,
             TenantRepository tenantRepository,
             BusinessCalendarRepository calendarRepository,
             RolePermissionRepository rolePermissionRepository,
             TransactionLimitRepository transactionLimitRepository) {
+        this.userRepository = userRepository;
         this.tenantRepository = tenantRepository;
         this.calendarRepository = calendarRepository;
         this.rolePermissionRepository = rolePermissionRepository;
@@ -80,7 +84,8 @@ public class SessionContextService {
 
     /**
      * Assemble the full Controlled Operational Context for a successfully
-     * authenticated user.
+     * authenticated user. Called from the login path where AppUser + tokens
+     * are already available.
      *
      * @param user         The authenticated AppUser (with branch eagerly loaded)
      * @param tenantId     The resolved tenant code
@@ -99,6 +104,42 @@ public class SessionContextService {
         return new LoginSessionContext(
                 buildTokenInfo(accessToken, refreshToken, expiresAt),
                 buildUserContext(user, authLevel),
+                buildBranchContext(user.getBranch()),
+                buildBusinessDayContext(tenantId, user.getBranch()),
+                buildRoleContext(tenantId, user),
+                buildLimitsContext(tenantId, user),
+                buildOperationalConfig(tenantId));
+    }
+
+    /**
+     * Assemble the COC from the current SecurityContext (JWT claims).
+     *
+     * <p>Called by {@code GET /api/v1/context/bootstrap} AFTER login.
+     * Per Tier-1 CBS: login returns only identity + tokens; the operational
+     * context is fetched separately via this dedicated endpoint.
+     *
+     * <p>The JWT carries username/tenant — we re-fetch the AppUser from DB
+     * to get current role, branch, and status (not stale JWT claims).
+     *
+     * <p>Token fields are null in the bootstrap response because the BFF
+     * already has the tokens from the login response. The COC carries
+     * everything EXCEPT tokens.
+     */
+    @Transactional(readOnly = true)
+    public LoginSessionContext assembleFromSecurityContext() {
+        String tenantId = com.finvanta.util.TenantContext.getCurrentTenant();
+        String username = com.finvanta.util.SecurityUtil.getCurrentUsername();
+
+        AppUser user = userRepository
+                .findByTenantIdAndUsername(tenantId, username)
+                .orElseThrow(() -> new com.finvanta.util.BusinessException(
+                        "USER_NOT_FOUND",
+                        "User not found: " + username));
+
+        // No tokens in bootstrap response — BFF already has them from login.
+        return new LoginSessionContext(
+                null, // tokens already held by BFF
+                buildUserContext(user, "SESSION"),
                 buildBranchContext(user.getBranch()),
                 buildBusinessDayContext(tenantId, user.getBranch()),
                 buildRoleContext(tenantId, user),

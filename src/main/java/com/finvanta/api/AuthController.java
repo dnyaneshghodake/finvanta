@@ -92,7 +92,7 @@ public class AuthController {
      */
     @PostMapping("/token")
     @Transactional
-    public ResponseEntity<ApiResponse<LoginSessionContext>>
+    public ResponseEntity<ApiResponse<AuthResponse>>
             authenticate(
                     @Valid @RequestBody TokenRequest req) {
         String tenantId = TenantContext.getCurrentTenant();
@@ -264,7 +264,7 @@ public class AuthController {
      */
     @PostMapping("/mfa/verify")
     @Transactional
-    public ResponseEntity<ApiResponse<LoginSessionContext>>
+    public ResponseEntity<ApiResponse<AuthResponse>>
             mfaVerify(
                     @Valid @RequestBody MfaVerifyRequest req) {
         Claims claims =
@@ -412,21 +412,27 @@ public class AuthController {
     }
 
     /**
-     * Shared token issuance + COC assembly path. Centralised to avoid
-     * drift between {@link #authenticate(TokenRequest)} and
-     * {@link #mfaVerify(MfaVerifyRequest)}.
+     * Shared token issuance path. Centralised to avoid drift between
+     * {@link #authenticate(TokenRequest)} and {@link #mfaVerify(MfaVerifyRequest)}.
      *
-     * <p>Per Finacle USER_SESSION / Temenos EB.USER.CONTEXT: the login
-     * response must establish the full Controlled Operational Context
-     * (identity, branch, business day, role/permission matrix, financial
-     * authority limits, operational config) in a single round-trip so the
-     * Next.js BFF can hydrate its server-side session without N+1 calls.
+     * <p><b>Tier-1 CBS Principle (Finacle/T24/Flexcube):</b> Login returns
+     * ONLY identity + authorization + tokens. Operational context (branch
+     * status, business day, permissions, limits, config) is fetched via the
+     * separate {@code GET /api/v1/context/bootstrap} endpoint AFTER login.
      *
-     * <p>Token issuance (JWT generation + login recording) remains here;
-     * COC assembly is delegated to {@link SessionContextService} which
-     * runs in a read-only transaction against the domain model.
+     * <p>Why NOT include dashboard/context in login:
+     * <ul>
+     *   <li>Login must be ultra-fast (&lt;300ms) — auth only</li>
+     *   <li>Dashboard/context data is heavy, aggregated, dynamic</li>
+     *   <li>Session payload must be minimal (security principle)</li>
+     *   <li>Auth service and Context service scale independently</li>
+     *   <li>RBI expects clear separation of auth &amp; business logic</li>
+     * </ul>
+     *
+     * <p>BFF flow: {@code POST /auth/token → store JWT → GET /context/bootstrap
+     * → GET /dashboard/widgets/* → render}
      */
-    private LoginSessionContext issueTokens(AppUser user, String tenantId,
+    private AuthResponse issueTokens(AppUser user, String tenantId,
             String flow) {
         String role = user.getRole().name();
         String branchCode = user.getBranch() != null
@@ -453,13 +459,15 @@ public class AuthController {
                 user.getUsername(), role, branchCode,
                 refresh.jti(), flow);
 
-        // CBS Tier-1: assemble the full Controlled Operational Context
-        // (identity + branch + business day + permissions + limits + config)
-        // alongside the tokens so the BFF gets everything in one response.
-        return sessionContextService.assemble(
-                user, tenantId,
-                accessToken, refresh.token(),
-                expiresAt, flow);
+        // CBS Tier-1: return ONLY identity + tokens.
+        // Operational context is fetched via GET /api/v1/context/bootstrap.
+        return new AuthResponse(
+                accessToken, refresh.token(), "Bearer", expiresAt,
+                new AuthResponse.UserIdentity(
+                        user.getId(), user.getUsername(),
+                        user.getFirstName() + " " + user.getLastName(),
+                        role, branchCode,
+                        flow, user.isMfaEnabled()));
     }
 
     /**
@@ -685,4 +693,40 @@ public class AuthController {
             String refreshToken,
             String tokenType,
             long expiresAt) {}
+
+    /**
+     * CBS Tier-1 Authentication Response per Finacle Connect / Temenos IRIS.
+     *
+     * <p>Contains ONLY identity + authorization + tokens. No operational
+     * context (branch status, business day, permissions, limits, config).
+     * Those are fetched via {@code GET /api/v1/context/bootstrap} AFTER login.
+     *
+     * <p>Per RBI IT Governance Direction 2023:
+     * <ul>
+     *   <li>Clear separation of authentication and business logic</li>
+     *   <li>Minimal session payload (principle of least privilege)</li>
+     *   <li>Login must be ultra-fast (&lt;300ms)</li>
+     * </ul>
+     */
+    public record AuthResponse(
+            String accessToken,
+            String refreshToken,
+            String tokenType,
+            long expiresAt,
+            UserIdentity user) {
+
+        /**
+         * Minimal user identity — enough for BFF to store in server-side
+         * session and determine which /context/bootstrap and /dashboard
+         * widgets to fetch. No PII beyond display name.
+         */
+        public record UserIdentity(
+                Long userId,
+                String username,
+                String displayName,
+                String role,
+                String branchCode,
+                String authenticationLevel,
+                boolean mfaEnabled) {}
+    }
 }
