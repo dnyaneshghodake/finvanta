@@ -1,0 +1,1070 @@
+# Finvanta CBS — Login API Contract for Frontend Integration
+
+> **Version:** 1.0
+> **Backend Commit:** `8284d59`
+> **Compliance:** RBI IT Governance Direction 2023 §8.1, §8.3, §8.4
+> **Architecture:** Finacle USER_SESSION / Temenos EB.USER.CONTEXT pattern
+
+---
+
+## Table of Contents
+
+1. [Overview](#1-overview)
+2. [Base Configuration](#2-base-configuration)
+3. [Required Headers](#3-required-headers)
+4. [Endpoint 1: POST /v1/auth/token](#4-endpoint-1-post-v1authtoken)
+5. [Endpoint 2: POST /v1/auth/mfa/verify](#5-endpoint-2-post-v1authmfaverify)
+6. [Endpoint 3: POST /v1/auth/refresh](#6-endpoint-3-post-v1authrefresh)
+7. [Complete Error Code Reference](#7-complete-error-code-reference)
+8. [BFF Authentication State Machine](#8-bff-authentication-state-machine)
+9. [Sequence Diagrams](#9-sequence-diagrams)
+10. [JWT Token Structures](#10-jwt-token-structures)
+11. [LoginSessionContext TypeScript Interface](#11-loginsessioncontext-typescript-interface)
+12. [CORS Configuration](#12-cors-configuration)
+13. [Filter Chain Execution Order](#13-filter-chain-execution-order)
+14. [Critical Frontend Rules](#14-critical-frontend-rules)
+
+---
+
+## 1. Overview
+
+The Finvanta CBS login API implements a **two-phase authentication flow** per RBI IT Governance Direction 2023:
+
+- **Phase 1 (Password):** `POST /v1/auth/token` — validates credentials, returns either full session context (non-MFA users) or a 428 MFA challenge (MFA-enrolled users).
+- **Phase 2 (MFA):** `POST /v1/auth/mfa/verify` — exchanges the challenge token + TOTP code for full session context. Only reached if Phase 1 returns 428.
+- **Token Refresh:** `POST /v1/auth/refresh` — rotates access + refresh tokens. Returns bare token pair (no session context — BFF already has it from login).
+
+On successful login (either phase), the backend returns a **Controlled Operational Context (COC)** containing tokens + user identity + branch + business day + role/permission matrix + financial authority limits + operational config — all in a single response. The Next.js BFF hydrates its server-side session from this single round-trip.
+
+### Security Invariants
+
+- **No account enumeration:** All pre-password-check failures return identical `401 AUTH_FAILED "Invalid credentials"` — including user-not-found, wrong password on disabled accounts, and wrong password on locked accounts.
+- **Timing-attack resistance:** User-not-found path executes a dummy BCrypt comparison to match the ~100ms latency of a real password check.
+- **MFA counter fairness:** Failed login counter is reset to 0 after successful password validation before the MFA gate, so MFA-enrolled users get a full 5 OTP attempts regardless of prior password failures.
+- **Single-use MFA challenges:** Challenge token `jti` is burned in the denylist on successful OTP verification. Failed OTP attempts do NOT burn the challenge — the user can retry with the same `challengeId`.
+
+---
+
+## 2. Base Configuration
+
+| Setting | Value | Source |
+|---|---|---|
+| Base URL | `/v1/auth` | `AuthController.java:54` |
+| Access Token Expiry | 15 minutes | `application.properties:25` |
+| Refresh Token Expiry | 8 hours | `application.properties:26` |
+| MFA Challenge Expiry | 5 minutes | `JwtTokenService.java:55` |
+| Account Lockout Threshold | 5 failed attempts | `AppUser.java:34` |
+| Auto-Unlock Duration | 30 minutes | `AppUser.java:36` |
+| Password Rotation Period | 90 days | `AppUser.java:38` |
+| JWT Signing Algorithm | HMAC-SHA256 | `JwtTokenService.java:69` |
+| JWT Issuer | `finvanta-cbs` | `application.properties:27` |
+| Password Hashing | BCrypt (12 rounds) | `SecurityConfig.java:460` |
+
+---
+
+## 3. Required Headers
+
+### Every API Request
+
+| Header | Required | Format | Validated By |
+|---|---|---|---|
+| `Content-Type` | YES | `application/json` | Spring MVC |
+| `X-Tenant-Id` | **YES** | `[A-Za-z0-9_]{1,20}` | `TenantFilter.java:57` |
+| `X-Correlation-Id` | Recommended | `[A-Za-z0-9-]{16,64}` | `CorrelationIdMdcFilter.java:63` |
+
+### Protected Endpoints (after login)
+
+| Header | Required | Format |
+|---|---|---|
+| `Authorization` | YES | `Bearer {accessToken}` |
+
+### Header Validation Errors
+
+**Missing Tenant ID — HTTP 400:**
+```json
+{
+  "status": "ERROR",
+  "errorCode": "MISSING_TENANT_ID",
+  "message": "X-Tenant-Id header is required for /api/v1/** requests."
+}
+```
+
+**Malformed Tenant ID — HTTP 400:**
+```json
+{
+  "status": "ERROR",
+  "errorCode": "INVALID_TENANT_ID",
+  "message": "X-Tenant-Id header is malformed. Must match [A-Za-z0-9_]{1,20}."
+}
+```
+
+**Correlation ID Behavior:**
+- If `X-Correlation-Id` is absent or malformed → server generates a UUID v4
+- Server always echoes `X-Correlation-Id` on the response header
+- Use the **same** correlation ID across the password phase and MFA phase of a single login attempt
+
+---
+
+## 4. Endpoint 1: POST /v1/auth/token
+
+**Purpose:** Password authentication. Returns full COC on success, or 428 MFA challenge if user has MFA enabled.
+
+### Request
+
+```
+POST /v1/auth/token HTTP/1.1
+Content-Type: application/json
+X-Tenant-Id: DEFAULT
+X-Correlation-Id: 7f3c1e40-52ea-4c7a-9b8d-19f2a51bf4d9
+```
+
+```json
+{
+  "username": "maker1",
+  "password": "password123"
+}
+```
+
+| Field | Type | Validation | Source |
+|---|---|---|---|
+| `username` | string | `@NotBlank` | `AuthController.java:664` |
+| `password` | string | `@NotBlank` | `AuthController.java:666` |
+
+### Response: Validation Failure (HTTP 400)
+
+Returned when request body fields are missing or blank.
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "VALIDATION_FAILED",
+  "message": "username: Username is required; password: Password is required",
+  "timestamp": "2026-04-19T15:30:00"
+}
+```
+
+Source: `ApiExceptionHandler.java:78-82`
+
+### Response: Wrong Password / User Not Found (HTTP 401)
+
+**Identical response for ALL pre-password-check failures** to prevent account enumeration per OWASP ASVS 2.5.2.
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "AUTH_FAILED",
+  "message": "Invalid credentials",
+  "timestamp": "2026-04-19T15:30:00"
+}
+```
+
+| Scenario | Backend Source | Counter Effect |
+|---|---|---|
+| User not found | `AuthController.java:125-138` | None (dummy BCrypt for timing parity) |
+| Wrong password, active user | `AuthController.java:150-174` | `failedLoginAttempts +1` |
+| Wrong password, disabled user | `AuthController.java:150-174` | No increment (line 155) |
+| Wrong password, locked user (lockout not expired) | `AuthController.java:150-174` | No increment (already locked) |
+| Wrong password, locked user (lockout expired) | `AuthController.java:143-147 → 150-174` | Reset to 0, then +1 |
+
+**Frontend action:** Show generic "Invalid credentials" error. No differentiation between scenarios.
+
+### Response: Account Disabled (HTTP 401)
+
+Returned only when password is **correct** but account is disabled. Per RBI §8.1: account status is revealed only after proving password knowledge.
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "ACCOUNT_DISABLED",
+  "message": "Account is disabled. Contact administrator.",
+  "timestamp": "2026-04-19T15:30:00"
+}
+```
+
+Source: `AuthController.java:183-197`
+
+**Frontend action:** Show "Account disabled — contact administrator." Disable retry.
+
+### Response: Account Locked (HTTP 401)
+
+Returned only when password is **correct** but account is locked and auto-unlock duration has not elapsed.
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "ACCOUNT_LOCKED",
+  "message": "Account locked. Try after 30 minutes",
+  "timestamp": "2026-04-19T15:30:00"
+}
+```
+
+Source: `AuthController.java:199-212`
+
+**Frontend action:** Show "Account locked — try after 30 minutes" with optional countdown timer.
+
+### Response: Password Expired (HTTP 401)
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "PASSWORD_EXPIRED",
+  "message": "Password expired. Change via UI before API access",
+  "timestamp": "2026-04-19T15:30:00"
+}
+```
+
+Source: `AuthController.java:216-222`
+
+**Frontend action:** Redirect to password change screen.
+
+### Response: MFA Step-Up Required (HTTP 428)
+
+Returned when password is correct and user has MFA enrolled. **No tokens are issued at this stage.**
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "MFA_REQUIRED",
+  "message": "MFA step-up required to complete sign-in",
+  "data": {
+    "challengeId": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJtYWtlcjEi...",
+    "channel": "TOTP"
+  },
+  "timestamp": "2026-04-19T15:30:00"
+}
+```
+
+Source: `AuthController.java:231-248` → throws `MfaRequiredException` → `ApiExceptionHandler.java:34-44`
+
+| Field | Description |
+|---|---|
+| `data.challengeId` | Signed JWT valid for 5 minutes, single-use on success |
+| `data.channel` | Always `"TOTP"` (Google Authenticator / Microsoft Authenticator) |
+
+**Backend side-effect:** `failedLoginAttempts` reset to 0 (line 239). MFA OTP failures start counting fresh.
+
+**Frontend action:** Store `challengeId` in component state (NOT localStorage). Show OTP input modal. Submit to `POST /v1/auth/mfa/verify`.
+
+### Response: Login Success — No MFA (HTTP 200)
+
+Full Controlled Operational Context returned when password is correct and user does NOT have MFA enrolled.
+
+```json
+{
+  "status": "SUCCESS",
+  "data": {
+    "token": {
+      "accessToken": "eyJhbGciOiJIUzI1NiJ9...",
+      "refreshToken": "eyJhbGciOiJIUzI1NiJ9...",
+      "tokenType": "Bearer",
+      "expiresAt": 1713520800
+    },
+    "user": {
+      "userId": 2,
+      "username": "maker1",
+      "displayName": "Rajesh Kumar",
+      "authenticationLevel": "PASSWORD",
+      "loginTimestamp": "2026-04-19T15:30:00",
+      "lastLoginTimestamp": "2026-04-18T09:15:00",
+      "passwordExpiryDate": "2026-07-18",
+      "mfaEnabled": false
+    },
+    "branch": {
+      "branchId": 2,
+      "branchCode": "MUM001",
+      "branchName": "Mumbai Main Branch",
+      "ifscCode": "FNVT0MUM001",
+      "branchType": "BRANCH",
+      "zoneCode": "WEST",
+      "regionCode": "MH",
+      "headOffice": false
+    },
+    "businessDay": {
+      "businessDate": "2026-04-19",
+      "dayStatus": "DAY_OPEN",
+      "isHoliday": false,
+      "previousBusinessDate": "2026-04-18",
+      "nextBusinessDate": "2026-04-21"
+    },
+    "role": {
+      "role": "MAKER",
+      "makerCheckerRole": "MAKER",
+      "permissionsByModule": {
+        "LOAN": ["LOAN_CREATE", "LOAN_REPAYMENT", "LOAN_VIEW"],
+        "DEPOSIT": ["DEPOSIT_OPEN", "DEPOSIT_DEPOSIT", "DEPOSIT_WITHDRAW", "DEPOSIT_TRANSFER", "DEPOSIT_VIEW"],
+        "CUSTOMER": ["CUSTOMER_CREATE", "CUSTOMER_VIEW"],
+        "CLEARING": ["CLEARING_INITIATE"]
+      },
+      "allowedModules": ["LOAN", "DEPOSIT", "CUSTOMER", "CLEARING"]
+    },
+    "limits": {
+      "transactionLimits": [
+        {
+          "transactionType": "ALL",
+          "channel": null,
+          "perTransactionLimit": 1000000,
+          "dailyAggregateLimit": 5000000
+        }
+      ]
+    },
+    "operationalConfig": {
+      "baseCurrency": "INR",
+      "decimalPrecision": 2,
+      "roundingMode": "HALF_UP",
+      "fiscalYearStartMonth": 4,
+      "businessDayPolicy": "MON_TO_SAT"
+    }
+  },
+  "timestamp": "2026-04-19T15:30:00"
+}
+```
+
+Source: `AuthController.java:251-252` → `issueTokens()` → `SessionContextService.assemble()`
+
+**COC Field Reference:**
+
+| Section | Key Fields | UI Usage |
+|---|---|---|
+| `token` | `accessToken`, `refreshToken`, `expiresAt` | BFF session storage (never browser) |
+| `user` | `displayName`, `authenticationLevel`, `lastLoginTimestamp`, `passwordExpiryDate` | Dashboard header, password expiry warning |
+| `branch` | `branchCode`, `branchName`, `branchType`, `headOffice` | Header bar, branch context display |
+| `businessDay` | `businessDate`, `dayStatus`, `isHoliday` | Transaction date, day-status banner |
+| `role` | `role`, `makerCheckerRole`, `permissionsByModule`, `allowedModules` | Sidebar menu, button visibility, maker/checker screens |
+| `limits` | `transactionLimits[].perTransactionLimit`, `dailyAggregateLimit` | Amount field pre-validation, limit warnings |
+| `operationalConfig` | `baseCurrency`, `decimalPrecision`, `roundingMode` | Currency formatting, amount input precision |
+
+**`businessDay.dayStatus` → UI Behavior:**
+
+| Value | UI Action |
+|---|---|
+| `DAY_OPEN` | Normal operations — all transaction buttons enabled |
+| `EOD_RUNNING` | Banner "End-of-day in progress" — disable transaction buttons |
+| `DAY_CLOSED` | Disable all posting buttons — read-only mode |
+| `NOT_OPENED` | Banner "Business day not opened — contact administrator" |
+
+**`role.makerCheckerRole` → UI Behavior:**
+
+| Value | Derived From | UI Action |
+|---|---|---|
+| `MAKER` | Has CREATE/INITIATE, no APPROVE/VERIFY | Show "Submit for Approval", hide approval screens |
+| `CHECKER` | Has APPROVE/VERIFY, no CREATE/INITIATE | Show approval screens, hide create screens |
+| `BOTH` | Has both (ADMIN) | Show all (self-approval blocked server-side) |
+| `VIEWER` | Has neither (AUDITOR) | Read-only — hide all action buttons |
+
+**`branch` can be `null`:** HO/system users without branch assignment. When null, `businessDay` is also null. Show branch-selector for these users.
+
+**Frontend action:** Store tokens in BFF server-side session. Store full COC in React context / Zustand for UI rendering. **Never store tokens in localStorage or sessionStorage.**
+
+---
+
+## 5. Endpoint 2: POST /v1/auth/mfa/verify
+
+**Purpose:** Complete MFA step-up by exchanging the challenge token + TOTP code for full login session context.
+
+### Request
+
+```
+POST /v1/auth/mfa/verify HTTP/1.1
+Content-Type: application/json
+X-Tenant-Id: DEFAULT
+X-Correlation-Id: 7f3c1e40-52ea-4c7a-9b8d-19f2a51bf4d9
+```
+
+**Note:** Use the **same** `X-Correlation-Id` as the original `/token` call to tie the two phases together in audit logs.
+
+```json
+{
+  "challengeId": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJtYWtlcjEi...",
+  "otp": "123456"
+}
+```
+
+| Field | Type | Validation | Source |
+|---|---|---|---|
+| `challengeId` | string | `@NotBlank` | `AuthController.java:674` |
+| `otp` | string | `@NotBlank` | `AuthController.java:676` |
+
+### Response: Invalid/Expired Challenge (HTTP 401)
+
+Challenge JWT expired (>5 min), tampered, wrong type, or malformed (null jti).
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "INVALID_MFA_CHALLENGE",
+  "message": "MFA challenge invalid or expired. Please sign in again.",
+  "timestamp": "2026-04-19T15:35:00"
+}
+```
+
+Source: `AuthController.java:272-280` or `AuthController.java:292-298` (null jti) or `AuthController.java:325-331` (tenant mismatch)
+
+**Frontend action:** Clear OTP modal, redirect to login page with "Session expired — please sign in again."
+
+### Response: Challenge Already Used (HTTP 401)
+
+The challenge `jti` was already burned by a prior successful OTP verification.
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "MFA_CHALLENGE_REUSED",
+  "message": "This MFA challenge has already been used.",
+  "timestamp": "2026-04-19T15:35:00"
+}
+```
+
+Source: `AuthController.java:302-320` or `AuthController.java:398-405` (concurrent race via unique constraint)
+
+**Frontend action:** Clear OTP modal, redirect to login page. Indicates either replay attack or double-submission.
+
+### Response: Account Invalidated Between Phases (HTTP 401)
+
+Admin disabled or locked the account after the password phase but before OTP submission.
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "ACCOUNT_INVALID",
+  "message": "Account no longer valid",
+  "timestamp": "2026-04-19T15:35:00"
+}
+```
+
+Source: `AuthController.java:337-343`
+
+**Frontend action:** Redirect to login with "Account no longer valid" message.
+
+### Response: Wrong OTP Code (HTTP 401)
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "MFA_VERIFICATION_FAILED",
+  "message": "Invalid OTP code",
+  "timestamp": "2026-04-19T15:35:00"
+}
+```
+
+Source: `AuthController.java:360-379`
+
+**Backend side-effect:** `failedLoginAttempts +1` (starting from 0 because password phase reset it). Account locks at 5 failed OTP attempts.
+
+**IMPORTANT:** The same `challengeId` can be reused for multiple OTP attempts. It is only burned on **successful** verification. The user gets up to 5 attempts before account lockout.
+
+**Frontend action:** Show "Invalid OTP" error on the OTP modal. Allow retry with the **same `challengeId`**. Track attempt count client-side (server does not return remaining attempts).
+
+### Response: OTP Correct — Full Login Success (HTTP 200)
+
+Same `LoginSessionContext` structure as the non-MFA success response, but with `authenticationLevel: "MFA"`:
+
+```json
+{
+  "status": "SUCCESS",
+  "data": {
+    "token": {
+      "accessToken": "eyJ...",
+      "refreshToken": "eyJ...",
+      "tokenType": "Bearer",
+      "expiresAt": 1713520800
+    },
+    "user": {
+      "userId": 2,
+      "username": "maker1",
+      "displayName": "Rajesh Kumar",
+      "authenticationLevel": "MFA",
+      "loginTimestamp": "2026-04-19T15:35:00",
+      "lastLoginTimestamp": "2026-04-18T09:15:00",
+      "passwordExpiryDate": "2026-07-18",
+      "mfaEnabled": true
+    },
+    "branch": { "...": "same structure as Section 4" },
+    "businessDay": { "...": "same structure as Section 4" },
+    "role": { "...": "same structure as Section 4" },
+    "limits": { "...": "same structure as Section 4" },
+    "operationalConfig": { "...": "same structure as Section 4" }
+  },
+  "timestamp": "2026-04-19T15:35:00"
+}
+```
+
+Source: `AuthController.java:408-409` → `issueTokens()` → `SessionContextService.assemble()`
+
+**Frontend action:** Same as non-MFA success — store tokens in BFF session, hydrate COC into React context, redirect to dashboard.
+
+---
+
+## 6. Endpoint 3: POST /v1/auth/refresh
+
+**Purpose:** Exchange a valid refresh token for a new access + refresh token pair. Implements RFC 6749 §10.4 rotation — old refresh token is burned on use.
+
+**NOTE:** Returns bare `TokenResponse`, NOT `LoginSessionContext`. Refresh is a token rotation, not a login — the BFF already has the COC from the original login.
+
+### Request
+
+```
+POST /v1/auth/refresh HTTP/1.1
+Content-Type: application/json
+X-Tenant-Id: DEFAULT
+X-Correlation-Id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+```
+
+```json
+{
+  "refreshToken": "eyJhbGciOiJIUzI1NiJ9..."
+}
+```
+
+| Field | Type | Validation | Source |
+|---|---|---|---|
+| `refreshToken` | string | `@NotBlank` | `AuthController.java:670` |
+
+### Response: Refresh Success (HTTP 200)
+
+```json
+{
+  "status": "SUCCESS",
+  "data": {
+    "accessToken": "eyJ...(new)...",
+    "refreshToken": "eyJ...(new)...",
+    "tokenType": "Bearer",
+    "expiresAt": 1713521700
+  },
+  "timestamp": "2026-04-19T15:45:00"
+}
+```
+
+Source: `AuthController.java:649-658`
+
+**Backend side-effect:** Old refresh token's `jti` persisted in `revoked_refresh_tokens` with reason `ROTATION`.
+
+**Frontend action:** Replace **both** `accessToken` and `refreshToken` in BFF session. Old refresh token is permanently invalid.
+
+### Response: Invalid/Expired Refresh Token (HTTP 401)
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "INVALID_REFRESH_TOKEN",
+  "message": "Refresh token invalid or expired",
+  "timestamp": "2026-04-19T23:30:00"
+}
+```
+
+Source: `AuthController.java:494-500`
+
+**Frontend action:** Clear session, redirect to login page.
+
+### Response: Not a Refresh Token (HTTP 401)
+
+Returned when an access token is mistakenly submitted instead of a refresh token.
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "NOT_REFRESH_TOKEN",
+  "message": "Provided token is not a refresh token",
+  "timestamp": "2026-04-19T15:30:00"
+}
+```
+
+Source: `AuthController.java:503-510`
+
+**Frontend action:** BFF bug — fix the client to submit the refresh token, not the access token.
+
+### Response: Refresh Token Already Used — Theft Detection (HTTP 401)
+
+**⚠️ CRITICAL SECURITY SIGNAL.** Per OWASP JWT Cheat Sheet: a reused refresh token means either the BFF has a bug (double-submitted) or the token was stolen and replayed.
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "REFRESH_TOKEN_REUSED",
+  "message": "Refresh token has already been used. Re-authenticate via /api/v1/auth/token.",
+  "timestamp": "2026-04-19T15:30:00"
+}
+```
+
+Source: `AuthController.java:542-561` or `AuthController.java:606-635` (concurrent race)
+
+**Frontend action:** **Immediately** clear all session state, redirect to login with "Session expired — please sign in again." Log this event client-side for SOC correlation.
+
+### Response: Account Invalidated (HTTP 401)
+
+Admin disabled/locked the account after the user's last login.
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "ACCOUNT_INVALID",
+  "message": "Account no longer valid",
+  "timestamp": "2026-04-19T15:30:00"
+}
+```
+
+Source: `AuthController.java:570-576`
+
+**Frontend action:** Clear session, redirect to login.
+
+### Response: Legacy Refresh Token (HTTP 401)
+
+Token issued before the rotation policy was deployed (missing `jti` claim).
+
+```json
+{
+  "status": "ERROR",
+  "errorCode": "LEGACY_REFRESH_TOKEN",
+  "message": "Refresh token predates rotation policy. Please re-authenticate via /api/v1/auth/token.",
+  "timestamp": "2026-04-19T15:30:00"
+}
+```
+
+Source: `AuthController.java:521-539`
+
+**Frontend action:** Clear session, redirect to login. Only occurs during migration.
+
+---
+
+## 7. Complete Error Code Reference
+
+| errorCode | HTTP | Endpoint | Frontend Action |
+|---|---|---|---|
+| `VALIDATION_FAILED` | 400 | Any | Show field-level errors |
+| `MISSING_TENANT_ID` | 400 | Any | BFF bug — fix header |
+| `INVALID_TENANT_ID` | 400 | Any | BFF bug — fix header |
+| `AUTH_FAILED` | 401 | `/token` | Show "Invalid credentials" |
+| `ACCOUNT_DISABLED` | 401 | `/token` | Show "Account disabled — contact admin" |
+| `ACCOUNT_LOCKED` | 401 | `/token` | Show "Locked — try after 30 min" |
+| `PASSWORD_EXPIRED` | 401 | `/token` | Redirect to password change |
+| `MFA_REQUIRED` | **428** | `/token` | Show OTP modal with `data.challengeId` |
+| `INVALID_MFA_CHALLENGE` | 401 | `/mfa/verify` | Redirect to login ("session expired") |
+| `MFA_CHALLENGE_REUSED` | 401 | `/mfa/verify` | Redirect to login |
+| `ACCOUNT_INVALID` | 401 | `/mfa/verify`, `/refresh` | Redirect to login |
+| `MFA_VERIFICATION_FAILED` | 401 | `/mfa/verify` | Show "Invalid OTP" — allow retry |
+| `INVALID_REFRESH_TOKEN` | 401 | `/refresh` | Redirect to login |
+| `NOT_REFRESH_TOKEN` | 401 | `/refresh` | BFF bug — fix client |
+| `REFRESH_TOKEN_REUSED` | 401 | `/refresh` | **CRITICAL** — clear all state, redirect |
+| `LEGACY_REFRESH_TOKEN` | 401 | `/refresh` | Redirect to login |
+| `UNAUTHORIZED` | 401 | Any protected | Access token expired — trigger refresh |
+| `INTERNAL_ERROR` | 500 | Any | Show "Unexpected error — contact support" |
+
+---
+
+## 8. BFF Authentication State Machine
+
+```
+┌─────────────┐
+│  LOGGED_OUT  │
+└──────┬──────┘
+       │ User submits username + password
+       ▼
+POST /v1/auth/token
+       │
+       ├── 401 AUTH_FAILED ──────────────────► Show error, stay on login
+       ├── 401 ACCOUNT_DISABLED ─────────────► Show disabled message
+       ├── 401 ACCOUNT_LOCKED ───────────────► Show locked + countdown
+       ├── 401 PASSWORD_EXPIRED ─────────────► Redirect to password change
+       │
+       ├── 428 MFA_REQUIRED ─────────────────► ┌──────────────┐
+       │   (store challengeId)                  │  MFA_PENDING  │
+       │                                        └──────┬───────┘
+       │                                               │ User submits OTP
+       │                                               ▼
+       │                                   POST /v1/auth/mfa/verify
+       │                                               │
+       │   ┌── 401 MFA_VERIFICATION_FAILED ◄───────────┤ (retry same challengeId)
+       │   │                                            │
+       │   │   401 INVALID_MFA_CHALLENGE ──────────────►│ Redirect to login
+       │   │   401 MFA_CHALLENGE_REUSED ───────────────►│ Redirect to login
+       │   │   401 ACCOUNT_INVALID ────────────────────►│ Redirect to login
+       │   │                                            │
+       │   └───────────────────────────────────────────►│
+       │                                               │
+       │                                    200 + LoginSessionContext
+       │                                               │
+       ├── 200 + LoginSessionContext ◄─────────────────┘
+       │
+       ▼
+┌─────────────┐
+│  LOGGED_IN   │ ◄── Store tokens + COC in BFF session
+└──────┬──────┘
+       │
+       │ Access token nearing expiry (14 min mark)
+       ▼
+POST /v1/auth/refresh
+       │
+       ├── 200 + TokenResponse ──────────────► Update tokens, stay logged in
+       ├── 401 (any) ────────────────────────► Clear session, redirect to login
+       │
+       ▼
+┌─────────────┐
+│  LOGGED_OUT  │
+└─────────────┘
+```
+
+---
+
+## 9. Sequence Diagrams
+
+### Flow A: Non-MFA Login (Password Only)
+
+```
+Browser              Next.js BFF              Spring Boot CBS
+  │                      │                          │
+  │  Submit login form   │                          │
+  │─────────────────────►│                          │
+  │                      │  POST /v1/auth/token     │
+  │                      │  X-Tenant-Id: DEFAULT    │
+  │                      │  X-Correlation-Id: uuid1 │
+  │                      │  {username, password}     │
+  │                      │─────────────────────────►│
+  │                      │                          │ Validate password (BCrypt)
+  │                      │                          │ Check active/locked/expired
+  │                      │                          │ user.mfaEnabled = false
+  │                      │                          │ Generate access + refresh JWT
+  │                      │                          │ Assemble COC (4-5 queries)
+  │                      │                          │ recordSuccessfulLogin()
+  │                      │    200 + LoginSession    │
+  │                      │◄─────────────────────────│
+  │                      │                          │
+  │                      │ Store tokens in server   │
+  │                      │ session (NOT browser)    │
+  │                      │ Store COC in session     │
+  │                      │                          │
+  │  Set session cookie  │                          │
+  │  Redirect /dashboard │                          │
+  │◄─────────────────────│                          │
+```
+
+### Flow B: MFA Login (Password + TOTP)
+
+```
+Browser              Next.js BFF              Spring Boot CBS
+  │                      │                          │
+  │  Submit login form   │                          │
+  │─────────────────────►│                          │
+  │                      │  POST /v1/auth/token     │
+  │                      │  X-Correlation-Id: uuid1 │
+  │                      │  {username, password}     │
+  │                      │─────────────────────────►│
+  │                      │                          │ Validate password ✓
+  │                      │                          │ user.mfaEnabled = true
+  │                      │                          │ resetLoginAttempts() → 0
+  │                      │                          │ Generate MFA challenge JWT
+  │                      │                          │
+  │                      │    428 MFA_REQUIRED      │
+  │                      │    {challengeId, "TOTP"} │
+  │                      │◄─────────────────────────│
+  │                      │                          │
+  │                      │ Store challengeId in     │
+  │                      │ server-side temp state   │
+  │                      │                          │
+  │  Show OTP modal      │                          │
+  │◄─────────────────────│                          │
+  │                      │                          │
+  │  Submit OTP: 123456  │                          │
+  │─────────────────────►│                          │
+  │                      │  POST /v1/auth/mfa/verify│
+  │                      │  X-Correlation-Id: uuid1 │ ◄── SAME correlation ID
+  │                      │  {challengeId, otp}      │
+  │                      │─────────────────────────►│
+  │                      │                          │ Validate challenge JWT
+  │                      │                          │ Check single-use (jti)
+  │                      │                          │ Check tenant match
+  │                      │                          │ Verify TOTP code
+  │                      │                          │ Burn challenge (denylist jti)
+  │                      │                          │ Generate access + refresh JWT
+  │                      │                          │ Assemble COC
+  │                      │                          │
+  │                      │    200 + LoginSession    │
+  │                      │    authLevel: "MFA"      │
+  │                      │◄─────────────────────────│
+  │                      │                          │
+  │                      │ Store tokens + COC       │
+  │  Redirect /dashboard │                          │
+  │◄─────────────────────│                          │
+```
+
+### Flow C: MFA Login — Wrong OTP Then Correct OTP
+
+```
+Browser              Next.js BFF              Spring Boot CBS
+  │                      │                          │
+  │  (password phase     │  428 MFA_REQUIRED        │
+  │   already done)      │  challengeId: "eyJ..."   │
+  │                      │                          │
+  │  Submit OTP: 999999  │                          │
+  │─────────────────────►│                          │
+  │                      │  POST /v1/auth/mfa/verify│
+  │                      │  {challengeId, "999999"} │
+  │                      │─────────────────────────►│
+  │                      │                          │ TOTP verify → false
+  │                      │                          │ failedLoginAttempts: 0 → 1
+  │                      │                          │
+  │                      │    401 MFA_VERIFICATION  │
+  │                      │    _FAILED               │
+  │                      │◄─────────────────────────│
+  │                      │                          │
+  │  Show "Invalid OTP"  │                          │
+  │  (attempt 1 of 5)    │                          │
+  │◄─────────────────────│                          │
+  │                      │                          │
+  │  Submit OTP: 123456  │                          │
+  │─────────────────────►│                          │
+  │                      │  POST /v1/auth/mfa/verify│
+  │                      │  {challengeId, "123456"} │ ◄── SAME challengeId
+  │                      │─────────────────────────►│
+  │                      │                          │ TOTP verify → true
+  │                      │                          │ Burn challenge jti
+  │                      │                          │ Issue tokens + COC
+  │                      │                          │
+  │                      │    200 + LoginSession    │
+  │                      │◄─────────────────────────│
+  │                      │                          │
+  │  Redirect /dashboard │                          │
+  │◄─────────────────────│                          │
+```
+
+### Flow D: Token Refresh (Proactive)
+
+```
+Browser              Next.js BFF              Spring Boot CBS
+  │                      │                          │
+  │  (14 min after login │                          │
+  │   — proactive timer) │                          │
+  │                      │  POST /v1/auth/refresh   │
+  │                      │  {refreshToken: "eyJ.."} │
+  │                      │─────────────────────────►│
+  │                      │                          │ Validate refresh JWT
+  │                      │                          │ Check jti not revoked
+  │                      │                          │ Re-fetch user (active?)
+  │                      │                          │ Revoke old jti (ROTATION)
+  │                      │                          │ Generate new access+refresh
+  │                      │                          │
+  │                      │    200 + TokenResponse   │
+  │                      │◄─────────────────────────│
+  │                      │                          │
+  │                      │ Replace tokens in session│
+  │                      │ (COC unchanged)          │
+  │  (seamless — user    │                          │
+  │   notices nothing)   │                          │
+```
+
+---
+
+## 10. JWT Token Structures
+
+### Access Token Claims
+
+```json
+{
+  "sub": "maker1",
+  "iss": "finvanta-cbs",
+  "tenant": "DEFAULT",
+  "role": "MAKER",
+  "branch": "MUM001",
+  "type": "ACCESS",
+  "iat": 1713520800,
+  "exp": 1713521700
+}
+```
+
+Source: `JwtTokenService.java:81-96` — Expiry: 15 minutes.
+
+### Refresh Token Claims
+
+```json
+{
+  "sub": "maker1",
+  "iss": "finvanta-cbs",
+  "jti": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "tenant": "DEFAULT",
+  "type": "REFRESH",
+  "iat": 1713520800,
+  "exp": 1713549600
+}
+```
+
+Source: `JwtTokenService.java:110-127` — Expiry: 8 hours. **No `role` or `branch` claim** — refresh tokens cannot be used for authorization.
+
+### MFA Challenge Token Claims
+
+```json
+{
+  "sub": "maker1",
+  "iss": "finvanta-cbs",
+  "jti": "f1e2d3c4-b5a6-9807-fedc-ba0987654321",
+  "tenant": "DEFAULT",
+  "type": "MFA_CHALLENGE",
+  "iat": 1713520800,
+  "exp": 1713521100
+}
+```
+
+Source: `JwtTokenService.java:197-208` — Expiry: 5 minutes. Single-use: `jti` burned in `revoked_refresh_tokens` on successful OTP verification.
+
+---
+
+## 11. LoginSessionContext TypeScript Interface
+
+```typescript
+// === API Envelope ===
+
+interface ApiResponse<T> {
+  status: 'SUCCESS' | 'ERROR';
+  data?: T;
+  errorCode?: string;
+  message?: string;
+  timestamp: string;
+}
+
+// === Login Success Response (200 from /token or /mfa/verify) ===
+
+interface LoginSessionContext {
+  token: {
+    accessToken: string;
+    refreshToken: string;
+    tokenType: 'Bearer';
+    expiresAt: number;           // Unix epoch seconds
+  };
+  user: {
+    userId: number;
+    username: string;
+    displayName: string;
+    authenticationLevel: 'PASSWORD' | 'MFA';
+    loginTimestamp: string;       // ISO 8601
+    lastLoginTimestamp: string | null;
+    passwordExpiryDate: string | null;  // YYYY-MM-DD
+    mfaEnabled: boolean;
+  };
+  branch: {
+    branchId: number;
+    branchCode: string;
+    branchName: string;
+    ifscCode: string | null;
+    branchType: 'HEAD_OFFICE' | 'ZONAL_OFFICE' | 'REGIONAL_OFFICE' | 'BRANCH';
+    zoneCode: string | null;
+    regionCode: string | null;
+    headOffice: boolean;
+  } | null;                      // null for HO/system users
+  businessDay: {
+    businessDate: string | null; // YYYY-MM-DD, null if NOT_OPENED
+    dayStatus: 'DAY_OPEN' | 'EOD_RUNNING' | 'DAY_CLOSED' | 'NOT_OPENED';
+    isHoliday: boolean;
+    previousBusinessDate: string | null;
+    nextBusinessDate: string | null;
+  } | null;                      // null if no branch assigned
+  role: {
+    role: 'MAKER' | 'CHECKER' | 'ADMIN' | 'AUDITOR';
+    makerCheckerRole: 'MAKER' | 'CHECKER' | 'BOTH' | 'VIEWER';
+    permissionsByModule: Record<string, string[]>;
+    allowedModules: string[];
+  };
+  limits: {
+    transactionLimits: Array<{
+      transactionType: string;
+      channel: string | null;
+      perTransactionLimit: number | null;
+      dailyAggregateLimit: number | null;
+    }>;
+  };
+  operationalConfig: {
+    baseCurrency: string;        // 'INR'
+    decimalPrecision: number;    // 2
+    roundingMode: string;        // 'HALF_UP'
+    fiscalYearStartMonth: number; // 4 (April)
+    businessDayPolicy: string;   // 'MON_TO_SAT'
+  };
+}
+
+// === MFA Challenge Response (428 from /token) ===
+
+interface MfaChallengeResponse {
+  status: 'ERROR';
+  errorCode: 'MFA_REQUIRED';
+  message: string;
+  data: {
+    challengeId: string;         // Opaque JWT — pass back to /mfa/verify
+    channel: 'TOTP';
+  };
+  timestamp: string;
+}
+
+// === Token Refresh Response (200 from /refresh) ===
+
+interface TokenResponse {
+  accessToken: string;
+  refreshToken: string;
+  tokenType: 'Bearer';
+  expiresAt: number;
+}
+
+// === Error Response (401/400/500) ===
+
+interface ErrorResponse {
+  status: 'ERROR';
+  errorCode: string;
+  message: string;
+  timestamp: string;
+}
+```
+
+---
+
+## 12. CORS Configuration
+
+Source: `SecurityConfig.java:392-438`
+
+| Setting | Value |
+|---|---|
+| Allowed Origins | `spring.boot.app.cors.allowed-origins` (default: `http://localhost:3000`) |
+| Allowed Methods | `GET, POST, PUT, DELETE, OPTIONS, PATCH` |
+| Allowed Request Headers | `Content-Type, Authorization, X-Tenant-Id, X-Request-ID, X-Correlation-Id, X-Idempotency-Key, X-Branch-Code, X-Client-Version, Accept, Accept-Language, X-CSRF-Token` |
+| Exposed Response Headers | `Authorization, X-Request-ID, X-Correlation-Id, X-Total-Count, X-Total-Pages, X-Current-Page, X-Page-Size` |
+| Credentials | `false` (stateless JWT — no cookies sent cross-origin) |
+| Preflight Max Age | 86400 seconds (24 hours) |
+
+---
+
+## 13. Filter Chain Execution Order
+
+Every API request passes through these filters in order:
+
+| Order | Filter | Purpose | Runs On |
+|---|---|---|---|
+| 0 | `CorrelationIdMdcFilter` | Read/generate `X-Correlation-Id`, set SLF4J MDC | All requests |
+| 1 | `TenantFilter` | Resolve `X-Tenant-Id`, validate format, set `TenantContext` + MDC | All requests |
+| — | `AuthRateLimitFilter` | Rate-limit `/v1/auth/**` endpoints | Auth endpoints only |
+| — | `JwtAuthenticationFilter` | Validate `Authorization: Bearer` JWT, set `SecurityContext` | Protected endpoints only |
+
+For `/v1/auth/token` and `/v1/auth/mfa/verify`: `JwtAuthenticationFilter` is **skipped** (these are `permitAll`). Only CorrelationId → Tenant → RateLimit → Controller.
+
+---
+
+## 14. Critical Frontend Rules
+
+1. **Never store tokens in browser storage.** Access and refresh tokens live in the Next.js BFF server-side session only. The browser never sees raw JWTs.
+
+2. **Same `X-Correlation-Id` across MFA flow.** The `/token` call and the `/mfa/verify` call for the same login attempt must carry the same correlation ID so audit logs tie them together.
+
+3. **Retry OTP with the same `challengeId`.** On `MFA_VERIFICATION_FAILED`, re-submit to `/mfa/verify` with the same `challengeId` and a new OTP. The challenge is only burned on success. Track attempt count client-side (max 5 before server locks the account).
+
+4. **On any 401 from `/refresh`, redirect to login.** Do not retry. `REFRESH_TOKEN_REUSED` is a theft signal — clear everything immediately.
+
+5. **Proactive refresh.** Schedule token refresh at `expiresAt - 60 seconds` (14 minutes after login). Do not wait for a 401 on a business endpoint — that creates poor UX.
+
+6. **`businessDay.dayStatus` controls the entire UI.** If `NOT_OPENED`, disable all transaction buttons and show a banner. If `EOD_RUNNING`, show read-only mode. The server enforces this too, but the UI should prevent the user from even trying.
+
+7. **`role.permissionsByModule` controls sidebar and buttons.** If `DEPOSIT` is not in `allowedModules`, hide the entire Deposits sidebar menu. Within a module, check individual permission codes: if `DEPOSIT_WITHDRAW` is absent, hide the Withdrawal button. The server re-validates via `CbsPermissionEvaluator` on every request — the UI is a convenience filter, not the security boundary.
+
+8. **`limits.transactionLimits` is advisory only.** Use for client-side pre-validation (highlight amount fields, show warnings). The server re-validates via `TransactionLimitService` on every financial operation.
+
+9. **`operationalConfig` controls all amount formatting.** Use `decimalPrecision` and `roundingMode` for every amount input and display. Do not hardcode `"INR"` or `2`.
+
+10. **`user.passwordExpiryDate` — show warning banner.** If within 7 days of today, show a non-blocking banner: "Your password expires on {date}."
+
+11. **`user.lastLoginTimestamp` — show on dashboard.** Per RBI IT Governance: display "Last login: {timestamp}" so the user can detect unauthorized access.
+
+12. **`branch` can be `null`.** HO/system users without branch assignment. When null, `businessDay` is also null. Show a branch-selector dropdown for these users.
+
+13. **Every API call must attach `X-Tenant-Id` and `X-Correlation-Id`.** Use an Axios/fetch interceptor in the BFF to inject these headers automatically from the server-side session.
