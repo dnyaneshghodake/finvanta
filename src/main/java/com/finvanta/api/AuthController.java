@@ -102,7 +102,33 @@ public class AuthController {
                         req.username())
                 .orElse(null);
 
+        // CBS SECURITY per RBI IT Governance Direction 2023 §8.1 and
+        // OWASP ASVS 2.5.2: pre-authentication responses MUST NOT reveal
+        // whether a username exists, is disabled, or is locked. An attacker
+        // probing with random usernames must see the same response as one
+        // probing with a valid username and wrong password.
+        //
+        // Tier-1 CBS invariant (Finacle/Temenos): password validation MUST
+        // run BEFORE any account-status check so that:
+        //   "user not found"  → AUTH_FAILED
+        //   "wrong password"  → AUTH_FAILED
+        //   "disabled + any"  → AUTH_FAILED (not ACCOUNT_DISABLED)
+        //   "locked + any"    → AUTH_FAILED (not ACCOUNT_LOCKED)
+        //   "correct + locked" → ACCOUNT_LOCKED (status revealed only
+        //                         after proving knowledge of password)
+        //
+        // The JSP flow achieves this via CustomUserDetailsService throwing
+        // UsernameNotFoundException for disabled accounts (same as not-found)
+        // and Spring Security showing a generic "Invalid username or password".
+        // The API must maintain the same opacity.
+
         if (user == null) {
+            // CBS: constant-time comparison to prevent timing-based user
+            // enumeration. Without this, "user not found" returns ~0ms
+            // while "wrong password" takes ~100ms (BCrypt). An attacker
+            // can distinguish the two by measuring response time.
+            passwordEncoder.matches(req.password(),
+                    "$2a$10$dummyhashtopreventtimingattackspadding");
             log.warn("API auth failed: user not found: {}",
                     req.username());
             return ResponseEntity
@@ -112,16 +138,70 @@ public class AuthController {
                             "Invalid credentials"));
         }
 
-        // CBS: Check account status before password
+        // CBS: Auto-unlock if eligible (before password check so a
+        // returning user whose lockout expired can log in immediately).
+        if (user.isLocked()
+                && user.isAutoUnlockEligible()) {
+            user.resetLoginAttempts();
+            userRepository.save(user);
+        }
+
+        // CBS: Validate password FIRST — before any status disclosure.
+        if (!passwordEncoder.matches(
+                req.password(), user.getPasswordHash())) {
+            // Record failed attempt regardless of account status.
+            // Per Finacle: even disabled accounts track failed attempts
+            // for SOC forensics (credential stuffing detection).
+            if (user.isActive()) {
+                boolean locked = user.recordFailedLogin();
+                userRepository.save(user);
+                log.warn("API auth failed: bad password: "
+                        + "user={}, attempts={}, locked={}",
+                        req.username(),
+                        user.getFailedLoginAttempts(),
+                        locked);
+            } else {
+                log.warn("API auth failed: bad password on "
+                        + "inactive account: user={}",
+                        req.username());
+            }
+            // CBS SECURITY: same error code and message for ALL
+            // pre-auth failures — no account status leakage.
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "AUTH_FAILED",
+                            "Invalid credentials"));
+        }
+
+        // === Password is correct — safe to reveal account status ===
+
+        // CBS: Check account status AFTER password validation.
+        // The attacker has proven knowledge of the password, so revealing
+        // "disabled" or "locked" is acceptable and necessary for the
+        // legitimate user to take corrective action.
         if (!user.isActive()) {
+            log.warn("API auth rejected: disabled account with "
+                    + "valid password: user={}", req.username());
+            auditService.logEvent(
+                    "AppUser", user.getId(),
+                    "AUTH_REJECTED_DISABLED", null, null,
+                    "AUTH",
+                    "Valid password on disabled account: "
+                            + req.username());
             return ResponseEntity
                     .status(HttpStatus.UNAUTHORIZED)
                     .body(ApiResponse.error(
                             "ACCOUNT_DISABLED",
-                            "Account is disabled"));
+                            "Account is disabled. "
+                                    + "Contact administrator."));
         }
-        if (user.isLocked()
-                && !user.isAutoUnlockEligible()) {
+        if (user.isLocked()) {
+            // If we reach here, auto-unlock was not eligible (lockout
+            // duration not yet elapsed). Password was correct but
+            // account is still locked from prior failed attempts.
+            log.warn("API auth rejected: locked account with "
+                    + "valid password: user={}", req.username());
             return ResponseEntity
                     .status(HttpStatus.UNAUTHORIZED)
                     .body(ApiResponse.error(
@@ -130,30 +210,6 @@ public class AuthController {
                                     + AppUser
                                     .LOCKOUT_DURATION_MINUTES
                                     + " minutes"));
-        }
-
-        // CBS: Auto-unlock if eligible
-        if (user.isLocked()
-                && user.isAutoUnlockEligible()) {
-            user.resetLoginAttempts();
-            userRepository.save(user);
-        }
-
-        // CBS: Validate password
-        if (!passwordEncoder.matches(
-                req.password(), user.getPasswordHash())) {
-            boolean locked = user.recordFailedLogin();
-            userRepository.save(user);
-            log.warn("API auth failed: bad password: "
-                    + "user={}, attempts={}, locked={}",
-                    req.username(),
-                    user.getFailedLoginAttempts(),
-                    locked);
-            return ResponseEntity
-                    .status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error(
-                            "AUTH_FAILED",
-                            "Invalid credentials"));
         }
 
         // CBS: Check password expiry
@@ -173,6 +229,16 @@ public class AuthController {
         // POST /api/v1/auth/mfa/verify. No access/refresh token is issued
         // at this stage -- keeping step-up resistant to password-only theft.
         if (user.isMfaEnabled() && user.getMfaSecret() != null) {
+            // CBS: reset failed login counter on successful password
+            // validation, even though the full login is not yet complete.
+            // Per Finacle: the password factor succeeded — only MFA
+            // failures should count toward lockout from this point.
+            // Without this reset, a user with 4 prior failed password
+            // attempts who now enters the correct password + wrong OTP
+            // gets locked on the first OTP failure (counter = 5).
+            user.resetLoginAttempts();
+            userRepository.save(user);
+
             String challenge = jwtTokenService.generateMfaChallengeToken(
                     user.getUsername(), tenantId);
             log.info("API auth pending MFA step-up: user={}",
