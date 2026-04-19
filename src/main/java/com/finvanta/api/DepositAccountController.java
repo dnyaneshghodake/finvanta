@@ -31,6 +31,7 @@ import org.springframework.web.bind.annotation.*;
  *   MAKER   → deposit, withdraw, transfer, open account
  *   CHECKER → activate, freeze, unfreeze, close, reverse
  *   ADMIN   → all MAKER + CHECKER operations
+ *   AUDITOR → read-only inquiry (account, balance, statement, list)
  */
 @RestController
 @RequestMapping("/v1/accounts")
@@ -149,7 +150,7 @@ public class DepositAccountController {
     // === Inquiry ===
 
     @GetMapping("/{accountNumber}")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<AccountResponse>>
             getAccount(@PathVariable String accountNumber) {
         DepositAccount account = depositService.getAccount(accountNumber);
@@ -158,7 +159,7 @@ public class DepositAccountController {
 
     /** Real-time balance inquiry per Finacle BAL_INQ — called by UPI/IMPS. */
     @GetMapping("/{accountNumber}/balance")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<BalanceResponse>>
             getBalance(@PathVariable String accountNumber) {
         DepositAccount a = depositService.getAccount(accountNumber);
@@ -170,7 +171,7 @@ public class DepositAccountController {
     }
 
     @GetMapping("/{accountNumber}/mini-statement")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<List<TxnResponse>>>
             getMiniStatement(@PathVariable String accountNumber,
                     @RequestParam(defaultValue = "10") int count) {
@@ -180,7 +181,7 @@ public class DepositAccountController {
     }
 
     @GetMapping("/{accountNumber}/statement")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<StatementResponse>>
             getStatement(@PathVariable String accountNumber,
                     @RequestParam String fromDate, @RequestParam String toDate) {
@@ -197,7 +198,7 @@ public class DepositAccountController {
     }
 
     @GetMapping("/customer/{customerId}")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<List<AccountResponse>>>
             getAccountsByCustomer(@PathVariable Long customerId) {
         var accounts = depositService.getAccountsByCustomer(customerId);
@@ -222,7 +223,7 @@ public class DepositAccountController {
      * surpasses that threshold).
      */
     @GetMapping
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<PageResponse<AccountResponse>>>
             listAccounts(@RequestParam(required = false) Long branchId,
                     @RequestParam(defaultValue = "0") int page,

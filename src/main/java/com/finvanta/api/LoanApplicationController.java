@@ -77,7 +77,7 @@ public class LoanApplicationController {
 
     /** Get application by ID. */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<ApplicationResponse>>
             getApplication(@PathVariable Long id) {
         LoanApplication app =
@@ -130,7 +130,7 @@ public class LoanApplicationController {
 
     /** Applications by customer CIF. */
     @GetMapping("/customer/{customerId}")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<List<ApplicationResponse>>>
             getByCustomer(
                     @PathVariable Long customerId) {

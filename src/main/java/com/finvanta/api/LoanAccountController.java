@@ -170,7 +170,7 @@ public class LoanAccountController {
     // === Inquiry ===
 
     @GetMapping("/{accountNumber}")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<LoanResponse>>
             getAccount(@PathVariable String accountNumber) {
         LoanAccount account = loanService.getAccount(accountNumber);
@@ -178,7 +178,7 @@ public class LoanAccountController {
     }
 
     @GetMapping("/active")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<List<LoanResponse>>>
             getActiveAccounts() {
         var accounts = loanService.getActiveAccounts();

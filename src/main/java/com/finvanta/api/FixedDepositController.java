@@ -127,7 +127,7 @@ public class FixedDepositController {
 
     /** Get FD by account number. Branch access enforced. */
     @GetMapping("/{fdNumber}")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<FdResponse>>
             getFd(@PathVariable String fdNumber) {
         String tid = TenantContext.getCurrentTenant();
@@ -143,7 +143,7 @@ public class FixedDepositController {
 
     /** FDs by customer CIF. */
     @GetMapping("/customer/{customerId}")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<List<FdResponse>>>
             getByCustomer(
                     @PathVariable Long customerId) {
