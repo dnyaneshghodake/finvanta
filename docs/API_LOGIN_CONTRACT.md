@@ -1121,7 +1121,7 @@ interface ErrorResponse {
 
 ---
 
-## 12. CORS Configuration
+## 13. CORS Configuration
 
 Source: `SecurityConfig.java:392-438`
 
@@ -1136,7 +1136,7 @@ Source: `SecurityConfig.java:392-438`
 
 ---
 
-## 13. Filter Chain Execution Order
+## 14. Filter Chain Execution Order
 
 Every API request passes through these filters in order:
 
@@ -1151,30 +1151,38 @@ For `/v1/auth/token` and `/v1/auth/mfa/verify`: `JwtAuthenticationFilter` is **s
 
 ---
 
-## 14. Critical Frontend Rules
+## 15. Critical Frontend Rules
 
 1. **Never store tokens in browser storage.** Access and refresh tokens live in the Next.js BFF server-side session only. The browser never sees raw JWTs.
 
-2. **Same `X-Correlation-Id` across MFA flow.** The `/token` call and the `/mfa/verify` call for the same login attempt must carry the same correlation ID so audit logs tie them together.
+2. **Login returns identity + tokens ONLY.** Do NOT expect branch, business day, permissions, limits, or config in the login response. Those come from `GET /api/v1/context/bootstrap` — call it immediately after login.
 
-3. **Retry OTP with the same `challengeId`.** On `MFA_VERIFICATION_FAILED`, re-submit to `/mfa/verify` with the same `challengeId` and a new OTP. The challenge is only burned on success. Track attempt count client-side (max 5 before server locks the account).
+3. **Three-step post-login hydration.** `POST /auth/token` → store JWT → `GET /context/bootstrap` → hydrate session → `GET /dashboard/widgets/*` → render. Never skip the bootstrap step.
 
-4. **On any 401 from `/refresh`, redirect to login.** Do not retry. `REFRESH_TOKEN_REUSED` is a theft signal — clear everything immediately.
+4. **Same `X-Correlation-Id` across MFA flow.** The `/token` call and the `/mfa/verify` call for the same login attempt must carry the same correlation ID so audit logs tie them together.
 
-5. **Proactive refresh.** Schedule token refresh at `expiresAt - 60 seconds` (14 minutes after login). Do not wait for a 401 on a business endpoint — that creates poor UX.
+5. **Retry OTP with the same `challengeId`.** On `MFA_VERIFICATION_FAILED`, re-submit to `/mfa/verify` with the same `challengeId` and a new OTP. The challenge is only burned on success. Track attempt count client-side (max 5 before server locks the account).
 
-6. **`businessDay.dayStatus` controls the entire UI.** If `NOT_OPENED`, disable all transaction buttons and show a banner. If `EOD_RUNNING`, show read-only mode. The server enforces this too, but the UI should prevent the user from even trying.
+6. **On any 401 from `/refresh`, redirect to login.** Do not retry. `REFRESH_TOKEN_REUSED` is a theft signal — clear everything immediately.
 
-7. **`role.permissionsByModule` controls sidebar and buttons.** If `DEPOSIT` is not in `allowedModules`, hide the entire Deposits sidebar menu. Within a module, check individual permission codes: if `DEPOSIT_WITHDRAW` is absent, hide the Withdrawal button. The server re-validates via `CbsPermissionEvaluator` on every request — the UI is a convenience filter, not the security boundary.
+7. **Proactive refresh.** Schedule token refresh at `expiresAt - 60 seconds` (14 minutes after login). Do not wait for a 401 on a business endpoint — that creates poor UX. After refresh, consider re-fetching `/context/bootstrap` if role/branch may have changed.
 
-8. **`limits.transactionLimits` is advisory only.** Use for client-side pre-validation (highlight amount fields, show warnings). The server re-validates via `TransactionLimitService` on every financial operation.
+8. **`businessDay.dayStatus` controls the entire UI** (from bootstrap context). If `NOT_OPENED`, disable all transaction buttons and show a banner. If `EOD_RUNNING`, show read-only mode. The server enforces this too, but the UI should prevent the user from even trying.
 
-9. **`operationalConfig` controls all amount formatting.** Use `decimalPrecision` and `roundingMode` for every amount input and display. Do not hardcode `"INR"` or `2`.
+9. **`role.permissionsByModule` controls sidebar and buttons** (from bootstrap context). If `DEPOSIT` is not in `allowedModules`, hide the entire Deposits sidebar menu. Within a module, check individual permission codes: if `DEPOSIT_WITHDRAW` is absent, hide the Withdrawal button. The server re-validates via `CbsPermissionEvaluator` on every request — the UI is a convenience filter, not the security boundary.
 
-10. **`user.passwordExpiryDate` — show warning banner.** If within 7 days of today, show a non-blocking banner: "Your password expires on {date}."
+10. **`limits.transactionLimits` is advisory only** (from bootstrap context). Use for client-side pre-validation (highlight amount fields, show warnings). The server re-validates via `TransactionLimitService` on every financial operation.
 
-11. **`user.lastLoginTimestamp` — show on dashboard.** Per RBI IT Governance: display "Last login: {timestamp}" so the user can detect unauthorized access.
+11. **`operationalConfig` controls all amount formatting** (from bootstrap context). Use `decimalPrecision` and `roundingMode` for every amount input and display. Do not hardcode `"INR"` or `2`.
 
-12. **`branch` can be `null`.** HO/system users without branch assignment. When null, `businessDay` is also null. Show a branch-selector dropdown for these users.
+12. **`user.passwordExpiryDate` — show warning banner** (from bootstrap context). If within 7 days of today, show a non-blocking banner: "Your password expires on {date}."
 
-13. **Every API call must attach `X-Tenant-Id` and `X-Correlation-Id`.** Use an Axios/fetch interceptor in the BFF to inject these headers automatically from the server-side session.
+13. **`user.lastLoginTimestamp` — show on dashboard** (from bootstrap context). Per RBI IT Governance: display "Last login: {timestamp}" so the user can detect unauthorized access.
+
+14. **`branch` can be `null`** (from bootstrap context). HO/system users without branch assignment. When null, `businessDay` is also null. Show a branch-selector dropdown for these users.
+
+15. **Re-fetch bootstrap on context changes.** Call `GET /context/bootstrap` again after: branch switch, token refresh, day status change event. Do NOT cache bootstrap indefinitely.
+
+16. **Dashboard widgets are independent.** Fetch each widget endpoint in parallel. A failed widget does NOT break the dashboard. Use skeleton placeholders. See `API_REFERENCE.md` Section 17 for widget registry and refresh intervals.
+
+17. **Every API call must attach `X-Tenant-Id` and `X-Correlation-Id`.** Use an Axios/fetch interceptor in the BFF to inject these headers automatically from the server-side session.
