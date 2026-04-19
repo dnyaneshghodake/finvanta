@@ -179,48 +179,66 @@ public class LoanApplicationController {
 
     // === Response DTOs ===
 
+    /**
+     * CBS Loan Application Response per Finacle LOAN_ORIG / Temenos AA.ARRANGEMENT.
+     *
+     * <p>Per RBI Digital Lending Guidelines 2022: customer name, all lifecycle
+     * dates (verified/approved/rejected), collateral, risk category, and penal
+     * rate are mandatory disclosure fields on the loan sanction letter.
+     */
     public record ApplicationResponse(
-            Long id,
-            String applicationNumber,
-            String status,
-            String productType,
-            BigDecimal requestedAmount,
-            BigDecimal approvedAmount,
-            BigDecimal interestRate,
+            Long id, String applicationNumber, String status,
+            String productType, String branchCode,
+            // --- Customer (CIF linkage) ---
+            Long customerId, String customerNumber, String customerName,
+            // --- Amounts / Rate ---
+            BigDecimal requestedAmount, BigDecimal approvedAmount,
+            BigDecimal interestRate, BigDecimal penalRate,
             int tenureMonths,
-            String purpose,
-            String customerNumber,
-            String branchCode,
+            // --- Purpose / Collateral / Risk ---
+            String purpose, String collateralReference,
+            String riskCategory,
+            String disbursementAccountNumber,
+            // --- Lifecycle Dates ---
             String applicationDate,
-            String verifiedBy,
-            String approvedBy,
-            String rejectionReason) {
-        static ApplicationResponse from(
-                LoanApplication a) {
+            String verifiedBy, String verifiedDate,
+            String approvedBy, String approvedDate,
+            String rejectedBy, String rejectedDate,
+            String rejectionReason,
+            // --- Remarks ---
+            String remarks) {
+        static ApplicationResponse from(LoanApplication a) {
             return new ApplicationResponse(
-                    a.getId(),
-                    a.getApplicationNumber(),
+                    a.getId(), a.getApplicationNumber(),
                     a.getStatus() != null
                             ? a.getStatus().name() : null,
                     a.getProductType(),
-                    a.getRequestedAmount(),
-                    a.getApprovedAmount(),
-                    a.getInterestRate(),
-                    a.getTenureMonths(),
-                    a.getPurpose(),
-                    a.getCustomer() != null
-                            ? a.getCustomer()
-                            .getCustomerNumber()
-                            : null,
                     a.getBranch() != null
-                            ? a.getBranch()
-                            .getBranchCode() : null,
+                            ? a.getBranch().getBranchCode() : null,
+                    a.getCustomer() != null ? a.getCustomer().getId() : null,
+                    a.getCustomer() != null
+                            ? a.getCustomer().getCustomerNumber() : null,
+                    a.getCustomer() != null
+                            ? a.getCustomer().getFullName() : null,
+                    a.getRequestedAmount(), a.getApprovedAmount(),
+                    a.getInterestRate(), a.getPenalRate(),
+                    a.getTenureMonths(),
+                    a.getPurpose(), a.getCollateralReference(),
+                    a.getRiskCategory(),
+                    a.getDisbursementAccountNumber(),
                     a.getApplicationDate() != null
-                            ? a.getApplicationDate()
-                            .toString() : null,
+                            ? a.getApplicationDate().toString() : null,
                     a.getVerifiedBy(),
+                    a.getVerifiedDate() != null
+                            ? a.getVerifiedDate().toString() : null,
                     a.getApprovedBy(),
-                    a.getRejectionReason());
+                    a.getApprovedDate() != null
+                            ? a.getApprovedDate().toString() : null,
+                    a.getRejectedBy(),
+                    a.getRejectedDate() != null
+                            ? a.getRejectedDate().toString() : null,
+                    a.getRejectionReason(),
+                    a.getRemarks());
         }
     }
 }

@@ -110,27 +110,40 @@ public class GLInquiryController {
 
     // === Response DTOs ===
 
+    /**
+     * CBS GL Response per Finacle GL_INQ / Temenos IRIS GL.
+     *
+     * <p>Per RBI: GL inquiry must include current balances, opening balances
+     * (for period reconciliation), hierarchy level, and period close date
+     * (to prevent back-dated postings to closed periods).
+     */
     public record GlResponse(
             String glCode, String glName,
-            String accountType,
-            BigDecimal debitBalance,
-            BigDecimal creditBalance,
+            String accountType, String description,
+            boolean active, boolean headerAccount,
+            String parentGlCode, Integer glLevel,
+            // --- Balances ---
+            BigDecimal debitBalance, BigDecimal creditBalance,
             BigDecimal netBalance,
-            boolean headerAccount,
-            String parentGlCode,
-            Integer glLevel) {
+            // --- Period Close (per Finacle GL_PERIOD) ---
+            BigDecimal openingDebitBalance,
+            BigDecimal openingCreditBalance,
+            String lastPeriodCloseDate) {
         static GlResponse from(GLMaster gl) {
             return new GlResponse(
                     gl.getGlCode(), gl.getGlName(),
                     gl.getAccountType() != null
-                            ? gl.getAccountType().name()
-                            : null,
-                    gl.getDebitBalance(),
-                    gl.getCreditBalance(),
+                            ? gl.getAccountType().name() : null,
+                    gl.getDescription(),
+                    gl.isActive(), gl.isHeaderAccount(),
+                    gl.getParentGlCode(), gl.getGlLevel(),
+                    gl.getDebitBalance(), gl.getCreditBalance(),
                     gl.getNetBalance(),
-                    gl.isHeaderAccount(),
-                    gl.getParentGlCode(),
-                    gl.getGlLevel());
+                    gl.getOpeningDebitBalance(),
+                    gl.getOpeningCreditBalance(),
+                    gl.getLastPeriodCloseDate() != null
+                            ? gl.getLastPeriodCloseDate().toString()
+                            : null);
         }
     }
 

@@ -223,14 +223,31 @@ public class ClearingController {
 
     // === Response DTOs (no entity exposure) ===
 
+    /**
+     * CBS Clearing Transaction Response per Finacle CLG_TRAN / Temenos CLEARING.ENTRY.
+     *
+     * <p>Per RBI NEFT/RTGS/IMPS: counterparty details, settlement reference,
+     * maker ID, and failure/reversal reasons are mandatory for reconciliation
+     * and regulatory reporting (SFMS/ISO 20022).
+     */
     public record ClearingTxnResponse(
             Long id, String extRef, String utr,
             String rail, String direction,
             BigDecimal amount, String status,
             String customerAccount,
-            String branchCode,
-            String initiatedAt,
-            String completedAt) {
+            // --- Counterparty (per SFMS/ISO 20022) ---
+            String counterpartyIfsc,
+            String counterpartyAccount,
+            String counterpartyName,
+            // --- Branch / Maker ---
+            String branchCode, String makerId,
+            // --- Narration ---
+            String narration, String valueDate,
+            // --- Timestamps ---
+            String initiatedAt, String completedAt,
+            String settledAt,
+            // --- Failure / Reversal ---
+            String failureReason, String reversalReason) {
         static ClearingTxnResponse from(
                 ClearingTransaction ct) {
             return new ClearingTxnResponse(
@@ -242,13 +259,22 @@ public class ClearingController {
                     ct.getAmount(),
                     ct.getStatus().name(),
                     ct.getCustomerAccountRef(),
+                    ct.getCounterpartyIfsc(),
+                    ct.getCounterpartyAccount(),
+                    ct.getCounterpartyName(),
                     ct.getBranchCode(),
+                    ct.getMakerId(),
+                    ct.getNarration(),
+                    ct.getValueDate() != null
+                            ? ct.getValueDate().toString() : null,
                     ct.getInitiatedAt() != null
-                            ? ct.getInitiatedAt().toString()
-                            : null,
+                            ? ct.getInitiatedAt().toString() : null,
                     ct.getCompletedAt() != null
-                            ? ct.getCompletedAt().toString()
-                            : null);
+                            ? ct.getCompletedAt().toString() : null,
+                    ct.getSettledAt() != null
+                            ? ct.getSettledAt().toString() : null,
+                    ct.getFailureReason(),
+                    ct.getReversalReason());
         }
     }
 
