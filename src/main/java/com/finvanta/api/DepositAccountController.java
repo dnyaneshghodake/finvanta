@@ -34,7 +34,7 @@ import org.springframework.web.bind.annotation.*;
  *   AUDITOR → read-only inquiry (account, balance, statement, list)
  */
 @RestController
-@RequestMapping("/v1/accounts")
+@RequestMapping("/api/v1/accounts")
 public class DepositAccountController {
 
     private final DepositAccountService depositService;

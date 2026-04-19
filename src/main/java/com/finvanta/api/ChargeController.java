@@ -34,7 +34,7 @@ import org.springframework.web.bind.annotation.*;
  * </ul>
  */
 @RestController
-@RequestMapping("/v1/charges")
+@RequestMapping("/api/v1/charges")
 public class ChargeController {
 
     private final ChargeKernel chargeKernel;

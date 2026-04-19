@@ -32,7 +32,7 @@ import org.springframework.web.bind.annotation.*;
  *   ADMIN   → reverse, return, cycle management, all MAKER/CHECKER ops
  */
 @RestController
-@RequestMapping("/v1/clearing")
+@RequestMapping("/api/v1/clearing")
 public class ClearingController {
 
     private final ClearingEngine clearingEngine;
