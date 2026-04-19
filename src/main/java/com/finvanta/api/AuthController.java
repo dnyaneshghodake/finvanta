@@ -298,7 +298,8 @@ public class AuthController {
                 ? LocalDateTime.ofInstant(challengeExp,
                         ZoneId.systemDefault())
                 : LocalDateTime.now().plusMinutes(10));
-        burn.setReason("MFA_CHALLENGE_CONSUMED");
+        // CBS: RevokedRefreshToken.reason is VARCHAR(20); keep value <= 20 chars.
+        burn.setReason("MFA_CONSUMED");
         try {
             refreshTokenRotationService.revoke(burn);
         } catch (DataIntegrityViolationException race) {
