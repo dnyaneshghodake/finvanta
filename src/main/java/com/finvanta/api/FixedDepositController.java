@@ -192,62 +192,68 @@ public class FixedDepositController {
 
     // === Response DTOs ===
 
+    /**
+     * CBS FD Response per Finacle TD_MASTER / Temenos IRIS Fixed Deposit.
+     *
+     * <p>Per RBI: nominee details, TDS, penalty rate, and customer CIF
+     * are mandatory display fields on FD certificate and closure receipt.
+     */
     public record FdResponse(
-            Long id,
-            String fdAccountNumber,
-            String status,
-            BigDecimal principalAmount,
-            BigDecimal currentPrincipal,
-            BigDecimal interestRate,
-            BigDecimal effectiveRate,
-            String interestPayoutMode,
-            BigDecimal accruedInterest,
-            BigDecimal totalInterestPaid,
+            Long id, String fdAccountNumber, String status,
+            String currencyCode, String branchCode,
+            // --- Customer (CIF linkage) ---
+            Long customerId, String customerNumber, String customerName,
+            // --- Principal ---
+            BigDecimal principalAmount, BigDecimal currentPrincipal,
             BigDecimal maturityAmount,
+            // --- Interest ---
+            BigDecimal interestRate, BigDecimal effectiveRate,
+            BigDecimal prematurePenaltyRate,
+            String interestPayoutMode,
+            BigDecimal accruedInterest, BigDecimal totalInterestPaid,
+            BigDecimal ytdInterestPaid, BigDecimal ytdTdsDeducted,
+            // --- Tenure / Dates ---
             int tenureDays,
-            String bookingDate,
-            String maturityDate,
-            String closureDate,
+            String bookingDate, String maturityDate, String closureDate,
+            // --- Linked Account ---
             String linkedAccountNumber,
-            String autoRenewalMode,
-            int renewalCount,
-            boolean lienMarked,
-            BigDecimal lienAmount,
-            String customerNumber,
-            String branchCode) {
+            // --- Renewal ---
+            String autoRenewalMode, int renewalCount,
+            // --- Lien ---
+            boolean lienMarked, BigDecimal lienAmount,
+            String lienLoanAccount,
+            // --- Nomination ---
+            String nomineeName, String nomineeRelationship) {
         static FdResponse from(FixedDeposit fd) {
             return new FdResponse(
-                    fd.getId(),
-                    fd.getFdAccountNumber(),
+                    fd.getId(), fd.getFdAccountNumber(),
                     fd.getStatus() != null
                             ? fd.getStatus().name() : null,
-                    fd.getPrincipalAmount(),
-                    fd.getCurrentPrincipal(),
-                    fd.getInterestRate(),
-                    fd.getEffectiveRate(),
-                    fd.getInterestPayoutMode(),
-                    fd.getAccruedInterest(),
-                    fd.getTotalInterestPaid(),
+                    fd.getCurrencyCode(), fd.getBranchCode(),
+                    fd.getCustomer() != null ? fd.getCustomer().getId() : null,
+                    fd.getCustomer() != null
+                            ? fd.getCustomer().getCustomerNumber() : null,
+                    fd.getCustomer() != null
+                            ? fd.getCustomer().getFullName() : null,
+                    fd.getPrincipalAmount(), fd.getCurrentPrincipal(),
                     fd.getMaturityAmount(),
+                    fd.getInterestRate(), fd.getEffectiveRate(),
+                    fd.getPrematurePenaltyRate(),
+                    fd.getInterestPayoutMode(),
+                    fd.getAccruedInterest(), fd.getTotalInterestPaid(),
+                    fd.getYtdInterestPaid(), fd.getYtdTdsDeducted(),
                     fd.getTenureDays(),
                     fd.getBookingDate() != null
-                            ? fd.getBookingDate().toString()
-                            : null,
+                            ? fd.getBookingDate().toString() : null,
                     fd.getMaturityDate() != null
-                            ? fd.getMaturityDate().toString()
-                            : null,
+                            ? fd.getMaturityDate().toString() : null,
                     fd.getClosureDate() != null
-                            ? fd.getClosureDate().toString()
-                            : null,
+                            ? fd.getClosureDate().toString() : null,
                     fd.getLinkedAccountNumber(),
-                    fd.getAutoRenewalMode(),
-                    fd.getRenewalCount(),
-                    fd.isLienMarked(),
-                    fd.getLienAmount(),
-                    fd.getCustomer() != null
-                            ? fd.getCustomer()
-                            .getCustomerNumber() : null,
-                    fd.getBranchCode());
+                    fd.getAutoRenewalMode(), fd.getRenewalCount(),
+                    fd.isLienMarked(), fd.getLienAmount(),
+                    fd.getLienLoanAccount(),
+                    fd.getNomineeName(), fd.getNomineeRelationship());
         }
     }
 }
