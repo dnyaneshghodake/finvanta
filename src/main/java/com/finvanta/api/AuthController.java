@@ -6,7 +6,9 @@ import com.finvanta.domain.entity.AppUser;
 import com.finvanta.domain.entity.RevokedRefreshToken;
 import com.finvanta.repository.AppUserRepository;
 import com.finvanta.repository.RevokedRefreshTokenRepository;
+import com.finvanta.service.MfaService;
 import com.finvanta.service.auth.RefreshTokenRotationService;
+import com.finvanta.util.MfaRequiredException;
 import com.finvanta.util.TenantContext;
 
 import io.jsonwebtoken.Claims;
@@ -59,6 +61,7 @@ public class AuthController {
     private final RevokedRefreshTokenRepository revokedRefreshTokenRepository;
     private final RefreshTokenRotationService refreshTokenRotationService;
     private final AuditService auditService;
+    private final MfaService mfaService;
 
     public AuthController(
             JwtTokenService jwtTokenService,
@@ -66,13 +69,15 @@ public class AuthController {
             PasswordEncoder passwordEncoder,
             RevokedRefreshTokenRepository revokedRefreshTokenRepository,
             RefreshTokenRotationService refreshTokenRotationService,
-            AuditService auditService) {
+            AuditService auditService,
+            MfaService mfaService) {
         this.jwtTokenService = jwtTokenService;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.revokedRefreshTokenRepository = revokedRefreshTokenRepository;
         this.refreshTokenRotationService = refreshTokenRotationService;
         this.auditService = auditService;
+        this.mfaService = mfaService;
     }
 
     /**
@@ -155,7 +160,168 @@ public class AuthController {
                                     + "UI before API access"));
         }
 
-        // CBS: Generate tokens
+        // CBS MFA gate per RBI IT Governance Direction 2023 §8.3: if the
+        // user has MFA enabled, password success alone is NOT enough. We
+        // return 428 MFA_REQUIRED with a signed challenge token so the
+        // Next.js BFF can prompt for a TOTP code and complete login via
+        // POST /api/v1/auth/mfa/verify. No access/refresh token is issued
+        // at this stage -- keeping step-up resistant to password-only theft.
+        if (user.isMfaEnabled() && user.getMfaSecret() != null) {
+            String challenge = jwtTokenService.generateMfaChallengeToken(
+                    user.getUsername(), tenantId);
+            log.info("API auth pending MFA step-up: user={}",
+                    user.getUsername());
+            throw new MfaRequiredException(
+                    challenge, "TOTP",
+                    "MFA step-up required to complete sign-in");
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(
+                issueTokens(user, tenantId, "PASSWORD")));
+    }
+
+    /**
+     * Complete MFA step-up login by exchanging the 428 challenge token plus a
+     * valid TOTP code for access + refresh tokens.
+     *
+     * <p>Per RBI IT Governance Direction 2023 §8.3 and NPCI step-up:
+     * the challenge token is single-use (persisted in the refresh-token
+     * rotation denylist by {@code jti} on success) and expires in 5 minutes.
+     * TOTP validation uses the same replay-protected path as the JSP UI
+     * so an OTP consumed on one channel cannot be replayed on another.
+     */
+    @PostMapping("/mfa/verify")
+    public ResponseEntity<ApiResponse<TokenResponse>>
+            mfaVerify(
+                    @Valid @RequestBody MfaVerifyRequest req) {
+        Claims claims =
+                jwtTokenService.validateToken(req.challengeId());
+        if (claims == null
+                || !jwtTokenService.isMfaChallengeToken(claims)) {
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "INVALID_MFA_CHALLENGE",
+                            "MFA challenge invalid or expired. "
+                                    + "Please sign in again."));
+        }
+
+        String tenantId =
+                jwtTokenService.getTenantId(claims);
+        String username =
+                jwtTokenService.getUsername(claims);
+        String challengeJti =
+                jwtTokenService.getJti(claims);
+
+        // CBS single-use challenge per OWASP ASVS 2.2.7: reject reuse.
+        if (challengeJti != null
+                && refreshTokenRotationService.isAlreadyRevoked(
+                        tenantId, challengeJti)) {
+            auditService.logEvent(
+                    "MFA_CHALLENGE",
+                    0L,
+                    "MFA_CHALLENGE_REUSED",
+                    null,
+                    java.util.Map.of(
+                            "username", username != null
+                                    ? username : "UNKNOWN",
+                            "jti", challengeJti),
+                    "AUTH",
+                    "MFA challenge reuse detected");
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "MFA_CHALLENGE_REUSED",
+                            "This MFA challenge has already been used."));
+        }
+
+        // Tenant context is set by the TenantFilter from X-Tenant-Id;
+        // double-check the challenge tenant matches the request tenant
+        // so a challenge issued for tenant A cannot be burned in tenant B.
+        if (tenantId == null
+                || !tenantId.equals(TenantContext.getCurrentTenant())) {
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "INVALID_MFA_CHALLENGE",
+                            "MFA challenge tenant mismatch."));
+        }
+
+        AppUser user = userRepository
+                .findByTenantIdAndUsername(tenantId, username)
+                .orElse(null);
+        if (user == null || !user.isActive()
+                || user.isLocked()) {
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "ACCOUNT_INVALID",
+                            "Account no longer valid"));
+        }
+
+        boolean otpValid;
+        try {
+            otpValid = mfaService.verifyLoginTotp(
+                    username, req.otp());
+        } catch (RuntimeException ex) {
+            log.warn("MFA verify error: user={}, error={}",
+                    username, ex.getMessage());
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "MFA_VERIFICATION_FAILED",
+                            "Invalid OTP code"));
+        }
+
+        if (!otpValid) {
+            auditService.logEvent(
+                    "AppUser", user.getId(),
+                    "MFA_VERIFICATION_FAILED", null, "invalid_code",
+                    "AUTH",
+                    "API MFA step-up failed: " + username);
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "MFA_VERIFICATION_FAILED",
+                            "Invalid OTP code"));
+        }
+
+        // Burn the challenge by placing its jti on the denylist so it
+        // cannot be exchanged a second time.
+        RevokedRefreshToken burn = new RevokedRefreshToken();
+        burn.setTenantId(tenantId);
+        burn.setJti(challengeJti);
+        burn.setSubject(username);
+        burn.setRevokedAt(LocalDateTime.now());
+        Instant challengeExp = jwtTokenService.getExpiration(claims);
+        burn.setExpiresAt(challengeExp != null
+                ? LocalDateTime.ofInstant(challengeExp,
+                        ZoneId.systemDefault())
+                : LocalDateTime.now().plusMinutes(10));
+        burn.setReason("MFA_CHALLENGE_CONSUMED");
+        try {
+            refreshTokenRotationService.revoke(burn);
+        } catch (DataIntegrityViolationException race) {
+            log.warn("MFA challenge concurrent consume: jti={}",
+                    challengeJti);
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "MFA_CHALLENGE_REUSED",
+                            "This MFA challenge has already been used."));
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(
+                issueTokens(user, tenantId, "MFA")));
+    }
+
+    /**
+     * Shared access + refresh token issuance path. Centralised to avoid
+     * drift between {@link #authenticate(TokenRequest)} and
+     * {@link #mfaVerify(MfaVerifyRequest)}.
+     */
+    private TokenResponse issueTokens(AppUser user, String tenantId,
+            String flow) {
         String role = user.getRole().name();
         String branchCode = user.getBranch() != null
                 ? user.getBranch().getBranchCode() : null;
@@ -168,24 +334,21 @@ public class AuthController {
                 jwtTokenService.generateRefreshToken(
                         user.getUsername(), tenantId);
 
-        // Record successful auth
         user.recordSuccessfulLogin("API");
         userRepository.save(user);
 
-        log.info("API token issued: user={}, role={}, "
-                + "branch={}, refreshJti={}",
+        log.info("API token issued: user={}, role={}, branch={}, "
+                + "refreshJti={}, flow={}",
                 user.getUsername(), role, branchCode,
-                refresh.jti());
+                refresh.jti(), flow);
 
-        return ResponseEntity.ok(ApiResponse.success(
-                new TokenResponse(
-                        accessToken, refresh.token(),
-                        "Bearer",
-                        jwtTokenService
-                                .parseToken(accessToken)
-                                .getExpiration()
-                                .getTime()
-                                / 1000)));
+        return new TokenResponse(
+                accessToken, refresh.token(), "Bearer",
+                jwtTokenService
+                        .parseToken(accessToken)
+                        .getExpiration()
+                        .getTime()
+                        / 1000);
     }
 
     /**
@@ -397,6 +560,12 @@ public class AuthController {
     public record RefreshRequest(
             @NotBlank(message = "Refresh token is required")
             String refreshToken) {}
+
+    public record MfaVerifyRequest(
+            @NotBlank(message = "Challenge id is required")
+            String challengeId,
+            @NotBlank(message = "OTP code is required")
+            String otp) {}
 
     // === Response DTOs ===
 

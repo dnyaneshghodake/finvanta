@@ -51,6 +51,8 @@ public class JwtTokenService {
     private static final String CLAIM_TYPE = "type";
     private static final String TYPE_ACCESS = "ACCESS";
     private static final String TYPE_REFRESH = "REFRESH";
+    private static final String TYPE_MFA_CHALLENGE = "MFA_CHALLENGE";
+    private static final long MFA_CHALLENGE_EXPIRY_MS = 5L * 60L * 1000L;
 
     private final SecretKey signingKey;
     private final long accessTokenExpiryMs;
@@ -174,6 +176,41 @@ public class JwtTokenService {
     /** Check if token is a REFRESH token */
     public boolean isRefreshToken(Claims claims) {
         return TYPE_REFRESH.equals(
+                claims.get(CLAIM_TYPE, String.class));
+    }
+
+    /**
+     * Generate a short-lived MFA step-up challenge token.
+     *
+     * <p>Per RBI IT Governance Direction 2023 §8.3 / NPCI step-up guidelines:
+     * when an API login succeeds on password but the user has MFA enabled,
+     * the server returns 428 Precondition Required with this challenge token
+     * as the opaque {@code challengeId}. The caller submits it back to
+     * {@code POST /api/v1/auth/mfa/verify} along with the TOTP code; the
+     * server validates the challenge, verifies the OTP, and only then
+     * issues access + refresh tokens.
+     *
+     * <p>The challenge is a signed JWT (not stored server-side) so it
+     * remains horizontally scalable; its 5-minute expiry limits replay,
+     * and its {@code jti} is single-use per successful verify.
+     */
+    public String generateMfaChallengeToken(String username, String tenantId) {
+        long now = System.currentTimeMillis();
+        return Jwts.builder()
+                .subject(username)
+                .issuer(issuer)
+                .id(UUID.randomUUID().toString())
+                .claim(CLAIM_TENANT, tenantId)
+                .claim(CLAIM_TYPE, TYPE_MFA_CHALLENGE)
+                .issuedAt(new Date(now))
+                .expiration(new Date(now + MFA_CHALLENGE_EXPIRY_MS))
+                .signWith(signingKey)
+                .compact();
+    }
+
+    /** Check if token is an MFA step-up challenge token. */
+    public boolean isMfaChallengeToken(Claims claims) {
+        return TYPE_MFA_CHALLENGE.equals(
                 claims.get(CLAIM_TYPE, String.class));
     }
 
