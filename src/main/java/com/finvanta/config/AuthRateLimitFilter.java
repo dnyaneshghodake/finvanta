@@ -66,7 +66,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 
     private static final int BUCKET_CAPACITY = 20;
     private static final Duration REFILL_INTERVAL = Duration.ofSeconds(6);
-    private static final String AUTH_PATH_PREFIX = "/api/v1/auth/";
+    private static final String AUTH_PATH_PREFIX = "/v1/auth/";
 
     /**
      * Hard ceiling on concurrently-tracked source IPs. Chosen so the worst-case

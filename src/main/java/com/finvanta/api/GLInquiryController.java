@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.*;
  *   AUDITOR       → GL inquiry (read-only audit access)
  */
 @RestController
-@RequestMapping("/api/v1/gl")
+@RequestMapping("/v1/gl")
 public class GLInquiryController {
 
     private final GLMasterRepository glRepo;

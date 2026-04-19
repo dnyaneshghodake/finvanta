@@ -29,7 +29,7 @@ import org.springframework.web.bind.annotation.*;
  *   ADMIN   → all operations + template management + retry
  */
 @RestController
-@RequestMapping("/api/v1/notifications")
+@RequestMapping("/v1/notifications")
 public class NotificationController {
 
     private final NotificationService notificationService;

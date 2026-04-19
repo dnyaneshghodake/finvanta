@@ -32,7 +32,7 @@ import org.springframework.web.bind.annotation.*;
  *   This is enforced in LoanApplicationServiceImpl (not in the controller).
  */
 @RestController
-@RequestMapping("/api/v1/loan-applications")
+@RequestMapping("/v1/loan-applications")
 public class LoanApplicationController {
 
     private final LoanApplicationService appService;

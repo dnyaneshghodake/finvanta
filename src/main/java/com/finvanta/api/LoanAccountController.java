@@ -37,7 +37,7 @@ import org.springframework.web.bind.annotation.*;
  * - Provisioning: Standard 0.4%, Sub-standard 15%, Doubtful 25-100%, Loss 100%
  */
 @RestController
-@RequestMapping("/api/v1/loans")
+@RequestMapping("/v1/loans")
 public class LoanAccountController {
 
     private final LoanAccountService loanService;

@@ -41,7 +41,7 @@ import org.springframework.web.bind.annotation.*;
  * GL posting, CASA debit/credit, and audit trail via TransactionEngine.
  */
 @RestController
-@RequestMapping("/api/v1/fixed-deposits")
+@RequestMapping("/v1/fixed-deposits")
 public class FixedDepositController {
 
     private final FixedDepositRepository fdRepo;

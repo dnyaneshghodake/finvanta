@@ -34,7 +34,7 @@ import org.springframework.web.bind.annotation.*;
  * - Full PII only in encrypted DB columns (AES-256-GCM)
  */
 @RestController("customerCifApiController")
-@RequestMapping("/api/v1/customers")
+@RequestMapping("/v1/customers")
 public class CustomerApiController {
 
     private final CustomerCifService customerService;
