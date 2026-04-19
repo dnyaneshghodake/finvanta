@@ -201,7 +201,13 @@ public class TenantFilter implements Filter {
             chain.doFilter(request, response);
         } finally {
             TenantContext.clear();
-            MDC.clear();
+            // Only remove the MDC keys this filter added — do NOT call
+            // MDC.clear() which would wipe correlationId set by the outer
+            // CorrelationIdMdcFilter (Order 0) during filter-chain unwinding.
+            MDC.remove(MDC_TENANT);
+            MDC.remove(MDC_BRANCH);
+            MDC.remove(MDC_USER);
+            MDC.remove(MDC_REQUEST_ID);
         }
     }
 }

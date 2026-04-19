@@ -216,9 +216,20 @@ public class AuthController {
         String challengeJti =
                 jwtTokenService.getJti(claims);
 
+        // CBS: challenge tokens MUST carry a jti for single-use enforcement.
+        // A null jti means the token was crafted or corrupted — reject early
+        // rather than relying on the DB NOT NULL constraint for flow control.
+        if (challengeJti == null || challengeJti.isBlank()) {
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error(
+                            "INVALID_MFA_CHALLENGE",
+                            "MFA challenge is malformed. "
+                                    + "Please sign in again."));
+        }
+
         // CBS single-use challenge per OWASP ASVS 2.2.7: reject reuse.
-        if (challengeJti != null
-                && refreshTokenRotationService.isAlreadyRevoked(
+        if (refreshTokenRotationService.isAlreadyRevoked(
                         tenantId, challengeJti)) {
             auditService.logEvent(
                     "MFA_CHALLENGE",
@@ -277,11 +288,20 @@ public class AuthController {
         }
 
         if (!otpValid) {
+            // CBS: count failed MFA attempts toward account lockout so an
+            // attacker who knows the password cannot brute-force OTPs
+            // across unlimited 5-minute challenge windows.
+            boolean locked = user.recordFailedLogin();
+            userRepository.save(user);
             auditService.logEvent(
                     "AppUser", user.getId(),
                     "MFA_VERIFICATION_FAILED", null, "invalid_code",
                     "AUTH",
                     "API MFA step-up failed: " + username);
+            if (locked) {
+                log.warn("Account locked after MFA failures: user={}",
+                        username);
+            }
             return ResponseEntity
                     .status(HttpStatus.UNAUTHORIZED)
                     .body(ApiResponse.error(
