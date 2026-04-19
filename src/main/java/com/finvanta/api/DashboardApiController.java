@@ -46,7 +46,7 @@ import org.springframework.web.bind.annotation.*;
  * to avoid null returns on empty datasets.
  */
 @RestController
-@RequestMapping("/v1/dashboard")
+@RequestMapping("/api/v1/dashboard")
 public class DashboardApiController {
 
     private final CustomerRepository customerRepository;
@@ -169,6 +169,106 @@ public class DashboardApiController {
                         new WorkflowMetrics(
                                 pendingApprovals))));
     }
+
+    // ====================================================================
+    // WIDGET ENDPOINTS — Tier-1 Progressive Secure Hydration Pattern
+    //
+    // Each widget is an independent endpoint fetched in parallel by the
+    // Next.js BFF. A failed widget does NOT break the entire dashboard.
+    // The monolithic /summary above is retained for backward compatibility
+    // but the BFF SHOULD use these individual endpoints instead.
+    // ====================================================================
+
+    /**
+     * Widget: Portfolio summary stat cards (ALL roles).
+     * BFF refresh: 60s. Skeleton: 6 metric cards.
+     */
+    @GetMapping("/widgets/portfolio")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
+    public ResponseEntity<ApiResponse<PortfolioWidget>> widgetPortfolio() {
+        String tid = TenantContext.getCurrentTenant();
+
+        Map<LoanStatus, Long> s = new EnumMap<>(LoanStatus.class);
+        for (Object[] row : accountRepository.countByTenantIdGroupByStatus(tid)) {
+            s.put((LoanStatus) row[0], (Long) row[1]);
+        }
+        long active = sc(s, LoanStatus.ACTIVE) + sc(s, LoanStatus.SMA_0)
+                + sc(s, LoanStatus.SMA_1) + sc(s, LoanStatus.SMA_2)
+                + sc(s, LoanStatus.RESTRUCTURED);
+        long sma = sc(s, LoanStatus.SMA_0) + sc(s, LoanStatus.SMA_1)
+                + sc(s, LoanStatus.SMA_2);
+        long npa = sc(s, LoanStatus.NPA_SUBSTANDARD)
+                + sc(s, LoanStatus.NPA_DOUBTFUL) + sc(s, LoanStatus.NPA_LOSS);
+
+        return ResponseEntity.ok(ApiResponse.success(new PortfolioWidget(
+                customerRepository.countByTenantIdAndActiveTrue(tid),
+                depositAccountRepository.countByTenantIdAndAccountStatusNot(
+                        tid, DepositAccountStatus.CLOSED),
+                active, sma, npa,
+                applicationRepository.countByTenantIdAndStatus(
+                        tid, ApplicationStatus.SUBMITTED))));
+    }
+
+    /**
+     * Widget: NPA & regulatory ratios (CHECKER, ADMIN, AUDITOR).
+     * BFF refresh: 60s. Skeleton: 3 amounts + 2 ratio bars.
+     */
+    @GetMapping("/widgets/npa")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN', 'AUDITOR')")
+    public ResponseEntity<ApiResponse<NpaWidget>> widgetNpa() {
+        String tid = TenantContext.getCurrentTenant();
+        BigDecimal out = accountRepository.calculateTotalOutstandingPrincipal(tid);
+        BigDecimal npaAmt = accountRepository.calculateTotalNpaOutstanding(tid);
+        BigDecimal prov = accountRepository.calculateTotalProvisioning(tid);
+        return ResponseEntity.ok(ApiResponse.success(new NpaWidget(
+                out, npaAmt, prov,
+                ratio(npaAmt, out),
+                ratio(prov, npaAmt).min(BigDecimal.valueOf(100)))));
+    }
+
+    /**
+     * Widget: CASA deposit overview (CHECKER, ADMIN, AUDITOR).
+     * BFF refresh: 60s. Skeleton: 3 metric values.
+     */
+    @GetMapping("/widgets/casa")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN', 'AUDITOR')")
+    public ResponseEntity<ApiResponse<CasaWidget>> widgetCasa() {
+        String tid = TenantContext.getCurrentTenant();
+        BigDecimal dep = depositAccountRepository.calculateTotalDeposits(tid);
+        long cnt = depositAccountRepository.countByTenantIdAndAccountStatusNot(
+                tid, DepositAccountStatus.CLOSED);
+        return ResponseEntity.ok(ApiResponse.success(new CasaWidget(
+                dep, cnt, ratio(dep, dep))));
+    }
+
+    /**
+     * Widget: Pending approvals badge (MAKER, CHECKER, ADMIN).
+     * BFF refresh: 15s. Skeleton: badge counter.
+     */
+    @GetMapping("/widgets/pending-approvals")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<ApprovalsWidget>> widgetApprovals() {
+        return ResponseEntity.ok(ApiResponse.success(new ApprovalsWidget(
+                workflowService.getPendingApprovals().size())));
+    }
+
+    // === Widget Response DTOs ===
+
+    public record PortfolioWidget(
+            long totalCustomers, long casaAccounts,
+            long activeLoans, long smaAccounts,
+            long npaAccounts, long pendingApplications) {}
+
+    public record NpaWidget(
+            BigDecimal totalOutstanding, BigDecimal npaOutstanding,
+            BigDecimal totalProvisioning,
+            BigDecimal grossNpaRatio, BigDecimal provisionCoverage) {}
+
+    public record CasaWidget(
+            BigDecimal totalDeposits, long casaAccountCount,
+            BigDecimal casaRatio) {}
+
+    public record ApprovalsWidget(long pendingCount) {}
 
     // === Helpers ===
 

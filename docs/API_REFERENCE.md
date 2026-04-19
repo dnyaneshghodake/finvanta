@@ -3,7 +3,7 @@
 > **Version:** 1.0 · **Base URL:** `/api/v1` · **Auth:** JWT Bearer · **Envelope:** `ApiResponse<T>`
 >
 > Per RBI IT Governance Direction 2023 and Finacle Connect / Temenos IRIS standards.
-> **78 endpoints** across 11 controllers · **42 error codes** · **4 CBS roles**
+> **82 endpoints** across 12 controllers · **42 error codes** · **4 CBS roles**
 
 ---
 
@@ -27,8 +27,9 @@
 | 14 | [GL Inquiry and Reporting](#14-gl-inquiry-and-reporting) | 4 |
 | 15 | [Maker-Checker Workflow](#15-maker-checker-workflow) | 6 |
 | 16 | [Notifications](#16-notifications) | 5 |
-| 17 | [Error Code Reference](#17-error-code-reference) | 42 codes |
-| 18 | [Infrastructure](#18-infrastructure) | — |
+| 17 | [Dashboard Widgets](#17-dashboard-widgets-4-widget-endpoints--1-legacy) | 4+1 |
+| 18 | [Error Code Reference](#18-error-code-reference) | 42 codes |
+| 19 | [Infrastructure](#19-infrastructure) | — |
 
 ---
 
@@ -653,7 +654,40 @@ Rotates refresh token per RFC 6749 section 10.4. Old token is denylisted; replay
 
 ---
 
-## 17. Error Code Reference
+## 17. Dashboard Widgets (4 widget endpoints + 1 legacy)
+
+**Base:** `/api/v1/dashboard` · **Pattern:** Tier-1 Progressive Secure Hydration
+
+Each widget is an independent endpoint fetched in parallel by the Next.js BFF. Layout renders immediately with role-based skeleton placeholders; data replaces skeletons as it arrives. A failed widget does NOT break the entire dashboard.
+
+**Widget Registry (BFF uses `LoginSessionContext.role` to select):**
+
+| Role | Widgets |
+|------|---------|
+| MAKER | portfolio, pending-approvals |
+| CHECKER | portfolio, npa, pending-approvals |
+| ADMIN | ALL widgets |
+| AUDITOR | portfolio, npa, casa |
+
+| # | Method | Path | Roles | Refresh | Skeleton |
+|---|--------|------|-------|---------|----------|
+| 79 | GET | `/dashboard/widgets/portfolio` | ALL | 60s | 6 metric cards |
+| 80 | GET | `/dashboard/widgets/npa` | CHECKER, ADMIN, AUDITOR | 60s | 3 amounts + 2 ratios |
+| 81 | GET | `/dashboard/widgets/casa` | CHECKER, ADMIN, AUDITOR | 60s | 3 metric values |
+| 82 | GET | `/dashboard/widgets/pending-approvals` | MAKER, CHECKER, ADMIN | 15s | Badge counter |
+| — | GET | `/dashboard/summary` | MAKER, CHECKER, ADMIN | — | Legacy monolithic (deprecated) |
+
+**`PortfolioWidget`:** `totalCustomers`, `casaAccounts`, `activeLoans`, `smaAccounts`, `npaAccounts`, `pendingApplications`
+
+**`NpaWidget`:** `totalOutstanding`, `npaOutstanding`, `totalProvisioning`, `grossNpaRatio`, `provisionCoverage`
+
+**`CasaWidget`:** `totalDeposits`, `casaAccountCount`, `casaRatio`
+
+**`ApprovalsWidget`:** `pendingCount`
+
+---
+
+## 18. Error Code Reference
 
 ### Authentication Errors (401)
 
@@ -747,7 +781,7 @@ Rotates refresh token per RFC 6749 section 10.4. Old token is denylisted; replay
 
 ---
 
-## 18. Infrastructure
+## 19. Infrastructure
 
 ### Servlet Filter Chain
 
