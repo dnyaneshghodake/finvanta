@@ -1,6 +1,6 @@
 package com.finvanta.api;
 
-import com.finvanta.workflow.ApprovalWorkflow;
+import com.finvanta.domain.entity.ApprovalWorkflow;
 import com.finvanta.workflow.ApprovalWorkflowService;
 
 import jakarta.validation.Valid;
