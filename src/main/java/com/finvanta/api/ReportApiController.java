@@ -260,6 +260,62 @@ public class ReportApiController {
                 outstanding, provisioning);
     }
 
+    // ========================================================================
+    // RBI Statutory Returns (GAP-01) + Basel III (GAP-06)
+    // ========================================================================
+
+    private final com.finvanta.compliance.RbiReturnsService rbiReturnsService;
+    private final com.finvanta.compliance.CapitalAdequacyService capitalAdequacyService;
+
+    // Note: These are injected via field injection to avoid modifying the existing
+    // constructor. In a dedicated refactor, move to constructor injection.
+    @org.springframework.beans.factory.annotation.Autowired
+    private void setRbiServices(
+            com.finvanta.compliance.RbiReturnsService rbiReturnsService,
+            com.finvanta.compliance.CapitalAdequacyService capitalAdequacyService) {
+        this.rbiReturnsService = rbiReturnsService;
+        this.capitalAdequacyService = capitalAdequacyService;
+    }
+
+    /**
+     * Daily Statement of Balances (DSB) per RBI Act 1934 Section 27.
+     * Returns NDTL, CRR/SLR requirements, total advances/deposits.
+     */
+    @GetMapping("/dsb")
+    @PreAuthorize("hasAnyRole('ADMIN', 'AUDITOR')")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>>
+            getDsb(@RequestParam(required = false) String date) {
+        java.time.LocalDate reportDate = date != null
+                ? java.time.LocalDate.parse(date)
+                : getBusinessDateSafe();
+        if (reportDate == null) reportDate = java.time.LocalDate.now();
+        return ResponseEntity.ok(ApiResponse.success(
+                rbiReturnsService.computeDsb(reportDate)));
+    }
+
+    /**
+     * CRR/SLR Compliance Position per RBI Act 1934 Sections 42/24.
+     */
+    @GetMapping("/crr-slr")
+    @PreAuthorize("hasAnyRole('ADMIN', 'AUDITOR')")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>>
+            getCrrSlrPosition() {
+        return ResponseEntity.ok(ApiResponse.success(
+                rbiReturnsService.computeCrrSlrPosition()));
+    }
+
+    /**
+     * Basel III Capital Adequacy (CRAR) per RBI Master Circular 2023.
+     * Returns Tier-1/2 capital, RWA breakdown, CRAR ratio, PCA status.
+     */
+    @GetMapping("/crar")
+    @PreAuthorize("hasAnyRole('ADMIN', 'AUDITOR')")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>>
+            getCrar() {
+        return ResponseEntity.ok(ApiResponse.success(
+                capitalAdequacyService.computeCrar()));
+    }
+
     // === Response DTOs ===
 
     public record DpdReport(
