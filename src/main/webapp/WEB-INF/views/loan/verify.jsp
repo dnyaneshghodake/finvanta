@@ -5,8 +5,14 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/loan/applications">Loan Applications</a></li>
+        <li class="active">Verify &mdash; <c:out value="${application.applicationNumber}" /></li>
+    </ul>
+
     <div class="fv-card">
-        <div class="card-header">Application Details</div>
+        <div class="card-header"><i class="bi bi-clipboard-check"></i> Application Details &mdash; <c:out value="${application.applicationNumber}" /> <div class="float-end"><a href="${pageContext.request.contextPath}/loan/applications" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/loan/applications"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a></div></div>
         <div class="card-body">
             <table class="table fv-table">
                 <tbody>
@@ -115,8 +121,8 @@
                         <td><c:choose><c:when test="${doc.verificationStatus == 'VERIFIED'}"><span class="fv-badge fv-badge-active">VERIFIED</span></c:when><c:when test="${doc.verificationStatus == 'REJECTED'}"><span class="fv-badge fv-badge-npa">REJECTED</span></c:when><c:otherwise><span class="fv-badge fv-badge-pending">PENDING</span></c:otherwise></c:choose></td>
                         <td><c:out value="${doc.verifiedBy}" default="--" /></td>
                         <td><c:if test="${doc.verificationStatus == 'PENDING'}">
-                            <form method="post" action="${pageContext.request.contextPath}/loan/document/verify/${doc.id}" class="d-inline"><input type="hidden" name="applicationId" value="${application.id}" /><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" /><button type="submit" class="btn btn-sm btn-success">Verify</button></form>
-                            <form method="post" action="${pageContext.request.contextPath}/loan/document/reject/${doc.id}" class="d-inline"><input type="hidden" name="applicationId" value="${application.id}" /><input type="hidden" name="rejectionReason" value="" id="docRej_${doc.id}" /><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" /><button type="submit" class="btn btn-sm btn-danger" onclick="var r=prompt('Rejection reason:'); if(!r){return false;} document.getElementById('docRej_${doc.id}').value=r;">Reject</button></form>
+                            <form method="post" action="${pageContext.request.contextPath}/loan/document/verify/${doc.id}" class="d-inline"><input type="hidden" name="applicationId" value="${application.id}" /><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" /><button type="submit" class="btn btn-sm btn-fv-success" data-confirm="Verify this document?"><i class="bi bi-patch-check"></i> Verify</button></form>
+                            <form method="post" action="${pageContext.request.contextPath}/loan/document/reject/${doc.id}" class="d-inline"><input type="hidden" name="applicationId" value="${application.id}" /><input type="hidden" name="rejectionReason" value="" class="fv-reason-field" /><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" /><button type="button" class="btn btn-sm btn-fv-danger" data-fv-reason-prompt="Rejection reason (mandatory):" data-fv-reason-confirm="Reject this document?" onclick="fvPromptReason(this);"><i class="bi bi-x-circle"></i> Reject</button></form>
                         </c:if></td>
                     </tr>
                 </c:forEach>
@@ -149,7 +155,7 @@
                     <textarea name="remarks" id="remarks" class="form-control" rows="3" required placeholder="Enter verification remarks"></textarea>
                 </div>
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                <button type="submit" class="btn btn-success">Verify &amp; Approve for Next Stage</button>
+                <button type="submit" class="btn btn-fv-success" data-confirm="Verify this application and forward to approval stage?"><i class="bi bi-check-circle"></i> Verify &amp; Approve for Next Stage</button>
                 <a href="${pageContext.request.contextPath}/loan/applications" class="btn btn-outline-secondary ms-2">Cancel</a>
             </form>
         </div>

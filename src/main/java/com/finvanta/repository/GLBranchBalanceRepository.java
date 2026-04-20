@@ -3,6 +3,7 @@ package com.finvanta.repository;
 import com.finvanta.domain.entity.GLBranchBalance;
 
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 import java.util.List;
 import java.util.Optional;
@@ -10,6 +11,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -41,6 +43,7 @@ public interface GLBranchBalanceRepository extends JpaRepository<GLBranchBalance
      * to prevent lost-update on running balances.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
     @Query("SELECT glb FROM GLBranchBalance glb WHERE glb.tenantId = :tenantId "
             + "AND glb.branch.id = :branchId AND glb.glCode = :glCode")
     Optional<GLBranchBalance> findAndLockByTenantIdAndBranchIdAndGlCode(

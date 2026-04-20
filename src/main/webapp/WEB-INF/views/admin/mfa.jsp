@@ -5,9 +5,14 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-    <c:if test="${not empty success}"><div class="alert alert-success alert-dismissible fade show"><c:out value="${success}" /><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div></c:if>
-    <c:if test="${not empty error}"><div class="alert alert-danger alert-dismissible fade show"><c:out value="${error}" /><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div></c:if>
-    <c:if test="${not empty info}"><div class="alert alert-info alert-dismissible fade show"><c:out value="${info}" /><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div></c:if>
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">MFA Management</li>
+    </ul>
+
+    <c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}" /></div></c:if>
+    <c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}" /></div></c:if>
+    <c:if test="${not empty info}"><div class="fv-alert alert alert-info"><c:out value="${info}" /></div></c:if>
 
     <div class="fv-card">
         <div class="card-header">MFA Management (RBI IT Governance Direction 2023 &sect;8.4)</div>
@@ -31,7 +36,7 @@
                         <tr>
                             <td class="fw-bold"><c:out value="${u.username}" /></td>
                             <td><c:out value="${u.fullName}" /></td>
-                            <td><span class="fv-badge fv-badge-${u.role == 'ADMIN' ? 'active' : 'closed'}"><c:out value="${u.role}" /></span></td>
+                            <td><span class="badge ${u.role == 'ADMIN' ? 'bg-danger' : u.role == 'CHECKER' ? 'bg-primary' : u.role == 'MAKER' ? 'bg-success' : 'bg-info'}"><c:out value="${u.role}" /></span></td>
                             <td>
                                 <c:choose>
                                     <c:when test="${u.mfaEnabled}"><span class="fv-badge fv-badge-active">YES</span></c:when>
@@ -51,18 +56,18 @@
                                     <form method="post" action="${pageContext.request.contextPath}/admin/mfa/enable" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                         <input type="hidden" name="username" value="<c:out value='${u.username}' />" />
-                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Enable MFA"><i class="bi bi-lock"></i> Enable</button>
+                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Enable MFA" data-confirm="Enable MFA for ${u.username}? The user will need to enroll their authenticator app before next login."><i class="bi bi-lock"></i> Enable</button>
                                     </form>
                                 </c:if>
                                 <c:if test="${u.mfaEnabled && u.mfaEnrolledDate == null}">
                                     <form method="post" action="${pageContext.request.contextPath}/admin/mfa/enroll" class="d-inline">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                         <input type="hidden" name="username" value="<c:out value='${u.username}' />" />
-                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Generate TOTP Secret"><i class="bi bi-key"></i> Enroll</button>
+                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Generate TOTP Secret" data-confirm="Generate TOTP secret for ${u.username}? A QR code will be shown for the user to scan with their authenticator app."><i class="bi bi-key"></i> Enroll</button>
                                     </form>
                                 </c:if>
                                 <c:if test="${u.mfaEnabled && u.role != 'ADMIN'}">
-                                    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableMfa_${u.id}" title="Disable MFA"><i class="bi bi-unlock"></i></button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableMfa_${u.id}" title="Disable MFA"><i class="bi bi-unlock"></i> Disable</button>
                                     <!-- Disable MFA Modal — uses numeric u.id for safe HTML id attribute -->
                                     <div class="modal fade" id="disableMfa_${u.id}" tabindex="-1">
                                         <div class="modal-dialog"><div class="modal-content">
@@ -74,7 +79,7 @@
                                                     <p class="text-muted">Per RBI audit norms: reason is mandatory for MFA disable.</p>
                                                     <div class="mb-3"><label class="form-label">Reason *</label><textarea name="reason" class="form-control" rows="2" required></textarea></div>
                                                 </div>
-                                                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Disable MFA</button></div>
+                                                <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-fv-danger"><i class="bi bi-unlock"></i> Disable MFA</button></div>
                                             </form>
                                         </div></div>
                                     </div>

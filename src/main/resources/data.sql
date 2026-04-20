@@ -167,6 +167,11 @@ INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance,
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '1300', 'Inter-Branch Receivable', 'ASSET', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2200', 'CGST Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2201', 'SGST Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+-- IGST Payable (GL 2202) -- inter-state GST head per GST Act 2017 sections 5 and 8.
+-- AccountingService.postJournalEntry validates every GL against gl_master; without
+-- this row ChargeKernel.levyCharge would fail with ACCOUNTING_GL_NOT_FOUND on every
+-- inter-state levy, breaking the IGST feature introduced in Phase 2.
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2202', 'IGST Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2300', 'Inter-Branch Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- Clearing Suspense GL (legacy — deprecated, use rail-specific GLs below)
@@ -329,7 +334,7 @@ VALUES ('DEFAULT', 'MAKER', 'WRITE_OFF', 0.00, 0.00, 1, 'Makers cannot perform w
 -- Per Finacle DAYCTRL: all operational branches must have DAY_OPEN for EOD to run.
 UPDATE business_calendar
 SET day_status = 'DAY_OPEN', day_opened_by = 'SYSTEM', day_opened_at = CURRENT_TIMESTAMP
-WHERE tenant_id = 'DEFAULT' AND business_date = '2026-04-01' AND is_holiday = 0;
+WHERE tenant_id = 'DEFAULT' AND business_date = '2026-04-01' AND is_holiday = FALSE;
 
 -- 2. Default transaction batches for April 1 — one per branch (required by TransactionEngine Step 5.5)
 -- Per Finacle BATCH_MASTER / BusinessDateService.openDay(): when a day is opened,
@@ -542,6 +547,6 @@ INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_t
 -- CHECKER: Can VERIFY/APPROVE but NOT CREATE (segregation of duties)
 INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','CHECKER',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND permission_code IN ('LOAN_VERIFY','LOAN_APPROVE','LOAN_DISBURSE','LOAN_VIEW','DEPOSIT_ACTIVATE','DEPOSIT_CLOSE','DEPOSIT_REVERSE','DEPOSIT_VIEW','CUSTOMER_KYC_VERIFY','CUSTOMER_VIEW','CLEARING_APPROVE','CLEARING_SETTLE','CLEARING_REVERSE','GL_VIEW','REPORT_VIEW');
 -- ADMIN: ALL permissions (self-approval blocked by workflow engine, not by permission matrix)
-INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','ADMIN',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND is_active=1;
+INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','ADMIN',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND is_active=TRUE;
 -- AUDITOR: Read-only permissions only (no financial operations)
 INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','AUDITOR',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND permission_code IN ('LOAN_VIEW','DEPOSIT_VIEW','CUSTOMER_VIEW','GL_VIEW','REPORT_VIEW','AUDIT_VIEW');

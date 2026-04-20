@@ -51,14 +51,17 @@ public class AccountingReconciliationEngine {
     private final GLMasterRepository glMasterRepository;
     private final JournalEntryRepository journalEntryRepository;
     private final AuditService auditService;
+    private final PostingIntegrityGuard integrityGuard;
 
     public AccountingReconciliationEngine(
             GLMasterRepository glMasterRepository,
             JournalEntryRepository journalEntryRepository,
-            AuditService auditService) {
+            AuditService auditService,
+            PostingIntegrityGuard integrityGuard) {
         this.glMasterRepository = glMasterRepository;
         this.journalEntryRepository = journalEntryRepository;
         this.auditService = auditService;
+        this.integrityGuard = integrityGuard;
     }
 
     /**
@@ -172,10 +175,16 @@ public class AccountingReconciliationEngine {
 
         if (!isBalanced) {
             int varianceCount = (int) result.get("varianceCount");
+            // CBS Tier-1: Activate financial safety kill switch on GL imbalance.
+            // Per RBI IT Governance §8.3: block ALL postings until resolved.
+            integrityGuard.activateRestriction(
+                    "GL reconciliation failed for " + businessDate + ": " + varianceCount + " variance(s)",
+                    "DAY_CLOSE_VALIDATION");
             throw new BusinessException(
                     "GL_RECONCILIATION_FAILED",
                     "GL reconciliation failed for " + businessDate + ": " + varianceCount
-                            + " variance(s) detected. Resolve before closing the day.");
+                            + " variance(s) detected. Resolve before closing the day. "
+                            + "POSTING RESTRICTED — all financial postings blocked until resolved.");
         }
     }
 }

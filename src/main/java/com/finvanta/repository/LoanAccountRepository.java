@@ -4,6 +4,7 @@ import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.LoanStatus;
 
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -12,15 +13,22 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> {
 
-    Optional<LoanAccount> findByTenantIdAndAccountNumber(String tenantId, String accountNumber);
+    /** JOIN FETCH customer+branch for JSP rendering on account-details page (OSIV disabled). */
+    @Query("SELECT la FROM LoanAccount la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId AND la.accountNumber = :accountNumber")
+    Optional<LoanAccount> findByTenantIdAndAccountNumber(
+            @Param("tenantId") String tenantId, @Param("accountNumber") String accountNumber);
 
+    /** CBS Tier-1: 30s lock timeout per Finacle ACCT_LOCK standard. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
     @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.accountNumber = :accountNumber")
     Optional<LoanAccount> findAndLockByTenantIdAndAccountNumber(
             @Param("tenantId") String tenantId, @Param("accountNumber") String accountNumber);
@@ -33,7 +41,9 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
             "SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF') AND la.daysPastDue >= :threshold")
     List<LoanAccount> findNpaCandidates(@Param("tenantId") String tenantId, @Param("threshold") int threshold);
 
-    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
+    /** JOIN FETCH customer+branch for JSP rendering (OSIV disabled). */
+    @Query("SELECT la FROM LoanAccount la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF')")
     List<LoanAccount> findAllActiveAccounts(@Param("tenantId") String tenantId);
 
     /** CBS: DB-level COUNT for product active account check — avoids loading entire portfolio into memory */
@@ -62,8 +72,12 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
     java.math.BigDecimal calculateTotalOutstandingByBranch(
             @Param("tenantId") String tenantId, @Param("branchId") Long branchId);
 
-    /** CBS Branch Portfolio: all loan accounts at a specific branch */
-    List<LoanAccount> findByTenantIdAndBranchId(String tenantId, Long branchId);
+    /** CBS Branch Portfolio: all loan accounts at a specific branch.
+     *  JOIN FETCH customer for branch/view.jsp (OSIV disabled). */
+    @Query("SELECT la FROM LoanAccount la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId AND la.branch.id = :branchId")
+    List<LoanAccount> findByTenantIdAndBranchId(
+            @Param("tenantId") String tenantId, @Param("branchId") Long branchId);
 
     // === CBS LOANINQ: Loan Account Search per Finacle LOANINQ / Temenos AA.ARRANGEMENT.ENQUIRY ===
 
@@ -73,7 +87,8 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
      * repayment processing, NPA follow-up, and RBI inspection queries.
      * All branches visible (ADMIN/AUDITOR). Branch-scoped variant below.
      */
-    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId "
+    @Query("SELECT la FROM LoanAccount la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId "
             + "AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF') AND ("
             + "la.accountNumber LIKE CONCAT('%', :query, '%') OR "
             + "la.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "
@@ -89,8 +104,9 @@ public interface LoanAccountRepository extends JpaRepository<LoanAccount, Long> 
         return searchAccounts(tenantId, query, org.springframework.data.domain.PageRequest.of(0, 500));
     }
 
-    /** Branch-scoped loan search for MAKER/CHECKER per Finacle BRANCH_CONTEXT */
-    @Query("SELECT la FROM LoanAccount la WHERE la.tenantId = :tenantId "
+    /** Branch-scoped loan search for MAKER/CHECKER. JOIN FETCH for JSP (OSIV disabled). */
+    @Query("SELECT la FROM LoanAccount la JOIN FETCH la.customer JOIN FETCH la.branch "
+            + "WHERE la.tenantId = :tenantId "
             + "AND la.branch.id = :branchId AND la.status NOT IN ('CLOSED', 'WRITTEN_OFF') AND ("
             + "la.accountNumber LIKE CONCAT('%', :query, '%') OR "
             + "la.customer.customerNumber LIKE CONCAT('%', :query, '%') OR "

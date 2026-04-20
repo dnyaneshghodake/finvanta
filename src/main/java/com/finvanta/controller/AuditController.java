@@ -2,10 +2,12 @@ package com.finvanta.controller;
 
 import com.finvanta.audit.AuditService;
 import com.finvanta.repository.AuditLogRepository;
+import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Set;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Controller;
@@ -35,6 +37,13 @@ public class AuditController {
     /** CBS: Max audit results per search to prevent OOM on large audit tables */
     private static final int MAX_AUDIT_RESULTS = 500;
 
+    /** CBS: Known entity types for audit trail — whitelist per defense-in-depth. */
+    private static final Set<String> KNOWN_ENTITY_TYPES = Set.of(
+            "Customer", "DepositAccount", "LoanAccount", "LoanApplication",
+            "Transaction", "JournalEntry", "Branch", "ProductMaster",
+            "StandingInstruction", "ApprovalWorkflow", "TransactionLimit",
+            "ChargeConfig", "BusinessCalendar", "User");
+
     private final AuditLogRepository auditLogRepository;
     private final AuditService auditService;
 
@@ -48,7 +57,68 @@ public class AuditController {
         String tenantId = TenantContext.getCurrentTenant();
         ModelAndView mav = new ModelAndView("audit/logs");
         mav.addObject("auditLogs", auditLogRepository.findRecentAuditLogs(tenantId));
+        // CBS: page-load indicator uses the bounded recent-window check
+        // (sub-100ms). Full O(N) chain walk is gated behind /audit/verify
+        // per Finacle/Temenos Tier-1 audit UX -- a synchronous multi-minute
+        // walk on every audit page view would make the UI unusable on any
+        // production-sized audit table.
+        mav.addObject("chainIntegrity",
+                auditService.verifyRecentChainIntegrity(tenantId));
+        return mav;
+    }
+
+    /**
+     * CBS full audit chain verification endpoint per RBI IT Governance Direction 2023 §8.3.
+     *
+     * <p>Triggers the O(N) walk of every audit record. Intentionally kept OFF the
+     * default page-load path (see {@link #auditLogs()}) because it can take minutes
+     * on a production-sized audit table. This endpoint exists so operations /
+     * compliance staff can trigger a full verification on demand during RBI
+     * inspection prep.
+     */
+    @GetMapping("/verify")
+    public ModelAndView verifyFullChain() {
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("audit/logs");
+        mav.addObject("auditLogs", auditLogRepository.findRecentAuditLogs(tenantId));
         mav.addObject("chainIntegrity", auditService.verifyChainIntegrity(tenantId));
+        mav.addObject("fullChainVerified", true);
+        return mav;
+    }
+
+    /**
+     * CBS Per-Entity Audit Trail per Finacle AUDIT_INQUIRY / RBI IT Governance §8.3.
+     * Linked from detail screens (customer/view, deposit/view, loan/account-details)
+     * via "View Audit Trail" button. Shows all audit records for a specific entity.
+     *
+     * Per RBI IT Governance Direction 2023 §8.3: inspectors must be able to view
+     * the complete change history of any individual entity (customer, account, loan).
+     */
+    @GetMapping("/entity")
+    public ModelAndView entityAuditTrail(
+            @RequestParam String entityType,
+            @RequestParam Long entityId) {
+        // CBS: Validate entityType against known types to prevent arbitrary strings
+        // in audit queries and log output. entityId must be non-negative.
+        if (entityType == null || !KNOWN_ENTITY_TYPES.contains(entityType)) {
+            throw new BusinessException("INVALID_ENTITY_TYPE",
+                    "Unknown entity type for audit trail: " + entityType);
+        }
+        if (entityId == null || entityId < 0) {
+            throw new BusinessException("INVALID_ENTITY_ID",
+                    "Entity ID must be a non-negative number");
+        }
+        String tenantId = TenantContext.getCurrentTenant();
+        ModelAndView mav = new ModelAndView("audit/logs");
+        // CBS: Paginate entity audit trail to prevent OOM on high-activity entities.
+        // Same MAX_AUDIT_RESULTS cap as search endpoint for consistency.
+        mav.addObject("auditLogs",
+                auditLogRepository.findByTenantIdAndEntityTypeAndEntityId(
+                        tenantId, entityType, entityId,
+                        PageRequest.of(0, MAX_AUDIT_RESULTS)));
+        mav.addObject("chainIntegrity",
+                auditService.verifyRecentChainIntegrity(tenantId));
+        mav.addObject("entityFilter", entityType + " #" + entityId);
         return mav;
     }
 
@@ -105,7 +175,8 @@ public class AuditController {
             mav.addObject("auditLogs", auditLogRepository.findRecentAuditLogs(tenantId));
         }
 
-        mav.addObject("chainIntegrity", auditService.verifyChainIntegrity(tenantId));
+        mav.addObject("chainIntegrity",
+                auditService.verifyRecentChainIntegrity(tenantId));
         return mav;
     }
 }

@@ -5,6 +5,7 @@ import com.finvanta.domain.enums.ClearingCycleStatus;
 import com.finvanta.domain.enums.PaymentRail;
 
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -13,6 +14,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -32,8 +34,10 @@ public interface ClearingCycleRepository extends JpaRepository<ClearingCycle, Lo
             @Param("cycleDate") LocalDate cycleDate,
             @Param("openStatus") ClearingCycleStatus openStatus);
 
-    /** Find and lock OPEN cycle for atomic transaction addition */
+    /** Find and lock OPEN cycle for atomic transaction addition.
+     *  30s lock timeout per Finacle CLG_LOCK standard. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
     @Query("SELECT cc FROM ClearingCycle cc WHERE cc.id = :id")
     Optional<ClearingCycle> findAndLockById(@Param("id") Long id);
 

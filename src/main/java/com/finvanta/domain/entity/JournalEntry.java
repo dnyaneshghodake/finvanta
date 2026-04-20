@@ -93,6 +93,24 @@ public class JournalEntry extends BaseEntity {
     @Column(name = "is_posted", nullable = false)
     private boolean posted = false;
 
+    /**
+     * CBS Tier-1: Voucher number linking this journal to the voucher register.
+     * Per Finacle TRAN_DETAIL / RBI Audit: every journal entry must carry the voucher
+     * reference for the mandatory Transaction ↔ Journal ↔ Voucher ↔ Ledger linkage chain.
+     * Set by AccountingService.postJournalEntry() from the pre-allocated voucher number.
+     * Without this, RBI auditors cannot reconcile the voucher register with the GL.
+     */
+    @Column(name = "voucher_number", length = 50)
+    private String voucherNumber;
+
+    /**
+     * CBS Tier-1: Transaction reference linking this journal back to the engine-level
+     * transaction. Enables Transaction ↔ Journal bidirectional traceability.
+     * Set by AccountingService.postJournalEntry() from the pre-allocated txn ref.
+     */
+    @Column(name = "transaction_ref", length = 40)
+    private String transactionRef;
+
     @OneToMany(mappedBy = "journalEntry", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<JournalEntryLine> lines = new ArrayList<>();
 

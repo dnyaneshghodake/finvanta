@@ -4,6 +4,10 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Business Calendar</li>
+    </ul>
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
@@ -20,13 +24,13 @@
         <div class="card-body">
             <c:choose>
                 <c:when test="${not empty openDay}">
-                    <div class="fv-stat-card stat-success" style="display:inline-block;padding:12px 24px;">
+                    <div class="fv-stat-card stat-success d-inline-block" style="padding:12px 24px;">
                         <div class="stat-value"><c:out value="${openDay.businessDate}" /></div>
                         <div class="stat-label">DAY OPEN</div>
                     </div>
                 </c:when>
                 <c:otherwise>
-                    <div class="fv-stat-card stat-danger" style="display:inline-block;padding:12px 24px;">
+                    <div class="fv-stat-card stat-danger d-inline-block" style="padding:12px 24px;">
                         <div class="stat-value">NO DAY OPEN</div>
                         <div class="stat-label">Open a day to allow transactions</div>
                     </div>
@@ -46,21 +50,31 @@
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <div class="col-auto">
                             <label class="form-label">Year</label>
-                            <input type="number" name="year" class="form-control" value="2026" min="2024" max="2030" required style="width:100px;" />
+                            <% int currentYear = java.time.LocalDate.now().getYear(); %>
+                            <input type="number" name="year" class="form-control fv-input-xs" value="<%= currentYear %>" min="<%= currentYear - 1 %>" max="<%= currentYear + 4 %>" required />
                         </div>
                         <div class="col-auto">
                             <label class="form-label">Month</label>
-                            <select name="month" class="form-select" required style="width:130px;">
-                                <option value="1">January</option><option value="2">February</option>
-                                <option value="3">March</option><option value="4" selected>April</option>
-                                <option value="5">May</option><option value="6">June</option>
-                                <option value="7">July</option><option value="8">August</option>
-                                <option value="9">September</option><option value="10">October</option>
-                                <option value="11">November</option><option value="12">December</option>
+                            <%-- CBS Tier-1: Default to current month, not hardcoded April.
+                                 Uses JSP expression to get current month number. --%>
+                            <% int currentMonth = java.time.LocalDate.now().getMonthValue(); %>
+                            <select name="month" class="form-select fv-input-sm" required>
+                                <option value="1" <%= currentMonth == 1 ? "selected" : "" %>>January</option>
+                                <option value="2" <%= currentMonth == 2 ? "selected" : "" %>>February</option>
+                                <option value="3" <%= currentMonth == 3 ? "selected" : "" %>>March</option>
+                                <option value="4" <%= currentMonth == 4 ? "selected" : "" %>>April</option>
+                                <option value="5" <%= currentMonth == 5 ? "selected" : "" %>>May</option>
+                                <option value="6" <%= currentMonth == 6 ? "selected" : "" %>>June</option>
+                                <option value="7" <%= currentMonth == 7 ? "selected" : "" %>>July</option>
+                                <option value="8" <%= currentMonth == 8 ? "selected" : "" %>>August</option>
+                                <option value="9" <%= currentMonth == 9 ? "selected" : "" %>>September</option>
+                                <option value="10" <%= currentMonth == 10 ? "selected" : "" %>>October</option>
+                                <option value="11" <%= currentMonth == 11 ? "selected" : "" %>>November</option>
+                                <option value="12" <%= currentMonth == 12 ? "selected" : "" %>>December</option>
                             </select>
                         </div>
                         <div class="col-auto">
-                            <button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Generate</button>
+                            <button type="submit" class="btn btn-fv-primary" data-confirm="Generate calendar entries for the selected month? Existing entries will not be duplicated."><i class="bi bi-plus-circle"></i> Generate</button>
                         </div>
                     </form>
                 </div>
@@ -75,24 +89,24 @@
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <div class="col-auto">
                             <label class="form-label">Date</label>
-                            <input type="date" name="date" class="form-control" required style="width:160px;" />
+                            <input type="date" name="date" class="form-control fv-input-md" required />
                         </div>
                         <div class="col">
                             <label class="form-label">Description</label>
                             <input type="text" name="description" class="form-control" placeholder="e.g., Independence Day" required />
                         </div>
                         <div class="col-auto">
-                            <button type="submit" class="btn btn-warning"><i class="bi bi-exclamation-triangle"></i> Add Holiday</button>
+                            <button type="submit" class="btn btn-fv-warning" data-confirm="Mark this date as a holiday? Transactions will be blocked on this date."><i class="bi bi-exclamation-triangle"></i> Add Holiday</button>
                         </div>
                     </form>
                     <form method="post" action="${pageContext.request.contextPath}/calendar/remove-holiday" class="row g-2 align-items-end">
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <div class="col-auto">
                             <label class="form-label">Date</label>
-                            <input type="date" name="date" class="form-control" required style="width:160px;" />
+                            <input type="date" name="date" class="form-control fv-input-md" required />
                         </div>
                         <div class="col-auto">
-                            <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-calendar-check"></i> Remove Holiday</button>
+                            <button type="submit" class="btn btn-outline-secondary" data-confirm="Remove holiday marking from this date? The date will become available for transactions."><i class="bi bi-calendar-check"></i> Remove Holiday</button>
                         </div>
                     </form>
                 </div>
@@ -159,7 +173,7 @@
                                         <input type="hidden" name="businessDate" value="${cal.businessDate}" />
                                         <input type="hidden" name="branchId" value="${currentBranchId}" />
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                        <button type="submit" class="btn btn-sm btn-success" data-confirm="Open business day ${cal.businessDate}?">Open Day</button>
+                                        <button type="submit" class="btn btn-sm btn-fv-success" data-confirm="Open business day ${cal.businessDate}?"><i class="bi bi-play-circle"></i> Open Day</button>
                                     </form>
                                 </c:if>
                                 <%-- CBS: Close Day button appears when EOD is complete, regardless of whether
@@ -171,7 +185,7 @@
                                         <input type="hidden" name="businessDate" value="${cal.businessDate}" />
                                         <input type="hidden" name="branchId" value="${currentBranchId}" />
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                        <button type="submit" class="btn btn-sm btn-danger" data-confirm="Close business day ${cal.businessDate}? This is irreversible.">Close Day</button>
+                                        <button type="submit" class="btn btn-sm btn-fv-danger" data-confirm="Close business day ${cal.businessDate}? This is irreversible."><i class="bi bi-stop-circle"></i> Close Day</button>
                                     </form>
                                 </c:if>
                             </td>

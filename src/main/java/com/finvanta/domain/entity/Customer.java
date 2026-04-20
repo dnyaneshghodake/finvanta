@@ -1,6 +1,8 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.config.PiiEncryptionConverter;
+import com.finvanta.domain.enums.CustomerType;
+import com.finvanta.domain.enums.KycRiskCategory;
 import com.finvanta.util.PiiHashUtil;
 
 import jakarta.persistence.*;
@@ -131,6 +133,11 @@ public class Customer extends BaseEntity {
      *   MEDIUM → re-KYC every 8 years (self-employed, moderate value)
      *   HIGH   → re-KYC every 2 years (PEP, high-value, adverse media)
      * Per RBI: risk category must be assessed at onboarding and reviewed periodically.
+     *
+     * <p>CBS Tier-1 (Gap 1): Validated against {@link KycRiskCategory} enum at the service
+     * layer. Field remains String for backward compatibility with the API response DTO
+     * ({@code CustomerResponse} record). Full enum migration requires coordinated change
+     * across entity + API controller + tests in a dedicated PR.
      */
     @Column(name = "kyc_risk_category", length = 10)
     private String kycRiskCategory = "MEDIUM";
@@ -179,6 +186,9 @@ public class Customer extends BaseEntity {
      * Customer type per RBI KYC Direction.
      * Determines KYC document requirements and regulatory treatment.
      * Values: INDIVIDUAL, JOINT, HUF, PARTNERSHIP, COMPANY, TRUST, NRI, MINOR, GOVERNMENT
+     *
+     * <p>CBS Tier-1 (Gap 1): Validated against {@link CustomerType} enum at the service
+     * layer. Field remains String for backward compatibility with the API response DTO.
      */
     @Column(name = "customer_type", length = 20)
     private String customerType = "INDIVIDUAL";
@@ -284,6 +294,153 @@ public class Customer extends BaseEntity {
      */
     @Column(name = "ckyc_account_type", length = 20)
     private String ckycAccountType = "INDIVIDUAL";
+
+    // ========================================================================
+    // CKYC Part I — Additional Identity Fields (per CERSAI v2.0 / RBI KYC)
+    // ========================================================================
+
+    /** Middle name — CKYC optional but captured for identity matching */
+    @Column(name = "middle_name", length = 100)
+    private String middleName;
+
+    /**
+     * Resident status per RBI/FEMA classification.
+     * Values: RESIDENT, NRI, PIO, OCI, FOREIGN_NATIONAL
+     * Per FEMA 1999: determines applicable account types (NRE/NRO/FCNR).
+     */
+    @Column(name = "resident_status", length = 30)
+    private String residentStatus = "RESIDENT";
+
+    /** Alternate mobile number — CKYC optional, used for SMS OTP fallback */
+    @Column(name = "alternate_mobile", length = 15)
+    private String alternateMobile;
+
+    /**
+     * Communication preference: EMAIL, SMS, BOTH, NONE
+     * Per RBI: customer consent for electronic communication must be recorded.
+     */
+    @Column(name = "communication_pref", length = 10)
+    private String communicationPref;
+
+    /** Source of funds — PMLA mandatory for high-value accounts */
+    @Column(name = "source_of_funds", length = 100)
+    private String sourceOfFunds;
+
+    // ========================================================================
+    // OVD (Officially Valid Documents) — per RBI KYC Direction Section 3
+    // ========================================================================
+
+    /** Passport number (encrypted at rest) — OVD per RBI KYC Direction */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "passport_number", length = 100)
+    private String passportNumber;
+
+    /** Passport expiry date — required if passport is the OVD */
+    @Column(name = "passport_expiry")
+    private LocalDate passportExpiry;
+
+    /** Voter ID number (encrypted at rest) — OVD per RBI KYC Direction */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "voter_id", length = 100)
+    private String voterId;
+
+    /** Driving license number (encrypted at rest) — OVD per RBI KYC Direction */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "driving_license", length = 100)
+    private String drivingLicense;
+
+    // ========================================================================
+    // FATCA / CRS (Foreign Account Tax Compliance Act / Common Reporting Std)
+    // ========================================================================
+
+    /**
+     * FATCA country of tax residence (ISO 3166 alpha-2).
+     * Per FATCA IGA India-US: banks must identify US persons and report.
+     * Null = Indian tax resident only (no FATCA reporting obligation).
+     */
+    @Column(name = "fatca_country", length = 2)
+    private String fatcaCountry;
+
+    // ========================================================================
+    // Relationship & Segmentation (per Finacle CIF_MASTER / Temenos CUSTOMER)
+    // ========================================================================
+
+    /**
+     * Customer segment: RETAIL, PREMIUM, HNI, CORPORATE, MSME, AGRICULTURE
+     * Per Finacle: drives product eligibility, pricing, and service levels.
+     */
+    @Column(name = "customer_segment", length = 30)
+    private String customerSegment;
+
+    /** Source of introduction — how the customer was acquired */
+    @Column(name = "source_of_introduction", length = 100)
+    private String sourceOfIntroduction;
+
+    /** Relationship manager employee ID — for HNI/premium customers */
+    @Column(name = "relationship_manager_id", length = 50)
+    private String relationshipManagerId;
+
+    // ========================================================================
+    // Corporate / Non-Individual Fields (per RBI KYC Direction Section 9)
+    // ========================================================================
+
+    /** Company/firm name — mandatory for COMPANY/PARTNERSHIP/TRUST/HUF */
+    @Column(name = "company_name", length = 300)
+    private String companyName;
+
+    /** Corporate Identification Number — mandatory for COMPANY type */
+    @Column(name = "cin", length = 21)
+    private String cin;
+
+    /** GSTIN — GST registration number for business customers */
+    @Column(name = "gstin", length = 15)
+    private String gstin;
+
+    /** Date of incorporation/registration for non-individual entities */
+    @Column(name = "date_of_incorporation")
+    private LocalDate dateOfIncorporation;
+
+    /**
+     * Constitution type per RBI classification.
+     * Values: PROPRIETORSHIP, PARTNERSHIP, LLP, PRIVATE_LIMITED,
+     *         PUBLIC_LIMITED, TRUST, SOCIETY, HUF, COOPERATIVE, GOVERNMENT
+     */
+    @Column(name = "constitution_type", length = 30)
+    private String constitutionType;
+
+    /** Nature of business — CKYC mandatory for non-individual customers */
+    @Column(name = "nature_of_business", length = 200)
+    private String natureOfBusiness;
+
+    // ========================================================================
+    // Permanent Address — District field (CKYC mandatory)
+    // ========================================================================
+
+    /** District — CKYC mandatory field (separate from city) */
+    @Column(name = "permanent_district", length = 100)
+    private String permanentDistrict;
+
+    // ========================================================================
+    // Correspondence Address (separate from permanent per CKYC/CERSAI)
+    // ========================================================================
+
+    @Column(name = "correspondence_address", length = 500)
+    private String correspondenceAddress;
+
+    @Column(name = "correspondence_city", length = 100)
+    private String correspondenceCity;
+
+    @Column(name = "correspondence_district", length = 100)
+    private String correspondenceDistrict;
+
+    @Column(name = "correspondence_state", length = 100)
+    private String correspondenceState;
+
+    @Column(name = "correspondence_pin_code", length = 6)
+    private String correspondencePinCode;
+
+    @Column(name = "correspondence_country", length = 50)
+    private String correspondenceCountry;
 
     // === Demographics (CKYC Mandatory Fields per CERSAI Specification v2.0) ===
 
@@ -435,17 +592,47 @@ public class Customer extends BaseEntity {
         return firstName + " " + lastName;
     }
 
+    // === CBS Tier-1 (Gap 6): Pre-masked PII accessors for view layer ===
+    //
+    // Per RBI IT Governance Direction 2023 / UIDAI Aadhaar Act 2016:
+    // PII must be masked before it reaches the presentation layer. These
+    // @Transient computed properties expose pre-masked values so JSP views
+    // use ${cust.maskedPan} instead of decrypting the full PAN in the template
+    // and masking inline. This ensures decrypted PII never traverses the
+    // template engine pipeline — masking happens at the entity boundary.
+    //
+    // Per Finacle CIF_LIST: PII columns in list views always show masked values.
+    // The view page uses controller-provided masked values (PiiMaskingUtil)
+    // for consistency; these accessors extend the same pattern to list views.
+
+    /** Masked PAN for list/display — never exposes full decrypted PAN to view layer. */
+    @Transient
+    public String getMaskedPan() {
+        return com.finvanta.util.PiiMaskingUtil.maskPan(this.panNumber);
+    }
+
+    /** Masked Aadhaar for list/display — per UIDAI, only last 4 digits visible. */
+    @Transient
+    public String getMaskedAadhaar() {
+        return com.finvanta.util.PiiMaskingUtil.maskAadhaar(this.aadhaarNumber);
+    }
+
+    /** Masked mobile for list/display — only last 4 digits visible. */
+    @Transient
+    public String getMaskedMobile() {
+        return com.finvanta.util.PiiMaskingUtil.maskMobile(this.mobileNumber);
+    }
+
     /**
      * Computes CKYC account type from customer type.
      * Per CERSAI: INDIVIDUAL/JOINT/MINOR/NRI → INDIVIDUAL; rest → NON_INDIVIDUAL
+     *
+     * <p>CBS Tier-1 (Gap 1): Delegates to {@link CustomerType#getCkycAccountType()} via
+     * enum lookup. Falls back to "INDIVIDUAL" for null/unrecognized values.
      */
     public void computeCkycAccountType() {
-        if ("INDIVIDUAL".equals(customerType) || "JOINT".equals(customerType)
-                || "MINOR".equals(customerType) || "NRI".equals(customerType)) {
-            this.ckycAccountType = "INDIVIDUAL";
-        } else {
-            this.ckycAccountType = "NON_INDIVIDUAL";
-        }
+        CustomerType ct = CustomerType.fromString(customerType);
+        this.ckycAccountType = ct != null ? ct.getCkycAccountType() : "NON_INDIVIDUAL";
     }
 
     // === KYC Helpers ===
@@ -456,11 +643,13 @@ public class Customer extends BaseEntity {
      *   LOW    → 10 years
      *   MEDIUM → 8 years
      *   HIGH   → 2 years
+     *
+     * <p>CBS Tier-1 (Gap 1): Delegates to {@link KycRiskCategory#getRenewalYears()} via
+     * enum lookup. Falls back to MEDIUM (8 years) for null/unrecognized values.
      */
     public int getKycRenewalYears() {
-        if ("HIGH".equals(kycRiskCategory)) return 2;
-        if ("LOW".equals(kycRiskCategory)) return 10;
-        return 8; // MEDIUM default
+        KycRiskCategory risk = KycRiskCategory.fromString(kycRiskCategory);
+        return risk != null ? risk.getRenewalYears() : KycRiskCategory.MEDIUM.getRenewalYears();
     }
 
     /**
@@ -503,6 +692,70 @@ public class Customer extends BaseEntity {
     /** JSP/view-layer convenience — uses system date as approximation. */
     public boolean isKycExpiringSoon() {
         return isKycExpiringSoon(LocalDate.now());
+    }
+
+    // === PII Immutability Guard (GAP 2 — Tier-1 defense-in-depth) ===
+
+    /**
+     * CBS Tier-1 CRITICAL: PAN and Aadhaar are IMMUTABLE after initial CIF creation.
+     * Per RBI KYC Master Direction 2016: PAN/Aadhaar define the CIF identity and
+     * must never be changed — correction requires CIF closure and re-creation.
+     *
+     * <p>This {@code @PreUpdate} hook is the LAST LINE OF DEFENSE. The service layer
+     * ({@code CustomerCifServiceImpl.updateCustomer}) already excludes PAN/Aadhaar
+     * from the mutable field copy, and the API controller rejects requests with
+     * PAN/Aadhaar in the body. But if any future code path (batch job, admin tool,
+     * direct repo save) accidentally modifies these fields, this hook catches it
+     * at the JPA boundary — before the SQL UPDATE is issued.
+     *
+     * <p>Per Finacle CIF_MASTER: immutable fields are enforced by DB triggers.
+     * JPA {@code @PreUpdate} is the closest equivalent in Spring Boot without
+     * requiring DB-vendor-specific DDL.
+     *
+     * <p><b>Mechanism:</b> Stores the original PAN/Aadhaar hashes at load time via
+     * {@code @PostLoad}. On {@code @PreUpdate}, recomputes hashes from current field
+     * values and compares. If changed, throws {@code IllegalStateException} which
+     * aborts the transaction. Uses hashes (not plaintext) because the encrypted
+     * ciphertext changes on every read (random IV), so direct comparison is impossible.
+     */
+    @Transient
+    private String originalPanHash;
+
+    @Transient
+    private String originalAadhaarHash;
+
+    @PostLoad
+    void snapshotImmutableFields() {
+        this.originalPanHash = this.panHash;
+        this.originalAadhaarHash = this.aadhaarHash;
+    }
+
+    @PreUpdate
+    void enforceImmutablePii() {
+        // Only enforce if snapshots were taken (i.e., entity was loaded from DB,
+        // not a freshly created entity going through its first save).
+        if (originalPanHash != null) {
+            // CBS Tier-1: Detect BOTH modification AND nullification of PAN.
+            // The previous implementation only checked (originalPanHash != null && panHash != null),
+            // which short-circuited when panHash was set to null — silently allowing PAN deletion.
+            // Per RBI KYC Master Direction 2016: PAN defines the CIF identity and must never be
+            // removed or changed after creation. Correction requires CIF closure and re-creation.
+            if (!originalPanHash.equals(panHash)) {
+                throw new IllegalStateException(
+                        "CBS IMMUTABILITY VIOLATION: PAN number cannot be changed or removed after CIF creation. "
+                                + "Per RBI KYC Master Direction 2016: PAN defines the CIF identity. "
+                                + "Customer: " + customerNumber);
+            }
+        }
+        if (originalAadhaarHash != null) {
+            // CBS Tier-1: Same nullification guard for Aadhaar.
+            if (!originalAadhaarHash.equals(aadhaarHash)) {
+                throw new IllegalStateException(
+                        "CBS IMMUTABILITY VIOLATION: Aadhaar number cannot be changed or removed after CIF creation. "
+                                + "Per UIDAI / RBI KYC norms: Aadhaar is immutable post-CIF creation. "
+                                + "Customer: " + customerNumber);
+            }
+        }
     }
 
     // === PII Hash Helpers ===

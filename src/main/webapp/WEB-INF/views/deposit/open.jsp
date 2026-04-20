@@ -5,20 +5,27 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-<c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+<ul class="fv-breadcrumb">
+    <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+    <li><a href="${pageContext.request.contextPath}/deposit/accounts">CASA Accounts</a></li>
+    <li class="active">Open Account</li>
+</ul>
+
+<c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
 
 <div class="fv-card">
-    <div class="card-header">CASA Account Opening <span class="badge bg-info ms-2">Finacle ACCTOPN</span></div>
+    <div class="card-header"><i class="bi bi-person-plus"></i> CASA Account Opening <span class="badge bg-info ms-2">Finacle ACCTOPN</span> <div class="float-end"><a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/deposit/accounts"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a></div></div>
     <div class="card-body">
     <form method="post" action="${pageContext.request.contextPath}/deposit/open" class="fv-form" id="casaOpenForm">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
 
         <!-- Section 1: Customer & Branch -->
-        <h6 class="mb-3 text-primary"><i class="bi bi-person-badge"></i> Customer &amp; Branch</h6>
+        <div class="fv-section-header" onclick=""><i class="bi bi-person-badge"></i> Customer &amp; Branch <i class="bi bi-chevron-down fv-chevron"></i></div>
+        <div class="fv-section-body">
         <div class="row mb-3">
-            <div class="col-md-6">
-                <label for="customerId" class="form-label">Customer (CIF) <span class="text-danger">*</span></label>
-                <select name="customerId" id="customerId" class="form-select" required>
+            <div class="col-md-6 fv-mandatory-group">
+                <label for="customerId" class="form-label fv-required">Customer (CIF)</label><span class="fv-help-icon" data-fv-help="Only KYC-verified customers are eligible for CASA account opening per RBI norms.">?</span>
+                <select name="customerId" id="customerId" class="form-select" required tabindex="1">
                     <option value="">-- Select Customer --</option>
                     <c:forEach var="c" items="${customers}">
                     <option value="${c.id}" data-kyc="${c.kycVerified}" data-cibil="${c.cibilScore}"><c:out value="${c.customerNumber}"/> &mdash; <c:out value="${c.firstName}"/> <c:out value="${c.lastName}"/></option>
@@ -26,9 +33,9 @@
                 </select>
                 <small id="customerHint" class="form-text text-muted"></small>
             </div>
-            <div class="col-md-6">
-                <label for="branchId" class="form-label">Branch (SOL) <span class="text-danger">*</span></label>
-                <select name="branchId" id="branchId" class="form-select" required>
+            <div class="col-md-6 fv-mandatory-group">
+                <label for="branchId" class="form-label fv-required">Branch (SOL)</label>
+                <select name="branchId" id="branchId" class="form-select" required tabindex="2">
                     <option value="">-- Select Branch --</option>
                     <c:forEach var="b" items="${branches}">
                     <option value="${b.id}"><c:out value="${b.branchCode}"/> &mdash; <c:out value="${b.branchName}"/></option>
@@ -37,13 +44,14 @@
             </div>
         </div>
 
-        <hr/>
+        </div><%-- end Customer & Branch section body --%>
 
         <!-- Section 2: Account Configuration -->
-        <h6 class="mb-3 text-primary"><i class="bi bi-gear"></i> Account Configuration</h6>
+        <div class="fv-section-header" onclick=""><i class="bi bi-gear"></i> Account Configuration <i class="bi bi-chevron-down fv-chevron"></i></div>
+        <div class="fv-section-body">
         <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="accountType" class="form-label">Account Type <span class="text-danger">*</span></label>
+            <div class="col-md-4 fv-mandatory-group">
+                <label for="accountType" class="form-label fv-required">Account Type</label><span class="fv-help-icon" data-fv-help="Per Finacle ACCTOPN: determines interest rate, minimum balance, and product features. PMJDY = zero balance per PM Jan Dhan Yojana.">?</span>
                 <select name="accountType" id="accountType" class="form-select" required>
                     <option value="">-- Select Type --</option>
                     <option value="SAVINGS">Savings Account (SB)</option>
@@ -93,10 +101,11 @@
             </div>
         </div>
 
-        <hr/>
+        </div><%-- end Account Configuration section body --%>
 
         <!-- Section 3: Nomination (RBI Deposit Insurance) -->
-        <h6 class="mb-3 text-primary"><i class="bi bi-shield-check"></i> Nomination (per RBI Deposit Insurance)</h6>
+        <div class="fv-section-header" onclick=""><i class="bi bi-shield-check"></i> Nomination (per RBI Deposit Insurance) <i class="bi bi-chevron-down fv-chevron"></i></div>
+        <div class="fv-section-body">
         <div class="row mb-3">
             <div class="col-md-4">
                 <label for="nomineeName" class="form-label">Nominee Name</label>
@@ -120,11 +129,11 @@
             </div>
         </div>
 
-        <hr/>
+        </div><%-- end Nomination section body --%>
 
         <div class="mt-3">
-            <button type="submit" class="btn btn-fv-primary" data-confirm="Open this CASA account? It will require checker approval before activation."><i class="bi bi-check-circle"></i> Submit Account Opening</button>
-            <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-outline-secondary ms-2">Cancel</a>
+            <button type="submit" class="btn btn-fv-primary" data-confirm="Open this CASA account? It will require checker approval before activation."><i class="bi bi-check-circle"></i> Submit Account Opening <span class="fv-kbd">F2</span></button>
+            <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-outline-secondary ms-2" data-fv-cancel="${pageContext.request.contextPath}/deposit/accounts"><i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span></a>
         </div>
     </form>
     </div>

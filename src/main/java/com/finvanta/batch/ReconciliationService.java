@@ -1,5 +1,6 @@
 package com.finvanta.batch;
 
+import com.finvanta.accounting.PostingIntegrityGuard;
 import com.finvanta.domain.entity.GLMaster;
 import com.finvanta.repository.GLBranchBalanceRepository;
 import com.finvanta.repository.GLMasterRepository;
@@ -38,14 +39,17 @@ public class ReconciliationService {
     private final GLMasterRepository glMasterRepository;
     private final GLBranchBalanceRepository glBranchBalanceRepository;
     private final LedgerEntryRepository ledgerRepository;
+    private final PostingIntegrityGuard integrityGuard;
 
     public ReconciliationService(
             GLMasterRepository glMasterRepository,
             GLBranchBalanceRepository glBranchBalanceRepository,
-            LedgerEntryRepository ledgerRepository) {
+            LedgerEntryRepository ledgerRepository,
+            PostingIntegrityGuard integrityGuard) {
         this.glMasterRepository = glMasterRepository;
         this.glBranchBalanceRepository = glBranchBalanceRepository;
         this.ledgerRepository = ledgerRepository;
+        this.integrityGuard = integrityGuard;
     }
 
     /**
@@ -97,6 +101,17 @@ public class ReconciliationService {
                     "GL reconciliation FAILED: {}/{} GL accounts have discrepancies",
                     discrepancies.size(),
                     checkedCount);
+            // CBS Tier-1: ACTIVATE FINANCIAL SAFETY KILL SWITCH on GL↔Ledger mismatch.
+            // Per RBI IT Governance §8.3: continuing to post on a corrupted ledger
+            // compounds the damage exponentially. Block ALL postings until investigated.
+            StringBuilder reason = new StringBuilder("GL↔Ledger mismatch: ");
+            for (Discrepancy d : discrepancies) {
+                reason.append(d.glCode()).append(" (DR: GL=").append(d.glMasterDebit())
+                        .append(" Ledger=").append(d.ledgerDebit())
+                        .append(", CR: GL=").append(d.glMasterCredit())
+                        .append(" Ledger=").append(d.ledgerCredit()).append("); ");
+            }
+            integrityGuard.activateRestriction(reason.toString(), "EOD_RECONCILIATION");
         }
 
         return new ReconciliationResult(balanced, checkedCount, discrepancies);
@@ -161,6 +176,17 @@ public class ReconciliationService {
                     "Branch balance reconciliation FAILED: {}/{} GL accounts have discrepancies",
                     discrepancies.size(),
                     checkedCount);
+            // CBS Tier-1: ACTIVATE KILL SWITCH on branch balance mismatch.
+            // GLMaster aggregate ≠ SUM(GLBranchBalance) indicates a bug in the
+            // dual-update logic in AccountingService.updateGLBalances().
+            StringBuilder reason = new StringBuilder("Branch↔GL mismatch: ");
+            for (Discrepancy d : discrepancies) {
+                reason.append(d.glCode()).append(" (DR: GL=").append(d.glMasterDebit())
+                        .append(" BranchSum=").append(d.ledgerDebit())
+                        .append(", CR: GL=").append(d.glMasterCredit())
+                        .append(" BranchSum=").append(d.ledgerCredit()).append("); ");
+            }
+            integrityGuard.activateRestriction(reason.toString(), "EOD_BRANCH_RECONCILIATION");
         }
 
         return new ReconciliationResult(balanced, checkedCount, discrepancies);

@@ -142,26 +142,35 @@ public class AccountingController {
         mav.addObject("fromDate", from);
         mav.addObject("toDate", to);
 
+        List<com.finvanta.domain.entity.JournalEntry> entries;
         if (q != null && !q.isBlank() && q.trim().length() >= 2) {
             String trimmed = q.trim();
             if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
-                mav.addObject("entries",
-                        journalEntryRepository.searchJournalEntries(
-                                tenantId, trimmed, PageRequest.of(0, MAX_JOURNAL_RESULTS)));
+                entries = journalEntryRepository.searchJournalEntries(
+                        tenantId, trimmed, PageRequest.of(0, MAX_JOURNAL_RESULTS));
             } else {
                 Long branchId = SecurityUtil.getCurrentUserBranchId();
                 if (branchId != null) {
-                    mav.addObject("entries",
-                            journalEntryRepository.searchJournalEntriesByBranch(
-                                    tenantId, branchId, trimmed, PageRequest.of(0, MAX_JOURNAL_RESULTS)));
+                    entries = journalEntryRepository.searchJournalEntriesByBranch(
+                            tenantId, branchId, trimmed, PageRequest.of(0, MAX_JOURNAL_RESULTS));
                 } else {
-                    mav.addObject("entries", java.util.Collections.emptyList());
+                    entries = java.util.Collections.emptyList();
                 }
             }
             mav.addObject("searchQuery", q);
         } else {
-            mav.addObject("entries", journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to));
+            // CBS Tier-1: limit at DB level via Pageable to prevent OOM on busy date ranges.
+            // The previous approach loaded ALL rows then truncated with subList() — on busy
+            // systems with 100K+ entries, the full result set caused OOM before the cap.
+            entries = journalEntryRepository.findByTenantIdAndValueDateBetweenPaged(
+                    tenantId, from, to, PageRequest.of(0, MAX_JOURNAL_RESULTS));
+            if (entries.size() >= MAX_JOURNAL_RESULTS) {
+                mav.addObject("warning", "Results capped at " + MAX_JOURNAL_RESULTS
+                        + " entries. Narrow the date range or use search for specific entries.");
+            }
         }
+        mav.addObject("entries", entries);
+        addJournalTotals(mav, entries);
         return mav;
     }
 
@@ -188,11 +197,40 @@ public class AccountingController {
             mav.addObject("error", "Invalid date format. Showing default 30-day range.");
         }
 
-        mav.addObject("entries", journalEntryRepository.findByTenantIdAndValueDateBetween(tenantId, from, to));
+        // CBS Tier-1: limit at DB level via Pageable to prevent OOM on busy date ranges.
+        List<com.finvanta.domain.entity.JournalEntry> entries =
+                journalEntryRepository.findByTenantIdAndValueDateBetweenPaged(
+                        tenantId, from, to, PageRequest.of(0, MAX_JOURNAL_RESULTS));
+        if (entries.size() >= MAX_JOURNAL_RESULTS) {
+            mav.addObject("warning", "Results capped at " + MAX_JOURNAL_RESULTS
+                    + " entries. Narrow the date range for complete data.");
+        }
+        mav.addObject("entries", entries);
+        addJournalTotals(mav, entries);
         mav.addObject("fromDate", from);
         mav.addObject("toDate", to);
 
         return mav;
+    }
+
+    /**
+     * CBS Tier-1: aggregate Debit/Credit totals for the journal-entry tfoot totals row
+     * per Finacle JRNL_INQUIRY standard. Null-safe against entities with unset totals.
+     */
+    private void addJournalTotals(
+            ModelAndView mav, List<com.finvanta.domain.entity.JournalEntry> entries) {
+        BigDecimal totalDebit = BigDecimal.ZERO;
+        BigDecimal totalCredit = BigDecimal.ZERO;
+        for (com.finvanta.domain.entity.JournalEntry entry : entries) {
+            if (entry.getTotalDebit() != null) {
+                totalDebit = totalDebit.add(entry.getTotalDebit());
+            }
+            if (entry.getTotalCredit() != null) {
+                totalCredit = totalCredit.add(entry.getTotalCredit());
+            }
+        }
+        mav.addObject("totalDebit", totalDebit);
+        mav.addObject("totalCredit", totalCredit);
     }
 
     /**

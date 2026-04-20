@@ -1,9 +1,16 @@
 <%@ taglib prefix="c" uri="jakarta.tags.core" %>
+<%@ taglib prefix="fn" uri="jakarta.tags.functions" %>
 <c:set var="pageTitle" value="Pending Approvals" />
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <%-- CBS Tier-1: breadcrumb per Finacle/Temenos — every screen needs Home > Module > Screen --%>
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Pending Approvals</li>
+    </ul>
+
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
@@ -12,8 +19,9 @@
     </c:if>
 
     <div class="fv-card">
-        <div class="card-header">Items Pending Approval (Maker-Checker)</div>
+        <div class="card-header"><i class="bi bi-check2-square"></i> Items Pending Approval (Maker-Checker)</div>
         <div class="card-body">
+            <div class="table-responsive">
             <table class="table fv-table fv-datatable">
                 <thead>
                     <tr>
@@ -36,15 +44,32 @@
                             <td><c:out value="${item.submittedAt}" /></td>
                             <td><c:out value="${item.makerRemarks}" /></td>
                             <td>
+                                <%-- CBS Tier-1: Approve is the higher-stakes action (it EXECUTES the journal posting
+                                     and is irreversible); it MUST carry the same styled confirm modal as Reject.
+                                     Entity type/id/action are templated into the confirm text so the operator sees
+                                     exactly what they are about to authorize. --%>
                                 <form method="post" action="${pageContext.request.contextPath}/workflow/approve/${item.id}" class="d-inline">
                                     <input type="hidden" name="remarks" value="Approved" />
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                    <button type="submit" class="btn btn-sm btn-success">Approve</button>
+                                    <button type="submit" class="btn btn-sm btn-fv-success"
+                                            data-confirm="Approve ${fn:escapeXml(item.entityType)} ${fn:escapeXml(item.entityId)} (${fn:escapeXml(item.actionType)})? This will execute the posting and cannot be undone.">
+                                        <i class="bi bi-check-circle"></i> Approve
+                                    </button>
                                 </form>
+                                <%-- CBS Tier-1: Reject MUST collect a mandatory reason per RBI IT
+                                     Governance §8.3 maker-checker audit trail. Uses fvPromptReason
+                                     modal instead of simple data-confirm so the checker's rationale
+                                     is captured in the workflow record. --%>
                                 <form method="post" action="${pageContext.request.contextPath}/workflow/reject/${item.id}" class="d-inline">
-                                    <input type="hidden" name="remarks" value="Rejected" />
+                                    <input type="hidden" name="remarks" value="" class="fv-reason-field" />
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                    <button type="submit" class="btn btn-sm btn-danger" data-confirm="Reject this item?">Reject</button>
+                                    <button type="button" class="btn btn-sm btn-fv-danger"
+                                            data-fv-reason-prompt="Rejection reason for ${fn:escapeXml(item.entityType)} ${fn:escapeXml(item.entityId)} (mandatory):"
+                                            data-fv-reason-confirm="Reject ${fn:escapeXml(item.entityType)} ${fn:escapeXml(item.entityId)} (${fn:escapeXml(item.actionType)})?"
+                                            data-fv-reason-minlength="3"
+                                            onclick="fvPromptReason(this);">
+                                        <i class="bi bi-x-circle"></i> Reject
+                                    </button>
                                 </form>
                             </td>
                         </tr>
@@ -54,6 +79,7 @@
                     </c:if>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>

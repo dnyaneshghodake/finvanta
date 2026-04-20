@@ -1,5 +1,5 @@
 <%@ taglib prefix="c" uri="jakarta.tags.core" %>
-<nav class="fv-sidebar">
+<nav class="fv-sidebar" aria-label="Main Navigation" role="navigation">
     <div class="fv-sidebar-brand">
         <h1>FINVANTA</h1>
         <small>Core Banking System</small>
@@ -84,22 +84,32 @@
 
         <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
         <li class="nav-section">Audit</li>
-        <li><a href="${pageContext.request.contextPath}/audit/logs" class="nav-link"><i class="bi bi-shield-lock"></i><span class="nav-text">Audit Logs</span></a></li>
+        <%-- CBS Tier-1: bi-journal-check signals an immutable, append-only audit journal
+             (hash-chained per RBI IT Governance §8.3). Distinct from bi-shield-lock on MFA. --%>
+        <li><a href="${pageContext.request.contextPath}/audit/logs" class="nav-link"><i class="bi bi-journal-check"></i><span class="nav-text">Audit Logs</span></a></li>
         </c:if>
     </ul>
 </nav>
 
 <!-- Top Navbar — Per Finacle/Temenos: always shows branch context + business date -->
 <div class="fv-topbar">
-    <h2 class="fv-page-title"><c:out value="${pageTitle}" default="Dashboard" /></h2>
+    <%-- CBS Tier-1: Hamburger toggle per Finacle/Temenos — collapse/expand sidebar
+         at any screen width. Preference persisted in localStorage. --%>
+    <div class="d-flex align-items-center">
+        <button type="button" class="fv-sidebar-toggle" id="fvSidebarToggle" title="Toggle sidebar (Alt+M)" aria-label="Toggle sidebar"><i class="bi bi-list"></i></button>
+        <h2 class="fv-page-title"><c:out value="${pageTitle}" default="Dashboard" /></h2>
+    </div>
     <div class="fv-topbar-right">
+        <%-- CBS Tier-1: Tenant ID always visible per RBI IT Governance §8.3.
+             Multi-tenant systems must display the active tenant so operators confirm context.
+             Matches Finacle TENANT_BANNER / Temenos COMPANY.ID header display. --%>
+        <span class="fv-tenant-id" title="Tenant"><i class="bi bi-shield-check"></i> <c:out value="${currentTenantId}" default="--" /></span>
         <!-- CBS Branch Context: Per Finacle SOL_SWITCH — ADMIN can switch branch -->
         <c:choose>
             <c:when test="${pageContext.request.isUserInRole('ROLE_ADMIN') && not empty allBranches}">
-                <form method="post" action="${pageContext.request.contextPath}/admin/switch-branch" class="d-inline" style="margin-right:8px;">
+                <form method="post" action="${pageContext.request.contextPath}/admin/switch-branch" class="d-inline fv-branch-switch-form">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                    <select name="branchId" onchange="this.form.submit()" class="form-select form-select-sm d-inline-block"
-                            style="width:auto;background:#1e293b;color:#90caf9;border:1px solid #334155;font-size:12px;padding:2px 24px 2px 8px;">
+                    <select name="branchId" onchange="this.form.submit()" class="form-select form-select-sm d-inline-block fv-branch-switch">
                         <c:forEach var="br" items="${allBranches}">
                             <option value="${br.id}" ${br.branchCode == userBranchCode ? 'selected' : ''}>
                                 <c:out value="${br.branchCode}" /> &mdash; <c:out value="${br.branchName}" />
@@ -114,11 +124,23 @@
         </c:choose>
         <span class="fv-biz-date"><c:out value="${businessDate}" default="--" /></span>
         <span class="fv-user-role"><c:out value="${userRole}" default="USER" /></span>
+        <%-- CBS Tier-1: Alerts indicator per Finacle ALERT_BANNER / enterprise blueprint.
+             Shows pending workflow items count for CHECKER/ADMIN roles.
+             Bell icon with red badge count — links to the approval queue. --%>
+        <c:if test="${pendingAlertCount != null && pendingAlertCount > 0}">
+        <a href="${pageContext.request.contextPath}/workflow/pending" class="fv-alerts" title="${pendingAlertCount} item(s) pending approval">
+            <i class="bi bi-bell-fill"></i>
+            <span class="fv-alert-count"><c:out value="${pendingAlertCount}" /></span>
+        </a>
+        </c:if>
+        <c:if test="${pendingAlertCount == null || pendingAlertCount == 0}">
+        <span class="fv-alerts" title="No pending alerts"><i class="bi bi-bell"></i></span>
+        </c:if>
         <span><c:out value="${pageContext.request.userPrincipal.name}" default="" /></span>
-        <a href="${pageContext.request.contextPath}/password/change" style="color:#90caf9;font-size:12px;text-decoration:none;margin-right:8px;" title="Change Password"><i class="bi bi-key"></i></a>
+        <a href="${pageContext.request.contextPath}/password/change" class="fv-topbar-action" title="Change Password"><i class="bi bi-key"></i></a>
         <form method="post" action="${pageContext.request.contextPath}/logout" class="d-inline">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-            <button type="submit" class="btn btn-sm" style="color:#90caf9;background:none;border:none;cursor:pointer;font-size:12px;padding:0;">Logout</button>
+            <button type="submit" class="btn btn-sm fv-topbar-action">Logout</button>
         </form>
     </div>
 </div>

@@ -160,9 +160,43 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         SecurityContextHolder.getContext()
                 .setAuthentication(auth);
 
+        // CBS Tier-1 API Access Log per Finacle TRAN_LOG / Temenos EB.API.LOG.
+        // Per RBI IT Governance Direction 2023 §7.4: every API request must be
+        // logged with user, method, path, response status, and outcome for
+        // SIEM/SOC traceability and forensic analysis. This is the single
+        // point where ALL authenticated API calls are recorded.
+        //
+        // Response outcome: HTTP status categorized as SUCCESS/CLIENT_ERROR/
+        // SERVER_ERROR so SOC can filter on outcome without parsing status codes.
+        // For 4xx/5xx, the error code from ApiExceptionHandler is included
+        // via the fvErrorCode request attribute (set by the exception handler).
+        long startMs = System.currentTimeMillis();
         try {
             filterChain.doFilter(request, response);
         } finally {
+            long durationMs = System.currentTimeMillis() - startMs;
+            int status = response.getStatus();
+            String outcome = status < 400 ? "SUCCESS"
+                    : status < 500 ? "CLIENT_ERROR" : "SERVER_ERROR";
+            // CBS: Read error code from request attribute if set by
+            // ApiExceptionHandler or controller error paths.
+            Object errorCodeAttr = request.getAttribute("fvErrorCode");
+            String errorCode = errorCodeAttr != null
+                    ? errorCodeAttr.toString() : "-";
+
+            if (status >= 400) {
+                log.warn("API {} {} → {} {} ({}ms) errorCode={} user={} role={} branch={} tenant={}",
+                        request.getMethod(),
+                        request.getRequestURI(),
+                        status, outcome, durationMs,
+                        errorCode, username, role, branchCode, tenantId);
+            } else {
+                log.info("API {} {} → {} {} ({}ms) user={} role={} branch={} tenant={}",
+                        request.getMethod(),
+                        request.getRequestURI(),
+                        status, outcome, durationMs,
+                        username, role, branchCode, tenantId);
+            }
             // CBS SECURITY: Clean up ThreadLocal and MDC after request completes.
             // Per Finacle / Temenos: stateless API chain uses container thread pool.
             // Without cleanup, stale tenant/MDC context leaks to subsequent requests
@@ -179,6 +213,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     /**
      * Only apply this filter to /api/v1/** paths.
      * Thymeleaf UI paths use session-based auth.
+     *
+     * CBS CRITICAL: Must match the SecurityConfig API chain's
+     * securityMatcher("/api/v1/**"). If this filter skips /api/v1/**
+     * paths, authenticated endpoints (dashboard, context, etc.)
+     * get 401 because no SecurityContext is set from the JWT.
      */
     @Override
     protected boolean shouldNotFilter(

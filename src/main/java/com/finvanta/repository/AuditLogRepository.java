@@ -19,13 +19,52 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     List<AuditLog> findByTenantIdAndEntityTypeAndEntityIdOrderByEventTimestampDesc(
             String tenantId, String entityType, Long entityId);
 
-    @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId ORDER BY al.eventTimestamp DESC")
+    /** Paginated per-entity audit trail — prevents OOM on high-activity entities (OSIV disabled). */
+    @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId "
+            + "AND al.entityType = :entityType AND al.entityId = :entityId "
+            + "ORDER BY al.eventTimestamp DESC")
+    List<AuditLog> findByTenantIdAndEntityTypeAndEntityId(
+            @Param("tenantId") String tenantId,
+            @Param("entityType") String entityType,
+            @Param("entityId") Long entityId,
+            Pageable pageable);
+
+    /**
+     * CBS Tier-1 CRITICAL: orders by {@code id DESC}, NOT by {@code eventTimestamp DESC}.
+     *
+     * <p>The audit hash chain is built in {@code id} order -- every new record links
+     * to the previous record located via {@link #findTopByTenantIdOrderByIdDesc}. Any
+     * chain-walk query MUST use the same ordering, otherwise same-second audit records
+     * can be returned in a different order than the chain was built, and the walker
+     * will see {@code current.previousHash != previous.hash} and report a FALSE TAMPER.
+     * This was observed after {@code eventTimestamp} was canonicalized to second
+     * precision for DB-round-trip hash stability (see {@code AuditService.logEvent}) --
+     * once fractional seconds were removed, multiple audit records per second became
+     * the norm, and any {@code ORDER BY eventTimestamp DESC} would tie-break
+     * nondeterministically. Per Finacle AUDIT_TRAIL / Temenos AUDIT.LOG: chain order
+     * is defined by the monotonic insert sequence (identity column), never by a
+     * wall-clock value that can tie or drift.
+     */
+    @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId ORDER BY al.id DESC")
     List<AuditLog> findRecentAuditLogsPaged(
             @Param("tenantId") String tenantId, Pageable pageable);
 
     default List<AuditLog> findRecentAuditLogs(String tenantId) {
         return findRecentAuditLogsPaged(tenantId, PageRequest.of(0, 500));
     }
+
+    /**
+     * Ascending-id walk over the ENTIRE audit chain for integrity verification.
+     * Per Finacle/Temenos Tier-1 and RBI IT Governance Direction 2023 §8.3: audit
+     * chain verification must cover every record, not just the recent window.
+     * Partial verification is not acceptable to an RBI on-site inspector.
+     */
+    @Query("SELECT al FROM AuditLog al WHERE al.tenantId = :tenantId ORDER BY al.id ASC")
+    List<AuditLog> findAllByTenantIdOrderByIdAsc(
+            @Param("tenantId") String tenantId, Pageable pageable);
+
+    @Query("SELECT COUNT(al) FROM AuditLog al WHERE al.tenantId = :tenantId")
+    long countByTenantId(@Param("tenantId") String tenantId);
 
     default Optional<AuditLog> findLatestByTenantId(String tenantId) {
         List<AuditLog> logs = findTopByTenantIdOrderByIdDesc(tenantId);

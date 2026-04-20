@@ -5,8 +5,13 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-    <c:if test="${not empty success}"><div class="alert alert-success"><c:out value="${success}"/></div></c:if>
-    <c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Charge Configuration</li>
+    </ul>
+
+    <c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}"/></div></c:if>
+    <c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
 
     <!-- CBS: Create Charge Form per Finacle CHRG_MASTER -->
     <div class="fv-card mb-3">
@@ -18,10 +23,31 @@
                     <div class="col-md-2"><label class="form-label small">Charge Code *</label><input type="text" name="chargeCode" class="form-control form-control-sm" required data-fv-type="code" placeholder="e.g., CHEQUE_RETURN"/></div>
                     <div class="col-md-3"><label class="form-label small">Charge Name *</label><input type="text" name="chargeName" class="form-control form-control-sm" required data-fv-type="name" maxlength="200"/></div>
                     <div class="col-md-2"><label class="form-label small">Event Trigger *</label>
+                        <%-- CBS Tier-1: Event types must match ChargeEventType enum exactly.
+                             Grouped by module per Finacle CHG_MASTER / RBI Schedule of Charges. --%>
                         <select name="eventTrigger" class="form-select form-select-sm" required>
-                            <option value="DISBURSEMENT">Disbursement</option><option value="OVERDUE_EMI">Overdue EMI</option>
-                            <option value="CHEQUE_RETURN">Cheque Return</option><option value="ACCOUNT_CLOSURE">Account Closure</option>
-                            <option value="STATEMENT_REQUEST">Statement Request</option><option value="MANUAL">Manual</option>
+                            <optgroup label="Clearing / Remittance">
+                                <option value="NEFT_OUTWARD">NEFT Outward</option>
+                                <option value="RTGS_OUTWARD">RTGS Outward</option>
+                                <option value="IMPS_OUTWARD">IMPS Outward</option>
+                                <option value="UPI_OUTWARD">UPI Outward</option>
+                            </optgroup>
+                            <optgroup label="CASA">
+                                <option value="CASH_WITHDRAWAL_OTHER_BRANCH">Cash Withdrawal (Other Branch)</option>
+                                <option value="CHEQUE_BOOK_ISSUANCE">Cheque Book Issuance</option>
+                                <option value="DD_ISSUANCE">DD Issuance</option>
+                                <option value="STATEMENT_REQUEST">Statement Request</option>
+                                <option value="MIN_BALANCE_PENALTY">Min Balance Penalty</option>
+                                <option value="SMS_ALERT_FEE">SMS Alert Fee</option>
+                                <option value="DEBIT_CARD_ANNUAL_FEE">Debit Card Annual Fee</option>
+                            </optgroup>
+                            <optgroup label="Loan">
+                                <option value="LOAN_PROCESSING_FEE">Loan Processing Fee</option>
+                                <option value="LOAN_PREPAYMENT_PENALTY">Loan Prepayment Penalty</option>
+                                <option value="LOAN_LATE_PAYMENT_FEE">Loan Late Payment Fee</option>
+                                <option value="LOAN_DOCUMENTATION_FEE">Loan Documentation Fee</option>
+                                <option value="CREDIT_REPORT_FEE">Credit Report (CIBIL) Fee</option>
+                            </optgroup>
                         </select>
                     </div>
                     <div class="col-md-2"><label class="form-label small">Calculation *</label>
@@ -29,14 +55,14 @@
                             <option value="FLAT">Flat Amount</option><option value="PERCENTAGE">Percentage</option><option value="SLAB">Slab-Based</option>
                         </select>
                     </div>
-                    <div class="col-md-1"><label class="form-label small">Base Amt</label><input type="number" name="baseAmount" class="form-control form-control-sm" data-fv-type="amount" placeholder="500"/></div>
-                    <div class="col-md-1"><label class="form-label small">Pct %</label><input type="number" name="percentage" class="form-control form-control-sm" data-fv-type="rate" placeholder="1.00"/></div>
-                    <div class="col-md-1"><label class="form-label small">Min</label><input type="number" name="minAmount" class="form-control form-control-sm" data-fv-type="amount"/></div>
+                    <div class="col-md-1"><label class="form-label small">Base Amt</label><input type="number" name="baseAmount" class="form-control form-control-sm" data-fv-type="amount" step="0.01" placeholder="500"/></div>
+                    <div class="col-md-1"><label class="form-label small">Pct %</label><input type="number" name="percentage" class="form-control form-control-sm" data-fv-type="rate" step="0.01" placeholder="1.00"/></div>
+                    <div class="col-md-1"><label class="form-label small">Min</label><input type="number" name="minAmount" class="form-control form-control-sm" data-fv-type="amount" step="0.01"/></div>
                 </div>
                 <div class="row mb-2">
-                    <div class="col-md-1"><label class="form-label small">Max</label><input type="number" name="maxAmount" class="form-control form-control-sm" data-fv-type="amount"/></div>
+                    <div class="col-md-1"><label class="form-label small">Max</label><input type="number" name="maxAmount" class="form-control form-control-sm" data-fv-type="amount" step="0.01"/></div>
                     <div class="col-md-1"><label class="form-label small">GST</label><div class="form-check mt-2"><input type="checkbox" name="gstApplicable" value="true" class="form-check-input" id="gstCheck"/><label class="form-check-label small" for="gstCheck">Yes</label></div></div>
-                    <div class="col-md-1"><label class="form-label small">GST %</label><input type="number" name="gstRate" class="form-control form-control-sm" data-fv-type="rate" value="18.00"/></div>
+                    <div class="col-md-1"><label class="form-label small">GST %</label><input type="number" name="gstRate" class="form-control form-control-sm" data-fv-type="rate" step="0.01" value="18.00"/></div>
                     <div class="col-md-2"><label class="form-label small">GL Income *</label>
                         <select name="glChargeIncome" class="form-select form-select-sm" required>
                             <c:forEach var="gl" items="${glAccounts}"><option value="${gl.glCode}" ${gl.glCode == '4002' ? 'selected' : ''}><c:out value="${gl.glCode}"/> &mdash; <c:out value="${gl.glName}"/></option></c:forEach>
@@ -49,7 +75,7 @@
                         </select>
                     </div>
                     <div class="col-md-1"><label class="form-label small">Waiver</label><div class="form-check mt-2"><input type="checkbox" name="waiverAllowed" value="true" class="form-check-input"/><label class="form-check-label small">Yes</label></div></div>
-                    <div class="col-md-1"><label class="form-label small">Max W%</label><input type="number" name="maxWaiverPercent" class="form-control form-control-sm" data-fv-type="rate" placeholder="50"/></div>
+                    <div class="col-md-1"><label class="form-label small">Max W%</label><input type="number" name="maxWaiverPercent" class="form-control form-control-sm" data-fv-type="rate" step="0.01" placeholder="50"/></div>
                     <div class="col-md-2"><label class="form-label small">Product</label>
                         <select name="productCode" class="form-select form-select-sm">
                             <option value="">ALL Products</option>

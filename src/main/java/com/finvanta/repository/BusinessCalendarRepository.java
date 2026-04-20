@@ -3,6 +3,7 @@ package com.finvanta.repository;
 import com.finvanta.domain.entity.BusinessCalendar;
 
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -11,6 +12,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -48,8 +50,10 @@ public interface BusinessCalendarRepository extends JpaRepository<BusinessCalend
      * Find and lock calendar entry for a specific branch on a specific date.
      * PESSIMISTIC_WRITE lock prevents concurrent day status transitions.
      * Used by EOD orchestrator and day open/close operations.
+     * 30s lock timeout per Finacle DAYCTRL standard.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
     @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId "
             + "AND bc.branch.id = :branchId AND bc.businessDate = :date")
     Optional<BusinessCalendar> findAndLockByTenantIdAndBranchIdAndDate(
@@ -182,9 +186,11 @@ public interface BusinessCalendarRepository extends JpaRepository<BusinessCalend
     /**
      * @deprecated Use {@link #findAndLockByTenantIdAndBranchIdAndDate} instead.
      * CBS: LIMIT 1 prevents NonUniqueResultException with multi-branch calendars.
+     * 30s lock timeout per Finacle DAYCTRL standard.
      */
     @Deprecated(forRemoval = true)
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
     @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId "
             + "AND bc.businessDate = :date ORDER BY bc.branch.id ASC LIMIT 1")
     Optional<BusinessCalendar> findAndLockByTenantIdAndDate(

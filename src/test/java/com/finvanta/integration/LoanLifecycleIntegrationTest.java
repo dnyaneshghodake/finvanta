@@ -74,9 +74,6 @@ class LoanLifecycleIntegrationTest {
     @BeforeEach
     void setUp() {
         TenantContext.setCurrentTenant(TENANT);
-        // CBS Tier-1: Use BranchAwareUserDetails so SecurityUtil.getCurrentUserBranchId() works.
-        // Initial branchId=0L (placeholder) — updated to real ID after setupReferenceData() creates the branch.
-        // ADMIN role bypasses BranchAccessValidator, but BusinessDateService needs branchId for calendar lookup.
         setSecurityContext(0L, "HQ");
     }
 

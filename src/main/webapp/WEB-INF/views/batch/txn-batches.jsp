@@ -5,6 +5,10 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Transaction Batches</li>
+    </ul>
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
@@ -91,7 +95,7 @@
                                     <form method="post" action="${pageContext.request.contextPath}/batch/txn/close/${b.id}" class="d-inline">
                                         <input type="hidden" name="businessDate" value="${businessDate}" />
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                        <button type="submit" class="btn btn-sm btn-danger" data-confirm="Close this batch? This action is irreversible.">Close Batch</button>
+                                        <button type="submit" class="btn btn-sm btn-fv-danger" data-confirm="Close this batch? This action is irreversible."><i class="bi bi-stop-circle"></i> Close Batch</button>
                                     </form>
                                 </c:if>
                             </td>

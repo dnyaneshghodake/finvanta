@@ -151,7 +151,16 @@ public class PiiEncryptionConverter implements AttributeConverter<String, String
     }
 
     private SecretKeySpec getKeySpec() {
-        String hexKey = System.getenv("FINVANTA_PII_KEY");
+        String rawKey = System.getenv("FINVANTA_PII_KEY");
+        // Tolerate the common operator mistake of a trailing newline or
+        // surrounding whitespace when the variable is exported from a
+        // .env file, PowerShell Here-String, or a CI/CD secret manager.
+        // A genuinely wrong-length key still fails fast below; this only
+        // recovers the "64 hex chars + \r\n" and "  64 hex chars  " cases.
+        String hexKey = rawKey == null ? null : rawKey.trim();
+        if (hexKey != null && hexKey.isEmpty()) {
+            hexKey = null;
+        }
 
         // If key is explicitly set but malformed — always fail (any environment)
         if (hexKey != null && hexKey.length() != 64) {

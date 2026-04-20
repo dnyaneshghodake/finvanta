@@ -28,14 +28,16 @@
         <div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> <c:out value="${error}" /></div>
     </c:if>
 
-    <!-- Deposit Transaction (CASA Subledger Entry) -->
+    <!-- Deposit Transaction (CASA Subledger Entry)
+         CBS Tier-1: detail panels use `.fv-table.table-sm` so font/row density/border
+         tokens come from theme, not raw Bootstrap `.table`. --> 
     <c:if test="${not empty depositTxn}">
     <div class="fv-card mb-3">
         <div class="card-header"><i class="bi bi-receipt"></i> CASA Deposit Transaction (Subledger) <span class="badge bg-info">DEPOSIT</span></div>
         <div class="card-body">
             <div class="row">
                 <div class="col-md-6">
-                    <table class="table table-sm mb-0">
+                    <table class="table fv-table table-sm mb-0">
                         <tr><td class="text-muted">Transaction Ref</td><td class="font-monospace"><c:out value="${depositTxn.transactionRef}" /></td></tr>
                         <tr><td class="text-muted">Voucher Number</td><td class="font-monospace"><c:out value="${depositTxn.voucherNumber}" default="--" /></td></tr>
                         <tr><td class="text-muted">Journal Entry ID</td><td class="font-monospace"><c:out value="${depositTxn.journalEntryId}" default="--" /></td></tr>
@@ -45,9 +47,9 @@
                     </table>
                 </div>
                 <div class="col-md-6">
-                    <table class="table table-sm mb-0">
-                        <tr><td class="text-muted">Amount</td><td class="fs-5"><strong><fmt:formatNumber value="${depositTxn.amount}" type="currency" currencyCode="INR" /></strong></td></tr>
-                        <tr><td class="text-muted">Balance After</td><td><fmt:formatNumber value="${depositTxn.balanceAfter}" type="currency" currencyCode="INR" /></td></tr>
+                    <table class="table fv-table table-sm mb-0">
+                        <tr><td class="text-muted">Amount</td><td class="amount fs-6"><strong><fmt:formatNumber value="${depositTxn.amount}" type="currency" currencyCode="INR" /></strong></td></tr>
+                        <tr><td class="text-muted">Balance After</td><td class="amount"><fmt:formatNumber value="${depositTxn.balanceAfter}" type="currency" currencyCode="INR" /></td></tr>
                         <tr><td class="text-muted">Value Date</td><td><c:out value="${depositTxn.valueDate}" /></td></tr>
                         <tr><td class="text-muted">Posting Date</td><td><c:out value="${depositTxn.postingDate}" /></td></tr>
                         <tr><td class="text-muted">Channel</td><td><c:out value="${depositTxn.channel}" default="--" /></td></tr>
@@ -71,7 +73,7 @@
         <div class="card-body">
             <div class="row">
                 <div class="col-md-6">
-                    <table class="table table-sm mb-0">
+                    <table class="table fv-table table-sm mb-0">
                         <tr><td class="text-muted">Transaction Ref</td><td class="font-monospace"><c:out value="${loanTxn.transactionRef}" /></td></tr>
                         <tr><td class="text-muted">Voucher Number</td><td class="font-monospace"><c:out value="${loanTxn.voucherNumber}" default="--" /></td></tr>
                         <tr><td class="text-muted">Journal Entry ID</td><td class="font-monospace"><c:out value="${loanTxn.journalEntryId}" default="--" /></td></tr>
@@ -80,8 +82,8 @@
                     </table>
                 </div>
                 <div class="col-md-6">
-                    <table class="table table-sm mb-0">
-                        <tr><td class="text-muted">Amount</td><td class="fs-5"><strong><fmt:formatNumber value="${loanTxn.amount}" type="currency" currencyCode="INR" /></strong></td></tr>
+                    <table class="table fv-table table-sm mb-0">
+                        <tr><td class="text-muted">Amount</td><td class="amount fs-6"><strong><fmt:formatNumber value="${loanTxn.amount}" type="currency" currencyCode="INR" /></strong></td></tr>
                         <tr><td class="text-muted">Value Date</td><td><c:out value="${loanTxn.valueDate}" /></td></tr>
                         <tr><td class="text-muted">Posting Date</td><td><c:out value="${loanTxn.postingDate}" /></td></tr>
                         <tr><td class="text-muted">Narration</td><td><c:out value="${loanTxn.narration}" /></td></tr>
@@ -102,13 +104,13 @@
     <div class="fv-card mb-3">
         <div class="card-header"><i class="bi bi-journal-text"></i> Journal Entry (Double-Entry)</div>
         <div class="card-body">
-            <table class="table table-sm mb-0">
-                <tr><td class="text-muted" style="width:200px;">Journal Ref</td><td class="font-monospace"><c:out value="${journalEntry.journalRef}" /></td></tr>
+            <table class="table fv-table table-sm mb-0">
+                <tr><td class="text-muted fv-label-col">Journal Ref</td><td class="font-monospace"><c:out value="${journalEntry.journalRef}" /></td></tr>
                 <tr><td class="text-muted">Value Date</td><td><c:out value="${journalEntry.valueDate}" /></td></tr>
                 <tr><td class="text-muted">Source Module</td><td><c:out value="${journalEntry.sourceModule}" /></td></tr>
                 <tr><td class="text-muted">Source Ref</td><td class="font-monospace"><c:out value="${journalEntry.sourceRef}" default="--" /></td></tr>
-                <tr><td class="text-muted">Total Debit</td><td><fmt:formatNumber value="${journalEntry.totalDebit}" type="currency" currencyCode="INR" /></td></tr>
-                <tr><td class="text-muted">Total Credit</td><td><fmt:formatNumber value="${journalEntry.totalCredit}" type="currency" currencyCode="INR" /></td></tr>
+                <tr><td class="text-muted">Total Debit</td><td class="amount"><fmt:formatNumber value="${journalEntry.totalDebit}" type="currency" currencyCode="INR" /></td></tr>
+                <tr><td class="text-muted">Total Credit</td><td class="amount"><fmt:formatNumber value="${journalEntry.totalCredit}" type="currency" currencyCode="INR" /></td></tr>
                 <tr><td class="text-muted">Narration</td><td><c:out value="${journalEntry.narration}" /></td></tr>
             </table>
         </div>
@@ -129,8 +131,8 @@
                         <td><c:out value="${entry.ledgerSequence}" /></td>
                         <td><c:out value="${entry.glCode}" /></td>
                         <td><c:out value="${entry.glName}" /></td>
-                        <td class="text-end"><c:if test="${entry.debitAmount > 0}"><fmt:formatNumber value="${entry.debitAmount}" type="number" maxFractionDigits="2" /></c:if></td>
-                        <td class="text-end"><c:if test="${entry.creditAmount > 0}"><fmt:formatNumber value="${entry.creditAmount}" type="number" maxFractionDigits="2" /></c:if></td>
+                        <td class="amount"><c:if test="${entry.debitAmount > 0}"><fmt:formatNumber value="${entry.debitAmount}" type="number" maxFractionDigits="2" /></c:if></td>
+                        <td class="amount"><c:if test="${entry.creditAmount > 0}"><fmt:formatNumber value="${entry.creditAmount}" type="number" maxFractionDigits="2" /></c:if></td>
                         <td class="small"><c:out value="${entry.narration}" /></td>
                     </tr>
                 </c:forEach>

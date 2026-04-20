@@ -100,8 +100,11 @@ class DepositAccountServiceTest {
     @BeforeEach
     void setUp() {
         // CBS Tier-1: Use real BranchAccessValidator (not mock) to test branch enforcement.
-        // The validator reads from SecurityContext which we set up with BranchAwareUserDetails.
-        branchAccessValidator = new BranchAccessValidator();
+        // The validator reads from SecurityContext via the injected CbsSecurityContext.
+        // CbsSecurityContext is a thin Spring-managed facade over SecurityUtil; we
+        // instantiate it directly here so the validator still sees the live
+        // SecurityContextHolder state populated below with BranchAwareUserDetails.
+        branchAccessValidator = new BranchAccessValidator(new com.finvanta.util.CbsSecurityContext());
         service = new DepositAccountServiceImpl(
                 accountRepository,
                 transactionRepository,

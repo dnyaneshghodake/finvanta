@@ -5,6 +5,12 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/deposit/accounts">CASA Accounts</a></li>
+        <li class="active">Account Pipeline</li>
+    </ul>
+
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
@@ -50,7 +56,7 @@
                             <td>
                                 <form method="post" action="${pageContext.request.contextPath}/deposit/activate/${a.accountNumber}" class="d-inline">
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                    <button type="submit" class="btn btn-sm btn-success" data-confirm="Activate this account? It will become operational immediately."><i class="bi bi-check-circle"></i> Activate</button>
+                                    <button type="submit" class="btn btn-sm btn-fv-success" data-confirm="Activate this account? It will become operational immediately."><i class="bi bi-check-circle"></i> Activate</button>
                                 </form>
                                 <a href="${pageContext.request.contextPath}/deposit/view/${a.accountNumber}" class="btn btn-sm btn-outline-secondary">View</a>
                             </td>

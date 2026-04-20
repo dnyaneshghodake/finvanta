@@ -1,6 +1,7 @@
 package com.finvanta.batch;
 
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
+import com.finvanta.accounting.GLConstants;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.InterBranchTransaction;
 import com.finvanta.domain.enums.DebitCredit;
@@ -112,9 +113,11 @@ public class InterBranchSettlementService {
         // Source branch: DR Customer / CR Inter-Branch Payable
         List<JournalLineRequest> sourceLines = List.of(
                 new JournalLineRequest(
-                        "1100", DebitCredit.DEBIT, amount, "Inter-branch transfer from branch " + sourceCode),
+                        GLConstants.BANK_OPERATIONS, DebitCredit.DEBIT, amount,
+                        "Inter-branch transfer from branch " + sourceCode),
                 new JournalLineRequest(
-                        "2300", DebitCredit.CREDIT, amount, "Inter-branch payable to branch " + targetCode));
+                        GLConstants.INTER_BRANCH_PAYABLE, DebitCredit.CREDIT, amount,
+                        "Inter-branch payable to branch " + targetCode));
 
         TransactionResult sourceResult = transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("INTER_BRANCH")
@@ -134,9 +137,10 @@ public class InterBranchSettlementService {
         // Target branch: DR Inter-Branch Receivable / CR Customer
         List<JournalLineRequest> targetLines = List.of(
                 new JournalLineRequest(
-                        "1300", DebitCredit.DEBIT, amount, "Inter-branch receivable from branch " + sourceCode),
+                        GLConstants.INTER_BRANCH_RECEIVABLE, DebitCredit.DEBIT, amount,
+                        "Inter-branch receivable from branch " + sourceCode),
                 new JournalLineRequest(
-                        "1100",
+                        GLConstants.BANK_OPERATIONS,
                         DebitCredit.CREDIT,
                         amount,
                         "Inter-branch transfer received from branch " + sourceCode));
@@ -254,6 +258,74 @@ public class InterBranchSettlementService {
             String direction = entry.getValue().signum() >= 0 ? "NET_RECEIVABLE" : "NET_PAYABLE";
             log.info("IB Net Position: branch={}, amount={}, direction={}",
                     entry.getKey(), entry.getValue().abs(), direction);
+        }
+
+        // ================================================================
+        // CBS Tier-1: Generate IB NETTING JOURNAL to clear IB GLs.
+        // Per Finacle IB_NETTING / Temenos IB.SETTLEMENT:
+        // After marking all transactions as SETTLED, post a netting journal
+        // that zeros out the IB Receivable (1300) and IB Payable (2300) GLs.
+        // Without this, IB GLs accumulate indefinitely and the trial balance
+        // shows ever-growing IB positions that obscure real branch exposures.
+        //
+        // Netting journal per branch pair:
+        //   DR Inter-Branch Payable (2300)  — clear the payable
+        //   CR Inter-Branch Receivable (1300) — clear the receivable
+        //
+        // This is posted as a system-generated transaction via TransactionEngine
+        // so it goes through the full GL posting pipeline (journal, ledger, hash chain).
+        // ================================================================
+        if (allBalanced && !branchNetPositions.isEmpty()) {
+            try {
+                // Calculate total IB volume to clear (sum of absolute positions / 2)
+                BigDecimal totalNettingAmount = BigDecimal.ZERO;
+                for (BigDecimal pos : branchNetPositions.values()) {
+                    totalNettingAmount = totalNettingAmount.add(pos.abs());
+                }
+                // Each transaction creates +X receivable and +X payable, so total to clear
+                // is the sum of all settled transaction amounts
+                BigDecimal totalSettledAmount = pendingTransactions.stream()
+                        .filter(t -> "SETTLED".equals(t.getSettlementStatus()))
+                        .map(InterBranchTransaction::getAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                if (totalSettledAmount.signum() > 0) {
+                    // Post netting journal: DR IB Payable / CR IB Receivable
+                    List<JournalLineRequest> nettingLines = List.of(
+                            new JournalLineRequest(
+                                    GLConstants.INTER_BRANCH_PAYABLE, DebitCredit.DEBIT, totalSettledAmount,
+                                    "IB netting settlement " + businessDate + " — clear payable"),
+                            new JournalLineRequest(
+                                    GLConstants.INTER_BRANCH_RECEIVABLE, DebitCredit.CREDIT, totalSettledAmount,
+                                    "IB netting settlement " + businessDate + " — clear receivable"));
+
+                    // Use HQ branch for the netting journal (HO-level settlement)
+                    String hqBranch = branchNetPositions.keySet().iterator().next(); // First branch as fallback
+                    TransactionResult nettingResult = transactionEngine.execute(TransactionRequest.builder()
+                            .sourceModule("INTER_BRANCH")
+                            .transactionType("IB_NETTING")
+                            .accountReference("IB-NETTING-" + businessDate)
+                            .amount(totalSettledAmount)
+                            .valueDate(businessDate)
+                            .branchCode(hqBranch)
+                            .narration("Inter-branch netting settlement for " + businessDate
+                                    + " | " + pendingTransactions.size() + " transactions"
+                                    + " | Batch: " + settlementBatchRef)
+                            .journalLines(nettingLines)
+                            .systemGenerated(true)
+                            .initiatedBy("SYSTEM_EOD")
+                            .build());
+
+                    log.info("IB NETTING JOURNAL posted: date={}, amount={}, journal={}, voucher={}",
+                            businessDate, totalSettledAmount,
+                            nettingResult.getJournalRef(), nettingResult.getVoucherNumber());
+                }
+            } catch (Exception e) {
+                // CBS: Netting journal failure is serious but should not rollback the settlement.
+                // The IB GLs will show non-zero balances — caught by EOD reconciliation.
+                log.error("IB NETTING JOURNAL FAILED for {}: {}. IB GLs not cleared — manual correction required.",
+                        businessDate, e.getMessage(), e);
+            }
         }
 
         if (!allBalanced) {

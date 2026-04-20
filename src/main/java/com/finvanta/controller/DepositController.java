@@ -1,7 +1,11 @@
 package com.finvanta.controller;
 
+import com.finvanta.accounting.AccountingService.JournalLineRequest;
+import com.finvanta.accounting.GLConstants;
+import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
+import com.finvanta.domain.enums.DebitCredit;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DepositAccountRepository;
@@ -9,6 +13,9 @@ import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.repository.StandingInstructionRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
+import com.finvanta.transaction.TransactionEngine;
+import com.finvanta.transaction.TransactionPreview;
+import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.util.BranchAccessValidator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
@@ -18,6 +25,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +62,10 @@ public class DepositController {
 
     private static final Logger log = LoggerFactory.getLogger(DepositController.class);
 
+    /** CBS: Allowed transaction types for the preview endpoint — whitelist per OWASP. */
+    private static final Set<String> PREVIEW_TXN_TYPES = Set.of(
+            "CASH_DEPOSIT", "CASH_WITHDRAWAL");
+
     private final DepositAccountService depositService;
     private final BusinessDateService businessDateService;
     private final CustomerRepository customerRepository;
@@ -62,6 +74,8 @@ public class DepositController {
     private final StandingInstructionRepository siRepository;
     private final ProductMasterRepository productMasterRepository;
     private final BranchAccessValidator branchAccessValidator;
+    private final TransactionEngine transactionEngine;
+    private final ProductGLResolver glResolver;
 
     public DepositController(
             DepositAccountService depositService,
@@ -71,7 +85,9 @@ public class DepositController {
             DepositAccountRepository depositAccountRepository,
             StandingInstructionRepository siRepository,
             ProductMasterRepository productMasterRepository,
-            BranchAccessValidator branchAccessValidator) {
+            BranchAccessValidator branchAccessValidator,
+            TransactionEngine transactionEngine,
+            ProductGLResolver glResolver) {
         this.depositService = depositService;
         this.businessDateService = businessDateService;
         this.customerRepository = customerRepository;
@@ -80,6 +96,8 @@ public class DepositController {
         this.siRepository = siRepository;
         this.productMasterRepository = productMasterRepository;
         this.branchAccessValidator = branchAccessValidator;
+        this.transactionEngine = transactionEngine;
+        this.glResolver = glResolver;
     }
 
     /**
@@ -254,6 +272,184 @@ public class DepositController {
         return mav;
     }
 
+    /**
+     * CBS Tier-1: Transaction Preview (Dry-Run Validation) per Finacle TRAN_PREVIEW.
+     *
+     * <p>AJAX endpoint called from deposit/withdraw/transfer forms when the operator
+     * enters an amount. Returns a JSON TransactionPreview with all validation check
+     * results, maker-checker status, and GL journal line preview — WITHOUT committing
+     * any GL posting.
+     *
+     * <p>Per RBI Operational Risk Guidelines: operators must verify transaction details
+     * and see any blockers BEFORE committing an irreversible posting.
+     *
+     * @param accountNumber Account to validate against
+     * @param amount        Transaction amount
+     * @param txnType       Transaction type (CASH_DEPOSIT, CASH_WITHDRAWAL)
+     * @param narration     Optional narration
+     * @return JSON TransactionPreview
+     */
+    @GetMapping("/preview/{accountNumber}")
+    @ResponseBody
+    public TransactionPreview previewTransaction(
+            @PathVariable String accountNumber,
+            @RequestParam BigDecimal amount,
+            @RequestParam String txnType,
+            @RequestParam(required = false) String narration) {
+        try {
+            // CBS: Whitelist txnType to prevent arbitrary strings flowing into
+            // TransactionRequest, audit trail narrations, and log files.
+            if (!PREVIEW_TXN_TYPES.contains(txnType)) {
+                throw new BusinessException("INVALID_TXN_TYPE",
+                        "Unsupported transaction type for preview: " + txnType);
+            }
+            DepositAccount account = depositService.getAccount(accountNumber);
+            // CBS Tier-1: Branch access validation — preview exposes account balance,
+            // customer name, and branch details. Without this check, a MAKER at Branch A
+            // could view account details at Branch B via the preview AJAX endpoint.
+            // The actual deposit/withdraw service methods validate branch access, but
+            // the preview would leak data before the operator even clicks Post.
+            branchAccessValidator.validateAccess(account.getBranch());
+            LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+
+            // Resolve GL codes based on transaction type
+            String depositGl = resolveDepositGl(account);
+            List<JournalLineRequest> lines;
+            if ("CASH_DEPOSIT".equals(txnType)) {
+                lines = List.of(
+                        new JournalLineRequest(
+                                GLConstants.BANK_OPERATIONS,
+                                DebitCredit.DEBIT, amount, "Cash deposit"),
+                        new JournalLineRequest(
+                                depositGl, DebitCredit.CREDIT, amount,
+                                "Credit " + accountNumber));
+            } else {
+                // CASH_WITHDRAWAL
+                lines = List.of(
+                        new JournalLineRequest(
+                                depositGl, DebitCredit.DEBIT, amount,
+                                "Debit " + accountNumber),
+                        new JournalLineRequest(
+                                GLConstants.BANK_OPERATIONS,
+                                DebitCredit.CREDIT, amount, "Cash withdrawal"));
+            }
+
+            TransactionRequest request = TransactionRequest.builder()
+                    .sourceModule("DEPOSIT")
+                    .transactionType(txnType)
+                    .accountReference(accountNumber)
+                    .amount(amount)
+                    .valueDate(businessDate)
+                    .branchCode(account.getBranch().getBranchCode())
+                    .narration(narration != null ? narration : (
+                            "CASH_DEPOSIT".equals(txnType) ? "Cash deposit" : "Cash withdrawal"))
+                    .journalLines(lines)
+                    .build();
+
+            TransactionPreview preview = transactionEngine.validate(request);
+
+            // CBS: Enrich the engine preview with account-specific info.
+            // Re-build with ALL engine checks copied, plus account context.
+            TransactionPreview.Builder enriched = TransactionPreview.builder()
+                    .accountNumber(accountNumber)
+                    .accountHolder(account.getCustomer().getFirstName() + " " + account.getCustomer().getLastName())
+                    .branchCode(account.getBranch().getBranchCode())
+                    .currentBalance(account.getLedgerBalance())
+                    .projectedBalance("CASH_DEPOSIT".equals(txnType)
+                            ? account.getLedgerBalance().add(amount)
+                            : account.getLedgerBalance().subtract(amount))
+                    .amount(amount)
+                    .transactionType(txnType)
+                    .valueDate(businessDate)
+                    .narration(request.getNarration())
+                    .requiresApproval(preview.isRequiresApproval())
+                    .journalLines(preview.getJournalLines());
+
+            // Copy ALL engine validation checks into the enriched preview
+            for (TransactionPreview.CheckResult check : preview.getChecks()) {
+                enriched.addCheck(check.step(), check.category(), check.description(), check.passed(), check.detail());
+            }
+
+            // Add account-specific checks not covered by the engine
+            boolean accountActive = account.isActive();
+            enriched.addCheck("ACCOUNT_STATUS", "Account",
+                    "Account " + accountNumber + " is " + account.getAccountStatus(),
+                    accountActive,
+                    accountActive ? "ACTIVE — transactions allowed" : "Status " + account.getAccountStatus() + " — transactions blocked");
+
+            if ("CASH_WITHDRAWAL".equals(txnType)) {
+                boolean hasFunds = account.hasSufficientFunds(amount);
+                enriched.addCheck("SUFFICIENT_FUNDS", "Account",
+                        "Sufficient funds for withdrawal of INR " + amount,
+                        hasFunds,
+                        hasFunds ? "Available: INR " + account.getEffectiveAvailable()
+                                : "Insufficient: available INR " + account.getEffectiveAvailable() + " < requested INR " + amount);
+                if (account.getMinimumBalance() != null && account.getMinimumBalance().signum() > 0) {
+                    BigDecimal postBalance = account.getLedgerBalance().subtract(amount);
+                    boolean minBalOk = postBalance.compareTo(account.getMinimumBalance()) >= 0;
+                    enriched.addCheck("MINIMUM_BALANCE", "Account",
+                            "Post-withdrawal balance INR " + postBalance + " ≥ minimum INR " + account.getMinimumBalance(),
+                            minBalOk,
+                            minBalOk ? "OK" : "BREACH: post-balance INR " + postBalance + " < minimum INR " + account.getMinimumBalance());
+                }
+            }
+
+            return enriched.build();
+        } catch (Exception e) {
+            log.warn("Transaction preview failed: account={}, type={}, error={}", accountNumber, txnType, e.getMessage());
+            // Return a preview with a single FAILED check so the UI shows the error
+            // instead of silently hiding the panel (empty checks = hidden).
+            return TransactionPreview.builder()
+                    .amount(amount)
+                    .transactionType(txnType)
+                    .accountNumber(accountNumber)
+                    .addCheck("PREVIEW_ERROR", "System",
+                            "Transaction preview could not be completed",
+                            false,
+                            e.getMessage() != null ? e.getMessage() : "Unexpected error — contact support")
+                    .build();
+        }
+    }
+
+    /**
+     * CBS: Sanitize a string for CSV output per OWASP CSV Injection guidelines.
+     * If the value starts with =, +, -, @, \t, or \r, prefix with a single quote
+     * to prevent Excel/LibreOffice from interpreting it as a formula.
+     * Also escapes embedded double-quotes per RFC 4180.
+     * Per RBI Inspection Manual: inspectors open CSV exports in Excel — formula
+     * injection in narration fields could execute arbitrary commands on their machines.
+     */
+    private static String csvSafe(String value) {
+        if (value == null) return "";
+        String escaped = value.replace("\"", "\"\"");
+        if (!escaped.isEmpty()) {
+            char first = escaped.charAt(0);
+            if (first == '=' || first == '+' || first == '-' || first == '@'
+                    || first == '\t' || first == '\r') {
+                escaped = "'" + escaped;
+            }
+        }
+        return escaped;
+    }
+
+    /**
+     * Resolve deposit GL code for preview — mirrors DepositAccountServiceImpl.glForAccount().
+     * CBS CRITICAL: Must use ProductGLResolver (same as service layer) to show correct GL
+     * codes in the preview. Hardcoded fallback would show wrong GL for product-configured
+     * accounts, undermining the preview's purpose of operator verification before posting.
+     */
+    private String resolveDepositGl(DepositAccount account) {
+        // CBS: Type-safe product existence check via ProductGLResolver (same logic as service layer)
+        var product = glResolver.getProduct(account.getProductCode());
+        if (product != null && product.getGlLoanAsset() != null) {
+            return product.getGlLoanAsset();
+        }
+        // Product not configured — fall back to type-based GL
+        return account.isSavings()
+                ? GLConstants.SB_DEPOSITS
+                : GLConstants.CA_DEPOSITS;
+    }
+
     @GetMapping("/deposit/{accountNumber}")
     public ModelAndView depositForm(@PathVariable String accountNumber) {
         ModelAndView mav = new ModelAndView("deposit/deposit");
@@ -269,15 +465,19 @@ public class DepositController {
             @RequestParam(required = false) String narration,
             RedirectAttributes ra) {
         try {
+            log.debug("Deposit request received: account={}, amount={}, narration={}", accountNumber, amount, narration);
             // CBS: Server-side validation — defense-in-depth per OWASP / RBI IT Governance
             if (amount == null || amount.signum() <= 0) {
                 throw new BusinessException("INVALID_AMOUNT", "Deposit amount must be positive");
             }
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+            log.debug("Deposit: calling service. account={}, amount={}, businessDate={}", accountNumber, amount, businessDate);
             DepositTransaction txn =
                     depositService.deposit(accountNumber, amount, businessDate, narration, null, "BRANCH");
+            log.debug("Deposit completed: account={}, voucher={}, txnRef={}", accountNumber, txn.getVoucherNumber(), txn.getTransactionRef());
             ra.addFlashAttribute("success", "Deposit of INR " + amount + " posted. Voucher: " + txn.getVoucherNumber());
         } catch (Exception e) {
+            log.error("Deposit failed: account={}, amount={}, error={}", accountNumber, amount, e.getMessage(), e);
             ra.addFlashAttribute("error", e.getMessage());
         }
         return "redirect:/deposit/view/" + accountNumber;
@@ -505,10 +705,10 @@ public class DepositController {
         csv.append("Date,Transaction Ref,Type,Channel,Narration,Debit,Credit,Balance,Voucher\n");
         for (DepositTransaction t : txns) {
             csv.append(t.getValueDate()).append(',');
-            csv.append('"').append(t.getTransactionRef() != null ? t.getTransactionRef().replace("\"", "\"\"") : "").append("\",");
+            csv.append('"').append(csvSafe(t.getTransactionRef())).append("\",");
             csv.append(t.getTransactionType()).append(',');
-            csv.append(t.getChannel() != null ? t.getChannel() : "").append(',');
-            csv.append('"').append(t.getNarration() != null ? t.getNarration().replace("\"", "\"\"") : "").append("\",");
+            csv.append(csvSafe(t.getChannel())).append(',');
+            csv.append('"').append(csvSafe(t.getNarration())).append("\",");
             // CBS: Debit/Credit split per RBI passbook format
             if ("DEBIT".equals(t.getDebitCredit())) {
                 csv.append(t.getAmount()).append(",,");
@@ -516,7 +716,7 @@ public class DepositController {
                 csv.append(',').append(t.getAmount()).append(',');
             }
             csv.append(t.getBalanceAfter()).append(',');
-            csv.append(t.getVoucherNumber() != null ? t.getVoucherNumber() : "");
+            csv.append(csvSafe(t.getVoucherNumber()));
             csv.append('\n');
         }
 

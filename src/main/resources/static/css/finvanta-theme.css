@@ -1,4 +1,5 @@
 /* Finvanta CBS - Banking Grade Theme | Offline Only | No CDN */
+/* Tier-1 CBS UI per Finacle/Temenos/BNP standards — RBI IT Governance Direction 2023 */
 :root {
     --fv-primary: #1a237e;
     --fv-primary-dark: #0d1547;
@@ -15,15 +16,35 @@
     --fv-text-muted: #90a4ae;
     --fv-border: #dee2e6;
     --fv-success: #2e7d32;
+    --fv-success-bg: #d1e7dd;
+    --fv-success-fg: #0f5132;
     --fv-danger: #c62828;
+    --fv-danger-bg: #f8d7da;
+    --fv-danger-fg: #842029;
     --fv-warning: #ef6c00;
     --fv-info: #1565c0;
     --fv-font-size: 13px;
     --fv-sidebar-width: 240px;
-    --fv-topbar-height: 50px;
+    --fv-topbar-height: 56px;
+    --fv-mandatory-color: #c62828;
+    --fv-mandatory-border: #e57373;
+    /* CBS Tier-1: single field height across filter/body forms per Finacle field-height std.
+       36px per enterprise blueprint (label 12px + input 13px + 8px padding × 2 + border).
+       Override to 28px on `.form-control-sm` / `.form-select-sm` for topbar / filter strips. */
+    --fv-field-height: 36px;
+    /* CBS Tier-1: cap content width at 1600px for ultra-wide monitors (1920px+ / 2560px).
+       Below this, content fills available space. Matches Finacle Client / Temenos Transact. */
+    --fv-content-max-width: 1600px;
 }
 body {
-    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Tahoma, Geneva, Verdana, sans-serif;
+    /* CBS Tier-1: vernacular fallbacks per RBI Retail Banking Direction 2023 §4.2 (multilingual
+       passbook/SMS/UI). Noto Sans <script> stack covers all 22 scheduled languages; browsers
+       silently fall through to Segoe UI if system lacks the specific Devanagari/Tamil/Bengali/
+       Kannada/Gujarati/Telugu/Malayalam/Gurmukhi face. No extra font asset downloaded. */
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Noto Sans Devanagari',
+        'Noto Sans Tamil', 'Noto Sans Bengali', 'Noto Sans Kannada', 'Noto Sans Gujarati',
+        'Noto Sans Telugu', 'Noto Sans Malayalam', 'Noto Sans Gurmukhi',
+        Tahoma, Geneva, Verdana, sans-serif;
     font-size: var(--fv-font-size);
     background: var(--fv-body-bg);
     color: var(--fv-text-primary);
@@ -99,6 +120,13 @@ body {
 }
 .fv-topbar .fv-page-title { font-size: 14px; font-weight: 500; margin: 0; }
 .fv-topbar .fv-topbar-right { display: flex; align-items: center; gap: 14px; font-size: 12px; }
+/* CBS Tier-1: Tenant ID badge — always visible per RBI IT Governance §8.3.
+   Distinct from branch code (green) — uses amber/gold to signal "context" vs "location". */
+.fv-topbar .fv-tenant-id {
+    background: rgba(255,183,77,0.2); color: #ffcc80;
+    padding: 2px 8px; border-radius: 3px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+}
 .fv-topbar .fv-branch-code {
     background: rgba(76,175,80,0.2); color: #a5d6a7;
     padding: 2px 8px; border-radius: 3px;
@@ -114,16 +142,48 @@ body {
     padding: 2px 8px; border-radius: 3px;
     font-size: 10px; font-weight: 600; text-transform: uppercase;
 }
+/* CBS Tier-1: Alerts indicator per Finacle ALERT_BANNER / Temenos NOTIFICATION.
+   Displays a bell icon with a count badge for pending workflow items.
+   Count populated by CbsLayoutAdvice.pendingAlertCount() model attribute. */
+.fv-topbar .fv-alerts {
+    position: relative; color: #90caf9; font-size: 16px; cursor: pointer;
+}
+.fv-topbar .fv-alerts:hover { color: #ffffff; }
+.fv-topbar .fv-alert-count {
+    position: absolute; top: -6px; right: -8px;
+    background: var(--fv-danger); color: #ffffff;
+    font-size: 9px; font-weight: 700; min-width: 16px; height: 16px;
+    border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    padding: 0 4px; line-height: 1;
+}
 .fv-topbar .fv-topbar-right a { color: #90caf9; text-decoration: none; font-size: 12px; }
 .fv-topbar .fv-topbar-right a:hover { color: #ffffff; }
+/* CBS Tier-1: Topbar action buttons/links — replaces inline styles on password/logout.
+   Per Phase 14 audit: no inline styles on layout elements rendered on every page. */
+.fv-topbar-action {
+    color: #90caf9; font-size: 12px; text-decoration: none;
+    background: none; border: none; cursor: pointer; padding: 0;
+}
+.fv-topbar-action:hover { color: #ffffff; }
+/* CBS Tier-1: Branch switch dropdown — ADMIN only, per Finacle SOL_SWITCH.
+   Replaces inline styles on the topbar branch select element. */
+.fv-branch-switch-form { margin-right: 8px; }
+.fv-branch-switch {
+    width: auto; background: #1e293b; color: #90caf9;
+    border: 1px solid #334155; font-size: 12px;
+    padding: 2px 24px 2px 8px;
+}
 
-/* Main Content */
+/* Main Content
+ * CBS Tier-1: cap content width so tables/forms stay readable on ultra-wide monitors
+ * (1920px+, 2560px dual-monitor branch setups). Below the cap, content fills available
+ * width bounded by (100vw - sidebar). Matches Finacle Client / Temenos Transact layout. */
 .fv-main {
     margin-left: var(--fv-sidebar-width);
     margin-top: var(--fv-topbar-height);
     padding: 16px 20px;
     min-height: calc(100vh - var(--fv-topbar-height) - 40px);
-    max-width: calc(100vw - var(--fv-sidebar-width));
+    max-width: min(calc(100vw - var(--fv-sidebar-width)), var(--fv-content-max-width));
     overflow-x: hidden;
 }
 
@@ -172,23 +232,36 @@ body {
 .fv-stat-card.stat-success { border-top-color: var(--fv-success); }
 .fv-stat-card.stat-success .stat-value, .fv-stat-card.stat-success .stat-icon { color: var(--fv-success); }
 
-/* Tables CBS High Density */
-.fv-table { font-size: 12px; margin-bottom: 0; width: 100%; table-layout: auto; }
+/* Tables CBS Standard Density — readable on 1366×768 branch monitors and above.
+   Previous "High Density" (11px/12px, 6px padding, 250px max-width) was too compact
+   when combined with DataTables styling. Bumped to 13px body / 12px header / 10px 12px
+   padding for comfortable readability per Finacle Client standard density. */
+.fv-table { font-size: 13px; margin-bottom: 0; width: 100%; table-layout: auto; }
 .fv-table thead th {
     background: #e8eaf6; color: var(--fv-primary);
-    font-weight: 600; font-size: 11px;
+    font-weight: 600; font-size: 12px;
     text-transform: uppercase; letter-spacing: 0.3px;
-    padding: 8px 8px;
+    padding: 10px 12px;
     border-bottom: 2px solid #c5cae9;
     white-space: nowrap; vertical-align: middle;
 }
 .fv-table tbody td {
-    padding: 6px 8px; vertical-align: middle;
+    padding: 8px 12px; vertical-align: middle;
     border-bottom: 1px solid #f0f0f0;
-    max-width: 250px; overflow: hidden; text-overflow: ellipsis;
 }
 .fv-table tbody tr:hover { background: #f5f7fa; }
 .fv-table .amount { font-family: 'Courier New', Consolas, monospace; font-weight: 600; text-align: right; white-space: nowrap; }
+/* CBS Tier-1: Sticky first column per Finacle GRID_FREEZE / enterprise blueprint.
+   When table is inside .table-responsive and horizontally scrollable, the first
+   column (typically Account No / Entity ID) stays pinned so the user always sees
+   which row they're looking at. Uses CSS position:sticky — no JS plugin needed. */
+.fv-table thead th:first-child,
+.fv-table tbody td:first-child {
+    position: sticky; left: 0; z-index: 1;
+}
+.fv-table thead th:first-child { background: #e8eaf6; z-index: 2; }
+.fv-table tbody td:first-child { background: var(--fv-card-bg); }
+.fv-table tbody tr:hover td:first-child { background: #f5f7fa; }
 /* Prevent action button columns from expanding excessively */
 .fv-table td:last-child { white-space: nowrap; }
 /* Ensure table-responsive container clips overflow properly */
@@ -204,16 +277,56 @@ body {
 .fv-badge-approved { background: #e3f2fd; color: var(--fv-info); }
 .fv-badge-rejected { background: #ffebee; color: var(--fv-danger); }
 .fv-badge-npa { background: #fce4ec; color: #ad1457; }
+.fv-badge-info { background: #e3f2fd; color: var(--fv-info); }
 .fv-badge-closed { background: #eceff1; color: #546e7a; }
 
 /* Forms */
 .fv-form .form-label { font-size: 12px; font-weight: 500; color: var(--fv-text-secondary); margin-bottom: 4px; }
 .fv-form .form-control, .fv-form .form-select { font-size: 13px; padding: 6px 10px; border-color: var(--fv-border); }
 .fv-form .form-control:focus, .fv-form .form-select:focus { border-color: var(--fv-primary); box-shadow: 0 0 0 2px rgba(26,35,126,0.1); }
+/* CBS Tier-1 field-height normalization per Finacle/Temenos single-density rule.
+   Same height across inputs + selects inside `.fv-form` so row-based forms line up.
+   Excludes textarea (multi-line) and file inputs (native control sizing). */
+.fv-form input.form-control:not([type="file"]),
+.fv-form select.form-select { height: var(--fv-field-height); }
+.fv-form input.form-control-sm:not([type="file"]),
+.fv-form select.form-select-sm { height: 28px; }
+
+/* CBS Tier-1: semantic card emphasis classes. Replaces inline
+   `style="border:2px solid #198754;background:#d1e7dd"` patterns with
+   theme-token-driven utility classes so brand-color changes propagate. */
+.fv-card.fv-card-pass { border: 2px solid var(--fv-success); }
+.fv-card.fv-card-pass > .card-header { background: var(--fv-success-bg); color: var(--fv-success-fg); }
+.fv-card.fv-card-fail { border: 2px solid var(--fv-danger); }
+.fv-card.fv-card-fail > .card-header { background: var(--fv-danger-bg); color: var(--fv-danger-fg); }
+
+/* ================================================================
+   CBS FOCUS INDICATORS — Per WCAG 2.1 AA SC 2.4.7 / RBI Accessibility
+   Keyboard-only users must see a visible focus ring on all interactive
+   elements. Uses :focus-visible to avoid showing rings on mouse clicks.
+   ================================================================ */
+.form-control:focus-visible, .form-select:focus-visible,
+.btn:focus-visible, a:focus-visible,
+.nav-link:focus-visible, .page-link:focus-visible {
+    outline: 2px solid var(--fv-sidebar-active);
+    outline-offset: 2px;
+    box-shadow: none;
+}
+.fv-sidebar .nav-link:focus-visible {
+    outline-color: var(--fv-sidebar-active);
+    outline-offset: -2px;
+    background: var(--fv-sidebar-hover);
+}
 
 /* Buttons */
 .btn-fv-primary { background: var(--fv-primary); border-color: var(--fv-primary); color: #ffffff; font-size: 12px; padding: 6px 14px; }
 .btn-fv-primary:hover { background: var(--fv-primary-light); border-color: var(--fv-primary-light); color: #ffffff; }
+.btn-fv-success { background: var(--fv-success); border-color: var(--fv-success); color: #ffffff; font-size: 12px; padding: 6px 14px; }
+.btn-fv-success:hover { background: #388e3c; border-color: #388e3c; color: #ffffff; }
+.btn-fv-danger { background: var(--fv-danger); border-color: var(--fv-danger); color: #ffffff; font-size: 12px; padding: 6px 14px; }
+.btn-fv-danger:hover { background: #d32f2f; border-color: #d32f2f; color: #ffffff; }
+.btn-fv-warning { background: var(--fv-warning); border-color: var(--fv-warning); color: #ffffff; font-size: 12px; padding: 6px 14px; }
+.btn-fv-warning:hover { background: #f57c00; border-color: #f57c00; color: #ffffff; }
 
 /* DataTables Overrides */
 .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter,
@@ -228,13 +341,245 @@ body {
 .fv-table.dataTable thead th.sorting_asc::before,
 .fv-table.dataTable thead th.sorting_desc::before { right: 8px; bottom: auto; top: 50%; transform: translateY(-70%); position: absolute; }
 
+/* ================================================================
+   CBS BREADCRUMB — Per Finacle/Temenos: Home > Module > Screen
+   ================================================================ */
+.fv-breadcrumb {
+    display: flex; align-items: center; gap: 4px;
+    padding: 8px 0 4px; margin-bottom: 8px;
+    font-size: 12px; color: var(--fv-text-muted);
+    list-style: none;
+}
+.fv-breadcrumb li { display: inline-flex; align-items: center; }
+.fv-breadcrumb li + li::before { content: '\203A'; margin: 0 6px; color: var(--fv-border); font-size: 14px; }
+.fv-breadcrumb a { color: var(--fv-primary-light); text-decoration: none; }
+.fv-breadcrumb a:hover { color: var(--fv-primary); text-decoration: underline; }
+.fv-breadcrumb .active { color: var(--fv-text-primary); font-weight: 500; }
+
+/* ================================================================
+   CBS MANDATORY FIELD INDICATOR — Per Finacle CIF_MASTER
+   Red left-border + red asterisk on required field labels.
+   ================================================================ */
+.fv-form .form-label.fv-required::after {
+    content: ' *'; color: var(--fv-mandatory-color); font-weight: 700;
+}
+.fv-form .fv-mandatory-group { border-left: 3px solid var(--fv-mandatory-border); padding-left: 10px; }
+
+/* ================================================================
+   CBS COLLAPSIBLE SECTION PANELS — Per Finacle accordion sections
+   ================================================================ */
+.fv-section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; margin-bottom: 0;
+    background: #f5f7fa; border: 1px solid var(--fv-border);
+    border-radius: 4px 4px 0 0; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: var(--fv-primary);
+    user-select: none; transition: background 0.15s ease;
+}
+.fv-section-header:hover { background: #e8eaf6; }
+.fv-section-header.collapsed { border-radius: 4px; margin-bottom: 12px; }
+.fv-section-header .fv-chevron { font-size: 12px; transition: transform 0.2s ease; }
+.fv-section-header.collapsed .fv-chevron { transform: rotate(-90deg); }
+.fv-section-body {
+    padding: 12px; border: 1px solid var(--fv-border);
+    border-top: none; border-radius: 0 0 4px 4px; margin-bottom: 12px;
+}
+.fv-section-body.fv-collapsed { display: none; }
+
+/* ================================================================
+   CBS TAB NAVIGATION — Per Finacle CIF_MASTER tabbed panels
+   ================================================================ */
+.fv-tabs { border-bottom: 2px solid var(--fv-border); margin-bottom: 16px; }
+.fv-tabs .nav-link {
+    font-size: 12px; font-weight: 600; color: var(--fv-text-secondary);
+    padding: 8px 16px; border: none; border-bottom: 2px solid transparent;
+    margin-bottom: -2px; text-transform: uppercase; letter-spacing: 0.3px;
+    transition: all 0.15s ease; cursor: pointer; background: none;
+}
+.fv-tabs .nav-link:hover { color: var(--fv-primary); border-bottom-color: var(--fv-primary-light); }
+.fv-tabs .nav-link.active {
+    color: var(--fv-primary); border-bottom-color: var(--fv-primary);
+    background: transparent;
+}
+.fv-tabs .nav-link i { margin-right: 4px; }
+.fv-tab-pane { display: none; }
+.fv-tab-pane.active { display: block; }
+
+/* ================================================================
+   CBS FIELD-LEVEL TOOLTIP — Per Finacle/Temenos field help
+   ================================================================ */
+.fv-help-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--fv-info); color: #ffffff;
+    font-size: 9px; font-weight: 700; margin-left: 4px;
+    cursor: help; position: relative; vertical-align: middle;
+}
+.fv-help-icon::after {
+    content: attr(data-fv-help);
+    position: absolute; bottom: 120%; left: 50%; transform: translateX(-50%);
+    background: #263238; color: #ffffff; font-size: 11px; font-weight: 400;
+    padding: 6px 10px; border-radius: 4px;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+    z-index: 1060; max-width: 320px; white-space: normal; line-height: 1.4;
+}
+.fv-help-icon:hover::after { opacity: 1; }
+
+/* ================================================================
+   CBS MULTI-COLUMN DETAIL LAYOUT — Per Finacle CIF_VIEW
+   2-3 columns of label-value pairs instead of single-column table
+   ================================================================ */
+.fv-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.fv-detail-grid.fv-detail-3col { grid-template-columns: 1fr 1fr 1fr; }
+.fv-detail-item {
+    display: flex; flex-direction: column;
+    padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
+}
+.fv-detail-item:hover { background: #f8f9fa; }
+.fv-detail-label {
+    font-size: 10px; font-weight: 600; color: var(--fv-text-muted);
+    text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 2px;
+}
+.fv-detail-value { font-size: 13px; color: var(--fv-text-primary); font-weight: 500; }
+.fv-detail-value.amount {
+    font-family: 'Courier New', Consolas, monospace;
+    font-weight: 700; color: var(--fv-primary);
+}
+.fv-detail-section-title {
+    grid-column: 1 / -1; padding: 10px 12px 6px;
+    font-size: 12px; font-weight: 700; color: var(--fv-primary);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 2px solid #c5cae9; background: #f5f7fa;
+    display: flex; align-items: center; gap: 6px;
+}
+
+/* ================================================================
+   CBS LOADING OVERLAY — Per Finacle "Processing..." spinner
+   Prevents double-click during form POST / AJAX operations
+   ================================================================ */
+.fv-loading-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.45); z-index: 9999;
+    justify-content: center; align-items: center; flex-direction: column;
+}
+.fv-loading-overlay.active { display: flex; }
+.fv-loading-spinner {
+    width: 48px; height: 48px; border: 4px solid rgba(255,255,255,0.3);
+    border-top-color: #ffffff; border-radius: 50%;
+    animation: fv-spin 0.8s linear infinite;
+}
+@keyframes fv-spin { to { transform: rotate(360deg); } }
+.fv-loading-text {
+    color: #ffffff; font-size: 14px; font-weight: 600;
+    margin-top: 12px; letter-spacing: 0.5px;
+}
+
+/* ================================================================
+   CBS CONFIRMATION MODAL — Per Finacle styled modal dialogs
+   Replaces browser confirm() for destructive actions.
+   Defensive display:none ensures modals stay hidden even if Bootstrap
+   CSS fails to load (vendor assets are not committed to repo).
+   ================================================================ */
+.fv-confirm-modal { display: none; }
+.fv-confirm-modal.show { display: block; }
+.fv-confirm-modal .modal-header {
+    background: var(--fv-danger); color: #ffffff;
+    padding: 10px 16px; border-bottom: none;
+}
+.fv-confirm-modal .modal-header .modal-title { font-size: 14px; font-weight: 600; }
+.fv-confirm-modal .modal-header .btn-close { filter: brightness(0) invert(1); }
+.fv-confirm-modal .modal-body { padding: 20px 16px; font-size: 13px; text-align: center; }
+.fv-confirm-modal .modal-body .fv-confirm-icon {
+    font-size: 36px; color: var(--fv-danger); margin-bottom: 12px;
+}
+.fv-confirm-modal .modal-footer { padding: 10px 16px; border-top: 1px solid var(--fv-border); }
+.fv-confirm-modal.fv-confirm-info .modal-header { background: var(--fv-info); }
+.fv-confirm-modal.fv-confirm-info .modal-body .fv-confirm-icon { color: var(--fv-info); }
+
+/* CBS KEYBOARD SHORTCUT BADGE — Per Finacle F2=Save, F3=Cancel */
+.fv-kbd {
+    display: inline-block; padding: 1px 5px; font-size: 10px;
+    font-family: 'Courier New', Consolas, monospace; font-weight: 600;
+    background: #eceff1; color: #546e7a; border: 1px solid #cfd8dc;
+    border-radius: 3px; margin-left: 6px; vertical-align: middle;
+    line-height: 1.4;
+}
+
+/* ================================================================
+   CBS INLINE-STYLE REPLACEMENT UTILITIES — Per Phase 14 audit
+   Replaces style="width:Npx" on search inputs, form fields, and
+   detail table label columns with reusable CSS classes.
+   ================================================================ */
+.fv-search-input { width: 320px; max-width: 100%; }
+.fv-search-input-lg { width: 400px; max-width: 100%; }
+.fv-input-xs { width: 100px; }
+.fv-input-sm { width: 130px; }
+.fv-input-md { width: 160px; }
+.fv-label-col { width: 200px; }
+.fv-label-col-lg { width: 250px; }
+.fv-label-col-pct { width: 40%; }
+
+/* CBS AMOUNT INPUT FORMATTING — INR with thousand separators */
+.fv-amount-display {
+    font-family: 'Courier New', Consolas, monospace;
+    font-weight: 600; color: var(--fv-primary); font-size: 13px;
+}
+
+/* CBS PRINT-ONLY HEADER — visible only during print */
+.fv-print-header { display: none; }
+
+/* ================================================================
+   CBS SESSION TIMEOUT WARNING — Per Finacle session countdown banner
+   Fixed bar at bottom of viewport, slides up when session nears expiry.
+   ================================================================ */
+.fv-session-warning {
+    display: none; position: fixed; bottom: 0; left: var(--fv-sidebar-width); right: 0;
+    background: #fff3e0; color: #e65100; border-top: 2px solid #ef6c00;
+    padding: 10px 20px; font-size: 13px; font-weight: 500;
+    z-index: 9998; text-align: center;
+    box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
+    animation: fv-slide-up 0.3s ease;
+}
+.fv-session-warning.active { display: block; }
+@keyframes fv-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
 /* Login Page */
 .fv-login-wrapper { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--fv-sidebar-bg) 0%, var(--fv-primary) 100%); }
-.fv-login-card { background: #ffffff; border-radius: 6px; padding: 36px; width: 380px; box-shadow: 0 16px 48px rgba(0,0,0,0.3); }
+/* CBS Tier-1: responsive login card — clamps at 380px on desktop but shrinks on narrow
+   viewports (branch tablet / 320px mobile). Prevents horizontal overflow on <400px widths.
+   Padding also reduces on very narrow screens so the form doesn't push the edges. */
+.fv-login-card { background: #ffffff; border-radius: 6px; padding: 36px; width: min(380px, calc(100vw - 32px)); max-width: 380px; box-shadow: 0 16px 48px rgba(0,0,0,0.3); }
+@media (max-width: 400px) { .fv-login-card { padding: 24px 20px; } }
 .fv-login-card h1 { text-align: center; color: var(--fv-primary); font-size: 24px; margin-bottom: 4px; letter-spacing: 1px; }
 .fv-login-card .subtitle { text-align: center; color: var(--fv-text-muted); font-size: 12px; margin-bottom: 28px; }
 
-/* Responsive */
+/* ================================================================
+   CBS SIDEBAR TOGGLE — Per Finacle/Temenos: hamburger button to
+   manually collapse/expand sidebar at any screen width. Operator
+   preference persisted in localStorage across page navigations.
+   Toggled via body.fv-sidebar-collapsed class set by JS.
+   ================================================================ */
+body.fv-sidebar-collapsed .fv-sidebar { width: 60px; }
+body.fv-sidebar-collapsed .fv-sidebar .nav-text,
+body.fv-sidebar-collapsed .fv-sidebar .nav-section,
+body.fv-sidebar-collapsed .fv-sidebar-brand small { display: none; }
+body.fv-sidebar-collapsed .fv-sidebar-brand h1 { font-size: 14px; }
+body.fv-sidebar-collapsed .fv-sidebar .nav-link { justify-content: center; padding: 10px 0; }
+body.fv-sidebar-collapsed .fv-sidebar .nav-link i { margin-right: 0; font-size: 16px; }
+body.fv-sidebar-collapsed .fv-topbar { left: 60px; }
+body.fv-sidebar-collapsed .fv-main { margin-left: 60px; max-width: calc(100vw - 60px); }
+body.fv-sidebar-collapsed .fv-footer { margin-left: 60px; }
+body.fv-sidebar-collapsed .fv-session-warning { left: 60px; }
+body.fv-sidebar-collapsed .fv-topbar .fv-tenant-id { font-size: 9px; }
+/* CBS: Hamburger toggle button in topbar */
+.fv-sidebar-toggle {
+    background: none; border: none; color: #ffffff; font-size: 18px;
+    cursor: pointer; padding: 4px 8px; margin-right: 8px;
+    border-radius: 3px; transition: background 0.15s ease;
+}
+.fv-sidebar-toggle:hover { background: rgba(255,255,255,0.12); }
+
+/* Responsive: auto-collapse below 992px (overrides manual toggle) */
 @media (max-width: 992px) {
     .fv-sidebar { width: 60px; }
     .fv-sidebar .nav-text, .fv-sidebar .nav-section, .fv-sidebar-brand small { display: none; }
@@ -245,7 +590,63 @@ body {
     .fv-main { margin-left: 60px; max-width: calc(100vw - 60px); }
     .fv-footer { margin-left: 60px; }
     /* Tighter table padding on smaller screens */
-    .fv-table thead th { padding: 6px 4px; font-size: 10px; }
-    .fv-table tbody td { padding: 4px 4px; font-size: 11px; max-width: 150px; }
+    .fv-table thead th { padding: 6px 6px; font-size: 11px; }
+    .fv-table tbody td { padding: 5px 6px; font-size: 12px; }
     .fv-table .btn-sm { padding: 1px 4px; font-size: 10px; }
+    /* Detail grid: 3-col → 2-col on smaller screens (1366×768 branch monitors) */
+    .fv-detail-grid.fv-detail-3col { grid-template-columns: 1fr 1fr; }
+    /* Session warning spans full width on collapsed sidebar */
+    .fv-session-warning { left: 60px; }
+    /* Hide tenant ID label on collapsed sidebar to save topbar space */
+    .fv-topbar .fv-tenant-id { font-size: 9px; }
+    /* Hide toggle button on small screens — sidebar is always collapsed */
+    .fv-sidebar-toggle { display: none; }
+}
+/* CBS Tier-1: Detail grid collapses to 1-col on narrow viewports (tablet / small laptop).
+   Prevents label-value pairs from being too cramped on ≤768px widths. */
+@media (max-width: 768px) {
+    .fv-detail-grid, .fv-detail-grid.fv-detail-3col { grid-template-columns: 1fr; }
+}
+
+/* ================================================================
+   CBS PRINT LAYOUT — Per Finacle "Print CIF" / "Print Statement"
+   Branch operations require physical printouts for file maintenance.
+   ================================================================ */
+@media print {
+    .fv-sidebar, .fv-topbar, .fv-footer,
+    .fv-breadcrumb, .btn, button, form,
+    .dataTables_wrapper .dataTables_length,
+    .dataTables_wrapper .dataTables_filter,
+    .dataTables_wrapper .dataTables_paginate,
+    .fv-loading-overlay, .modal,
+    .fv-session-warning { display: none !important; }
+    .fv-main {
+        margin: 0 !important; padding: 10px !important;
+        max-width: 100% !important; font-size: 11px !important;
+    }
+    .fv-print-header {
+        display: block !important; text-align: center;
+        border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px;
+    }
+    .fv-print-header h2 { font-size: 16px; margin: 0; }
+    .fv-print-header small { font-size: 10px; color: #666; }
+    .fv-card { border: 1px solid #999 !important; box-shadow: none !important; page-break-inside: avoid; }
+    .fv-card .card-header {
+        background: #f0f0f0 !important; color: #000 !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .fv-table { font-size: 10px !important; }
+    .fv-table thead th {
+        background: #e0e0e0 !important; color: #000 !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .fv-badge {
+        border: 1px solid #000 !important; background: transparent !important;
+        color: #000 !important;
+    }
+    .fv-detail-grid { grid-template-columns: 1fr 1fr !important; }
+    .fv-detail-label { color: #333 !important; }
+    .fv-detail-value { color: #000 !important; }
+    .fv-section-body { display: block !important; }
+    .fv-tab-pane { display: block !important; }
 }

@@ -3,6 +3,8 @@ package com.finvanta.service.impl;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
+import com.finvanta.domain.enums.CustomerType;
+import com.finvanta.domain.enums.KycRiskCategory;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.LoanAccountRepository;
@@ -85,6 +87,12 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         validateCustomerFields(tid, c.getFirstName(), c.getLastName(), c.getPanNumber(),
                 c.getAadhaarNumber(), c.getMobileNumber(), c.getPinCode(), c.getEmail());
 
+        // CBS Tier-1 (Gap 4): CKYC mandatory field validation per CERSAI Specification v2.0.
+        // Gender, DOB, father's name, mother's name are mandatory for INDIVIDUAL-type customers.
+        // Without this, a crafted POST bypassing HTML5 required attributes can create a CIF
+        // with null CKYC-mandatory fields — blocking subsequent CERSAI upload.
+        validateCkycMandatoryFields(c);
+
         Branch branch = branchRepo.findById(branchId)
                 .filter(b -> b.getTenantId().equals(tid) && b.isActive())
                 .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "" + branchId));
@@ -150,6 +158,33 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                 .orElseThrow(() -> new BusinessException(
                         "CUSTOMER_NOT_FOUND", "" + customerId));
         branchValidator.validateAccess(c.getBranch());
+        return c;
+    }
+
+    /**
+     * CBS Tier-1 (Gap 8): Audit-logged customer view per RBI IT Governance Direction 2023 §8.3.
+     *
+     * <p>Identical to {@link #getCustomer(Long)} but additionally emits a {@code CIF_VIEW}
+     * audit event. Used by controller endpoints where a <b>user explicitly views</b> a
+     * customer record (view page, edit page, API GET). NOT used by internal service-to-service
+     * calls (document upload, charge levy, etc.) where {@code getCustomer()} is called for
+     * branch-access validation only — those would flood the audit table with noise.
+     *
+     * <p>Per Finacle AUDIT_TRAIL / Temenos AUDIT.LOG: CIF_VIEW events enable compliance to
+     * answer RBI inspector queries like "show all users who accessed customer X's record
+     * in the last 30 days." Uses {@code REQUIRES_NEW} propagation (AuditService) so the
+     * audit record persists even if the enclosing read-only transaction has no write intent.
+     *
+     * @param customerId the customer ID to view
+     * @return the Customer entity with branch access enforced
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Customer getCustomerWithAudit(Long customerId) {
+        Customer c = getCustomer(customerId);
+        auditSvc.logEvent("Customer", c.getId(), "CIF_VIEW", null,
+                c.getCustomerNumber(), "CIF",
+                "Customer record viewed by " + SecurityUtil.getCurrentUsername());
         return c;
     }
 
@@ -272,6 +307,20 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                 .filter(b -> b.getTenantId().equals(tid) && b.isActive())
                 .orElseThrow(() -> new BusinessException("BRANCH_NOT_FOUND", "" + branchId));
 
+        // CBS Tier-1: Optimistic locking — propagate the @Version from the form/API
+        // to the existing entity so JPA detects concurrent modifications. If the version
+        // from the client is stale (another user saved in between), Hibernate throws
+        // OptimisticLockException on flush. Without this, the version on the existing
+        // entity is always "current" (just loaded), so the check never fires.
+        // Per Finacle CIF_MASTER / RBI Operational Risk: concurrent edits must be rejected.
+        if (updated.getVersion() != null && !updated.getVersion().equals(existing.getVersion())) {
+            throw new BusinessException("CONCURRENT_MODIFICATION",
+                    "This customer record was modified by another user. "
+                            + "Please reload the page and try again. "
+                            + "(Expected version " + updated.getVersion()
+                            + ", current version " + existing.getVersion() + ")");
+        }
+
         String beforeState = existing.getFullName() + "|" + existing.getMobileNumber();
 
         // CBS Validation: validate mutable fields on update (format checks only — no duplicate PAN/Aadhaar).
@@ -361,13 +410,10 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         // OR if the existing entity was already non-PEP (safe to copy false).
         // Same pattern for addressSameAsPermanent (entity default=true could override false).
         if (updated.getKycRiskCategory() != null) {
-            // CBS: Validate kycRiskCategory against allowed values per RBI KYC Section 16.
-            // Without validation, arbitrary strings (e.g., "INVALID") would be persisted,
-            // causing getKycRenewalYears() to silently default to 8 years (MEDIUM) —
-            // masking data quality issues. Per Finacle CIF_MASTER: closed enumeration.
-            if (!"LOW".equals(updated.getKycRiskCategory())
-                    && !"MEDIUM".equals(updated.getKycRiskCategory())
-                    && !"HIGH".equals(updated.getKycRiskCategory())) {
+            // CBS Tier-1 (Gap 1): Validate kycRiskCategory against KycRiskCategory enum.
+            // The enum is the source of truth for allowed values. If the string doesn't
+            // match any enum constant, reject it — prevents silent MEDIUM default.
+            if (KycRiskCategory.fromString(updated.getKycRiskCategory()) == null) {
                 throw new BusinessException("INVALID_KYC_RISK_CATEGORY",
                         "KYC risk category must be LOW, MEDIUM, or HIGH. Got: "
                                 + updated.getKycRiskCategory());
@@ -458,10 +504,18 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                         "Customer with this PAN already exists. Per RBI KYC norms, one PAN = one CIF.");
         }
 
-        // Aadhaar format: exactly 12 digits
+        // Aadhaar format: exactly 12 digits + Verhoeff checksum validation
         if (aadhaarNumber != null && !aadhaarNumber.isBlank()) {
             if (!aadhaarNumber.matches("^[0-9]{12}$"))
                 throw new BusinessException("INVALID_AADHAAR_FORMAT", "Aadhaar must be exactly 12 digits.");
+            // CBS Tier-1 (Gap 5): Verhoeff checksum validation per UIDAI specification.
+            // The 12th digit of Aadhaar is a check digit computed using the Verhoeff algorithm.
+            // Without this, any random 12-digit number passes format validation (e.g., 000000000000).
+            // Per Finacle CIF_MASTER / Temenos CUSTOMER: Aadhaar check digit is validated at intake.
+            if (!isValidVerhoeff(aadhaarNumber))
+                throw new BusinessException("INVALID_AADHAAR_CHECKSUM",
+                        "Aadhaar number failed Verhoeff checksum validation. "
+                                + "Please verify the number and re-enter.");
             if (customerRepo.existsByTenantIdAndAadhaarHash(tid, PiiHashUtil.computeSha256(aadhaarNumber)))
                 throw new BusinessException("DUPLICATE_AADHAAR",
                         "Customer with this Aadhaar already exists. Duplicate CIFs are prohibited per RBI KYC.");
@@ -488,6 +542,104 @@ public class CustomerCifServiceImpl implements CustomerCifService {
                         "Email address format is invalid.");
         }
     }
+
+    /**
+     * CBS CKYC Mandatory Field Validation per CERSAI Specification v2.0.
+     *
+     * <p>For INDIVIDUAL-type customers (INDIVIDUAL, JOINT, MINOR, NRI), CERSAI
+     * requires: gender, date of birth, and father's name. Mother's name is also
+     * mandatory per CERSAI v2.0 Section 4.2.
+     *
+     * <p>Non-INDIVIDUAL types (HUF, PARTNERSHIP, COMPANY, TRUST, GOVERNMENT) have
+     * different mandatory fields handled by the CKYC upload batch — not validated
+     * here because the fields are populated during entity registration, not CIF creation.
+     *
+     * <p>This validation runs on CREATE only. On UPDATE, these fields are mutable
+     * (can be corrected during re-KYC) and are validated by {@code validateMutableFields}.
+     *
+     * @param c the customer entity being created
+     */
+    private void validateCkycMandatoryFields(Customer c) {
+        // CBS Tier-1 (Gap 1+4): Parse customerType String via CustomerType enum for type-safe
+        // CKYC mandatory field determination. Falls back to INDIVIDUAL if null/unrecognized.
+        CustomerType type = CustomerType.fromString(c.getCustomerType());
+        if (type == null) type = CustomerType.INDIVIDUAL;
+        // CKYC mandatory fields apply to INDIVIDUAL-type customers per CERSAI spec
+        boolean isIndividualType = type == CustomerType.INDIVIDUAL || type == CustomerType.JOINT
+                || type == CustomerType.MINOR || type == CustomerType.NRI;
+        if (!isIndividualType) return;
+
+        if (c.getGender() == null || c.getGender().isBlank())
+            throw new BusinessException("GENDER_REQUIRED",
+                    "Gender is mandatory for individual customers per CERSAI CKYC specification v2.0.");
+        if (!"M".equals(c.getGender()) && !"F".equals(c.getGender()) && !"T".equals(c.getGender()))
+            throw new BusinessException("INVALID_GENDER",
+                    "Gender must be M (Male), F (Female), or T (Transgender) per NALSA 2014 / CERSAI.");
+        if (c.getDateOfBirth() == null)
+            throw new BusinessException("DOB_REQUIRED",
+                    "Date of birth is mandatory for individual customers per CERSAI CKYC specification v2.0.");
+        if (c.getFatherName() == null || c.getFatherName().isBlank())
+            throw new BusinessException("FATHER_NAME_REQUIRED",
+                    "Father's name is mandatory for individual customers per CERSAI CKYC specification v2.0.");
+        if (c.getMotherName() == null || c.getMotherName().isBlank())
+            throw new BusinessException("MOTHER_NAME_REQUIRED",
+                    "Mother's name is mandatory for individual customers per CERSAI CKYC specification v2.0.");
+    }
+
+    // ========================================================================
+    // AADHAAR VERHOEFF CHECKSUM (Gap 5 — per UIDAI specification)
+    // ========================================================================
+
+    /**
+     * Validates an Aadhaar number using the Verhoeff checksum algorithm.
+     *
+     * <p>Per UIDAI specification: the 12th digit of Aadhaar is a check digit computed
+     * using the Verhoeff algorithm (a dihedral group D5-based checksum). This catches
+     * single-digit errors, all adjacent transpositions, and most twin errors.
+     *
+     * <p>Reference: Verhoeff, J. (1969). "Error Detecting Decimal Codes".
+     * Mathematical Centre Tract 29, Amsterdam.
+     *
+     * @param number the 12-digit Aadhaar number
+     * @return true if the Verhoeff checksum is valid
+     */
+    static boolean isValidVerhoeff(String number) {
+        if (number == null || number.isEmpty()) return false;
+        int c = 0;
+        int len = number.length();
+        for (int i = len - 1; i >= 0; i--) {
+            int digit = number.charAt(i) - '0';
+            if (digit < 0 || digit > 9) return false;
+            c = VERHOEFF_D[c][VERHOEFF_P[((len - 1 - i) % 8)][digit]];
+        }
+        return c == 0;
+    }
+
+    // Verhoeff multiplication table (D5 dihedral group)
+    private static final int[][] VERHOEFF_D = {
+            {0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+            {1, 2, 3, 4, 0, 6, 7, 8, 9, 5},
+            {2, 3, 4, 0, 1, 7, 8, 9, 5, 6},
+            {3, 4, 0, 1, 2, 8, 9, 5, 6, 7},
+            {4, 0, 1, 2, 3, 9, 5, 6, 7, 8},
+            {5, 9, 8, 7, 6, 0, 4, 3, 2, 1},
+            {6, 5, 9, 8, 7, 1, 0, 4, 3, 2},
+            {7, 6, 5, 9, 8, 2, 1, 0, 4, 3},
+            {8, 7, 6, 5, 9, 3, 2, 1, 0, 4},
+            {9, 8, 7, 6, 5, 4, 3, 2, 1, 0}
+    };
+
+    // Verhoeff permutation table
+    private static final int[][] VERHOEFF_P = {
+            {0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+            {1, 5, 7, 6, 2, 8, 3, 0, 9, 4},
+            {5, 8, 0, 3, 7, 9, 6, 1, 4, 2},
+            {8, 9, 1, 6, 0, 4, 3, 5, 2, 7},
+            {9, 4, 5, 3, 1, 2, 6, 8, 7, 0},
+            {4, 2, 8, 6, 5, 7, 3, 9, 0, 1},
+            {2, 7, 9, 3, 8, 0, 6, 4, 1, 5},
+            {7, 0, 4, 6, 9, 1, 3, 2, 5, 8}
+    };
 
     /**
      * CBS Mutable Field Validation for customer update operations.

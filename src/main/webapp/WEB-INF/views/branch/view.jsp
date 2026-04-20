@@ -5,6 +5,12 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/branch/list">Branches</a></li>
+        <li class="active"><c:out value="${branch.branchCode}" /> &mdash; <c:out value="${branch.branchName}" /></li>
+    </ul>
+
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
@@ -32,7 +38,7 @@
                     <h6 class="text-muted border-bottom pb-1 mb-2"><i class="bi bi-tag"></i> Identity</h6>
                     <table class="table fv-table table-sm">
                         <tbody>
-                        <tr><td class="fw-bold" style="width:40%">Branch Code</td><td><c:out value="${branch.branchCode}" /></td></tr>
+                        <tr><td class="fw-bold fv-label-col-pct">Branch Code</td><td><c:out value="${branch.branchCode}" /></td></tr>
                         <tr><td class="fw-bold">Branch Name</td><td><c:out value="${branch.branchName}" /></td></tr>
                         <tr><td class="fw-bold">IFSC Code</td><td><c:out value="${branch.ifscCode}" default="--" /></td></tr>
                         <tr><td class="fw-bold">Status</td><td><c:choose><c:when test="${branch.active}"><span class="fv-badge fv-badge-active">Active</span></c:when><c:otherwise><span class="fv-badge fv-badge-rejected">Inactive</span></c:otherwise></c:choose></td></tr>
@@ -43,7 +49,7 @@
                     <h6 class="text-muted border-bottom pb-1 mb-2"><i class="bi bi-diagram-3"></i> Hierarchy</h6>
                     <table class="table fv-table table-sm">
                         <tbody>
-                        <tr><td class="fw-bold" style="width:40%">Branch Type</td><td>
+                        <tr><td class="fw-bold fv-label-col-pct">Branch Type</td><td>
                             <c:choose>
                                 <c:when test="${branch.branchType == 'HEAD_OFFICE'}"><span class="fv-badge fv-badge-npa">HEAD OFFICE</span></c:when>
                                 <c:when test="${branch.branchType == 'ZONAL_OFFICE'}"><span class="fv-badge fv-badge-pending">ZONAL OFFICE</span></c:when>
@@ -61,7 +67,7 @@
             <h6 class="text-muted border-bottom pb-1 mb-2 mt-2"><i class="bi bi-geo-alt"></i> Location</h6>
             <table class="table fv-table table-sm">
                 <tbody>
-                <tr><td class="fw-bold" style="width:20%">Address</td><td><c:out value="${branch.address}" default="--" /></td></tr>
+                <tr><td class="fw-bold fv-label-col-pct">Address</td><td><c:out value="${branch.address}" default="--" /></td></tr>
                 <tr><td class="fw-bold">City / State / PIN</td><td><c:out value="${branch.city}" default="--" /> / <c:out value="${branch.state}" default="--" /> - <c:out value="${branch.pinCode}" default="--" /></td></tr>
                 <tr><td class="fw-bold">Region (Display)</td><td><c:out value="${branch.region}" default="--" /></td></tr>
                 </tbody>

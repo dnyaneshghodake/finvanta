@@ -5,14 +5,24 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-<c:if test="${not empty success}"><div class="alert alert-success"><c:out value="${success}"/></div></c:if>
-<c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+<ul class="fv-breadcrumb">
+    <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+    <li><a href="${pageContext.request.contextPath}/deposit/accounts">CASA Accounts</a></li>
+    <li class="active"><c:out value="${account.accountNumber}"/></li>
+</ul>
+
+<c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}"/></div></c:if>
+<c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4>Account: <c:out value="${account.accountNumber}"/></h4>
+    <h4><i class="bi bi-wallet2"></i> Account: <c:out value="${account.accountNumber}"/></h4>
     <div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print();" title="Print Account"><i class="bi bi-printer"></i> Print <span class="fv-kbd">Ctrl+P</span></button>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_AUDITOR') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <a href="${pageContext.request.contextPath}/audit/entity?entityType=DepositAccount&entityId=${account.id}" class="btn btn-sm btn-outline-info" title="View change history"><i class="bi bi-journal-check"></i> Audit Trail</a>
+        </c:if>
         <span class="badge fs-6 ${account.active ? 'bg-success' : account.frozen ? 'bg-danger' : account.dormant ? 'bg-warning' : 'bg-secondary'}"><c:out value="${account.accountStatus}"/></span>
-        <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-sm btn-outline-secondary ms-2"><i class="bi bi-arrow-left"></i> Back</a>
+        <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-sm btn-outline-secondary ms-2" data-fv-cancel="${pageContext.request.contextPath}/deposit/accounts"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a>
     </div>
 </div>
 
@@ -77,7 +87,10 @@
     <tr class="table-active"><td class="text-muted"><strong>Available Balance</strong></td><td class="text-end fs-5"><strong><fmt:formatNumber value="${account.effectiveAvailable}" type="currency" currencyCode="INR"/></strong></td></tr>
     </table>
 </div></div>
+</div><%-- end col-md-6 right --%>
+</div><%-- end row --%>
 
+<%-- CBS: Action cards below the two-column layout (full width) --%>
 <c:if test="${account.accountStatus == 'PENDING_ACTIVATION' && (pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN'))}">
 <div class="card mt-3 border-warning"><div class="card-body">
     <div class="d-flex align-items-center gap-3">
@@ -85,7 +98,7 @@
         <span class="text-muted">This account requires checker approval before transactions can be processed.</span>
         <form method="post" action="${pageContext.request.contextPath}/deposit/activate/${account.accountNumber}" class="d-inline ms-auto">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-            <button type="submit" class="btn btn-success btn-sm" data-confirm="Activate this account? It will become operational immediately."><i class="bi bi-check-circle"></i> Activate Account</button>
+            <button type="submit" class="btn btn-fv-success btn-sm" data-confirm="Activate this account? It will become operational immediately."><i class="bi bi-check-circle"></i> Activate Account</button>
         </form>
     </div>
 </div></div>
@@ -93,16 +106,16 @@
 
 <c:if test="${account.active}">
 <div class="card mt-3"><div class="card-body d-flex gap-2 flex-wrap">
-    <a href="${pageContext.request.contextPath}/deposit/deposit/${account.accountNumber}" class="btn btn-success btn-sm"><i class="bi bi-plus-circle"></i> Deposit</a>
-    <a href="${pageContext.request.contextPath}/deposit/withdraw/${account.accountNumber}" class="btn btn-warning btn-sm"><i class="bi bi-dash-circle"></i> Withdraw</a>
-    <a href="${pageContext.request.contextPath}/deposit/transfer" class="btn btn-info btn-sm"><i class="bi bi-arrow-left-right"></i> Transfer</a>
+    <a href="${pageContext.request.contextPath}/deposit/deposit/${account.accountNumber}" class="btn btn-fv-success btn-sm"><i class="bi bi-plus-circle"></i> Deposit</a>
+    <a href="${pageContext.request.contextPath}/deposit/withdraw/${account.accountNumber}" class="btn btn-fv-warning btn-sm"><i class="bi bi-dash-circle"></i> Withdraw</a>
+    <a href="${pageContext.request.contextPath}/deposit/transfer" class="btn btn-fv-primary btn-sm"><i class="bi bi-arrow-left-right"></i> Transfer</a>
     <a href="${pageContext.request.contextPath}/deposit/statement/${account.accountNumber}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-journal-text"></i> Statement</a>
     <c:if test="${pageContext.request.isUserInRole('ROLE_ADMIN')}">
     <form method="post" action="${pageContext.request.contextPath}/deposit/freeze/${account.accountNumber}" class="d-inline">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
         <input type="hidden" name="freezeType" value="TOTAL_FREEZE"/>
         <input type="hidden" name="reason" value="Admin freeze"/>
-        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Freeze this account?')"><i class="bi bi-lock"></i> Freeze</button>
+        <button type="submit" class="btn btn-fv-danger btn-sm" data-confirm="Freeze this account? All debits will be blocked until unfrozen."><i class="bi bi-lock"></i> Freeze</button>
     </form>
     </c:if>
 </div></div>
@@ -111,23 +124,24 @@
 <div class="card mt-3"><div class="card-body">
     <form method="post" action="${pageContext.request.contextPath}/deposit/unfreeze/${account.accountNumber}" class="d-inline">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-        <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('Unfreeze this account?')"><i class="bi bi-unlock"></i> Unfreeze Account</button>
+        <button type="submit" class="btn btn-fv-success btn-sm" data-confirm="Unfreeze this account? All transaction restrictions will be lifted."><i class="bi bi-unlock"></i> Unfreeze Account</button>
     </form>
 </div></div>
 </c:if>
 <c:if test="${(pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')) && !account.closed}">
 <div class="card mt-3"><div class="card-body">
-    <form method="post" action="${pageContext.request.contextPath}/deposit/close/${account.accountNumber}" class="d-inline">
+    <form method="post" action="${pageContext.request.contextPath}/deposit/close/${account.accountNumber}" class="fv-form d-inline">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-        <input type="hidden" name="reason" value="" id="closeReason"/>
-        <button type="submit" class="btn btn-outline-danger btn-sm"
-            onclick="var r=prompt('Closure reason (mandatory):'); if(!r){return false;} document.getElementById('closeReason').value=r; return confirm('Close this account? Balance must be zero.');">
+        <input type="hidden" name="reason" value="" class="fv-reason-field"/>
+        <button type="button" class="btn btn-outline-danger btn-sm"
+            data-fv-reason-prompt="Closure reason (mandatory):"
+            data-fv-reason-confirm="Close this account? Balance must be zero."
+            onclick="fvPromptReason(this);">
             <i class="bi bi-x-circle"></i> Close Account
         </button>
     </form>
 </div></div>
 </c:if>
-</div></div>
 
 <!-- CBS Account Maintenance per Finacle ACCTMOD -->
 <c:if test="${account.active && (pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN'))}">
@@ -180,18 +194,18 @@
             <div class="row mb-3">
                 <div class="col-md-2">
                     <label class="form-label small">Daily Withdrawal Limit</label>
-                    <input type="number" name="dailyWithdrawalLimit" class="form-control form-control-sm" data-fv-type="amount" value="${account.dailyWithdrawalLimit}"/>
+                    <input type="number" name="dailyWithdrawalLimit" class="form-control form-control-sm" data-fv-type="amount" step="0.01" value="${account.dailyWithdrawalLimit}"/>
                     <small class="text-muted">0 = unlimited</small>
                 </div>
                 <div class="col-md-2">
                     <label class="form-label small">Daily Transfer Limit</label>
-                    <input type="number" name="dailyTransferLimit" class="form-control form-control-sm" data-fv-type="amount" value="${account.dailyTransferLimit}"/>
+                    <input type="number" name="dailyTransferLimit" class="form-control form-control-sm" data-fv-type="amount" step="0.01" value="${account.dailyTransferLimit}"/>
                     <small class="text-muted">0 = unlimited</small>
                 </div>
                 <c:if test="${account.accountType == 'CURRENT_OD'}">
                 <div class="col-md-2">
                     <label class="form-label small">OD Limit (INR)</label>
-                    <input type="number" name="odLimit" class="form-control form-control-sm" data-fv-type="amount" value="${account.odLimit}"/>
+                    <input type="number" name="odLimit" class="form-control form-control-sm" data-fv-type="amount" step="0.01" value="${account.odLimit}"/>
                 </div>
                 </c:if>
                 <c:if test="${account.savings}">
@@ -203,7 +217,7 @@
                 </c:if>
                 <div class="col-md-2">
                     <label class="form-label small">Min Balance (INR)</label>
-                    <input type="number" name="minimumBalance" class="form-control form-control-sm" data-fv-type="amount" value="${account.minimumBalance}"/>
+                    <input type="number" name="minimumBalance" class="form-control form-control-sm" data-fv-type="amount" step="0.01" value="${account.minimumBalance}"/>
                     <small class="text-muted">0 = no minimum</small>
                 </div>
                 <div class="col-md-2 d-flex align-items-end">
@@ -285,7 +299,7 @@
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Amount (INR) *</label>
-                    <input type="number" name="amount" class="form-control" data-fv-type="amount" min="1" required/>
+                    <input type="number" name="amount" class="form-control" data-fv-type="amount" step="0.01" min="1" required/>
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Frequency *</label>
@@ -347,12 +361,14 @@
     </c:choose></td>
     <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
     <td><c:if test="${!t.reversed && t.transactionType != 'REVERSAL' && !account.closed}">
-        <form method="post" action="${pageContext.request.contextPath}/deposit/reversal/${t.transactionRef}" style="display:inline">
+        <form method="post" action="${pageContext.request.contextPath}/deposit/reversal/${t.transactionRef}" class="fv-form d-inline">
             <input type="hidden" name="accountNumber" value="<c:out value='${account.accountNumber}'/>"/>
-            <input type="hidden" name="reason" value="" id="reason_${t.id}"/>
+            <input type="hidden" name="reason" value="" class="fv-reason-field"/>
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
-            <button type="submit" class="btn btn-sm btn-outline-danger"
-                onclick="var r=prompt('Reversal reason (mandatory):'); if(!r){return false;} document.getElementById('reason_${t.id}').value=r; return confirm('Reverse this transaction?');">
+            <button type="button" class="btn btn-sm btn-outline-danger"
+                data-fv-reason-prompt="Reversal reason (mandatory):"
+                data-fv-reason-confirm="Reverse this CASA transaction?"
+                onclick="fvPromptReason(this);">
                 Reverse
             </button>
         </form>

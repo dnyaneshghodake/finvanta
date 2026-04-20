@@ -1,17 +1,25 @@
 package com.finvanta.api;
 
 import com.finvanta.util.BusinessException;
+import com.finvanta.util.MfaRequiredException;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.stream.Collectors;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * CBS Global API Exception Handler per Finacle API / Temenos IRIS.
@@ -25,71 +33,81 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(basePackages = "com.finvanta.api")
 public class ApiExceptionHandler {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(ApiExceptionHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    @ExceptionHandler(MfaRequiredException.class)
+    public ResponseEntity<ApiResponse<Map<String, String>>> handleMfaRequired(MfaRequiredException ex) {
+        log.info("API mfa step-up required: challenge={}", ex.getChallengeId());
+        exposeErrorCode(ex.getErrorCode());
+        Map<String, String> payload = new HashMap<>();
+        payload.put("challengeId", ex.getChallengeId());
+        payload.put("channel", ex.getChannel());
+        return ResponseEntity.status(428).body(ApiResponse.errorWithData(ex.getErrorCode(), ex.getMessage(), payload));
+    }
 
     @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<ApiResponse<Void>> handleBusiness(
-            BusinessException ex) {
-        log.warn("API business error: {} — {}",
-                ex.getErrorCode(), ex.getMessage());
-        HttpStatus status = mapErrorCodeToStatus(
-                ex.getErrorCode());
-        return ResponseEntity.status(status)
+    public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException ex) {
+        log.warn("API business error: {} — {}", ex.getErrorCode(), ex.getMessage());
+        exposeErrorCode(ex.getErrorCode());
+        HttpStatus status = mapErrorCodeToStatus(ex.getErrorCode());
+        return ResponseEntity.status(status).body(ApiResponse.error(ex.getErrorCode(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiResponse<Void>> handleOptimisticLock(OptimisticLockingFailureException ex) {
+        log.warn("API optimistic lock failure: {}", ex.getMessage());
+        exposeErrorCode("VERSION_CONFLICT");
+        return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponse.error(
-                        ex.getErrorCode(),
-                        ex.getMessage()));
+                        "VERSION_CONFLICT", "Record was modified by another user. " + "Please reload and retry."));
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<ApiResponse<Void>> handleAccess(
-            AccessDeniedException ex) {
+    public ResponseEntity<ApiResponse<Void>> handleAccess(AccessDeniedException ex) {
+        exposeErrorCode("ACCESS_DENIED");
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(ApiResponse.error(
-                        "ACCESS_DENIED",
-                        "Insufficient privileges for this "
-                                + "operation"));
+                .body(ApiResponse.error("ACCESS_DENIED", "Insufficient privileges for this " + "operation"));
     }
 
-    /**
-     * Handles @Valid validation failures on @RequestBody DTOs.
-     * Per Finacle API: returns structured field-level error messages
-     * so API consumers can fix specific fields without guessing.
-     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiResponse<Void>> handleValidation(
-            MethodArgumentNotValidException ex) {
-        String errors = ex.getBindingResult()
-                .getFieldErrors().stream()
-                .map(fe -> fe.getField() + ": "
-                        + fe.getDefaultMessage())
+    public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
+        exposeErrorCode("VALIDATION_FAILED");
+        String errors = ex.getBindingResult().getFieldErrors().stream()
+                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
                 .collect(Collectors.joining("; "));
-        return ResponseEntity.badRequest()
-                .body(ApiResponse.error(
-                        "VALIDATION_FAILED", errors));
+        return ResponseEntity.badRequest().body(ApiResponse.error("VALIDATION_FAILED", errors));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ApiResponse<Void>> handleBadArg(
-            IllegalArgumentException ex) {
-        return ResponseEntity.badRequest()
-                .body(ApiResponse.error(
-                        "INVALID_REQUEST",
-                        ex.getMessage()));
+    public ResponseEntity<ApiResponse<Void>> handleBadArg(IllegalArgumentException ex) {
+        exposeErrorCode("INVALID_REQUEST");
+        return ResponseEntity.badRequest().body(ApiResponse.error("INVALID_REQUEST", ex.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<Void>> handleGeneric(
-            Exception ex) {
-        // CBS SECURITY: Never expose internal details
-        log.error("API unhandled error: {}", ex.getMessage(),
-                ex);
-        return ResponseEntity
-                .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error(
-                        "INTERNAL_ERROR",
-                        "An unexpected error occurred. "
-                                + "Contact support."));
+    public ResponseEntity<ApiResponse<Void>> handleGeneric(Exception ex) {
+        log.error("API unhandled error: {}", ex.getMessage(), ex);
+        exposeErrorCode("INTERNAL_ERROR");
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred. " + "Contact support."));
+    }
+
+    /**
+     * CBS: Expose the error code as a request attribute so the
+     * JwtAuthenticationFilter's access log can include it without
+     * reading the response body. Per Finacle TRAN_LOG: every API
+     * error must carry the error code in the access log for SOC.
+     */
+    private void exposeErrorCode(String errorCode) {
+        try {
+            ServletRequestAttributes attrs = (ServletRequestAttributes)
+                    RequestContextHolder.getRequestAttributes();
+            if (attrs != null) {
+                attrs.getRequest().setAttribute("fvErrorCode", errorCode);
+            }
+        } catch (Exception ignored) {
+            // Never fail the error response for logging
+        }
     }
 
     /**
@@ -101,43 +119,38 @@ public class ApiExceptionHandler {
         if (code == null) return HttpStatus.BAD_REQUEST;
         return switch (code) {
             case "CLEARING_NOT_FOUND",
-                 "ACCOUNT_NOT_FOUND",
-                 "BENEFICIARY_NOT_FOUND",
-                 "BRANCH_NOT_FOUND",
-                 "CHARGE_NOT_FOUND",
-                 "CYCLE_NOT_FOUND",
-                 "LOAN_NOT_FOUND",
-                 "APPLICATION_NOT_FOUND",
-                 "CUSTOMER_NOT_FOUND",
-                 "TRANSACTION_NOT_FOUND",
-                 "FD_NOT_FOUND",
-                 "GL_NOT_FOUND",
-                 "NOTIFICATION_NOT_FOUND",
-                 "TEMPLATE_NOT_FOUND" ->
-                    HttpStatus.NOT_FOUND;
+                    "ACCOUNT_NOT_FOUND",
+                    "BENEFICIARY_NOT_FOUND",
+                    "BRANCH_NOT_FOUND",
+                    "CHARGE_NOT_FOUND",
+                    "CYCLE_NOT_FOUND",
+                    "LOAN_NOT_FOUND",
+                    "APPLICATION_NOT_FOUND",
+                    "CUSTOMER_NOT_FOUND",
+                    "TRANSACTION_NOT_FOUND",
+                    "FD_NOT_FOUND",
+                    "GL_NOT_FOUND",
+                    "NOTIFICATION_NOT_FOUND",
+                    "TEMPLATE_NOT_FOUND" -> HttpStatus.NOT_FOUND;
             case "DUPLICATE_CLEARING_REF",
-                 "ALREADY_TERMINAL",
-                 "ALREADY_WAIVED",
-                 "ALREADY_REVERSED",
-                 "ALREADY_DISBURSED",
-                 "ALREADY_CLOSED",
-                 "CLEARING_IN_PROGRESS",
-                 "DUPLICATE_TRANSACTION" ->
-                    HttpStatus.CONFLICT;
+                    "ALREADY_TERMINAL",
+                    "ALREADY_WAIVED",
+                    "ALREADY_REVERSED",
+                    "ALREADY_DISBURSED",
+                    "ALREADY_CLOSED",
+                    "CLEARING_IN_PROGRESS",
+                    "DUPLICATE_TRANSACTION" -> HttpStatus.CONFLICT;
             case "INSUFFICIENT_BALANCE",
-                 "ACCOUNT_FROZEN",
-                 "ACCOUNT_CLOSED",
-                 "ACCOUNT_DORMANT",
-                 "DEBIT_NOT_ALLOWED",
-                 "CREDIT_NOT_ALLOWED",
-                 "FD_NOT_ACTIVE",
-                 "PREMATURE_NOT_ALLOWED",
-                 "LIEN_BLOCKED",
-                 "KYC_NOT_VERIFIED" ->
-                    HttpStatus.UNPROCESSABLE_ENTITY;
-            case "WORKFLOW_SELF_APPROVAL",
-                 "BRANCH_ACCESS_DENIED" ->
-                    HttpStatus.FORBIDDEN;
+                    "ACCOUNT_FROZEN",
+                    "ACCOUNT_CLOSED",
+                    "ACCOUNT_DORMANT",
+                    "DEBIT_NOT_ALLOWED",
+                    "CREDIT_NOT_ALLOWED",
+                    "FD_NOT_ACTIVE",
+                    "PREMATURE_NOT_ALLOWED",
+                    "LIEN_BLOCKED",
+                    "KYC_NOT_VERIFIED" -> HttpStatus.UNPROCESSABLE_ENTITY;
+            case "WORKFLOW_SELF_APPROVAL", "BRANCH_ACCESS_DENIED" -> HttpStatus.FORBIDDEN;
             default -> HttpStatus.BAD_REQUEST;
         };
     }

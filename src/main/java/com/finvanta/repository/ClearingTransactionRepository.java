@@ -6,6 +6,7 @@ import com.finvanta.domain.enums.ClearingStatus;
 import com.finvanta.domain.enums.PaymentRail;
 
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -16,6 +17,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -63,8 +65,10 @@ public interface ClearingTransactionRepository extends JpaRepository<ClearingTra
             @Param("tenantId") String tenantId,
             @Param("activeStatuses") List<ClearingStatus> activeStatuses);
 
-    /** Find and lock for settlement processing */
+    /** Find and lock for settlement processing.
+     *  30s lock timeout per Finacle CLG_LOCK — settlement batches may lock many rows. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
     @Query("SELECT ct FROM ClearingTransaction ct WHERE ct.tenantId = :tenantId "
             + "AND ct.status = :status AND ct.paymentRail = :rail "
             + "ORDER BY ct.initiatedAt ASC")

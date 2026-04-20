@@ -4,16 +4,21 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Branches</li>
+    </ul>
+
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
     <div class="fv-card">
-        <div class="card-header">Branch List <a href="${pageContext.request.contextPath}/branch/add" class="btn btn-sm btn-fv-primary float-end"><i class="bi bi-plus-circle"></i> Add Branch</a></div>
+        <div class="card-header"><i class="bi bi-building"></i> Branch List <a href="${pageContext.request.contextPath}/branch/add" class="btn btn-sm btn-fv-primary float-end"><i class="bi bi-plus-circle"></i> Add Branch</a></div>
         <div class="card-body">
             <!-- CBS: Branch search per Finacle BRNINQ -->
             <form method="get" action="${pageContext.request.contextPath}/branch/search" class="row g-2 mb-3">
                 <div class="col-auto">
-                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by code, name, IFSC, city, zone, region, type..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:360px;" />
+                    <input type="text" name="q" class="form-control form-control-sm fv-search-input" placeholder="Search by code, name, IFSC, city, zone, region, type..." value="<c:out value='${searchQuery}'/>" minlength="2" />
                 </div>
                 <div class="col-auto">
                     <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>

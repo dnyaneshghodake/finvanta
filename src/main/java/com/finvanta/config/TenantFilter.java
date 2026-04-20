@@ -4,9 +4,11 @@ import com.finvanta.util.TenantContext;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
 import org.slf4j.MDC;
@@ -60,6 +62,18 @@ public class TenantFilter implements Filter {
     private static final String MDC_USER = "username";
 
     /**
+     * CBS Tier-1: Request correlation ID per RBI IT Governance Direction 2023 §7.4.
+     * Unique per HTTP request for SIEM correlation and support escalation.
+     * Exposed to error pages via request attribute so users can quote it to support.
+     * Per Finacle TRAN_REF / Temenos OFS.ID: every operation has a traceable reference.
+     */
+    private static final String MDC_REQUEST_ID = "requestId";
+    private static final String REQUEST_ATTR_REQUEST_ID = "fvRequestId";
+
+    /** Monotonic counter for unique request IDs — survives servlet request object reuse. */
+    private static final AtomicLong REQUEST_COUNTER = new AtomicLong(0);
+
+    /**
      * Populate username and branchCode MDC keys from the HTTP session's SecurityContext.
      *
      * Per Finacle/Temenos: reads SPRING_SECURITY_CONTEXT directly from the session
@@ -97,14 +111,22 @@ public class TenantFilter implements Filter {
             throws IOException, ServletException {
         try {
             HttpServletRequest httpRequest = (HttpServletRequest) request;
+            HttpServletResponse httpResponse = (HttpServletResponse) response;
+            String path = httpRequest.getRequestURI();
+            String contextPath = httpRequest.getContextPath();
+            boolean isApiRequest = contextPath != null
+                    && path != null
+                    && path.startsWith(contextPath + "/v1/");
 
             // === Resolve Tenant ID ===
-            // Priority: X-Tenant-Id header → session → DEFAULT fallback.
+            // Priority: X-Tenant-Id header → session → DEFAULT fallback (UI chain only).
             // Per Finacle BANK_MASTER: tenant ID is resolved once at login and
             // stored in session. The header is for API/service-to-service calls.
-            String tenantId = httpRequest.getHeader("X-Tenant-Id");
+            String rawHeader = httpRequest.getHeader("X-Tenant-Id");
+            boolean headerProvided = rawHeader != null && !rawHeader.isBlank();
+            String tenantId = headerProvided ? rawHeader : null;
 
-            if (tenantId == null || tenantId.isBlank()) {
+            if (tenantId == null) {
                 HttpSession session = httpRequest.getSession(false);
                 if (session != null) {
                     Object sessionTenant = session.getAttribute(TENANT_SESSION_KEY);
@@ -114,16 +136,37 @@ public class TenantFilter implements Filter {
                 }
             }
 
-            if (tenantId == null || tenantId.isBlank()) {
-                tenantId = DEFAULT_TENANT;
-            }
-
             // CBS Security: Validate tenant ID format to prevent injection attacks.
             // Per RBI IT Governance Direction 2023 §8.1: all external input must be
             // validated against expected format before use. An attacker could send
             // X-Tenant-Id with SQL/JPQL special characters to manipulate queries.
             // Only alphanumeric + underscore, max 20 chars (matches DB column length).
-            if (!TENANT_ID_PATTERN.matcher(tenantId).matches()) {
+            boolean tenantIsMalformed = tenantId != null
+                    && !TENANT_ID_PATTERN.matcher(tenantId).matches();
+
+            // CBS API chain: a malformed or missing header on /api/v1/** must fail-fast
+            // with HTTP 400. Silent fallback to DEFAULT for machine-to-machine traffic
+            // would cause cross-tenant data leaks for any client that mistyped the
+            // header name. Per Finacle Connect / Temenos IRIS API standards.
+            if (isApiRequest && (tenantIsMalformed || !headerProvided)) {
+                String errorCode = tenantIsMalformed ? "INVALID_TENANT_ID" : "MISSING_TENANT_ID";
+                String message = tenantIsMalformed
+                        ? "X-Tenant-Id header is malformed. Must match [A-Za-z0-9_]{1,20}."
+                        : "X-Tenant-Id header is required for /api/v1/** requests.";
+                httpResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                httpResponse.setContentType("application/json");
+                httpResponse.getWriter().write(
+                        "{\"status\":\"ERROR\",\"errorCode\":\""
+                                + errorCode
+                                + "\",\"message\":\""
+                                + message
+                                + "\"}");
+                return;
+            }
+
+            // UI chain retains lenient fallback: a malformed or missing header is
+            // tolerated (returns DEFAULT) so that login/static/error pages still work.
+            if (tenantIsMalformed || tenantId == null || tenantId.isBlank()) {
                 tenantId = DEFAULT_TENANT;
             }
 
@@ -132,6 +175,17 @@ public class TenantFilter implements Filter {
             // === Set MDC for structured logging ===
             // Tenant ID is always available at this point (resolved above).
             MDC.put(MDC_TENANT, tenantId);
+
+            // CBS Tier-1: Generate unique request ID for correlation.
+            // Format: yyyyMMddHHmmss-NNNNN (compact, sortable, human-readable, guaranteed unique).
+            // Uses AtomicLong counter instead of System.identityHashCode because servlet
+            // containers reuse request objects from a pool — identityHashCode is NOT unique.
+            // Exposed as request attribute for error pages and as MDC key for log lines.
+            String requestId = java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                    + "-" + Long.toHexString(REQUEST_COUNTER.incrementAndGet()).toUpperCase();
+            MDC.put(MDC_REQUEST_ID, requestId);
+            httpRequest.setAttribute(REQUEST_ATTR_REQUEST_ID, requestId);
 
             // CBS: Username and branch MDC are set BEFORE chain.doFilter().
             // For the FIRST request (login POST), SecurityContext is empty here
@@ -147,7 +201,13 @@ public class TenantFilter implements Filter {
             chain.doFilter(request, response);
         } finally {
             TenantContext.clear();
-            MDC.clear();
+            // Only remove the MDC keys this filter added — do NOT call
+            // MDC.clear() which would wipe correlationId set by the outer
+            // CorrelationIdMdcFilter (Order 0) during filter-chain unwinding.
+            MDC.remove(MDC_TENANT);
+            MDC.remove(MDC_BRANCH);
+            MDC.remove(MDC_USER);
+            MDC.remove(MDC_REQUEST_ID);
         }
     }
 }

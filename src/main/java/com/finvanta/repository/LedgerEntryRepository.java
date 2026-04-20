@@ -28,8 +28,14 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, Long> 
     /**
      * Get the latest ledger entry with pessimistic lock to serialize concurrent postings.
      * Prevents race conditions where two concurrent postings get the same sequence/hash.
+     * 30s lock timeout per Finacle LEDGER_LOCK standard.
+     *
+     * <p><b>Note:</b> This method is superseded by TenantLedgerState sentinel locking
+     * in LedgerService.postToLedger(). Retained for backward compatibility and
+     * LedgerService.ensureAndLockSentinel() legacy-tenant seeding path.
      */
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
     @Query("SELECT le FROM LedgerEntry le WHERE le.tenantId = :tenantId " + "ORDER BY le.ledgerSequence DESC")
     List<LedgerEntry> findTopByTenantIdForUpdate(
             @Param("tenantId") String tenantId, org.springframework.data.domain.Pageable pageable);

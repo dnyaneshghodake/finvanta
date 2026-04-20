@@ -5,20 +5,25 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-<c:if test="${not empty success}"><div class="alert alert-success"><c:out value="${success}"/></div></c:if>
-<c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+<ul class="fv-breadcrumb">
+    <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+    <li class="active">CASA Accounts</li>
+</ul>
+
+<c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}"/></div></c:if>
+<c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4>CASA Accounts</h4>
+    <h4><i class="bi bi-wallet2"></i> CASA Accounts</h4>
     <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
-    <a href="${pageContext.request.contextPath}/deposit/open" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle"></i> Open Account</a>
+    <a href="${pageContext.request.contextPath}/deposit/open" class="btn btn-fv-primary btn-sm"><i class="bi bi-plus-circle"></i> Open Account</a>
     </c:if>
 </div>
 
 <!-- CBS: CASA Account search per Finacle ACCTINQ -->
 <form method="get" action="${pageContext.request.contextPath}/deposit/search" class="row g-2 mb-3">
     <div class="col-auto">
-        <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by account no, CIF, customer name..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:320px;" />
+        <input type="text" name="q" class="form-control form-control-sm fv-search-input" placeholder="Search by account no, CIF, customer name..." value="<c:out value='${searchQuery}'/>" minlength="2" />
     </div>
     <div class="col-auto">
         <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>

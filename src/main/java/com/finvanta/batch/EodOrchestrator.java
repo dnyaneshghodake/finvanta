@@ -51,14 +51,15 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <b>IMPORTANT: This is the Phase 2 EOD orchestrator with inter-branch settlement
  * and clearing validation. The currently active EOD entry point used by
- * {@link com.finvanta.controller.BatchController} is {@link BatchService#runEodBatch(java.time.LocalDate)}.
+ * {@link com.finvanta.controller.BatchController} is
+ * {@link com.finvanta.legacy.BatchService#runEodBatch(java.time.LocalDate)}.
  * Do NOT wire both into the same controller/scheduler.</b>
  *
  * <p>When Phase 2 migration is complete (inter-branch and clearing modules validated),
  * switch {@code BatchController} to call {@code EodOrchestrator.executeEod()} and
- * deprecate {@code BatchService.runEodBatch()}.
+ * delete the legacy {@code com.finvanta.legacy.BatchService}.
  *
- * <p>Differences from BatchService:
+ * <p>Differences from legacy BatchService:
  * <ul>
  *   <li>Adds Step 7.5: Inter-Branch Settlement (per Finacle IB_SETTLEMENT)</li>
  *   <li>Adds Step 7.6: Clearing Suspense Validation (per Finacle CLG_MASTER)</li>
@@ -1095,5 +1096,37 @@ public class EodOrchestrator {
                 .append(": ")
                 .append(e.getMessage())
                 .append("\n");
+    }
+
+    // ------------------------------------------------------------------
+    // Read-only queries for the EOD dashboard (BatchController).
+    //
+    // These replace the callers that previously depended on
+    // com.finvanta.legacy.BatchService, which caused
+    // CbsArchitectureTest.legacyPackage_notDependedOnFromProduction to fail
+    // because production code must not depend on the legacy package.
+    // Both methods are tenant-scoped via TenantContext and are pure reads
+    // (no transactional boundary needed).
+    // ------------------------------------------------------------------
+
+    /**
+     * Returns the full batch job history for the current tenant, most recent first.
+     * Per Finacle BATCH_HIST / Temenos EB.BATCH.LOG: operators review the last N
+     * EOD runs from the batch dashboard.
+     */
+    public List<BatchJob> getBatchHistory() {
+        return batchJobRepository.findByTenantIdOrderByCreatedAtDesc(TenantContext.getCurrentTenant());
+    }
+
+    /**
+     * Returns the EOD_BATCH job for a specific business date, or {@code null}
+     * if no EOD has been initiated for that date.
+     * Per Finacle DAYCTRL: EOD re-run detection relies on this lookup.
+     */
+    public BatchJob getBatchJobByDate(LocalDate businessDate) {
+        return batchJobRepository
+                .findByTenantIdAndJobNameAndBusinessDate(
+                        TenantContext.getCurrentTenant(), "EOD", businessDate)
+                .orElse(null);
     }
 }

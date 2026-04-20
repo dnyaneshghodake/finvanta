@@ -31,7 +31,9 @@ public interface LoanTransactionRepository extends JpaRepository<LoanTransaction
             @Param("accountId") Long accountId,
             @Param("type") TransactionType type);
 
-    @Query("SELECT t FROM LoanTransaction t WHERE t.tenantId = :tenantId "
+    /** JOIN FETCH loanAccount for voucher-register.jsp and txn360 (OSIV disabled). */
+    @Query("SELECT t FROM LoanTransaction t JOIN FETCH t.loanAccount "
+            + "WHERE t.tenantId = :tenantId "
             + "AND t.valueDate BETWEEN :fromDate AND :toDate ORDER BY t.postingDate")
     List<LoanTransaction> findByTenantIdAndValueDateBetween(
             @Param("tenantId") String tenantId,

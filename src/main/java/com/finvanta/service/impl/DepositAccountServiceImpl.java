@@ -320,10 +320,17 @@ public class DepositAccountServiceImpl implements DepositAccountService {
     /**
      * Build and persist a DepositTransaction record.
      *
-     * @param debitCredit Explicit "DEBIT" or "CREDIT" — caller determines direction.
-     *                    Per Finacle TRAN_DETAIL: debit/credit indicator must be set by
-     *                    the posting logic, not inferred from transaction type name strings.
-     *                    This prevents misclassification of REVERSAL transactions.
+     * <p><b>CBS Tier-1: Before/After Balance Tracking</b>
+     * Per RBI IT Governance Direction 2023 §8.3 and Finacle TRAN_DETAIL:
+     * every transaction record must carry both balance_before and balance_after.
+     * This enables RBI auditors to verify: balance_after = balance_before ± amount.
+     *
+     * <p>The caller MUST capture balanceBefore BEFORE mutating acct.ledgerBalance.
+     * After mutation, acct.getLedgerBalance() = balance_after (set by buildTxn).
+     *
+     * @param debitCredit   Explicit "DEBIT" or "CREDIT" — caller determines direction.
+     * @param balanceBefore Ledger balance BEFORE this transaction was applied.
+     *                      Must be captured by the caller before balance mutation.
      */
     private DepositTransaction buildTxn(
             DepositAccount acct,
@@ -336,7 +343,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             String txnRef,
             String idempotencyKey,
             String channel,
-            String counterparty) {
+            String counterparty,
+            BigDecimal balanceBefore) {
         DepositTransaction txn = new DepositTransaction();
         txn.setTenantId(acct.getTenantId());
         txn.setTransactionRef(txnRef);
@@ -351,6 +359,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         txn.setValueDate(valueDate);
         txn.setPostingDate(LocalDateTime.now());
         txn.setDebitCredit(debitCredit);
+        // CBS Tier-1: Before/after balance for complete audit trail
+        txn.setBalanceBefore(balanceBefore);
         txn.setBalanceAfter(acct.getLedgerBalance());
         txn.setNarration(narration);
         txn.setJournalEntryId(result.getJournalEntryId());
@@ -361,6 +371,27 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         txn.setCreatedBy(SecurityUtil.getCurrentUsername());
         txn.setUpdatedBy(SecurityUtil.getCurrentUsername());
         return transactionRepository.save(txn);
+    }
+
+    /**
+     * Backward-compatible buildTxn without explicit balanceBefore.
+     * Uses current ledger balance as both before and after (for PENDING_APPROVAL
+     * transactions where balance has not been mutated).
+     */
+    private DepositTransaction buildTxn(
+            DepositAccount acct,
+            BigDecimal amount,
+            String txnType,
+            String debitCredit,
+            LocalDate valueDate,
+            String narration,
+            TransactionResult result,
+            String txnRef,
+            String idempotencyKey,
+            String channel,
+            String counterparty) {
+        return buildTxn(acct, amount, txnType, debitCredit, valueDate, narration,
+                result, txnRef, idempotencyKey, channel, counterparty, acct.getLedgerBalance());
     }
 
     // === Account Opening ===
@@ -595,6 +626,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                     channel,
                     null);
         }
+        // CBS Tier-1: Capture balance BEFORE mutation for audit trail
+        BigDecimal balanceBefore = acct.getLedgerBalance();
         acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
@@ -603,7 +636,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
             acct.setDormantDate(null);
             // CBS: Audit trail for dormancy reactivation per RBI IT Governance Direction 2023.
             // Per RBI KYC 2016 Sec 38: deposit on dormant account reactivates it.
-            auditService.logEvent(
+            // CBS CRITICAL: Use logEventInline (REQUIRED) — NOT logEvent (REQUIRES_NEW).
+            // At this point we hold PESSIMISTIC_WRITE lock on the deposit account row
+            // (acquired via lockAccount). logEvent(REQUIRES_NEW) would suspend this TX
+            // without releasing the lock — same deadlock vector as AccountingService.
+            auditService.logEventInline(
                     "DepositAccount",
                     acct.getId(),
                     "DORMANCY_REACTIVATED",
@@ -626,7 +663,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 r.getTransactionRef(),
                 idempotencyKey,
                 channel,
-                null);
+                null,
+                balanceBefore);
     }
 
     // === Withdrawal ===
@@ -723,13 +761,15 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                     channel,
                     null);
         }
+        // CBS Tier-1: Capture balance BEFORE mutation for audit trail
+        BigDecimal balanceBefore = acct.getLedgerBalance();
         acct.setLedgerBalance(acct.getLedgerBalance().subtract(amount));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(bd);
         acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
         return buildTxn(
-                acct, amount, "CASH_WITHDRAWAL", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, channel, null);
+                acct, amount, "CASH_WITHDRAWAL", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, channel, null, balanceBefore);
     }
 
     // === Transfer ===
@@ -833,6 +873,9 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                     "INTERNAL",
                     to);
         }
+        // CBS Tier-1: Capture balance BEFORE mutation for both accounts
+        BigDecimal srcBalanceBefore = src.getLedgerBalance();
+        BigDecimal tgtBalanceBefore = tgt.getLedgerBalance();
         src.setLedgerBalance(src.getLedgerBalance().subtract(amount));
         recomputeAvailable(src);
         src.setLastTransactionDate(bd);
@@ -844,7 +887,11 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         if (tgt.isDormant()) {
             tgt.setAccountStatus(DepositAccountStatus.ACTIVE);
             tgt.setDormantDate(null);
-            auditService.logEvent(
+            // CBS CRITICAL: Use logEventInline (REQUIRED) — NOT logEvent (REQUIRES_NEW).
+            // At this point we hold PESSIMISTIC_WRITE locks on BOTH source and target
+            // accounts (locked at lines 756-757). logEvent(REQUIRES_NEW) would suspend
+            // this TX without releasing those locks — deadlock vector on SQL Server.
+            auditService.logEventInline(
                     "DepositAccount",
                     tgt.getId(),
                     "DORMANCY_REACTIVATED",
@@ -871,9 +918,10 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 creditTxnRef,
                 null,
                 "INTERNAL",
-                from);
+                from,
+                tgtBalanceBefore);
         return buildTxn(
-                src, amount, "TRANSFER_DEBIT", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, "INTERNAL", to);
+                src, amount, "TRANSFER_DEBIT", "DEBIT", bd, narration, r, r.getTransactionRef(), idk, "INTERNAL", to, srcBalanceBefore);
     }
 
     // === Interest Accrual (EOD daily) ===
@@ -1239,6 +1287,69 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 "Account closed: " + acn + " reason=" + reason);
         log.info("Account closed: {}", acn);
         return saved;
+    }
+
+    // === Maker-Checker Subledger Update ===
+    // CBS Tier-1: Apply account balance effect after checker-approved GL posting.
+    // Called by WorkflowController after TransactionReExecutionService posts the GL.
+    @Override
+    @Transactional
+    public DepositTransaction applyApprovedTransaction(
+            String accountNumber,
+            BigDecimal amount,
+            String transactionType,
+            TransactionResult result,
+            LocalDate businessDate) {
+        String tid = TenantContext.getCurrentTenant();
+        DepositAccount acct = lockAccount(tid, accountNumber);
+
+        // Determine debit/credit direction from transaction type
+        boolean isCredit = "CASH_DEPOSIT".equals(transactionType)
+                || "TRANSFER_CREDIT".equals(transactionType)
+                || "INTEREST_CREDIT".equals(transactionType);
+
+        // CBS Tier-1: Capture balance BEFORE mutation for audit trail
+        BigDecimal balanceBefore = acct.getLedgerBalance();
+
+        // Apply balance effect
+        if (isCredit) {
+            acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
+        } else {
+            // CASH_WITHDRAWAL, TRANSFER_DEBIT, TDS_DEBIT, CHARGE_DEBIT
+            if (!acct.hasSufficientFunds(amount)) {
+                throw new BusinessException("INSUFFICIENT_BALANCE",
+                        "Approved transaction cannot be applied: insufficient funds. "
+                                + "Available: " + acct.getEffectiveAvailable() + ", Required: " + amount);
+            }
+            acct.setLedgerBalance(acct.getLedgerBalance().subtract(amount));
+        }
+        recomputeAvailable(acct);
+        acct.setLastTransactionDate(businessDate);
+
+        // CBS: Dormancy reactivation on credit (same as deposit())
+        if (isCredit && acct.isDormant()) {
+            acct.setAccountStatus(DepositAccountStatus.ACTIVE);
+            acct.setDormantDate(null);
+            auditService.logEventInline(
+                    "DepositAccount", acct.getId(), "DORMANCY_REACTIVATED",
+                    "DORMANT", "ACTIVE", "DEPOSIT",
+                    "Account reactivated via approved " + transactionType + ": " + accountNumber);
+        }
+
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        accountRepository.save(acct);
+
+        String debitCredit = isCredit ? "CREDIT" : "DEBIT";
+        String narration = "Maker-checker approved " + transactionType
+                + " | Voucher: " + result.getVoucherNumber();
+
+        log.info("Maker-checker subledger applied: account={}, type={}, amount={}, direction={}, "
+                + "balanceBefore={}, balanceAfter={}",
+                accountNumber, transactionType, amount, debitCredit, balanceBefore, acct.getLedgerBalance());
+
+        return buildTxn(
+                acct, amount, transactionType, debitCredit, businessDate, narration,
+                result, result.getTransactionRef(), null, "MAKER_CHECKER", null, balanceBefore);
     }
 
     // === Dormancy (EOD batch) ===

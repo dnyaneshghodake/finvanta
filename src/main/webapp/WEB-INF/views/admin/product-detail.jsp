@@ -5,6 +5,11 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li><a href="${pageContext.request.contextPath}/admin/products">Product Master</a></li>
+        <li class="active"><c:out value="${product.productCode}" /></li>
+    </ul>
     <div class="fv-card">
         <div class="card-header">
             Product: <c:out value="${product.productCode}" /> &mdash; <c:out value="${product.productName}" />
@@ -14,7 +19,7 @@
             <h6 class="mb-3">Product Configuration</h6>
             <table class="table fv-table">
                 <tbody>
-                <tr><td class="fw-bold" style="width:250px">Product Code</td><td><c:out value="${product.productCode}" /></td></tr>
+                <tr><td class="fw-bold fv-label-col-lg">Product Code</td><td><c:out value="${product.productCode}" /></td></tr>
                 <tr><td class="fw-bold">Product Name</td><td><c:out value="${product.productName}" /></td></tr>
                 <tr><td class="fw-bold">Category</td><td><c:out value="${product.productCategory}" /></td></tr>
                 <tr><td class="fw-bold">Currency</td><td><c:out value="${product.currencyCode}" /></td></tr>
@@ -61,31 +66,31 @@
                     <form method="post" action="${pageContext.request.contextPath}/admin/products/${product.id}/status" class="d-inline">
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <input type="hidden" name="status" value="ACTIVE" />
-                        <button type="submit" class="btn btn-sm btn-success" data-confirm="Activate this product? It will be available for new origination."><i class="bi bi-check-circle"></i> Activate</button>
+                        <button type="submit" class="btn btn-sm btn-fv-success" data-confirm="Activate this product? It will be available for new origination."><i class="bi bi-check-circle"></i> Activate</button>
                     </form>
                 </c:if>
                 <c:if test="${product.productStatus == 'ACTIVE'}">
                     <form method="post" action="${pageContext.request.contextPath}/admin/products/${product.id}/status" class="d-inline">
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <input type="hidden" name="status" value="SUSPENDED" />
-                        <button type="submit" class="btn btn-sm btn-warning" data-confirm="Suspend this product? No new origination, existing accounts continue."><i class="bi bi-pause-circle"></i> Suspend</button>
+                        <button type="submit" class="btn btn-sm btn-fv-warning" data-confirm="Suspend this product? No new origination, existing accounts continue."><i class="bi bi-pause-circle"></i> Suspend</button>
                     </form>
                     <form method="post" action="${pageContext.request.contextPath}/admin/products/${product.id}/status" class="d-inline">
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <input type="hidden" name="status" value="RETIRED" />
-                        <button type="submit" class="btn btn-sm btn-danger" data-confirm="Retire this product permanently? This cannot be undone."><i class="bi bi-x-octagon"></i> Retire</button>
+                        <button type="submit" class="btn btn-sm btn-fv-danger" data-confirm="Retire this product permanently? This cannot be undone."><i class="bi bi-x-octagon"></i> Retire</button>
                     </form>
                 </c:if>
                 <c:if test="${product.productStatus == 'SUSPENDED'}">
                     <form method="post" action="${pageContext.request.contextPath}/admin/products/${product.id}/status" class="d-inline">
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <input type="hidden" name="status" value="ACTIVE" />
-                        <button type="submit" class="btn btn-sm btn-success" data-confirm="Reactivate this product?"><i class="bi bi-play-circle"></i> Reactivate</button>
+                        <button type="submit" class="btn btn-sm btn-fv-success" data-confirm="Reactivate this product?"><i class="bi bi-play-circle"></i> Reactivate</button>
                     </form>
                     <form method="post" action="${pageContext.request.contextPath}/admin/products/${product.id}/status" class="d-inline">
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                         <input type="hidden" name="status" value="RETIRED" />
-                        <button type="submit" class="btn btn-sm btn-danger" data-confirm="Retire this product permanently? This cannot be undone."><i class="bi bi-x-octagon"></i> Retire</button>
+                        <button type="submit" class="btn btn-sm btn-fv-danger" data-confirm="Retire this product permanently? This cannot be undone."><i class="bi bi-x-octagon"></i> Retire</button>
                     </form>
                 </c:if>
             </div>

@@ -5,11 +5,17 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-<c:if test="${not empty success}"><div class="alert alert-success"><c:out value="${success}"/></div></c:if>
-<c:if test="${not empty error}"><div class="alert alert-danger"><c:out value="${error}"/></div></c:if>
+<ul class="fv-breadcrumb">
+    <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+    <li><a href="${pageContext.request.contextPath}/deposit/accounts">CASA Accounts</a></li>
+    <li class="active">Fund Transfer</li>
+</ul>
+
+<c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}"/></div></c:if>
+<c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}"/></div></c:if>
 
 <div class="fv-card">
-    <div class="card-header">Internal Fund Transfer <span class="badge bg-info ms-2">Finacle TRAN_POSTING</span></div>
+    <div class="card-header"><i class="bi bi-arrow-left-right"></i> Internal Fund Transfer <span class="badge bg-info ms-2">Finacle TRAN_POSTING</span> <div class="float-end"><a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/deposit/accounts"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a></div></div>
     <div class="card-body">
     <form method="post" action="${pageContext.request.contextPath}/deposit/transfer" class="fv-form" id="transferForm">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
@@ -18,7 +24,7 @@
         <h6 class="mb-3 text-primary"><i class="bi bi-box-arrow-right"></i> Source (Debit)</h6>
         <div class="row mb-3">
             <div class="col-md-8">
-                <label for="fromAccount" class="form-label">From Account <span class="text-danger">*</span></label>
+                <label for="fromAccount" class="form-label fv-required">From Account</label>
                 <select name="fromAccount" id="fromAccount" class="form-select" required>
                     <option value="">-- Select Source Account --</option>
                     <c:forEach var="a" items="${accounts}">
@@ -39,10 +45,12 @@
         <h6 class="mb-3 text-primary"><i class="bi bi-box-arrow-in-left"></i> Target (Credit)</h6>
         <div class="row mb-3">
             <div class="col-md-8">
-                <label for="toAccount" class="form-label">To Account <span class="text-danger">*</span></label>
+                <label for="toAccount" class="form-label fv-required">To Account</label>
+                <%-- CBS Tier-1: Target uses ${allAccounts} (all branches) because inter-branch
+                     transfers are allowed. Source uses ${accounts} (branch-scoped). --%>
                 <select name="toAccount" id="toAccount" class="form-select" required>
                     <option value="">-- Select Target Account --</option>
-                    <c:forEach var="a" items="${accounts}">
+                    <c:forEach var="a" items="${allAccounts}">
                     <option value="<c:out value='${a.accountNumber}'/>" data-cust="<c:out value='${a.customer.firstName}'/> <c:out value='${a.customer.lastName}'/>" data-type="<c:out value='${a.accountType}'/>" data-branch="<c:out value='${a.branch.branchCode}'/>"><c:out value="${a.accountNumber}"/> &mdash; <c:out value="${a.customer.firstName}"/> <c:out value="${a.customer.lastName}"/> | <c:out value="${a.accountType}"/> | <c:out value="${a.branch.branchCode}"/></option>
                     </c:forEach>
                 </select>
@@ -59,8 +67,8 @@
         <h6 class="mb-3 text-primary"><i class="bi bi-cash-stack"></i> Transaction Details</h6>
         <div class="row mb-3">
             <div class="col-md-4">
-                <label for="amount" class="form-label">Transfer Amount (INR) <span class="text-danger">*</span></label>
-                <input type="number" name="amount" id="amount" class="form-control" data-fv-type="amount" min="0.01" required placeholder="0.00"/>
+                <label for="amount" class="form-label fv-required">Transfer Amount (INR)</label>
+                <input type="number" name="amount" id="amount" class="form-control" data-fv-type="amount" min="0.01" step="0.01" required placeholder="0.00"/>
             </div>
             <div class="col-md-4">
                 <label class="form-label">Transfer Mode</label>
@@ -78,8 +86,8 @@
         <hr/>
 
         <div class="mt-3">
-            <button type="submit" class="btn btn-fv-primary" id="transferBtn" data-confirm="Confirm fund transfer? This will debit the source and credit the target immediately."><i class="bi bi-arrow-left-right"></i> Execute Transfer</button>
-            <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-outline-secondary ms-2">Cancel</a>
+            <button type="submit" class="btn btn-fv-primary" id="transferBtn" data-confirm="Confirm fund transfer? This will debit the source and credit the target immediately."><i class="bi bi-arrow-left-right"></i> Execute Transfer <span class="fv-kbd">F2</span></button>
+            <a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-outline-secondary ms-2" data-fv-cancel="${pageContext.request.contextPath}/deposit/accounts"><i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span></a>
         </div>
     </form>
     </div>
@@ -107,9 +115,29 @@ document.getElementById('transferForm').addEventListener('submit', function(e) {
     var to = document.getElementById('toAccount').value;
     if (from && to && from === to) {
         e.preventDefault();
-        alert('Source and target accounts cannot be the same.');
+        /* CBS Tier-1: Use field-level validation instead of browser alert().
+           Per Finacle TRAN_POSTING: same-account transfers are blocked with
+           inline error feedback, not modal dialogs that can be suppressed. */
+        var toSelect = document.getElementById('toAccount');
+        toSelect.classList.add('is-invalid');
+        var errDiv = document.getElementById('sameAccountError');
+        if (!errDiv) {
+            errDiv = document.createElement('div');
+            errDiv.id = 'sameAccountError';
+            errDiv.className = 'text-danger small mt-1';
+            errDiv.textContent = 'Source and target accounts cannot be the same. Please select a different target account.';
+            toSelect.parentNode.appendChild(errDiv);
+        }
+        errDiv.style.display = 'block';
+        toSelect.focus();
         return false;
     }
+});
+/* Clear same-account error when target account changes */
+document.getElementById('toAccount').addEventListener('change', function() {
+    this.classList.remove('is-invalid');
+    var errDiv = document.getElementById('sameAccountError');
+    if (errDiv) errDiv.style.display = 'none';
 });
 </script>
 

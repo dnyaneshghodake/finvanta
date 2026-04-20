@@ -5,6 +5,11 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Loan Applications</li>
+    </ul>
+
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
@@ -15,7 +20,7 @@
     <!-- CBS: Loan Application search per Finacle APPINQ -->
     <form method="get" action="${pageContext.request.contextPath}/loan/applications/search" class="row g-2 mb-3">
         <div class="col-auto">
-            <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by app no, CIF, customer name..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:320px;" />
+            <input type="text" name="q" class="form-control form-control-sm fv-search-input" placeholder="Search by app no, CIF, customer name..." value="<c:out value='${searchQuery}'/>" minlength="2" />
         </div>
         <div class="col-auto">
             <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>
@@ -56,7 +61,7 @@
                             <td><span class="fv-badge fv-badge-pending"><c:out value="${app.status}" /></span></td>
                             <td><c:out value="${app.applicationDate}" /></td>
                             <td>
-                                <a href="${pageContext.request.contextPath}/loan/verify/${app.id}" class="btn btn-sm btn-success">Verify</a>
+                                <a href="${pageContext.request.contextPath}/loan/verify/${app.id}" class="btn btn-sm btn-fv-success"><i class="bi bi-clipboard-check"></i> Verify</a>
                             </td>
                         </tr>
                     </c:forEach>
@@ -95,10 +100,12 @@
                             <td>
                                 <a href="${pageContext.request.contextPath}/loan/approve/${app.id}" class="btn btn-sm btn-fv-primary">Approve</a>
                                 <form method="post" action="${pageContext.request.contextPath}/loan/reject/${app.id}" class="d-inline">
-                                    <input type="hidden" name="reason" value="" id="rejectReason_${app.id}" />
+                                    <input type="hidden" name="reason" value="" class="fv-reason-field" />
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                    <button type="submit" class="btn btn-sm btn-danger"
-                                        onclick="var r=prompt('Rejection reason (mandatory per RBI Fair Practices Code):'); if(!r||!r.trim()){alert('Rejection reason is mandatory.');return false;} document.getElementById('rejectReason_${app.id}').value=r; return confirm('Reject this application?');">Reject</button>
+                                    <button type="button" class="btn btn-sm btn-fv-danger"
+                                        data-fv-reason-prompt="Rejection reason (mandatory per RBI Fair Practices Code):"
+                                        data-fv-reason-confirm="Reject this loan application?"
+                                        onclick="fvPromptReason(this);"><i class="bi bi-x-circle"></i> Reject</button>
                                 </form>
                             </td>
                         </tr>
@@ -140,7 +147,7 @@
                             <td>
                                 <form method="post" action="${pageContext.request.contextPath}/loan/create-account/${app.id}" class="d-inline">
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
-                                    <button type="submit" class="btn btn-sm btn-success">Create Account</button>
+                                    <button type="submit" class="btn btn-sm btn-fv-success" data-confirm="Create loan account for this approved application?"><i class="bi bi-bank"></i> Create Account</button>
                                 </form>
                             </td>
                         </tr>

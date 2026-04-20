@@ -5,8 +5,13 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Journal Entries</li>
+    </ul>
+
     <div class="fv-card">
-        <div class="card-header">Filter</div>
+        <div class="card-header"><i class="bi bi-journal-text"></i> Filter</div>
         <div class="card-body">
             <form method="get" action="${pageContext.request.contextPath}/accounting/journal-entries" class="fv-form">
                 <div class="row g-2 align-items-end">
@@ -27,7 +32,7 @@
             <!-- CBS: Journal Entry search per Finacle JRNL_INQUIRY -->
             <form method="get" action="${pageContext.request.contextPath}/accounting/journal-entries/search" class="row g-2 mt-2">
                 <div class="col-auto">
-                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by journal ref, narration, source module, source ref, branch..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:400px;" />
+                    <input type="text" name="q" class="form-control form-control-sm fv-search-input-lg" placeholder="Search by journal ref, narration, source module, source ref, branch..." value="<c:out value='${searchQuery}'/>" minlength="2" />
                 </div>
                 <div class="col-auto">
                     <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>
@@ -40,6 +45,10 @@
             </form>
         </div>
     </div>
+
+    <c:if test="${not empty warning}">
+        <div class="fv-alert alert alert-warning"><i class="bi bi-exclamation-triangle"></i> <c:out value="${warning}" /></div>
+    </c:if>
 
     <div class="fv-card">
         <div class="card-header">Journal Entries</div>
@@ -78,6 +87,18 @@
                         <tr><td colspan="7" class="text-center text-muted">No journal entries found</td></tr>
                     </c:if>
                 </tbody>
+                <%-- CBS Tier-1: tfoot totals row (Debit / Credit aggregate) per Finacle JRNL_INQUIRY
+                     standard. Uses `.amount` class so digits line up with tbody via monospace. --%>
+                <c:if test="${not empty entries}">
+                <tfoot>
+                    <tr class="fw-bold" style="background:#f8f9fa;border-top:2px solid var(--fv-primary);">
+                        <td colspan="4" class="text-end">Totals:</td>
+                        <td class="amount"><fmt:formatNumber value="${totalDebit}" type="number" maxFractionDigits="2" /></td>
+                        <td class="amount"><fmt:formatNumber value="${totalCredit}" type="number" maxFractionDigits="2" /></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+                </c:if>
             </table>
             </div>
         </div>

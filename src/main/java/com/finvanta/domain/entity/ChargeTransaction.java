@@ -1,6 +1,7 @@
 package com.finvanta.domain.entity;
 
 import com.finvanta.domain.enums.ChargeEventType;
+import com.finvanta.domain.enums.ChargeTransactionStatus;
 
 import jakarta.persistence.*;
 
@@ -98,17 +99,42 @@ public class ChargeTransaction extends BaseEntity {
             nullable = false)
     private BigDecimal cgstAmount = BigDecimal.ZERO;
 
-    /** SGST amount (9% of base fee, per GST Act 2017) */
+    /** SGST amount (9% of base fee for intra-state supplies, per GST Act 2017) */
     @Column(name = "sgst_amount", precision = 18, scale = 2,
             nullable = false)
     private BigDecimal sgstAmount = BigDecimal.ZERO;
 
-    /** Total amount debited from customer (baseFee + CGST + SGST) */
+    /**
+     * IGST amount (18% of base fee for inter-state supplies, per GST Act 2017 §5).
+     * Non-zero only when the customer's state differs from the branch state.
+     */
+    @Column(name = "igst_amount", precision = 18, scale = 2,
+            nullable = false)
+    private BigDecimal igstAmount = BigDecimal.ZERO;
+
+    /**
+     * Customer's state at the time of the charge -- captured immutably so later
+     * audits / GST reconciliations can re-derive the CGST/SGST vs IGST split
+     * without depending on the current Customer record (which may change).
+     */
+    @Column(name = "customer_state_code", length = 10)
+    private String customerStateCode;
+
+    /** Total amount debited from customer (baseFee + CGST + SGST + IGST) */
     @Column(name = "total_debit", precision = 18, scale = 2,
             nullable = false)
     private BigDecimal totalDebit;
 
-    /** Whether this charge was waived */
+    /**
+     * Lifecycle status per Finacle CHG_MASTER. Defaults to {@link ChargeTransactionStatus#LEVIED}.
+     * Mutated only by {@code ChargeKernel.waiveCharge()} (-> WAIVED) and
+     * {@code ChargeKernel.reverseCharge()} (-> REVERSED).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 16)
+    private ChargeTransactionStatus status = ChargeTransactionStatus.LEVIED;
+
+    /** Whether this charge was waived (legacy boolean -- kept for backward compat with reports). */
     @Column(name = "waived", nullable = false)
     private boolean waived = false;
 
@@ -120,13 +146,37 @@ public class ChargeTransaction extends BaseEntity {
     @Column(name = "waived_by", length = 100)
     private String waivedBy;
 
+    /**
+     * Reversal reason (mandatory if status = REVERSED). Per Finacle CHG_MASTER:
+     * reversals are operational rollbacks (e.g. source transaction reversed, duplicate
+     * levy), distinct from waivers which relinquish fee income.
+     */
+    @Column(name = "reversal_reason", length = 500)
+    private String reversalReason;
+
+    /** User who approved the reversal */
+    @Column(name = "reversed_by", length = 100)
+    private String reversedBy;
+
+    /** Timestamp of the reversal journal posting */
+    @Column(name = "reversed_at")
+    private LocalDateTime reversedAt;
+
     /** FK to the GL journal entry that posted this charge */
     @Column(name = "journal_entry_id")
     private Long journalEntryId;
 
+    /** FK to the reversal contra-journal entry (null until REVERSED) */
+    @Column(name = "reversal_journal_entry_id")
+    private Long reversalJournalEntryId;
+
     /** Voucher number from TransactionEngine */
     @Column(name = "voucher_number", length = 50)
     private String voucherNumber;
+
+    /** Reversal voucher number (null until REVERSED) */
+    @Column(name = "reversal_voucher_number", length = 50)
+    private String reversalVoucherNumber;
 
     /** When the charge was posted */
     @Column(name = "posted_at", nullable = false)

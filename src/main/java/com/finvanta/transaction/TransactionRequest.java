@@ -72,6 +72,25 @@ public class TransactionRequest {
     private final boolean systemGenerated;
 
     /**
+     * CBS Tier-1: Pre-approved flag for maker-checker re-execution.
+     * When true, TransactionEngine Step 7 (maker-checker gate) is bypassed.
+     * This flag is set ONLY by TransactionReExecutionService after a CHECKER
+     * has approved the workflow — never by module code or user input.
+     *
+     * Per Finacle TRAN_AUTH: once a checker approves, the re-executed transaction
+     * must not trigger maker-checker again (infinite approval loop).
+     */
+    private final boolean preApproved;
+
+    /**
+     * CBS Tier-1: Transaction currency code per RBI FEMA / Finacle TRAN_POSTING.CURRENCY.
+     * Defaults to "INR" if not specified (backward compatible with existing callers).
+     * Per Finacle/Temenos: every financial transaction must carry an explicit currency.
+     * Non-INR currencies are rejected until the FCY module is implemented.
+     */
+    private final String currencyCode;
+
+    /**
      * CBS Compound Journal Groups per Finacle TRAN_POSTING multi-leg support.
      *
      * Some CBS operations require multiple balanced journal entries in a single
@@ -102,6 +121,8 @@ public class TransactionRequest {
         this.productType = builder.productType;
         this.idempotencyKey = builder.idempotencyKey;
         this.systemGenerated = builder.systemGenerated;
+        this.preApproved = builder.preApproved;
+        this.currencyCode = builder.currencyCode;
         this.compoundJournalGroups = builder.compoundJournalGroups;
     }
 
@@ -153,6 +174,14 @@ public class TransactionRequest {
         return systemGenerated;
     }
 
+    public boolean isPreApproved() {
+        return preApproved;
+    }
+
+    public String getCurrencyCode() {
+        return currencyCode;
+    }
+
     public List<CompoundJournalGroup> getCompoundJournalGroups() {
         return compoundJournalGroups;
     }
@@ -194,6 +223,8 @@ public class TransactionRequest {
         private String productType;
         private String idempotencyKey;
         private boolean systemGenerated = false;
+        private boolean preApproved = false;
+        private String currencyCode;
         private List<CompoundJournalGroup> compoundJournalGroups;
 
         public Builder amount(BigDecimal amount) {
@@ -253,6 +284,25 @@ public class TransactionRequest {
 
         public Builder systemGenerated(boolean systemGenerated) {
             this.systemGenerated = systemGenerated;
+            return this;
+        }
+
+        /**
+         * CBS Tier-1: Mark this request as pre-approved (checker already authorized).
+         * ONLY used by TransactionReExecutionService — never by module code.
+         */
+        public Builder preApproved(boolean preApproved) {
+            this.preApproved = preApproved;
+            return this;
+        }
+
+        /**
+         * CBS Tier-1: Set transaction currency code per RBI FEMA.
+         * Optional — defaults to null (engine assumes INR when null).
+         * Per Finacle TRAN_POSTING.CURRENCY: explicit currency on every posting.
+         */
+        public Builder currencyCode(String currencyCode) {
+            this.currencyCode = currencyCode;
             return this;
         }
 

@@ -170,7 +170,7 @@ public class LoanAccountController {
     // === Inquiry ===
 
     @GetMapping("/{accountNumber}")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<LoanResponse>>
             getAccount(@PathVariable String accountNumber) {
         LoanAccount account = loanService.getAccount(accountNumber);
@@ -178,7 +178,7 @@ public class LoanAccountController {
     }
 
     @GetMapping("/active")
-    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN', 'AUDITOR')")
     public ResponseEntity<ApiResponse<List<LoanResponse>>>
             getActiveAccounts() {
         var accounts = loanService.getActiveAccounts();
@@ -208,45 +208,114 @@ public class LoanAccountController {
 
     // === Response DTOs ===
 
+    /**
+     * CBS Loan Account Response per Finacle LOAN_MASTER / Temenos AA.ARRANGEMENT.
+     *
+     * <p>Every field the Next.js BFF needs for loan detail, NPA dashboard,
+     * repayment schedule, and CRILC reporting screens.
+     * Per RBI IRAC / Fair Lending Code: NPA classification, DPD,
+     * provisioning, and penal interest are mandatory display fields.
+     */
     public record LoanResponse(
             Long id, String accountNumber, String status,
-            String productType, String currencyCode,
+            String productType, String currencyCode, String branchCode,
+            // --- Customer (CIF linkage) ---
+            Long customerId, String customerNumber, String customerName,
+            // --- Amounts ---
             BigDecimal sanctionedAmount, BigDecimal disbursedAmount,
+            BigDecimal undisbursedAmount,
             BigDecimal outstandingPrincipal, BigDecimal outstandingInterest,
-            BigDecimal totalOutstanding, BigDecimal interestRate,
-            int daysPastDue, String branchCode,
+            BigDecimal accruedInterest, BigDecimal totalOutstanding,
+            BigDecimal overduePrincipal, BigDecimal overdueInterest,
+            // --- Interest / Rate ---
+            BigDecimal interestRate, BigDecimal penalRate,
+            BigDecimal penalInterestAccrued,
+            String benchmarkRateName, BigDecimal benchmarkRate,
+            BigDecimal spread, String rateResetFrequency,
+            String nextRateResetDate,
+            // --- EMI / Tenure ---
+            BigDecimal emiAmount, String repaymentFrequency,
+            int tenureMonths, Integer remainingTenure,
+            String nextEmiDate, String lastPaymentDate,
+            // --- NPA / DPD (per RBI IRAC) ---
+            int daysPastDue, String npaDate,
+            BigDecimal provisioningAmount, String riskCategory,
+            String sectoralClassification,
+            // --- Disbursement ---
             String disbursementDate, String maturityDate,
-            boolean fullyDisbursed) {
+            String disbursementMode, boolean fullyDisbursed,
+            Integer totalTranchesPlanned, Integer tranchesDisbursed,
+            String disbursementAccountNumber) {
         static LoanResponse from(LoanAccount a) {
             return new LoanResponse(
                     a.getId(), a.getAccountNumber(),
                     a.getStatus() != null ? a.getStatus().name() : null,
                     a.getProductType(), a.getCurrencyCode(),
-                    a.getSanctionedAmount(), a.getDisbursedAmount(),
-                    a.getOutstandingPrincipal(), a.getOutstandingInterest(),
-                    a.getTotalOutstanding(), a.getInterestRate(),
-                    a.getDaysPastDue(),
                     a.getBranch() != null ? a.getBranch().getBranchCode() : null,
+                    a.getCustomer() != null ? a.getCustomer().getId() : null,
+                    a.getCustomer() != null ? a.getCustomer().getCustomerNumber() : null,
+                    a.getCustomer() != null ? a.getCustomer().getFullName() : null,
+                    a.getSanctionedAmount(), a.getDisbursedAmount(),
+                    a.getUndisbursedAmount(),
+                    a.getOutstandingPrincipal(), a.getOutstandingInterest(),
+                    a.getAccruedInterest(), a.getTotalOutstanding(),
+                    a.getOverduePrincipal(), a.getOverdueInterest(),
+                    a.getInterestRate(), a.getPenalRate(),
+                    a.getPenalInterestAccrued(),
+                    a.getBenchmarkRateName(), a.getBenchmarkRate(),
+                    a.getSpread(), a.getRateResetFrequency(),
+                    a.getNextRateResetDate() != null
+                            ? a.getNextRateResetDate().toString() : null,
+                    a.getEmiAmount(), a.getRepaymentFrequency(),
+                    a.getTenureMonths(), a.getRemainingTenure(),
+                    a.getNextEmiDate() != null
+                            ? a.getNextEmiDate().toString() : null,
+                    a.getLastPaymentDate() != null
+                            ? a.getLastPaymentDate().toString() : null,
+                    a.getDaysPastDue(),
+                    a.getNpaDate() != null ? a.getNpaDate().toString() : null,
+                    a.getProvisioningAmount(), a.getRiskCategory(),
+                    a.getSectoralClassification(),
                     a.getDisbursementDate() != null
                             ? a.getDisbursementDate().toString() : null,
                     a.getMaturityDate() != null
                             ? a.getMaturityDate().toString() : null,
-                    a.isFullyDisbursed());
+                    a.getDisbursementMode(), a.isFullyDisbursed(),
+                    a.getTotalTranchesPlanned(), a.getTranchesDisbursed(),
+                    a.getDisbursementAccountNumber());
         }
     }
 
+    /**
+     * CBS Loan Transaction Response per Finacle TRAN_DETAIL / Temenos AA.ACTIVITY.
+     *
+     * <p>Per RBI IRAC: repayment transactions must show principal/interest/penalty
+     * component breakdown. Balance after and branch code are mandatory for audit.
+     */
     public record LoanTxnResponse(
             Long id, String transactionRef, String transactionType,
-            BigDecimal amount, String valueDate,
-            String narration, String voucherNumber) {
+            BigDecimal amount,
+            BigDecimal principalComponent, BigDecimal interestComponent,
+            BigDecimal penaltyComponent,
+            BigDecimal balanceAfter,
+            String valueDate, String postingDate,
+            String narration, String voucherNumber,
+            String branchCode,
+            boolean reversed, String reversedByRef) {
         static LoanTxnResponse from(LoanTransaction t) {
             return new LoanTxnResponse(
                     t.getId(), t.getTransactionRef(),
                     t.getTransactionType() != null
                             ? t.getTransactionType().name() : null,
                     t.getAmount(),
+                    t.getPrincipalComponent(), t.getInterestComponent(),
+                    t.getPenaltyComponent(),
+                    t.getBalanceAfter(),
                     t.getValueDate() != null ? t.getValueDate().toString() : null,
-                    t.getNarration(), t.getVoucherNumber());
+                    t.getPostingDate() != null ? t.getPostingDate().toString() : null,
+                    t.getNarration(), t.getVoucherNumber(),
+                    t.getBranchCode(),
+                    t.isReversed(), t.getReversedByRef());
         }
     }
 }

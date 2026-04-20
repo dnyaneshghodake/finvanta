@@ -4,6 +4,12 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <%-- CBS Tier-1: Breadcrumb per Finacle/Temenos --%>
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Customers</li>
+    </ul>
+
     <c:if test="${not empty success}">
         <div class="fv-alert alert alert-success"><c:out value="${success}" /></div>
     </c:if>
@@ -16,7 +22,7 @@
             <!-- CBS: Customer search per Finacle CIF_SEARCH -->
             <form method="get" action="${pageContext.request.contextPath}/customer/search" class="row g-2 mb-3">
                 <div class="col-auto">
-                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by name, CIF, mobile, PAN..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:320px;" />
+                    <input type="text" name="q" class="form-control form-control-sm fv-search-input" placeholder="Search by name, CIF, mobile, PAN..." value="<c:out value='${searchQuery}'/>" minlength="2" />
                 </div>
                 <div class="col-auto">
                     <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>
@@ -28,7 +34,12 @@
                 </c:if>
             </form>
             <div class="table-responsive">
-            <table class="table fv-table fv-datatable">
+            <%-- CBS Tier-1: Do NOT use fv-datatable here — this table uses server-side
+                 pagination (customerPage). Adding fv-datatable triggers DataTables client-side
+                 pagination on the already-paginated subset, causing "Showing 1 to 25 of 25"
+                 on a page that shows "Page 2 of 10". Per Finacle CIF_LIST: server-side
+                 pagination is the correct pattern for large datasets. --%>
+            <table class="table fv-table">
                 <thead>
                     <tr>
                         <th>Customer No.</th>
@@ -46,11 +57,12 @@
                         <tr>
                             <td><c:out value="${cust.customerNumber}" /></td>
                             <td><c:out value="${cust.fullName}" /></td>
-                            <%-- CBS: PII masked in list view per RBI IT Governance / UIDAI.
-                                 Full PAN/Mobile are decrypted but only last 4 chars shown.
+                            <%-- CBS Tier-1 (Gap 6): PII masked via entity-level accessors per RBI IT Governance / UIDAI.
+                                 Pre-masked values from Customer.getMaskedPan() / getMaskedMobile()
+                                 — decrypted PAN/Mobile never reach the JSP template engine.
                                  Per Finacle CIF_LIST: PII is always masked in list views. --%>
-                            <td><c:if test="${not empty cust.panNumber}"><c:choose><c:when test="${cust.panNumber.length() > 4}">XXXXXX<c:out value="${cust.panNumber.substring(cust.panNumber.length() - 4)}" /></c:when><c:otherwise>****</c:otherwise></c:choose></c:if></td>
-                            <td><c:if test="${not empty cust.mobileNumber}"><c:choose><c:when test="${cust.mobileNumber.length() > 4}">XXXXXX<c:out value="${cust.mobileNumber.substring(cust.mobileNumber.length() - 4)}" /></c:when><c:otherwise>****</c:otherwise></c:choose></c:if></td>
+                            <td><c:out value="${cust.maskedPan}" /></td>
+                            <td><c:out value="${cust.maskedMobile}" /></td>
                             <td>
                                 <c:choose>
                                     <c:when test="${cust.kycVerified}"><span class="fv-badge fv-badge-active">Verified</span></c:when>

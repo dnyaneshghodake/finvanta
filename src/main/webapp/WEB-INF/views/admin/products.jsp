@@ -5,9 +5,14 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">Product Master</li>
+    </ul>
+
     <div class="fv-card">
         <div class="card-header">
-            Product Master (Finacle PDDEF)
+            <i class="bi bi-box-seam"></i> Product Master (Finacle PDDEF)
             <div class="float-end">
                 <a href="${pageContext.request.contextPath}/admin/products/create" class="btn btn-sm btn-primary"><i class="bi bi-plus-circle"></i> Create Product</a>
                 <form method="post" action="${pageContext.request.contextPath}/admin/products/evict-cache" class="d-inline ms-2">
@@ -21,7 +26,7 @@
             <!-- CBS: Product search per Finacle PDDEF -->
             <form method="get" action="${pageContext.request.contextPath}/admin/products/search" class="row g-2 mb-3">
                 <div class="col-auto">
-                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by code, name, category, status..." value="<c:out value='${searchQuery}'/>" minlength="2" style="width:320px;" />
+                    <input type="text" name="q" class="form-control form-control-sm fv-search-input" placeholder="Search by code, name, category, status..." value="<c:out value='${searchQuery}'/>" minlength="2" />
                 </div>
                 <div class="col-auto">
                     <button type="submit" class="btn btn-sm btn-fv-primary"><i class="bi bi-search"></i> Search</button>

@@ -21,6 +21,7 @@ import com.finvanta.util.TenantContext;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -100,20 +101,6 @@ public class AccountingService {
         ENGINE_TOKEN.remove();
     }
 
-    // Legacy compatibility — retained for migration period only.
-    // TODO: Remove after confirming no callers use the old API.
-    /** @deprecated Use generateEngineToken()/clearEngineToken() instead */
-    @Deprecated(forRemoval = true)
-    public static void enterEngineContext() {
-        generateEngineToken();
-    }
-
-    /** @deprecated Use clearEngineToken() instead */
-    @Deprecated(forRemoval = true)
-    public static void exitEngineContext() {
-        clearEngineToken();
-    }
-
     public AccountingService(
             JournalEntryRepository journalEntryRepository,
             GLMasterRepository glMasterRepository,
@@ -132,8 +119,21 @@ public class AccountingService {
     }
 
     /**
-     * Posts a journal entry with branch attribution.
-     * Overload that accepts branchCode for Tier-1 branch-level accounting.
+     * Posts a journal entry with branch attribution and voucher/txnRef linkage.
+     *
+     * <p><b>CBS Tier-1 Linkage Chain:</b> Transaction ↔ Journal ↔ Voucher ↔ Ledger.
+     * The voucherNumber and transactionRef are pre-allocated by TransactionEngine
+     * (Step 8.0) and stamped on the JournalEntry so RBI auditors can trace any
+     * voucher to its journal, and any journal to its originating transaction.
+     *
+     * @param valueDate      CBS business date for the posting
+     * @param narration      Transaction narration
+     * @param sourceModule   Originating module (DEPOSIT, LOAN, CLEARING, etc.)
+     * @param sourceRef      Module-specific reference (account number)
+     * @param lines          Balanced DR/CR journal lines
+     * @param branchCode     Posting branch code
+     * @param voucherNumber  Pre-allocated voucher (nullable for backward compat)
+     * @param transactionRef Pre-allocated transaction ref (nullable for backward compat)
      */
     @Transactional
     public JournalEntry postJournalEntry(
@@ -142,9 +142,19 @@ public class AccountingService {
             String sourceModule,
             String sourceRef,
             List<JournalLineRequest> lines,
-            String branchCode) {
+            String branchCode,
+            String voucherNumber,
+            String transactionRef) {
         String tenantId = TenantContext.getCurrentTenant();
         JournalEntry entry = postJournalEntryInternal(valueDate, narration, sourceModule, sourceRef, lines, tenantId);
+
+        // CBS Tier-1: Stamp voucher + txnRef on journal for linkage chain
+        if (voucherNumber != null) {
+            entry.setVoucherNumber(voucherNumber);
+        }
+        if (transactionRef != null) {
+            entry.setTransactionRef(transactionRef);
+        }
 
         // CBS Tier-1: Set branch attribution on the journal entry
         if (branchCode != null && !branchCode.isBlank()) {
@@ -198,7 +208,17 @@ public class AccountingService {
             }
         }
 
-        auditService.logEvent(
+        // CBS CRITICAL: Use logEventInline (Propagation.REQUIRED) — NOT logEvent (REQUIRES_NEW).
+        // At this point we hold PESSIMISTIC_WRITE locks on GLMaster, GLBranchBalance, and
+        // TenantLedgerState rows. logEvent(REQUIRES_NEW) would suspend this transaction
+        // without releasing those locks, then open a new connection whose INSERT into
+        // audit_logs contends with the held locks — a guaranteed deadlock on SQL Server
+        // due to lock escalation. logEventInline joins THIS transaction so the audit
+        // INSERT sees the same lock scope and commits atomically with the posting.
+        // Trade-off: if this TX rolls back, the audit record is also lost — acceptable
+        // because a rolled-back posting never happened (nothing to audit). The
+        // TransactionEngine Step 10 audit (also inline) captures the committed state.
+        auditService.logEventInline(
                 "JournalEntry",
                 savedEntry.getId(),
                 "POST",
@@ -218,7 +238,22 @@ public class AccountingService {
     }
 
     /**
-     * Backward-compatible postJournalEntry without explicit branchCode.
+     * Backward-compatible overload: branchCode only (no voucher/txnRef).
+     * Used by callers that don't have pre-allocated voucher numbers.
+     */
+    @Transactional
+    public JournalEntry postJournalEntry(
+            LocalDate valueDate,
+            String narration,
+            String sourceModule,
+            String sourceRef,
+            List<JournalLineRequest> lines,
+            String branchCode) {
+        return postJournalEntry(valueDate, narration, sourceModule, sourceRef, lines, branchCode, null, null);
+    }
+
+    /**
+     * Backward-compatible overload: no branchCode, no voucher/txnRef.
      * Resolves branch from current user's security context.
      */
     @Transactional
@@ -229,7 +264,7 @@ public class AccountingService {
             String sourceRef,
             List<JournalLineRequest> lines) {
         String branchCode = SecurityUtil.getCurrentUserBranchCode();
-        return postJournalEntry(valueDate, narration, sourceModule, sourceRef, lines, branchCode);
+        return postJournalEntry(valueDate, narration, sourceModule, sourceRef, lines, branchCode, null, null);
     }
 
     /** Finds the first OPEN batch for a business date, or null. */
@@ -377,7 +412,18 @@ public class AccountingService {
      */
     @Transactional
     public void updateGLBalances(String tenantId, List<JournalLineRequest> lines, Branch branch) {
-        for (JournalLineRequest line : lines) {
+        // CBS CRITICAL — GL Lock Ordering per Finacle GL_LOCK / Temenos EB.LOCK:
+        // Sort journal lines by GL code BEFORE acquiring PESSIMISTIC_WRITE locks.
+        // Without ordering, Transaction A (DR 1100 / CR 2010) and Transaction B
+        // (DR 2010 / CR 1100) acquire locks in opposite order — classic ABBA deadlock.
+        // Sorting by glCode ensures all concurrent transactions acquire GL locks in
+        // the same canonical order, eliminating cross-GL deadlocks.
+        // Same pattern as DepositAccountServiceImpl.transfer() which uses alphabetical
+        // account ordering to prevent inter-account deadlocks.
+        List<JournalLineRequest> sortedLines = lines.stream()
+                .sorted(Comparator.comparing(JournalLineRequest::glCode))
+                .toList();
+        for (JournalLineRequest line : sortedLines) {
             // Step 1: Update tenant-level GLMaster (aggregate balance)
             GLMaster gl = glMasterRepository
                     .findAndLockByTenantIdAndGlCode(tenantId, line.glCode())
@@ -389,23 +435,62 @@ public class AccountingService {
             } else {
                 gl.setCreditBalance(gl.getCreditBalance().add(line.amount()));
             }
-            glMasterRepository.save(gl);
+            // CBS CRITICAL: Use saveAndFlush (not save) to force the SQL UPDATE to the DB
+            // BEFORE entering the branch-balance section below. If the branch-balance
+            // first-posting race condition triggers entityManager.clear(), any unflushed
+            // GLMaster updates from THIS or PREVIOUS loop iterations would be silently
+            // discarded (clear() evicts the write-behind cache without rolling back
+            // already-flushed SQL). saveAndFlush ensures the GL update is durable in the
+            // DB transaction log before we risk a clear().
+            glMasterRepository.saveAndFlush(gl);
 
             // Step 2: Update branch-level GLBranchBalance (per-branch running balance)
             // Per Finacle GL_BRANCH: concurrent postings to same branch+GL are serialized
             // via PESSIMISTIC_WRITE lock to prevent lost-update on running balances.
+            //
+            // CBS: First-posting race condition on branch+GL combination.
+            // On the first-ever posting, findAndLock returns empty. Two concurrent
+            // first-postings both see empty, both try INSERT, one gets
+            // DataIntegrityViolationException on uq idx_glbb_tenant_branch_gl.
+            // Resolution: inline saveAndFlush with catch for constraint violation.
             if (branch != null) {
                 GLBranchBalance branchBalance = glBranchBalanceRepository
                         .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
-                        .orElseGet(() -> {
-                            // Auto-create branch balance row on first posting to this branch+GL
-                            GLBranchBalance newBalance = new GLBranchBalance();
-                            newBalance.setTenantId(tenantId);
-                            newBalance.setBranch(branch);
-                            newBalance.setGlCode(line.glCode());
-                            newBalance.setGlName(gl.getGlName());
-                            return newBalance;
-                        });
+                        .orElse(null);
+
+                if (branchBalance == null) {
+                    // CBS: First-ever posting to this branch+GL — create inline (same TX).
+                    // With REQUIRED propagation on TransactionEngine.executeInternal(),
+                    // the Branch entity exists in THIS transaction's persistence context.
+                    // Using GLBranchBalanceBootstrap (REQUIRES_NEW) would fail because
+                    // the Branch FK is not yet committed to the DB — the nested TX
+                    // cannot see the uncommitted Branch row, causing FK violation.
+                    //
+                    // Inline saveAndFlush is safe here: the unique constraint on
+                    // (tenant_id, branch_id, gl_code) prevents duplicates. In a
+                    // concurrent scenario (two threads first-posting to same branch+GL),
+                    // one wins and the other gets DataIntegrityViolationException —
+                    // which is caught and the existing row is re-locked below.
+                    try {
+                        GLBranchBalance newBb = new GLBranchBalance();
+                        newBb.setTenantId(tenantId);
+                        newBb.setBranch(branch);
+                        newBb.setGlCode(line.glCode());
+                        newBb.setGlName(gl.getGlName());
+                        branchBalance = glBranchBalanceRepository.saveAndFlush(newBb);
+                        log.debug("GLBranchBalance created inline: branch={}, gl={}",
+                                branch.getBranchCode(), line.glCode());
+                    } catch (org.springframework.dao.DataIntegrityViolationException concurrent) {
+                        // Another thread won the race — re-lock the now-present row.
+                        log.debug("GLBranchBalance race resolved: branch={}, gl={}",
+                                branch.getBranchCode(), line.glCode());
+                        branchBalance = glBranchBalanceRepository
+                                .findAndLockByTenantIdAndBranchIdAndGlCode(tenantId, branch.getId(), line.glCode())
+                                .orElseThrow(() -> new IllegalStateException(
+                                        "GLBranchBalance row disappeared after race: "
+                                                + branch.getBranchCode() + "/" + line.glCode()));
+                    }
+                }
 
                 if (line.debitCredit() == DebitCredit.DEBIT) {
                     branchBalance.setDebitBalance(branchBalance.getDebitBalance().add(line.amount()));
@@ -457,6 +542,15 @@ public class AccountingService {
         result.put("isBalanced", totalDebit.compareTo(totalCredit) == 0);
 
         return result;
+    }
+
+    /**
+     * CBS Tier-1: Expose GLMasterRepository for read-only GL validation in
+     * TransactionEngine.validate() dry-run. No mutations — only used for
+     * findByTenantIdAndGlCode() lookups during preview.
+     */
+    public GLMasterRepository getGlMasterRepository() {
+        return glMasterRepository;
     }
 
     public record JournalLineRequest(String glCode, DebitCredit debitCredit, BigDecimal amount, String narration) {}

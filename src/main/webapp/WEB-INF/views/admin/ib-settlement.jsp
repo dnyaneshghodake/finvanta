@@ -5,8 +5,13 @@
 <%@ include file="../layout/sidebar.jsp" %>
 
 <div class="fv-main">
-    <c:if test="${not empty success}"><div class="alert alert-success alert-dismissible fade show"><c:out value="${success}" /><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div></c:if>
-    <c:if test="${not empty error}"><div class="alert alert-danger alert-dismissible fade show"><c:out value="${error}" /><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div></c:if>
+    <ul class="fv-breadcrumb">
+        <li><a href="${pageContext.request.contextPath}/dashboard"><i class="bi bi-speedometer2"></i> Home</a></li>
+        <li class="active">IB Settlement</li>
+    </ul>
+
+    <c:if test="${not empty success}"><div class="fv-alert alert alert-success"><c:out value="${success}" /></div></c:if>
+    <c:if test="${not empty error}"><div class="fv-alert alert alert-danger"><c:out value="${error}" /></div></c:if>
 
     <div class="fv-card">
         <div class="card-header">Inter-Branch Settlement &mdash; HO Manual Settle (Finacle IB_SETTLEMENT)</div>
@@ -15,9 +20,9 @@
 
             <div class="row mb-4">
                 <div class="col-md-4">
-                    <div class="fv-card" style="background:${stalePendingCount > 0 ? '#fff3cd' : '#d1e7dd'};border:none;">
+                    <div class="fv-stat-card ${stalePendingCount > 0 ? 'stat-warning' : 'stat-success'}">
                         <div class="card-body text-center">
-                            <h2 class="mb-0" style="font-size:2.5rem;font-weight:700;color:${stalePendingCount > 0 ? '#856404' : '#0f5132'};">
+                            <h2 class="stat-value mb-0">
                                 <c:out value="${stalePendingCount}" />
                             </h2>
                             <p class="text-muted mb-0">Stale PENDING Transactions</p>
@@ -46,18 +51,10 @@
                                     <small class="text-muted">Head Office authorization number for audit trail</small>
                                 </div>
                             </div>
-                            <button type="submit" class="btn btn-warning" id="settleBtn"
-                                    data-count="<c:out value='${stalePendingCount}' />">
+                            <button type="submit" class="btn btn-fv-warning"
+                                    data-confirm="This will settle ${stalePendingCount} stale PENDING IB transactions. This action cannot be undone. Continue?">
                                 <i class="bi bi-exclamation-triangle"></i> Settle <c:out value="${stalePendingCount}" /> Stale Transaction(s)
                             </button>
-                            <script>
-                                document.getElementById('settleBtn').addEventListener('click', function(e) {
-                                    var count = this.getAttribute('data-count');
-                                    if (!confirm('This will settle ' + count + ' stale PENDING IB transactions. This action cannot be undone. Continue?')) {
-                                        e.preventDefault();
-                                    }
-                                });
-                            </script>
                         </form>
                     </div>
                 </div>

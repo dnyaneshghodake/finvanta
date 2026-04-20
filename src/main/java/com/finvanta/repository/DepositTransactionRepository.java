@@ -97,8 +97,9 @@ public interface DepositTransactionRepository extends JpaRepository<DepositTrans
      */
     List<DepositTransaction> findByTenantIdAndJournalEntryId(String tenantId, Long journalEntryId);
 
-    /** All deposit transactions for a business date (for voucher register / daily report) */
-    @Query("SELECT dt FROM DepositTransaction dt WHERE dt.tenantId = :tenantId "
+    /** All deposit transactions for a business date. JOIN FETCH for voucher register JSP (OSIV disabled). */
+    @Query("SELECT dt FROM DepositTransaction dt JOIN FETCH dt.depositAccount JOIN FETCH dt.branch "
+            + "WHERE dt.tenantId = :tenantId "
             + "AND dt.valueDate = :date ORDER BY dt.postingDate ASC")
     List<DepositTransaction> findByTenantIdAndValueDate(
             @Param("tenantId") String tenantId, @Param("date") LocalDate date);
