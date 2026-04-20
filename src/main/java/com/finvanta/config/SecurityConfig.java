@@ -143,10 +143,18 @@ public class SecurityConfig {
                                     "/fonts/**",
                                     "/img/**",
                                     "/actuator/health",
-                                    "/actuator/info")
+                                    "/actuator/info",
+                                    "/actuator/prometheus")
                             .permitAll();
                     if (isDevProfile()) {
-                        auth.requestMatchers("/h2-console/**").permitAll();
+                        auth.requestMatchers(
+                                "/h2-console/**",
+                                // CBS Tier-1: OpenAPI/Swagger UI accessible in dev only.
+                                // Per RBI IT Governance §8.5: API documentation must not
+                                // be publicly accessible in production (schema exposure risk).
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**").permitAll();
                     }
                     // CBS: Explicit rule for branch-switching admin endpoint per Finacle
                     // BRANCH_CONTEXT / Temenos BRANCH.SWITCH. Declared BEFORE /admin/**

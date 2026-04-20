@@ -292,11 +292,15 @@
     </springProfile>
 
     <!-- ================================================================== -->
-    <!-- PROD Profile: Rolling files with structured format                   -->
+    <!-- PROD Profile: JSON structured logging for SIEM/SOC ingestion        -->
+    <!-- Per RBI IT Governance Direction 2023 §7.4: production logs must be   -->
+    <!-- in structured format for automated SIEM ingestion (Splunk, ELK,      -->
+    <!-- Azure Sentinel). All MDC keys (tenantId, branchCode, username,       -->
+    <!-- correlationId, txnRef) are preserved as discrete JSON fields.         -->
     <!-- ================================================================== -->
     <springProfile name="prod">
 
-        <!-- === APPLICATION LOG === -->
+        <!-- === APPLICATION LOG (JSON structured for SIEM) === -->
         <appender name="APP_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
             <file>${LOG_DIR}/${APP_NAME}-app.log</file>
             <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
@@ -305,8 +309,18 @@
                 <maxHistory>90</maxHistory>
                 <totalSizeCap>5GB</totalSizeCap>
             </rollingPolicy>
-            <encoder>
-                <pattern>${FILE_PATTERN}</pattern>
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdcKeyName>tenantId</includeMdcKeyName>
+                <includeMdcKeyName>branchCode</includeMdcKeyName>
+                <includeMdcKeyName>username</includeMdcKeyName>
+                <includeMdcKeyName>correlationId</includeMdcKeyName>
+                <includeMdcKeyName>requestId</includeMdcKeyName>
+                <includeMdcKeyName>txnRef</includeMdcKeyName>
+                <fieldNames>
+                    <timestamp>@timestamp</timestamp>
+                    <version>[ignore]</version>
+                </fieldNames>
+                <customFields>{"application":"finvanta-cbs"}</customFields>
             </encoder>
         </appender>
 

@@ -149,6 +149,19 @@
             <version>2.8.4</version>
         </dependency>
 
+        <!-- Logstash Logback Encoder — CBS Tier-1 JSON structured logging for SIEM.
+             Per RBI IT Governance Direction 2023 §7.4: production logs must be in
+             structured format for automated ingestion by SIEM/SOC platforms
+             (Splunk, ELK, Azure Sentinel). Plain text logs require regex parsing
+             which is fragile and loses MDC context on multi-line stack traces.
+             JSON format preserves all MDC keys (tenantId, branchCode, username,
+             correlationId, txnRef) as discrete fields for indexed querying. -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>8.0</version>
+        </dependency>
+
         <!-- JWT (JSON Web Token) — HMAC-SHA256 token generation/validation.
              Per Finacle Connect / Temenos IRIS: REST APIs use stateless JWT auth
              for mobile banking, NPCI adapters, and Account Aggregator clients.
