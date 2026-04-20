@@ -1,17 +1,25 @@
 package com.finvanta.api;
 
+import com.finvanta.domain.entity.ApprovalWorkflow;
 import com.finvanta.domain.enums.ApplicationStatus;
+import com.finvanta.domain.enums.ClearingStatus;
 import com.finvanta.domain.enums.DepositAccountStatus;
 import com.finvanta.domain.enums.LoanStatus;
+import com.finvanta.repository.ClearingTransactionRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DepositAccountRepository;
+import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.repository.LoanApplicationRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.TenantContext;
 import com.finvanta.workflow.ApprovalWorkflowService;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -53,19 +61,28 @@ public class DashboardApiController {
     private final LoanApplicationRepository applicationRepository;
     private final LoanAccountRepository accountRepository;
     private final DepositAccountRepository depositAccountRepository;
+    private final DepositTransactionRepository depositTxnRepository;
+    private final ClearingTransactionRepository clearingTxnRepository;
     private final ApprovalWorkflowService workflowService;
+    private final BusinessDateService businessDateService;
 
     public DashboardApiController(
             CustomerRepository customerRepository,
             LoanApplicationRepository applicationRepository,
             LoanAccountRepository accountRepository,
             DepositAccountRepository depositAccountRepository,
-            ApprovalWorkflowService workflowService) {
+            DepositTransactionRepository depositTxnRepository,
+            ClearingTransactionRepository clearingTxnRepository,
+            ApprovalWorkflowService workflowService,
+            BusinessDateService businessDateService) {
         this.customerRepository = customerRepository;
         this.applicationRepository = applicationRepository;
         this.accountRepository = accountRepository;
         this.depositAccountRepository = depositAccountRepository;
+        this.depositTxnRepository = depositTxnRepository;
+        this.clearingTxnRepository = clearingTxnRepository;
         this.workflowService = workflowService;
+        this.businessDateService = businessDateService;
     }
 
     /**
@@ -269,6 +286,181 @@ public class DashboardApiController {
             BigDecimal casaRatio) {}
 
     public record ApprovalsWidget(long pendingCount) {}
+
+    // ====================================================================
+    // TELLER DASHBOARD WIDGETS — Operational Cockpit
+    // Per Finacle TELLER_DASHBOARD / Temenos TELLER.COCKPIT:
+    // Transaction control + liquidity + approval queue.
+    // ====================================================================
+
+    /**
+     * Teller Widget: Today's transaction metrics (4 metric cards).
+     * BFF refresh: 30s. Skeleton: 4 metric cards (128px height).
+     * Per Finacle TRAN_SUMMARY: intra-day operational awareness.
+     */
+    @GetMapping("/widgets/teller/txn-summary")
+    @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<TellerTxnSummary>> widgetTellerTxnSummary() {
+        String tid = TenantContext.getCurrentTenant();
+        LocalDate bd = businessDateService.getCurrentBusinessDate();
+
+        List<Object[]> txnStats = depositTxnRepository.findByTenantIdAndValueDate(tid, bd)
+                .stream().collect(
+                        () -> new Object[]{0L, BigDecimal.ZERO, BigDecimal.ZERO},
+                        (acc, txn) -> {
+                            acc[0] = (long) acc[0] + 1;
+                            if ("CREDIT".equals(txn.getDebitCredit())) {
+                                acc[1] = ((BigDecimal) acc[1]).add(txn.getAmount());
+                            } else {
+                                acc[2] = ((BigDecimal) acc[2]).add(txn.getAmount());
+                            }
+                        },
+                        (a, b) -> {});
+
+        long count = (long) txnStats[0];
+        BigDecimal credits = (BigDecimal) txnStats[1];
+        BigDecimal debits = (BigDecimal) txnStats[2];
+
+        return ResponseEntity.ok(ApiResponse.success(new TellerTxnSummary(
+                bd.toString(), count,
+                credits, debits, credits.subtract(debits))));
+    }
+
+    /**
+     * Teller Widget: Pending approval queue with aging (table widget).
+     * BFF refresh: 15s. Skeleton: table (360px height, 8 rows).
+     * Per Finacle WFAPI: shows ref, type, amount, maker, age, status.
+     */
+    @GetMapping("/widgets/teller/approval-queue")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<ApprovalQueueWidget>> widgetApprovalQueue() {
+        List<ApprovalWorkflow> pending = workflowService.getPendingApprovals();
+        LocalDateTime now = LocalDateTime.now();
+
+        List<ApprovalQueueItem> items = pending.stream()
+                .map(wf -> {
+                    long ageMinutes = wf.getSubmittedAt() != null
+                            ? ChronoUnit.MINUTES.between(wf.getSubmittedAt(), now) : 0;
+                    String ageDisplay = ageMinutes < 60
+                            ? ageMinutes + "m"
+                            : (ageMinutes / 60) + "h " + (ageMinutes % 60) + "m";
+                    boolean slaBreached = wf.isSlaBreached();
+                    return new ApprovalQueueItem(
+                            wf.getId(),
+                            wf.getEntityType() + "/" + wf.getEntityId(),
+                            wf.getActionType(),
+                            wf.getMakerUserId(),
+                            ageDisplay, ageMinutes,
+                            slaBreached,
+                            wf.getStatus().name());
+                })
+                .sorted((a, b) -> Long.compare(b.ageMinutes(), a.ageMinutes()))
+                .limit(8)
+                .toList();
+
+        long overdueCount = pending.stream()
+                .filter(ApprovalWorkflow::isSlaBreached).count();
+
+        return ResponseEntity.ok(ApiResponse.success(
+                new ApprovalQueueWidget(items, pending.size(), overdueCount)));
+    }
+
+    // ====================================================================
+    // MANAGER DASHBOARD WIDGETS — Risk Visibility
+    // Per Finacle BRANCH_DASHBOARD / Temenos RISK.MONITOR:
+    // Risk metrics + clearing status + overdue approvals.
+    // ====================================================================
+
+    /**
+     * Manager Widget: Clearing & settlement status (4 counts).
+     * BFF refresh: 60s. Skeleton: 4 metric values in horizontal panel.
+     */
+    @GetMapping("/widgets/manager/clearing-status")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<ClearingStatusWidget>> widgetClearingStatus() {
+        String tid = TenantContext.getCurrentTenant();
+        LocalDate bd = businessDateService.getCurrentBusinessDate();
+
+        long initiated = clearingTxnRepository.countByDateAndStatus(
+                tid, bd, ClearingStatus.INITIATED);
+        long sentToNetwork = clearingTxnRepository.countByDateAndStatus(
+                tid, bd, ClearingStatus.SENT_TO_NETWORK);
+        long settled = clearingTxnRepository.countByDateAndStatus(
+                tid, bd, ClearingStatus.SETTLED)
+                + clearingTxnRepository.countByDateAndStatus(
+                        tid, bd, ClearingStatus.COMPLETED);
+        long failed = clearingTxnRepository.countByDateAndStatus(
+                tid, bd, ClearingStatus.SETTLEMENT_FAILED)
+                + clearingTxnRepository.countByDateAndStatus(
+                        tid, bd, ClearingStatus.NETWORK_REJECTED);
+
+        return ResponseEntity.ok(ApiResponse.success(new ClearingStatusWidget(
+                bd.toString(), initiated, sentToNetwork, settled, failed)));
+    }
+
+    /**
+     * Manager Widget: Risk metrics (4 cards — red border if threshold breached).
+     * BFF refresh: 60s. Skeleton: 4 metric cards (140px height).
+     */
+    @GetMapping("/widgets/manager/risk-metrics")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<RiskMetricsWidget>> widgetRiskMetrics() {
+        String tid = TenantContext.getCurrentTenant();
+        LocalDate bd = businessDateService.getCurrentBusinessDate();
+
+        List<ApprovalWorkflow> pending = workflowService.getPendingApprovals();
+        long overdueApprovals = pending.stream()
+                .filter(ApprovalWorkflow::isSlaBreached).count();
+
+        // High-value transactions today (> 10 lakh = 1,000,000)
+        BigDecimal highValueThreshold = new BigDecimal("1000000");
+        long highValueTxns = depositTxnRepository.findByTenantIdAndValueDate(tid, bd)
+                .stream()
+                .filter(t -> t.getAmount().compareTo(highValueThreshold) > 0)
+                .count();
+
+        // Suspense accounts (clearing in non-terminal state with active suspense GL)
+        long suspensePending = clearingTxnRepository.countByDateAndStatus(
+                tid, bd, ClearingStatus.SUSPENSE_POSTED)
+                + clearingTxnRepository.countByDateAndStatus(
+                        tid, bd, ClearingStatus.SENT_TO_NETWORK);
+
+        return ResponseEntity.ok(ApiResponse.success(new RiskMetricsWidget(
+                overdueApprovals, suspensePending, highValueTxns,
+                overdueApprovals > 0, suspensePending > 5,
+                highValueTxns > 10)));
+    }
+
+    // === Teller + Manager Widget Response DTOs ===
+
+    /** Teller: Today's intra-day transaction metrics */
+    public record TellerTxnSummary(
+            String businessDate, long totalTransactions,
+            BigDecimal totalCredits, BigDecimal totalDebits,
+            BigDecimal netAmount) {}
+
+    /** Teller: Approval queue with aging per Finacle WFAPI */
+    public record ApprovalQueueWidget(
+            List<ApprovalQueueItem> items,
+            long totalPending, long overdueCount) {}
+
+    public record ApprovalQueueItem(
+            Long id, String reference, String actionType,
+            String makerUserId, String age, long ageMinutes,
+            boolean slaBreached, String status) {}
+
+    /** Manager: Clearing & settlement status */
+    public record ClearingStatusWidget(
+            String businessDate,
+            long initiated, long sentToNetwork,
+            long settled, long failed) {}
+
+    /** Manager: Risk metrics with threshold breach flags */
+    public record RiskMetricsWidget(
+            long overdueApprovals, long suspensePending,
+            long highValueTxnsToday,
+            boolean overdueBreached, boolean suspenseBreached,
+            boolean highValueBreached) {}
 
     // === Helpers ===
 
