@@ -295,6 +295,153 @@ public class Customer extends BaseEntity {
     @Column(name = "ckyc_account_type", length = 20)
     private String ckycAccountType = "INDIVIDUAL";
 
+    // ========================================================================
+    // CKYC Part I — Additional Identity Fields (per CERSAI v2.0 / RBI KYC)
+    // ========================================================================
+
+    /** Middle name — CKYC optional but captured for identity matching */
+    @Column(name = "middle_name", length = 100)
+    private String middleName;
+
+    /**
+     * Resident status per RBI/FEMA classification.
+     * Values: RESIDENT, NRI, PIO, OCI, FOREIGN_NATIONAL
+     * Per FEMA 1999: determines applicable account types (NRE/NRO/FCNR).
+     */
+    @Column(name = "resident_status", length = 30)
+    private String residentStatus = "RESIDENT";
+
+    /** Alternate mobile number — CKYC optional, used for SMS OTP fallback */
+    @Column(name = "alternate_mobile", length = 15)
+    private String alternateMobile;
+
+    /**
+     * Communication preference: EMAIL, SMS, BOTH, NONE
+     * Per RBI: customer consent for electronic communication must be recorded.
+     */
+    @Column(name = "communication_pref", length = 10)
+    private String communicationPref;
+
+    /** Source of funds — PMLA mandatory for high-value accounts */
+    @Column(name = "source_of_funds", length = 100)
+    private String sourceOfFunds;
+
+    // ========================================================================
+    // OVD (Officially Valid Documents) — per RBI KYC Direction Section 3
+    // ========================================================================
+
+    /** Passport number (encrypted at rest) — OVD per RBI KYC Direction */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "passport_number", length = 100)
+    private String passportNumber;
+
+    /** Passport expiry date — required if passport is the OVD */
+    @Column(name = "passport_expiry")
+    private LocalDate passportExpiry;
+
+    /** Voter ID number (encrypted at rest) — OVD per RBI KYC Direction */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "voter_id", length = 100)
+    private String voterId;
+
+    /** Driving license number (encrypted at rest) — OVD per RBI KYC Direction */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "driving_license", length = 100)
+    private String drivingLicense;
+
+    // ========================================================================
+    // FATCA / CRS (Foreign Account Tax Compliance Act / Common Reporting Std)
+    // ========================================================================
+
+    /**
+     * FATCA country of tax residence (ISO 3166 alpha-2).
+     * Per FATCA IGA India-US: banks must identify US persons and report.
+     * Null = Indian tax resident only (no FATCA reporting obligation).
+     */
+    @Column(name = "fatca_country", length = 2)
+    private String fatcaCountry;
+
+    // ========================================================================
+    // Relationship & Segmentation (per Finacle CIF_MASTER / Temenos CUSTOMER)
+    // ========================================================================
+
+    /**
+     * Customer segment: RETAIL, PREMIUM, HNI, CORPORATE, MSME, AGRICULTURE
+     * Per Finacle: drives product eligibility, pricing, and service levels.
+     */
+    @Column(name = "customer_segment", length = 30)
+    private String customerSegment;
+
+    /** Source of introduction — how the customer was acquired */
+    @Column(name = "source_of_introduction", length = 100)
+    private String sourceOfIntroduction;
+
+    /** Relationship manager employee ID — for HNI/premium customers */
+    @Column(name = "relationship_manager_id", length = 50)
+    private String relationshipManagerId;
+
+    // ========================================================================
+    // Corporate / Non-Individual Fields (per RBI KYC Direction Section 9)
+    // ========================================================================
+
+    /** Company/firm name — mandatory for COMPANY/PARTNERSHIP/TRUST/HUF */
+    @Column(name = "company_name", length = 300)
+    private String companyName;
+
+    /** Corporate Identification Number — mandatory for COMPANY type */
+    @Column(name = "cin", length = 21)
+    private String cin;
+
+    /** GSTIN — GST registration number for business customers */
+    @Column(name = "gstin", length = 15)
+    private String gstin;
+
+    /** Date of incorporation/registration for non-individual entities */
+    @Column(name = "date_of_incorporation")
+    private LocalDate dateOfIncorporation;
+
+    /**
+     * Constitution type per RBI classification.
+     * Values: PROPRIETORSHIP, PARTNERSHIP, LLP, PRIVATE_LIMITED,
+     *         PUBLIC_LIMITED, TRUST, SOCIETY, HUF, COOPERATIVE, GOVERNMENT
+     */
+    @Column(name = "constitution_type", length = 30)
+    private String constitutionType;
+
+    /** Nature of business — CKYC mandatory for non-individual customers */
+    @Column(name = "nature_of_business", length = 200)
+    private String natureOfBusiness;
+
+    // ========================================================================
+    // Permanent Address — District field (CKYC mandatory)
+    // ========================================================================
+
+    /** District — CKYC mandatory field (separate from city) */
+    @Column(name = "permanent_district", length = 100)
+    private String permanentDistrict;
+
+    // ========================================================================
+    // Correspondence Address (separate from permanent per CKYC/CERSAI)
+    // ========================================================================
+
+    @Column(name = "correspondence_address", length = 500)
+    private String correspondenceAddress;
+
+    @Column(name = "correspondence_city", length = 100)
+    private String correspondenceCity;
+
+    @Column(name = "correspondence_district", length = 100)
+    private String correspondenceDistrict;
+
+    @Column(name = "correspondence_state", length = 100)
+    private String correspondenceState;
+
+    @Column(name = "correspondence_pin_code", length = 6)
+    private String correspondencePinCode;
+
+    @Column(name = "correspondence_country", length = 50)
+    private String correspondenceCountry;
+
     // === Demographics (CKYC Mandatory Fields per CERSAI Specification v2.0) ===
 
     /**
