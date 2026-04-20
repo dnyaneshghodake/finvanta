@@ -209,7 +209,7 @@ Rotates refresh token per RFC 6749 section 10.4. Old token is denylisted; replay
 | `LEGACY_REFRESH_TOKEN` | 401 | Pre-rotation token, must re-authenticate |
 | `ACCOUNT_INVALID` | 401 | Account disabled/locked since token issuance |
 
-### 2.4 `GET /context/bootstrap` — Operational Context (Post-Login)
+### 2.4 `GET /context/bootstrap` — Operational Context (Post-Login) `#83`
 
 **Base:** `/api/v1/context` · **Auth:** JWT required · **When:** Immediately after login, after branch switch, after token refresh
 
