@@ -38,7 +38,7 @@ import org.springframework.web.bind.annotation.*;
  * or password history. Only operational metadata is returned.
  */
 @RestController
-@RequestMapping("/v1/users")
+@RequestMapping("/api/v1/users")
 public class UserApiController {
 
     private final UserService userService;

@@ -33,9 +33,9 @@ import org.springframework.web.bind.annotation.*;
  * and redirect to login. Per Finacle USER_MASTER: a session authenticated
  * with the old (now-changed) password must not continue.
  *
- * <p>This endpoint is placed under {@code /v1/auth/password} (within the
+ * <p>This endpoint is placed under {@code /api/v1/auth/password} (within the
  * auth namespace) because it is a credential management operation, not a
- * business operation. However, unlike {@code /v1/auth/token}, it requires
+ * business operation. However, unlike {@code /api/v1/auth/token}, it requires
  * a valid JWT (authenticated user changing their own password).
  */
 @RestController

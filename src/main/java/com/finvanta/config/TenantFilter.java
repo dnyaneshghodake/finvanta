@@ -116,7 +116,7 @@ public class TenantFilter implements Filter {
             String contextPath = httpRequest.getContextPath();
             boolean isApiRequest = contextPath != null
                     && path != null
-                    && path.startsWith(contextPath + "/v1/");
+                    && path.startsWith(contextPath + "/api/v1/");
 
             // === Resolve Tenant ID ===
             // Priority: X-Tenant-Id header → session → DEFAULT fallback (UI chain only).

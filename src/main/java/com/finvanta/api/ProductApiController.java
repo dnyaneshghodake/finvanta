@@ -35,7 +35,7 @@ import org.springframework.web.bind.annotation.*;
  * Product configuration is a system-level operation.
  */
 @RestController
-@RequestMapping("/v1/products")
+@RequestMapping("/api/v1/products")
 public class ProductApiController {
 
     private final ProductMasterService productService;

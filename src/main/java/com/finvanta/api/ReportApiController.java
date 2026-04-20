@@ -40,7 +40,7 @@ import org.springframework.web.bind.annotation.*;
  * </ul>
  */
 @RestController
-@RequestMapping("/v1/reports")
+@RequestMapping("/api/v1/reports")
 public class ReportApiController {
 
     private final LoanAccountRepository accountRepository;
