@@ -141,14 +141,24 @@
         <!-- SpringDoc OpenAPI — CBS Tier-1 API documentation per Finacle API / Temenos IRIS.
              Per RBI IT Governance Direction 2023 §8.5: all API endpoints must be
              documented with request/response schemas, error codes, and security
-             requirements. Generates OpenAPI 3.0 spec at /v3/api-docs and Swagger UI
-             at /swagger-ui.html (dev/test only — disabled in production).
+             requirements. Generates OpenAPI 3.0 spec at /v3/api-docs.
+
+             CBS SECURITY: Uses the API-only module (no embedded Swagger UI webjar).
+             The -webmvc-ui artifact transitively pulls swagger-ui which has known
+             vulnerabilities (GHSA-72hv-8253-57qq, WS-2026-0003 — DOM XSS/SSRF,
+             CVSS 7.5). Per RBI IT Governance §8.2: vulnerable transitive dependencies
+             must be eliminated, not just mitigated.
+
+             API documentation is consumed via:
+               - Postman: import from http://localhost:8080/v3/api-docs
+               - Swagger Editor: paste the JSON spec
+               - CI/CD: generate docs from the OpenAPI JSON artifact
+
              CBS VERSION NOTE: 2.6.0 is the last version compatible with Spring Boot 3.3.x
-             (Spring Framework 6.1). Version 2.7+ requires Spring Boot 3.4+ / Spring
-             Framework 6.2 (LiteWebJarsResourceResolver). Upgrade when moving to Boot 3.4. -->
+             (Spring Framework 6.1). Upgrade when moving to Boot 3.4. -->
         <dependency>
             <groupId>org.springdoc</groupId>
-            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
             <version>2.6.0</version>
         </dependency>
 

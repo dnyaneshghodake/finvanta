@@ -1055,10 +1055,9 @@ Per RBI IT Governance Direction 2023 §8.2: complexity (upper+lower+digit+specia
 | `GET /actuator/health` | None | All | K8s liveness/readiness probe |
 | `GET /actuator/info` | None | All | Build version and metadata |
 | `GET /actuator/prometheus` | None | All | Micrometer metrics for Prometheus scraping |
-| `GET /swagger-ui.html` | None | **Dev only** | OpenAPI 3.0 Swagger UI (disabled in prod) |
 | `GET /v3/api-docs` | None | **Dev only** | OpenAPI 3.0 JSON spec (disabled in prod) |
 
-> **CBS SECURITY:** Swagger UI and OpenAPI spec are disabled in production via `springdoc.api-docs.enabled=false` per RBI IT Governance §8.5 (API schema exposure risk). Prometheus metrics are permitted without authentication for infrastructure scraping.
+> **CBS SECURITY:** Swagger UI webjar is NOT included in the dependency tree — removed to eliminate GHSA-72hv-8253-57qq / WS-2026-0003 (CVSS 7.5 DOM XSS/SSRF). API docs are consumed via Postman or Swagger Editor importing from `/v3/api-docs`. The spec endpoint is disabled in production via `springdoc.api-docs.enabled=false` per RBI IT Governance §8.5. Prometheus metrics are permitted without authentication for infrastructure scraping.
 
 ### JSON Structured Logging (Production)
 

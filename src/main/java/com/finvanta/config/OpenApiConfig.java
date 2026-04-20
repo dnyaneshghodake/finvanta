@@ -14,15 +14,24 @@ import org.springframework.context.annotation.Configuration;
 /**
  * CBS Tier-1 OpenAPI Configuration per Finacle API / Temenos IRIS / FLEXCUBE REST.
  *
- * <p>Generates OpenAPI 3.0 specification at {@code /v3/api-docs} and Swagger UI
- * at {@code /swagger-ui.html}. Per RBI IT Governance Direction 2023 §8.5:
- * all API endpoints must be documented with request/response schemas,
- * error codes, and security requirements.
+ * <p>Generates OpenAPI 3.0 specification at {@code /v3/api-docs}.
+ * Per RBI IT Governance Direction 2023 §8.5: all API endpoints must be
+ * documented with request/response schemas, error codes, and security
+ * requirements.
  *
- * <p>CBS SECURITY: Swagger UI is accessible in dev/test profiles only.
- * Production disables it via {@code springdoc.swagger-ui.enabled=false}
- * in application-prod.properties. API schema exposure in production is
- * a security risk per OWASP API Security Top 10 (API9:2023).
+ * <p>CBS SECURITY: The Swagger UI webjar is NOT included in the dependency tree.
+ * The {@code springdoc-openapi-starter-webmvc-ui} artifact was replaced with
+ * {@code springdoc-openapi-starter-webmvc-api} to eliminate transitive
+ * vulnerabilities in the swagger-ui JavaScript (GHSA-72hv-8253-57qq,
+ * WS-2026-0003 — CVSS 7.5). API documentation is consumed via:
+ * <ul>
+ *   <li>Postman: import from {@code http://localhost:8080/v3/api-docs}</li>
+ *   <li>Swagger Editor (external): paste the JSON spec</li>
+ *   <li>CI/CD: generate static docs from the OpenAPI JSON artifact</li>
+ * </ul>
+ *
+ * <p>Production disables the spec endpoint via {@code springdoc.api-docs.enabled=false}
+ * in application-prod.properties per OWASP API Security Top 10 (API9:2023).
  *
  * <p>Security scheme: JWT Bearer token per Finacle Connect / Temenos IRIS.
  * All {@code /api/v1/**} endpoints except {@code /api/v1/auth/**} require
