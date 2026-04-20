@@ -142,11 +142,14 @@
              Per RBI IT Governance Direction 2023 §8.5: all API endpoints must be
              documented with request/response schemas, error codes, and security
              requirements. Generates OpenAPI 3.0 spec at /v3/api-docs and Swagger UI
-             at /swagger-ui.html (dev/test only — disabled in production). -->
+             at /swagger-ui.html (dev/test only — disabled in production).
+             CBS VERSION NOTE: 2.6.0 is the last version compatible with Spring Boot 3.3.x
+             (Spring Framework 6.1). Version 2.7+ requires Spring Boot 3.4+ / Spring
+             Framework 6.2 (LiteWebJarsResourceResolver). Upgrade when moving to Boot 3.4. -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>2.8.4</version>
+            <version>2.6.0</version>
         </dependency>
 
         <!-- Logstash Logback Encoder — CBS Tier-1 JSON structured logging for SIEM.
