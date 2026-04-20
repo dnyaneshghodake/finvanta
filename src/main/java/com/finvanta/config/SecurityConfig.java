@@ -84,11 +84,11 @@ public class SecurityConfig {
             JwtAuthenticationFilter jwtFilter,
             AuthRateLimitFilter authRateLimitFilter)
             throws Exception {
-        http.securityMatcher("/v1/**")
+        http.securityMatcher("/api/v1/**")
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                "/v1/auth/**")
+                                "/api/v1/auth/**")
                         .permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session
