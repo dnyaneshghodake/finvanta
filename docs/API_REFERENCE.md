@@ -1,9 +1,9 @@
 # Finvanta CBS — REST API Reference
 
-> **Version:** 1.0 · **Base URL:** `/api/v1` · **Auth:** JWT Bearer · **Envelope:** `ApiResponse<T>`
+> **Version:** 2.0 · **Base URL:** `/api/v1` · **Auth:** JWT Bearer · **Envelope:** `ApiResponse<T>`
 >
 > Per RBI IT Governance Direction 2023 and Finacle Connect / Temenos IRIS standards.
-> **82 endpoints** across 12 controllers · **42 error codes** · **4 CBS roles**
+> **83 endpoints** across 13 controllers · **42 error codes** · **4 CBS roles**
 
 ---
 
@@ -12,7 +12,7 @@
 | # | Section | Endpoints |
 |---|---------|-----------|
 | 1 | [Global Conventions](#1-global-conventions) | — |
-| 2 | [Authentication](#2-authentication) | 3 |
+| 2 | [Authentication and Context](#2-authentication) | 4 |
 | 3 | [Customer Onboarding](#3-customer-onboarding) | 6 |
 | 4 | [CASA Account Lifecycle](#4-casa-account-lifecycle) | 6 |
 | 5 | [CASA Financial Operations](#5-casa-financial-operations) | 4 |
@@ -94,9 +94,10 @@ Every response uses `ApiResponse<T>`:
 
 ---
 
-## 2. Authentication
+## 2. Authentication and Context
 
-**Base:** `/api/v1/auth` · **Auth:** `permitAll` · **Rate limit:** 20 req/IP burst, 1 token/6s refill
+**Auth Base:** `/api/v1/auth` · **Auth:** `permitAll` · **Rate limit:** 20 req/IP burst, 1 token/6s refill
+**Context Base:** `/api/v1/context` · **Auth:** JWT required
 
 ### 2.1 `POST /auth/token` — Login
 
