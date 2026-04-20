@@ -9,13 +9,17 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * CBS ApiResponse Envelope Tests — standard response contract.
+ * CBS Tier-1 ApiResponse Envelope Tests — standard response contract.
  *
  * Per RBI IT Governance Direction 2023 §8.5: all API responses must follow
- * a consistent envelope with status, data, errorCode, message, and timestamp.
+ * a consistent envelope with status, data, errorCode, message, timestamp,
+ * meta (apiVersion, correlationId), and structured error detail.
  *
- * Tests the new errorWithData() factory added in this PR alongside the
- * existing success() and error() factories.
+ * Tests all factory methods and verifies the Tier-1 CBS envelope contract:
+ *   - meta.apiVersion is always "v1"
+ *   - meta.timestamp is always present
+ *   - error detail mirrors the flat errorCode/message for backward compatibility
+ *   - severity and action are carried in the structured error object
  */
 class ApiResponseTest {
 
@@ -24,7 +28,7 @@ class ApiResponseTest {
     class SuccessTests {
 
         @Test
-        @DisplayName("success(data) sets SUCCESS status and data")
+        @DisplayName("success(data) sets SUCCESS status and data with meta")
         void successWithData() {
             ApiResponse<String> response = ApiResponse.success("hello");
 
@@ -33,6 +37,12 @@ class ApiResponseTest {
             assertThat(response.getErrorCode()).isNull();
             assertThat(response.getMessage()).isNull();
             assertThat(response.getTimestamp()).isNotNull();
+            // Tier-1: meta is always present
+            assertThat(response.getMeta()).isNotNull();
+            assertThat(response.getMeta().apiVersion()).isEqualTo("v1");
+            assertThat(response.getMeta().timestamp()).isNotNull();
+            // Tier-1: no error detail on success
+            assertThat(response.getError()).isNull();
         }
 
         @Test
@@ -44,6 +54,7 @@ class ApiResponseTest {
             assertThat(response.getData()).isEqualTo(42);
             assertThat(response.getMessage()).isEqualTo("Account created");
             assertThat(response.getErrorCode()).isNull();
+            assertThat(response.getMeta().apiVersion()).isEqualTo("v1");
         }
     }
 
@@ -52,7 +63,7 @@ class ApiResponseTest {
     class ErrorTests {
 
         @Test
-        @DisplayName("error(code, message) sets ERROR status with no data")
+        @DisplayName("error(code, message) sets ERROR with structured error detail")
         void errorWithCodeAndMessage() {
             ApiResponse<Void> response = ApiResponse.error("ACCOUNT_NOT_FOUND", "Not found");
 
@@ -61,11 +72,36 @@ class ApiResponseTest {
             assertThat(response.getMessage()).isEqualTo("Not found");
             assertThat(response.getData()).isNull();
             assertThat(response.getTimestamp()).isNotNull();
+            // Tier-1: structured error mirrors flat fields
+            assertThat(response.getError()).isNotNull();
+            assertThat(response.getError().code()).isEqualTo("ACCOUNT_NOT_FOUND");
+            assertThat(response.getError().message()).isEqualTo("Not found");
+            assertThat(response.getError().severity()).isNull();
+            assertThat(response.getError().action()).isNull();
+            // Tier-1: meta always present
+            assertThat(response.getMeta()).isNotNull();
+            assertThat(response.getMeta().apiVersion()).isEqualTo("v1");
+        }
+
+        @Test
+        @DisplayName("error(code, message, severity, action) carries full Tier-1 error detail")
+        void errorWithSeverityAndAction() {
+            ApiResponse<Void> response = ApiResponse.error(
+                    "CBS-ACCT-007", "Insufficient account balance",
+                    "HIGH", "Verify available balance before initiating transfer");
+
+            assertThat(response.getStatus()).isEqualTo("ERROR");
+            assertThat(response.getErrorCode()).isEqualTo("CBS-ACCT-007");
+            assertThat(response.getError()).isNotNull();
+            assertThat(response.getError().code()).isEqualTo("CBS-ACCT-007");
+            assertThat(response.getError().severity()).isEqualTo("HIGH");
+            assertThat(response.getError().action()).isEqualTo(
+                    "Verify available balance before initiating transfer");
         }
     }
 
     @Nested
-    @DisplayName("errorWithData() factory — new in this PR")
+    @DisplayName("errorWithData() factory")
     class ErrorWithDataTests {
 
         @Test
@@ -84,6 +120,9 @@ class ApiResponseTest {
             assertThat(response.getData()).containsEntry("challengeId", "abc-123");
             assertThat(response.getData()).containsEntry("channel", "TOTP");
             assertThat(response.getTimestamp()).isNotNull();
+            // Tier-1: structured error present alongside data
+            assertThat(response.getError()).isNotNull();
+            assertThat(response.getError().code()).isEqualTo("MFA_REQUIRED");
         }
 
         @Test
@@ -95,6 +134,8 @@ class ApiResponseTest {
             assertThat(response.getStatus()).isEqualTo("ERROR");
             assertThat(response.getErrorCode()).isEqualTo("SOME_ERROR");
             assertThat(response.getData()).isNull();
+            assertThat(response.getError()).isNotNull();
+            assertThat(response.getError().code()).isEqualTo("SOME_ERROR");
         }
     }
 }

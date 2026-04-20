@@ -127,6 +127,28 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Micrometer Prometheus Registry — CBS Tier-1 metrics exposure.
+             Per RBI IT Governance Direction 2023 §7.4: production systems must
+             expose operational metrics for SLA monitoring and capacity planning.
+             Exposes /actuator/prometheus endpoint for Prometheus scraping.
+             Custom CBS metrics (transaction count, GL balance drift, EOD duration,
+             auth rate limit trips) are registered via MeterRegistry in service classes. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- SpringDoc OpenAPI — CBS Tier-1 API documentation per Finacle API / Temenos IRIS.
+             Per RBI IT Governance Direction 2023 §8.5: all API endpoints must be
+             documented with request/response schemas, error codes, and security
+             requirements. Generates OpenAPI 3.0 spec at /v3/api-docs and Swagger UI
+             at /swagger-ui.html (dev/test only — disabled in production). -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.8.4</version>
+        </dependency>
+
         <!-- JWT (JSON Web Token) — HMAC-SHA256 token generation/validation.
              Per Finacle Connect / Temenos IRIS: REST APIs use stateless JWT auth
              for mobile banking, NPCI adapters, and Account Aggregator clients.
