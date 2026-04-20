@@ -78,7 +78,7 @@ public class ProductApiController {
     @GetMapping("/search")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<List<ProductResponse>>>
-            searchProducts(@RequestParam String q) {
+            searchProducts(@RequestParam(required = false) String q) {
         String tenantId = TenantContext.getCurrentTenant();
         List<ProductMaster> products;
         if (q != null && q.trim().length() >= 2) {

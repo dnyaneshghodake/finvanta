@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -86,6 +87,20 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest()
                 .body(ApiResponse.error("VALIDATION_FAILED", errors,
                         "LOW", "Correct the highlighted fields and resubmit"));
+    }
+
+    /**
+     * CBS: Missing required query/path parameter (e.g., ?q= omitted on search).
+     * Per Tier-1 CBS: returns 400 with the parameter name so the BFF can
+     * identify which parameter was missing without guessing.
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingParam(MissingServletRequestParameterException ex) {
+        exposeErrorCode("MISSING_PARAMETER");
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error("MISSING_PARAMETER",
+                        "Required parameter '" + ex.getParameterName() + "' is missing",
+                        "LOW", "Include the '" + ex.getParameterName() + "' query parameter and retry"));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

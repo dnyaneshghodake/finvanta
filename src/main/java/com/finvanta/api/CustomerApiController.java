@@ -140,9 +140,10 @@ public class CustomerApiController {
     @GetMapping("/search")
     @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<CustomerResponse>>>
-            search(@RequestParam String q) {
-        var results = customerService
-                .searchCustomers(q);
+            search(@RequestParam(required = false) String q) {
+        var results = (q != null && q.trim().length() >= 2)
+                ? customerService.searchCustomers(q)
+                : customerService.searchCustomers("");
         var items = results.stream()
                 .map(CustomerResponse::from).toList();
         return ResponseEntity.ok(

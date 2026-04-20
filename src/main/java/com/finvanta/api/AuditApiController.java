@@ -86,7 +86,7 @@ public class AuditApiController {
     @PreAuthorize("hasAnyRole('AUDITOR', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<AuditLogResponse>>>
             searchLogs(
-                    @RequestParam String q,
+                    @RequestParam(required = false) String q,
                     @RequestParam(required = false) String fromDate,
                     @RequestParam(required = false) String toDate,
                     @RequestParam(defaultValue = "0") int page,
