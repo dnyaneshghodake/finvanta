@@ -151,6 +151,17 @@ public class PslComplianceService {
                     "Account " + accountNumber + " PSL classification is already certified");
         }
 
+        // CBS Maker-Checker: Self-approval guard per RBI Internal Controls.
+        // The same user who classified (MAKER) cannot certify (CHECKER).
+        // Per Finacle APPR_MASTER / Temenos OFS.AUTHORIZATION: dual control
+        // prevents a single user from inflating PSL achievement numbers.
+        String classifiedBy = account.getUpdatedBy();
+        if (classifiedBy != null && classifiedBy.equals(currentUser)) {
+            throw new BusinessException("WORKFLOW_SELF_APPROVAL",
+                    "PSL certification requires a different user than the one who classified. "
+                            + "Classified by: " + classifiedBy + ", current user: " + currentUser);
+        }
+
         account.setPslCertified(true);
         account.setPslCertifiedDate(LocalDate.now());
         account.setUpdatedBy(currentUser);
