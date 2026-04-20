@@ -304,22 +304,17 @@ public class DashboardApiController {
         String tid = TenantContext.getCurrentTenant();
         LocalDate bd = businessDateService.getCurrentBusinessDate();
 
-        List<Object[]> txnStats = depositTxnRepository.findByTenantIdAndValueDate(tid, bd)
-                .stream().collect(
-                        () -> new Object[]{0L, BigDecimal.ZERO, BigDecimal.ZERO},
-                        (acc, txn) -> {
-                            acc[0] = (long) acc[0] + 1;
-                            if ("CREDIT".equals(txn.getDebitCredit())) {
-                                acc[1] = ((BigDecimal) acc[1]).add(txn.getAmount());
-                            } else {
-                                acc[2] = ((BigDecimal) acc[2]).add(txn.getAmount());
-                            }
-                        },
-                        (a, b) -> {});
-
-        long count = (long) txnStats[0];
-        BigDecimal credits = (BigDecimal) txnStats[1];
-        BigDecimal debits = (BigDecimal) txnStats[2];
+        var txns = depositTxnRepository.findByTenantIdAndValueDate(tid, bd);
+        long count = txns.size();
+        BigDecimal credits = BigDecimal.ZERO;
+        BigDecimal debits = BigDecimal.ZERO;
+        for (var txn : txns) {
+            if ("CREDIT".equals(txn.getDebitCredit())) {
+                credits = credits.add(txn.getAmount());
+            } else {
+                debits = debits.add(txn.getAmount());
+            }
+        }
 
         return ResponseEntity.ok(ApiResponse.success(new TellerTxnSummary(
                 bd.toString(), count,
