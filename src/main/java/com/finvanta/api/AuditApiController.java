@@ -39,7 +39,7 @@ import org.springframework.web.bind.annotation.*;
  * </ul>
  */
 @RestController
-@RequestMapping("/v1/audit")
+@RequestMapping("/api/v1/audit")
 public class AuditApiController {
 
     private static final int MAX_RESULTS = 500;

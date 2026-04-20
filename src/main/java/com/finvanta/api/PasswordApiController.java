@@ -39,7 +39,7 @@ import org.springframework.web.bind.annotation.*;
  * a valid JWT (authenticated user changing their own password).
  */
 @RestController
-@RequestMapping("/v1/auth/password")
+@RequestMapping("/api/v1/auth/password")
 public class PasswordApiController {
 
     private final UserService userService;

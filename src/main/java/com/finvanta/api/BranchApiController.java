@@ -41,7 +41,7 @@ import org.springframework.web.bind.annotation.*;
  * </ul>
  */
 @RestController
-@RequestMapping("/v1/branches")
+@RequestMapping("/api/v1/branches")
 public class BranchApiController {
 
     private final BranchService branchService;
