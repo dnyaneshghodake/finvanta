@@ -820,9 +820,9 @@ POST /api/v1/auth/token
        │   │                                            │
        │   └───────────────────────────────────────────►│
        │                                               │
-       │                                    200 + LoginSessionContext
+       │                                    200 + AuthResponse
        │                                               │
-       ├── 200 + LoginSessionContext ◄─────────────────┘
+       ├── 200 + AuthResponse ◄────────────────────────┘
        │
        ▼
 ┌─────────────┐
@@ -957,9 +957,9 @@ Browser              Next.js BFF              Spring Boot CBS
   │                      │─────────────────────────►│
   │                      │                          │ TOTP verify → true
   │                      │                          │ Burn challenge jti
-  │                      │                          │ Issue tokens + COC
+  │                      │                          │ Issue tokens
   │                      │                          │
-  │                      │    200 + LoginSession    │
+  │                      │    200 + AuthResponse    │
   │                      │◄─────────────────────────│
   │                      │                          │
   │  Redirect /dashboard │                          │
@@ -973,7 +973,8 @@ Browser              Next.js BFF              Spring Boot CBS
   │                      │                          │
   │  (14 min after login │                          │
   │   — proactive timer) │                          │
-  │                      │  POST /v1/auth/refresh   │
+  │                      │  POST /api/v1/auth/      │
+  │                      │  refresh                 │
   │                      │  {refreshToken: "eyJ.."} │
   │                      │─────────────────────────►│
   │                      │                          │ Validate refresh JWT
@@ -1209,11 +1210,11 @@ Every API request passes through these filters in order:
 | Order | Filter | Purpose | Runs On |
 |---|---|---|---|
 | 0 | `CorrelationIdMdcFilter` | Read/generate `X-Correlation-Id`, set SLF4J MDC | All requests |
-| 1 | `TenantFilter` | Resolve `X-Tenant-Id`, validate format, set `TenantContext` + MDC | All requests |
-| — | `AuthRateLimitFilter` | Rate-limit `/v1/auth/**` endpoints | Auth endpoints only |
-| — | `JwtAuthenticationFilter` | Validate `Authorization: Bearer` JWT, set `SecurityContext` | Protected endpoints only |
+| 1 | `TenantFilter` | Resolve `X-Tenant-Id`, validate format, set `TenantContext` + MDC. Rejects missing/malformed header on `/api/v1/**` with HTTP 400 | All requests |
+| — | `AuthRateLimitFilter` | Token-bucket rate-limit on `/api/v1/auth/**` (20 req/IP burst, 1 token/6s refill) | Auth endpoints only |
+| — | `JwtAuthenticationFilter` | Validate `Authorization: Bearer` JWT, set `SecurityContext` with role/branch/tenant | `/api/v1/**` only (skipped for non-API) |
 
-For `/v1/auth/token` and `/v1/auth/mfa/verify`: `JwtAuthenticationFilter` is **skipped** (these are `permitAll`). Only CorrelationId → Tenant → RateLimit → Controller.
+For `/api/v1/auth/token` and `/api/v1/auth/mfa/verify`: `JwtAuthenticationFilter` still runs but finds no `Authorization` header → passes through as anonymous. Rate limiter applies. Only CorrelationId → Tenant → RateLimit → Controller.
 
 ---
 
@@ -1252,3 +1253,9 @@ For `/v1/auth/token` and `/v1/auth/mfa/verify`: `JwtAuthenticationFilter` is **s
 16. **Dashboard widgets are independent.** Fetch each widget endpoint in parallel. A failed widget does NOT break the dashboard. Use skeleton placeholders. See `API_REFERENCE.md` Section 17 for widget registry and refresh intervals.
 
 17. **Every API call must attach `X-Tenant-Id` and `X-Correlation-Id`.** Use an Axios/fetch interceptor in the BFF to inject these headers automatically from the server-side session.
+
+18. **Use `response.meta.correlationId` for error reporting.** Every response (success and error) now carries `meta.correlationId`. Display this in error modals so users can quote it to support. The correlation ID ties the BFF request → CBS API → audit log → SIEM for end-to-end traceability.
+
+19. **Use `response.error.severity` for UI treatment.** Error responses carry `error.severity` (LOW/MEDIUM/HIGH/CRITICAL) and `error.action` (remediation text). Map severity to UI behavior: LOW → toast auto-dismiss, MEDIUM → warning modal, HIGH → blocking error with action text, CRITICAL → "contact support with correlation ID" modal.
+
+20. **Legacy flat fields are deprecated.** `response.errorCode`, `response.message`, and `response.timestamp` are retained for backward compatibility but deprecated. New BFF code should read `response.error.code`, `response.error.message`, and `response.meta.timestamp` instead.
