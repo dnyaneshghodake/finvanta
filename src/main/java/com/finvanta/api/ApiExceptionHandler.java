@@ -208,9 +208,11 @@ public class ApiExceptionHandler {
                     "BRANCH_ACCESS_DENIED" -> "HIGH";
             case "DUPLICATE_CLEARING_REF",
                     "ALREADY_TERMINAL",
+                    "ALREADY_WAIVED",
                     "ALREADY_REVERSED",
                     "ALREADY_DISBURSED",
                     "ALREADY_CLOSED",
+                    "CLEARING_IN_PROGRESS",
                     "DUPLICATE_TRANSACTION" -> "MEDIUM";
             case "ACCOUNT_DORMANT",
                     "FD_NOT_ACTIVE",
@@ -241,6 +243,13 @@ public class ApiExceptionHandler {
             case "WORKFLOW_SELF_APPROVAL" -> "A different user must approve this operation";
             case "BRANCH_ACCESS_DENIED" -> "You do not have access to this branch's data";
             case "DUPLICATE_TRANSACTION" -> "This transaction was already processed. Check your statement";
+            case "ALREADY_WAIVED" -> "This charge has already been waived. No further action needed";
+            case "CLEARING_IN_PROGRESS" -> "A clearing cycle is in progress. Wait for completion before retrying";
+            case "DUPLICATE_CLEARING_REF" -> "This clearing reference already exists. Verify and use a unique reference";
+            case "ALREADY_TERMINAL" -> "This record is in a terminal state and cannot be modified";
+            case "ALREADY_REVERSED" -> "This transaction has already been reversed";
+            case "ALREADY_DISBURSED" -> "This loan has already been disbursed";
+            case "ALREADY_CLOSED" -> "This account/record is already closed";
             default -> null;
         };
     }
