@@ -7,6 +7,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -16,6 +18,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * CBS Global API Exception Handler per Finacle API / Temenos IRIS.
@@ -33,11 +37,8 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(MfaRequiredException.class)
     public ResponseEntity<ApiResponse<Map<String, String>>> handleMfaRequired(MfaRequiredException ex) {
-        // Per RBI IT Governance Direction 2023 §8.3: step-up MFA failures
-        // return 428 Precondition Required so the Next.js BFF can prompt
-        // the user for MFA and resume the original action with a fresh
-        // idempotency key. No PII is carried in the body.
         log.info("API mfa step-up required: challenge={}", ex.getChallengeId());
+        exposeErrorCode(ex.getErrorCode());
         Map<String, String> payload = new HashMap<>();
         payload.put("challengeId", ex.getChallengeId());
         payload.put("channel", ex.getChannel());
@@ -47,17 +48,15 @@ public class ApiExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException ex) {
         log.warn("API business error: {} — {}", ex.getErrorCode(), ex.getMessage());
+        exposeErrorCode(ex.getErrorCode());
         HttpStatus status = mapErrorCodeToStatus(ex.getErrorCode());
         return ResponseEntity.status(status).body(ApiResponse.error(ex.getErrorCode(), ex.getMessage()));
     }
 
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ApiResponse<Void>> handleOptimisticLock(OptimisticLockingFailureException ex) {
-        // Per Finacle/Temenos maker-checker invariant: a checker operating
-        // on a stale @Version must receive a deterministic 409 with
-        // errorCode VERSION_CONFLICT so the UI can surface "Record changed
-        // since you loaded it — please reload." No merge, no partial write.
         log.warn("API optimistic lock failure: {}", ex.getMessage());
+        exposeErrorCode("VERSION_CONFLICT");
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponse.error(
                         "VERSION_CONFLICT", "Record was modified by another user. " + "Please reload and retry."));
@@ -65,17 +64,14 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiResponse<Void>> handleAccess(AccessDeniedException ex) {
+        exposeErrorCode("ACCESS_DENIED");
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(ApiResponse.error("ACCESS_DENIED", "Insufficient privileges for this " + "operation"));
     }
 
-    /**
-     * Handles @Valid validation failures on @RequestBody DTOs.
-     * Per Finacle API: returns structured field-level error messages
-     * so API consumers can fix specific fields without guessing.
-     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
+        exposeErrorCode("VALIDATION_FAILED");
         String errors = ex.getBindingResult().getFieldErrors().stream()
                 .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
                 .collect(Collectors.joining("; "));
@@ -84,15 +80,34 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse<Void>> handleBadArg(IllegalArgumentException ex) {
+        exposeErrorCode("INVALID_REQUEST");
         return ResponseEntity.badRequest().body(ApiResponse.error("INVALID_REQUEST", ex.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneric(Exception ex) {
-        // CBS SECURITY: Never expose internal details
         log.error("API unhandled error: {}", ex.getMessage(), ex);
+        exposeErrorCode("INTERNAL_ERROR");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred. " + "Contact support."));
+    }
+
+    /**
+     * CBS: Expose the error code as a request attribute so the
+     * JwtAuthenticationFilter's access log can include it without
+     * reading the response body. Per Finacle TRAN_LOG: every API
+     * error must carry the error code in the access log for SOC.
+     */
+    private void exposeErrorCode(String errorCode) {
+        try {
+            ServletRequestAttributes attrs = (ServletRequestAttributes)
+                    RequestContextHolder.getRequestAttributes();
+            if (attrs != null) {
+                attrs.getRequest().setAttribute("fvErrorCode", errorCode);
+            }
+        } catch (Exception ignored) {
+            // Never fail the error response for logging
+        }
     }
 
     /**
