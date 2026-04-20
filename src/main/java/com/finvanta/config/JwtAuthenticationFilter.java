@@ -179,11 +179,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     /**
      * Only apply this filter to /api/v1/** paths.
      * Thymeleaf UI paths use session-based auth.
+     *
+     * CBS CRITICAL: Must match the SecurityConfig API chain's
+     * securityMatcher("/api/v1/**"). If this filter skips /api/v1/**
+     * paths, authenticated endpoints (dashboard, context, etc.)
+     * get 401 because no SecurityContext is set from the JWT.
      */
     @Override
     protected boolean shouldNotFilter(
             HttpServletRequest request) {
         String path = request.getServletPath();
-        return !path.startsWith("/v1/");
+        return !path.startsWith("/api/v1/");
     }
 }
