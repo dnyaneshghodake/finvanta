@@ -147,14 +147,10 @@ public class SecurityConfig {
                                     "/actuator/prometheus")
                             .permitAll();
                     if (isDevProfile()) {
-                        auth.requestMatchers(
-                                "/h2-console/**",
-                                // CBS Tier-1: OpenAPI JSON spec accessible in dev only.
-                                // Per RBI IT Governance §8.5: API schema must not be
-                                // publicly accessible in production (endpoint enumeration risk).
-                                // Swagger UI webjar removed (GHSA-72hv-8253-57qq / WS-2026-0003).
-                                // Use Postman or Swagger Editor to consume /v3/api-docs.
-                                "/v3/api-docs/**").permitAll();
+                        auth.requestMatchers("/h2-console/**").permitAll();
+                        // CBS SECURITY: springdoc-openapi removed from classpath due to
+                        // CRITICAL CVEs in swagger-core (CVSS 9.6, 9.1). No /v3/api-docs
+                        // or /swagger-ui endpoints exist. API docs: docs/API_REFERENCE.md.
                     }
                     // CBS: Explicit rule for branch-switching admin endpoint per Finacle
                     // BRANCH_CONTEXT / Temenos BRANCH.SWITCH. Declared BEFORE /admin/**
