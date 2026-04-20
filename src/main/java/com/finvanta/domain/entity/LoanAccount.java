@@ -346,4 +346,53 @@ public class LoanAccount extends BaseEntity {
     public boolean isMultiDisbursement() {
         return "MULTI_TRANCHE".equals(disbursementMode) || "DRAWDOWN".equals(disbursementMode);
     }
+
+    // === Priority Sector Lending (per RBI Master Direction on PSL 2020) ===
+
+    /**
+     * RBI PSL Classification per Master Direction on PSL 2020.
+     * Values: AGRICULTURE, MICRO_ENTERPRISE, SMALL_ENTERPRISE, MEDIUM_ENTERPRISE,
+     *         EDUCATION, HOUSING, SOCIAL_INFRASTRUCTURE, RENEWABLE_ENERGY,
+     *         EXPORT_CREDIT, WEAKER_SECTION, NON_PSL
+     * Per RBI: 40% of ANBC must be in priority sectors.
+     * Null = not yet classified (pending PSL certification).
+     */
+    @Column(name = "psl_category", length = 30)
+    private String pslCategory;
+
+    /**
+     * PSL sub-category for granular target tracking.
+     * Agriculture sub-categories: CROP_LOAN, ALLIED_ACTIVITIES, FARM_INFRASTRUCTURE,
+     *   ANCILLARY, FOOD_PROCESSING, AGRI_INFRA, DIRECT_AGRI, INDIRECT_AGRI
+     * MSME sub-categories: MANUFACTURING, SERVICES, KHADI_VILLAGE
+     */
+    @Column(name = "psl_sub_category", length = 50)
+    private String pslSubCategory;
+
+    /**
+     * Whether PSL classification has been certified by the checker.
+     * Per RBI: PSL classification must go through maker-checker to prevent
+     * misclassification that inflates PSL achievement numbers.
+     */
+    @Column(name = "psl_certified", nullable = false)
+    private boolean pslCertified = false;
+
+    /** Date when PSL classification was certified */
+    @Column(name = "psl_certified_date")
+    private LocalDate pslCertifiedDate;
+
+    /**
+     * RBI Weaker Section flag per PSL MD 2020.
+     * Per RBI: 12% of ANBC must be to weaker sections (SC/ST, women,
+     * persons with disabilities, minorities, beneficiaries of NRLM/NULM).
+     * Tracked separately because weaker section is a cross-cutting sub-target
+     * that applies across PSL categories (agriculture + MSME + housing etc.).
+     */
+    @Column(name = "weaker_section", nullable = false)
+    private boolean weakerSection = false;
+
+    /** Returns true if this loan is classified under any PSL category */
+    public boolean isPslClassified() {
+        return pslCategory != null && !"NON_PSL".equals(pslCategory);
+    }
 }
