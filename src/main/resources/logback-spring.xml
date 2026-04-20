@@ -33,12 +33,17 @@
     <property name="LOG_DIR" value="${LOG_DIR:-logs}" />
     <property name="APP_NAME" value="finvanta-cbs" />
 
-    <!-- CBS Structured Pattern: includes MDC keys for traceability -->
+    <!-- CBS Structured Pattern: includes MDC keys for traceability
+         Per RBI IT Governance Direction 2023 §7.4: every log line must carry
+         tenant, branch, user, and correlation ID for SIEM/SOC traceability.
+         correlationId: set by CorrelationIdMdcFilter (Order 0) — stable across
+         retries/MFA step-up within a single user action.
+         requestId: set by TenantFilter (Order 1) — unique per HTTP request. -->
     <property name="LOG_PATTERN"
-              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{tenantId:-SYSTEM}/%X{branchCode:-NONE}/%X{username:-SYSTEM}] %logger{36} - %msg%n" />
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{tenantId:-SYSTEM}/%X{branchCode:-NONE}/%X{username:-SYSTEM}/%X{correlationId:-}] %logger{36} - %msg%n" />
 
     <property name="FILE_PATTERN"
-              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{tenantId:-SYSTEM}/%X{branchCode:-NONE}/%X{username:-SYSTEM}/%X{txnRef:-}] %logger{50} - %msg%n" />
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{tenantId:-SYSTEM}/%X{branchCode:-NONE}/%X{username:-SYSTEM}/%X{correlationId:-}/%X{txnRef:-}] %logger{50} - %msg%n" />
 
     <!-- ================================================================== -->
     <!-- DEV Profile: Console with colors                                    -->
@@ -46,7 +51,7 @@
     <springProfile name="dev">
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
             <encoder>
-                <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) [%X{tenantId:-SYS}/%X{branchCode:-}/%X{username:-SYS}] %cyan(%logger{36}) - %msg%n</pattern>
+                <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) [%X{tenantId:-SYS}/%X{branchCode:-}/%X{username:-SYS}/%X{correlationId:-}] %cyan(%logger{36}) - %msg%n</pattern>
             </encoder>
         </appender>
 
@@ -79,7 +84,7 @@
         <!-- Console: CBS application logs only (no SQL queries, no framework noise) -->
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
             <encoder>
-                <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) [%X{tenantId:-SYS}/%X{branchCode:-}/%X{username:-SYS}] %cyan(%logger{36}) - %msg%n</pattern>
+                <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) [%X{tenantId:-SYS}/%X{branchCode:-}/%X{username:-SYS}/%X{correlationId:-}] %cyan(%logger{36}) - %msg%n</pattern>
             </encoder>
         </appender>
 

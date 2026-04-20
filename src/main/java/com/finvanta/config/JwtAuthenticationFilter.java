@@ -160,9 +160,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         SecurityContextHolder.getContext()
                 .setAuthentication(auth);
 
+        // CBS Tier-1 API Access Log per Finacle TRAN_LOG / Temenos EB.API.LOG.
+        // Per RBI IT Governance Direction 2023 §7.4: every API request must be
+        // logged with user, method, path, and response status for SIEM/SOC
+        // traceability and forensic analysis. This is the single point where
+        // ALL authenticated API calls are recorded.
+        long startMs = System.currentTimeMillis();
         try {
             filterChain.doFilter(request, response);
         } finally {
+            long durationMs = System.currentTimeMillis() - startMs;
+            log.info("API {} {} → {} ({}ms) user={} branch={} tenant={}",
+                    request.getMethod(),
+                    request.getRequestURI(),
+                    response.getStatus(),
+                    durationMs,
+                    username, branchCode, tenantId);
             // CBS SECURITY: Clean up ThreadLocal and MDC after request completes.
             // Per Finacle / Temenos: stateless API chain uses container thread pool.
             // Without cleanup, stale tenant/MDC context leaks to subsequent requests
