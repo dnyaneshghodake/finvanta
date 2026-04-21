@@ -103,14 +103,21 @@ public class SecurityConfig {
                                     res.setStatus(401);
                                     res.setContentType(
                                             "application/json");
+                                    // CBS v3.0 Envelope: include error + meta per API_REFERENCE.md
+                                    // so BFF clients reading response.error.code get a consistent shape.
+                                    String correlationId = req.getHeader("X-Correlation-Id");
+                                    String timestamp = java.time.LocalDateTime.now().toString();
                                     res.getWriter().write(
                                             "{\"status\":\"ERROR\","
-                                            + "\"errorCode\":"
-                                            + "\"UNAUTHORIZED\","
-                                            + "\"message\":"
-                                            + "\"Authentication "
-                                            + "required. Provide "
-                                            + "Bearer token.\"}");
+                                            + "\"errorCode\":\"UNAUTHORIZED\","
+                                            + "\"message\":\"Authentication required. Provide Bearer token.\","
+                                            + "\"error\":{\"code\":\"UNAUTHORIZED\","
+                                            + "\"message\":\"Authentication required. Provide Bearer token.\","
+                                            + "\"severity\":\"HIGH\","
+                                            + "\"action\":\"Login to obtain an access token\"},"
+                                            + "\"meta\":{\"apiVersion\":\"3.0\","
+                                            + "\"correlationId\":\"" + (correlationId != null ? correlationId : "") + "\","
+                                            + "\"timestamp\":\"" + timestamp + "\"}}");
                                 }))
                 // CBS: rate limit auth endpoints BEFORE JWT auth so token issuance
                 // cannot be brute-forced. Per RBI Cyber Security Framework 2024 §6.2.
