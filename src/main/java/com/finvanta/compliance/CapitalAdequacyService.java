@@ -167,24 +167,34 @@ public class CapitalAdequacyService {
         }
 
         // CRAR = Total Capital / RWA × 100
-        BigDecimal crar = totalRwa.signum() > 0
-                ? totalCapital.multiply(BigDecimal.valueOf(100))
-                        .divide(totalRwa, 2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
+        // CBS CRITICAL: When RWA is zero (no loan exposure), CRAR is not meaningful.
+        // Per Basel III: a bank with zero RWA and positive capital is fully compliant —
+        // there is no risk to absorb. Setting CRAR to zero would incorrectly trigger
+        // PCA_THRESHOLD_3 (the most severe Prompt Corrective Action level).
+        // A sentinel value of 999.99 signals "no risk exposure" to the BFF/dashboard.
+        BigDecimal crar;
+        BigDecimal tier1Ratio;
+        boolean zeroRwa = totalRwa.signum() == 0;
+        if (zeroRwa) {
+            crar = totalCapital.signum() > 0 ? new BigDecimal("999.99") : BigDecimal.ZERO;
+            tier1Ratio = crar;
+        } else {
+            crar = totalCapital.multiply(BigDecimal.valueOf(100))
+                    .divide(totalRwa, 2, RoundingMode.HALF_UP);
+            tier1Ratio = tier1Capital.multiply(BigDecimal.valueOf(100))
+                    .divide(totalRwa, 2, RoundingMode.HALF_UP);
+        }
 
-        BigDecimal tier1Ratio = totalRwa.signum() > 0
-                ? tier1Capital.multiply(BigDecimal.valueOf(100))
-                        .divide(totalRwa, 2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
-
-        // PCA assessment
+        // PCA assessment — skip when RWA is zero (no exposure = no PCA trigger)
         String pcaStatus = "NORMAL";
-        if (crar.compareTo(PCA_THRESHOLD_3) < 0) {
-            pcaStatus = "PCA_THRESHOLD_3";
-        } else if (crar.compareTo(PCA_THRESHOLD_2) < 0) {
-            pcaStatus = "PCA_THRESHOLD_2";
-        } else if (crar.compareTo(PCA_THRESHOLD_1) < 0) {
-            pcaStatus = "PCA_THRESHOLD_1";
+        if (!zeroRwa) {
+            if (crar.compareTo(PCA_THRESHOLD_3) < 0) {
+                pcaStatus = "PCA_THRESHOLD_3";
+            } else if (crar.compareTo(PCA_THRESHOLD_2) < 0) {
+                pcaStatus = "PCA_THRESHOLD_2";
+            } else if (crar.compareTo(PCA_THRESHOLD_1) < 0) {
+                pcaStatus = "PCA_THRESHOLD_1";
+            }
         }
 
         Map<String, Object> result = new LinkedHashMap<>();

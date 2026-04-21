@@ -264,11 +264,9 @@ public class ReportApiController {
     // RBI Statutory Returns (GAP-01) + Basel III (GAP-06)
     // ========================================================================
 
-    private final com.finvanta.compliance.RbiReturnsService rbiReturnsService;
-    private final com.finvanta.compliance.CapitalAdequacyService capitalAdequacyService;
+    private com.finvanta.compliance.RbiReturnsService rbiReturnsService;
+    private com.finvanta.compliance.CapitalAdequacyService capitalAdequacyService;
 
-    // Note: These are injected via field injection to avoid modifying the existing
-    // constructor. In a dedicated refactor, move to constructor injection.
     @org.springframework.beans.factory.annotation.Autowired
     private void setRbiServices(
             com.finvanta.compliance.RbiReturnsService rbiReturnsService,

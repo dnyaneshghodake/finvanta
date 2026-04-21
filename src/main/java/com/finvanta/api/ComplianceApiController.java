@@ -53,7 +53,18 @@ public class ComplianceApiController {
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Void>> classifyPsl(
             @RequestBody PslClassifyRequest req) {
-        PslCategory category = PslCategory.valueOf(req.category());
+        // CBS: Validate category string before valueOf() to avoid leaking
+        // internal class names (IllegalArgumentException exposes
+        // "No enum constant com.finvanta.domain.enums.PslCategory.INVALID").
+        PslCategory category;
+        try {
+            category = PslCategory.valueOf(req.category());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new com.finvanta.util.BusinessException(
+                    "INVALID_PSL_CATEGORY",
+                    "Invalid PSL category: '" + req.category()
+                            + "'. Valid values: " + java.util.Arrays.toString(PslCategory.values()));
+        }
         pslService.classifyLoan(
                 req.accountNumber(), category,
                 req.subCategory(), req.weakerSection());

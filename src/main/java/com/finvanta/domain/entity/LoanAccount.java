@@ -382,6 +382,17 @@ public class LoanAccount extends BaseEntity {
     private LocalDate pslCertifiedDate;
 
     /**
+     * CBS Maker-Checker: Username of the user who classified the PSL category.
+     * Dedicated field to prevent the self-approval bypass via generic updatedBy.
+     * updatedBy is overwritten by ANY subsequent mutation (batch jobs, interest
+     * accrual, NPA classification), so comparing updatedBy against the certifier
+     * would allow the original MAKER to self-approve after any intervening update.
+     * This field is set ONLY by classifyLoan() and compared in certifyPslClassification().
+     */
+    @Column(name = "psl_classified_by", length = 100)
+    private String pslClassifiedBy;
+
+    /**
      * RBI Weaker Section flag per PSL MD 2020.
      * Per RBI: 12% of ANBC must be to weaker sections (SC/ST, women,
      * persons with disabilities, minorities, beneficiaries of NRLM/NULM).

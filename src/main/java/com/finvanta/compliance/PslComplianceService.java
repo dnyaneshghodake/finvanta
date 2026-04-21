@@ -105,6 +105,7 @@ public class PslComplianceService {
         account.setPslSubCategory(subCategory);
         account.setWeakerSection(weakerSection);
         account.setPslCertified(false); // Requires checker certification
+        account.setPslClassifiedBy(currentUser); // Dedicated field for maker-checker guard
         account.setUpdatedBy(currentUser);
 
         loanAccountRepository.save(account);
@@ -155,7 +156,12 @@ public class PslComplianceService {
         // The same user who classified (MAKER) cannot certify (CHECKER).
         // Per Finacle APPR_MASTER / Temenos OFS.AUTHORIZATION: dual control
         // prevents a single user from inflating PSL achievement numbers.
-        String classifiedBy = account.getUpdatedBy();
+        //
+        // CRITICAL: Uses dedicated pslClassifiedBy field, NOT the generic updatedBy.
+        // updatedBy is overwritten by ANY mutation (EOD batch sets it to "SYSTEM",
+        // interest accrual, NPA classification, etc.). If we compared updatedBy,
+        // the original MAKER could self-certify after any intervening batch update.
+        String classifiedBy = account.getPslClassifiedBy();
         if (classifiedBy != null && classifiedBy.equals(currentUser)) {
             throw new BusinessException("WORKFLOW_SELF_APPROVAL",
                     "PSL certification requires a different user than the one who classified. "

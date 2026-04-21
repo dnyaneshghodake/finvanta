@@ -1,6 +1,8 @@
 package com.finvanta.compliance;
 
 import com.finvanta.audit.AuditService;
+import com.finvanta.domain.entity.AmlStrReport;
+import com.finvanta.repository.AmlStrReportRepository;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
@@ -60,9 +62,13 @@ public class AmlComplianceService {
     private static final int STR_FILING_DEADLINE_DAYS = 7;
 
     private final AuditService auditService;
+    private final AmlStrReportRepository strReportRepository;
 
-    public AmlComplianceService(AuditService auditService) {
+    public AmlComplianceService(
+            AuditService auditService,
+            AmlStrReportRepository strReportRepository) {
         this.auditService = auditService;
+        this.strReportRepository = strReportRepository;
     }
 
     /**
@@ -170,12 +176,32 @@ public class AmlComplianceService {
 
         String strReference = "STR/" + tenantId + "/" + ReferenceGenerator.generateTransactionRef();
 
-        log.info("STR created: ref={}, customer={}, category={}, method={}, score={}",
-                strReference, customerId, category, detectionMethod, riskScore);
+        // CBS CRITICAL: Persist STR to database per PMLA 2002 Section 29.
+        // Without persistence, STR records are silently lost, the findBreachedDeadline()
+        // query returns nothing, and the bank cannot demonstrate PMLA compliance.
+        AmlStrReport str = new AmlStrReport();
+        str.setTenantId(tenantId);
+        str.setStrReference(strReference);
+        str.setCustomerId(customerId);
+        str.setAccountReference(accountReference);
+        str.setDetectionDate(LocalDate.now());
+        str.setStrCategory(category);
+        str.setSuspiciousAmount(amount);
+        str.setNarrative(narrative);
+        str.setDetectionMethod(detectionMethod);
+        str.setRuleId(ruleId);
+        str.setRiskScore(riskScore);
+        str.setStatus("DRAFT");
+        str.setCreatedBy(currentUser);
+
+        AmlStrReport saved = strReportRepository.save(str);
+
+        log.info("STR created and persisted: ref={}, id={}, customer={}, category={}, method={}, score={}",
+                strReference, saved.getId(), customerId, category, detectionMethod, riskScore);
 
         auditService.logEvent(
                 "AML_STR",
-                null,
+                saved.getId(),
                 "STR_CREATED",
                 null,
                 strReference,
