@@ -50,7 +50,7 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
     private final BranchRepository branchRepository;
     private final TransactionEngine transactionEngine;
     private final BusinessDateService businessDateService;
-    private final CbsReferenceService refService;
+    private final SequenceGeneratorService sequenceGenerator;
     private final AuditService auditService;
 
     public RecurringDepositServiceImpl(
@@ -59,14 +59,14 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
             BranchRepository branchRepository,
             TransactionEngine transactionEngine,
             BusinessDateService businessDateService,
-            CbsReferenceService refService,
+            SequenceGeneratorService sequenceGenerator,
             AuditService auditService) {
         this.rdRepository = rdRepository;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.transactionEngine = transactionEngine;
         this.businessDateService = businessDateService;
-        this.refService = refService;
+        this.sequenceGenerator = sequenceGenerator;
         this.auditService = auditService;
     }
 
