@@ -140,12 +140,17 @@ public class CapitalAdequacyService {
 
             if (loan.getStatus().isNpa()) {
                 // NPA: risk weight depends on provision coverage
+                // CBS: Null-safe provisioningAmount — JPA sets null for DB rows where
+                // the column is NULL (Java field default BigDecimal.ZERO only applies
+                // to objects created in Java, not loaded from DB).
+                BigDecimal provisionAmt = loan.getProvisioningAmount() != null
+                        ? loan.getProvisioningAmount() : BigDecimal.ZERO;
                 BigDecimal provisionCoverage = outstanding.signum() > 0
-                        ? loan.getProvisioningAmount().divide(outstanding, 4, RoundingMode.HALF_UP)
+                        ? provisionAmt.divide(outstanding, 4, RoundingMode.HALF_UP)
                         : BigDecimal.ZERO;
                 riskWeight = provisionCoverage.compareTo(NPA_PROVISION_THRESHOLD) >= 0
                         ? RW_NPA_HIGH_PROVISION : RW_NPA_LOW_PROVISION;
-                BigDecimal netExposure = outstanding.subtract(loan.getProvisioningAmount()).max(BigDecimal.ZERO);
+                BigDecimal netExposure = outstanding.subtract(provisionAmt).max(BigDecimal.ZERO);
                 BigDecimal rwa = netExposure.multiply(riskWeight);
                 npaRwa = npaRwa.add(rwa);
                 totalRwa = totalRwa.add(rwa);
