@@ -195,6 +195,26 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
 
         BigDecimal daily = rd.getCumulativeDeposit().multiply(rd.getInterestRate())
                 .divide(BigDecimal.valueOf(36500), 2, RoundingMode.HALF_UP);
+
+        // CBS CRITICAL: GL posting BEFORE subledger update.
+        // Per Finacle RD_ENGINE / Temenos FIXED.DEPOSIT accrual:
+        // DR RD Interest Expense (5012) / CR RD Interest Payable (2041)
+        // Without this, the maturity GL posting debits 2041 which was never
+        // credited, and EOD reconciliation flags subledger-vs-GL mismatch daily.
+        if (daily.signum() > 0) {
+            transactionEngine.execute(TransactionRequest.builder()
+                    .sourceModule("RECURRING_DEPOSIT").transactionType("RD_INTEREST_ACCRUAL")
+                    .accountReference(rd.getRdAccountNumber()).amount(daily)
+                    .valueDate(businessDate).branchCode(rd.getBranchCode())
+                    .narration("RD daily interest accrual")
+                    .journalLines(List.of(
+                            new JournalLineRequest(GLConstants.RD_INTEREST_EXPENSE,
+                                    DebitCredit.DEBIT, daily, "RD interest expense"),
+                            new JournalLineRequest(GLConstants.RD_INTEREST_PAYABLE,
+                                    DebitCredit.CREDIT, daily, "RD interest payable")))
+                    .systemGenerated(true).build());
+        }
+
         rd.setAccruedInterest(rd.getAccruedInterest().add(daily));
         rd.setLastAccrualDate(businessDate);
         rdRepository.save(rd);
