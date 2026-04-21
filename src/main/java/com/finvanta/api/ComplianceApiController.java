@@ -34,14 +34,17 @@ public class ComplianceApiController {
     private final PslComplianceService pslService;
     private final AmlComplianceService amlService;
     private final CreditBureauService bureauService;
+    private final com.finvanta.compliance.CustomerCertificateService certificateService;
 
     public ComplianceApiController(
             PslComplianceService pslService,
             AmlComplianceService amlService,
-            CreditBureauService bureauService) {
+            CreditBureauService bureauService,
+            com.finvanta.compliance.CustomerCertificateService certificateService) {
         this.pslService = pslService;
         this.amlService = amlService;
         this.bureauService = bureauService;
+        this.certificateService = certificateService;
     }
 
     // ========================================================================
@@ -156,6 +159,47 @@ public class ComplianceApiController {
                 .map(BureauInquiryResponse::from)
                 .toList();
         return ResponseEntity.ok(ApiResponse.success(history));
+    }
+
+    // ========================================================================
+    // Customer Certificates (per RBI Fair Practices Code / IT Act)
+    // ========================================================================
+
+    /** Interest Certificate (Form 16A equivalent) per IT Act Section 203. */
+    @GetMapping("/certificates/interest/{accountNumber}")
+    @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>>
+            getInterestCertificate(
+                    @PathVariable String accountNumber,
+                    @RequestParam(defaultValue = "2024-25") String financialYear) {
+        Map<String, Object> data = certificateService
+                .generateInterestCertificateData(accountNumber, financialYear);
+        return ResponseEntity.ok(ApiResponse.success(data));
+    }
+
+    /** Loan Closure NOC per RBI Fair Practices Code 2023. */
+    @GetMapping("/certificates/noc/{loanAccountNumber}")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>>
+            getLoanClosureNoc(@PathVariable String loanAccountNumber) {
+        Map<String, Object> data = certificateService
+                .generateLoanClosureNocData(loanAccountNumber);
+        return ResponseEntity.ok(ApiResponse.success(data));
+    }
+
+    /** Balance Confirmation Certificate for auditors. */
+    @GetMapping("/certificates/balance/{accountNumber}")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN', 'AUDITOR')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>>
+            getBalanceConfirmation(
+                    @PathVariable String accountNumber,
+                    @RequestParam(required = false) String asOfDate) {
+        java.time.LocalDate date = asOfDate != null
+                ? java.time.LocalDate.parse(asOfDate)
+                : java.time.LocalDate.now();
+        Map<String, Object> data = certificateService
+                .generateBalanceConfirmationData(accountNumber, date);
+        return ResponseEntity.ok(ApiResponse.success(data));
     }
 
     // ========================================================================
