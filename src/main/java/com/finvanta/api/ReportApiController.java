@@ -1,5 +1,7 @@
 package com.finvanta.api;
 
+import com.finvanta.compliance.CapitalAdequacyService;
+import com.finvanta.compliance.RbiReturnsService;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.BusinessDateService;
@@ -11,8 +13,10 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -264,13 +268,13 @@ public class ReportApiController {
     // RBI Statutory Returns (GAP-01) + Basel III (GAP-06)
     // ========================================================================
 
-    private com.finvanta.compliance.RbiReturnsService rbiReturnsService;
-    private com.finvanta.compliance.CapitalAdequacyService capitalAdequacyService;
+    private RbiReturnsService rbiReturnsService;
+    private CapitalAdequacyService capitalAdequacyService;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private void setRbiServices(
-            com.finvanta.compliance.RbiReturnsService rbiReturnsService,
-            com.finvanta.compliance.CapitalAdequacyService capitalAdequacyService) {
+            RbiReturnsService rbiReturnsService,
+            CapitalAdequacyService capitalAdequacyService) {
         this.rbiReturnsService = rbiReturnsService;
         this.capitalAdequacyService = capitalAdequacyService;
     }
@@ -281,12 +285,12 @@ public class ReportApiController {
      */
     @GetMapping("/dsb")
     @PreAuthorize("hasAnyRole('ADMIN', 'AUDITOR')")
-    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>>
+    public ResponseEntity<ApiResponse<Map<String, Object>>>
             getDsb(@RequestParam(required = false) String date) {
-        java.time.LocalDate reportDate = date != null
-                ? java.time.LocalDate.parse(date)
+        LocalDate reportDate = date != null
+                ? LocalDate.parse(date)
                 : getBusinessDateSafe();
-        if (reportDate == null) reportDate = java.time.LocalDate.now();
+        if (reportDate == null) reportDate = LocalDate.now();
         return ResponseEntity.ok(ApiResponse.success(
                 rbiReturnsService.computeDsb(reportDate)));
     }
@@ -296,7 +300,7 @@ public class ReportApiController {
      */
     @GetMapping("/crr-slr")
     @PreAuthorize("hasAnyRole('ADMIN', 'AUDITOR')")
-    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>>
+    public ResponseEntity<ApiResponse<Map<String, Object>>>
             getCrrSlrPosition() {
         return ResponseEntity.ok(ApiResponse.success(
                 rbiReturnsService.computeCrrSlrPosition()));
@@ -308,7 +312,7 @@ public class ReportApiController {
      */
     @GetMapping("/crar")
     @PreAuthorize("hasAnyRole('ADMIN', 'AUDITOR')")
-    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>>
+    public ResponseEntity<ApiResponse<Map<String, Object>>>
             getCrar() {
         return ResponseEntity.ok(ApiResponse.success(
                 capitalAdequacyService.computeCrar()));

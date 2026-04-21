@@ -2,10 +2,15 @@ package com.finvanta.api;
 
 import com.finvanta.compliance.AmlComplianceService;
 import com.finvanta.compliance.CreditBureauService;
+import com.finvanta.compliance.CustomerCertificateService;
 import com.finvanta.compliance.PslComplianceService;
 import com.finvanta.domain.entity.CreditBureauInquiry;
 import com.finvanta.domain.enums.PslCategory;
+import com.finvanta.util.BusinessException;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -34,13 +39,13 @@ public class ComplianceApiController {
     private final PslComplianceService pslService;
     private final AmlComplianceService amlService;
     private final CreditBureauService bureauService;
-    private final com.finvanta.compliance.CustomerCertificateService certificateService;
+    private final CustomerCertificateService certificateService;
 
     public ComplianceApiController(
             PslComplianceService pslService,
             AmlComplianceService amlService,
             CreditBureauService bureauService,
-            com.finvanta.compliance.CustomerCertificateService certificateService) {
+            CustomerCertificateService certificateService) {
         this.pslService = pslService;
         this.amlService = amlService;
         this.bureauService = bureauService;
@@ -63,10 +68,10 @@ public class ComplianceApiController {
         try {
             category = PslCategory.valueOf(req.category());
         } catch (IllegalArgumentException | NullPointerException e) {
-            throw new com.finvanta.util.BusinessException(
+            throw new BusinessException(
                     "INVALID_PSL_CATEGORY",
                     "Invalid PSL category: '" + req.category()
-                            + "'. Valid values: " + java.util.Arrays.toString(PslCategory.values()));
+                            + "'. Valid values: " + Arrays.toString(PslCategory.values()));
         }
         pslService.classifyLoan(
                 req.accountNumber(), category,
@@ -194,9 +199,9 @@ public class ComplianceApiController {
             getBalanceConfirmation(
                     @PathVariable String accountNumber,
                     @RequestParam(required = false) String asOfDate) {
-        java.time.LocalDate date = asOfDate != null
-                ? java.time.LocalDate.parse(asOfDate)
-                : java.time.LocalDate.now();
+        LocalDate date = asOfDate != null
+                ? LocalDate.parse(asOfDate)
+                : LocalDate.now();
         Map<String, Object> data = certificateService
                 .generateBalanceConfirmationData(accountNumber, date);
         return ResponseEntity.ok(ApiResponse.success(data));
@@ -218,7 +223,7 @@ public class ComplianceApiController {
             Long customerId,
             String accountReference,
             String category,
-            java.math.BigDecimal amount,
+            BigDecimal amount,
             String narrative,
             String detectionMethod,
             String ruleId,
