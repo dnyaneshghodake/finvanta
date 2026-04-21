@@ -115,7 +115,7 @@ public class SecurityConfig {
                                             + "\"message\":\"Authentication required. Provide Bearer token.\","
                                             + "\"severity\":\"HIGH\","
                                             + "\"action\":\"Login to obtain an access token\"},"
-                                            + "\"meta\":{\"apiVersion\":\"3.0\","
+                                            + "\"meta\":{\"apiVersion\":\"v1\","
                                             + "\"correlationId\":\"" + (correlationId != null ? correlationId : "") + "\","
                                             + "\"timestamp\":\"" + timestamp + "\"}}");
                                 }))
