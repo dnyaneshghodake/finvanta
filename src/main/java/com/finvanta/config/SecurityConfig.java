@@ -105,7 +105,13 @@ public class SecurityConfig {
                                             "application/json");
                                     // CBS v3.0 Envelope: include error + meta per API_REFERENCE.md
                                     // so BFF clients reading response.error.code get a consistent shape.
-                                    String correlationId = req.getHeader("X-Correlation-Id");
+                                    // CBS SECURITY: Read correlationId from MDC (validated by
+                                    // CorrelationIdMdcFilter) instead of raw header to prevent
+                                    // JSON injection via crafted X-Correlation-Id values.
+                                    String correlationId = org.slf4j.MDC.get("correlationId");
+                                    if (correlationId == null) {
+                                        correlationId = "";
+                                    }
                                     String timestamp = java.time.LocalDateTime.now().toString();
                                     res.getWriter().write(
                                             "{\"status\":\"ERROR\","
