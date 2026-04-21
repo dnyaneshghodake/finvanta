@@ -12,8 +12,8 @@ import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.RecurringDepositRepository;
 import com.finvanta.service.BusinessDateService;
-import com.finvanta.service.CbsReferenceService;
 import com.finvanta.service.RecurringDepositService;
+import com.finvanta.service.SequenceGeneratorService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
@@ -108,7 +108,7 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
         RecurringDeposit rd = new RecurringDeposit();
         rd.setTenantId(tenantId);
         rd.setRdAccountNumber("RD/" + branch.getBranchCode() + "/"
-                + refService.nextSequenceValue("RD_" + branch.getBranchCode()));
+                + sequenceGenerator.nextFormattedValue("RD_SEQ_" + branch.getBranchCode(), 6));
         rd.setCustomer(cust);
         rd.setBranch(branch);
         rd.setBranchCode(branch.getBranchCode());
