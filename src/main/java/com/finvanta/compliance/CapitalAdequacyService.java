@@ -134,7 +134,8 @@ public class CapitalAdequacyService {
         BigDecimal npaRwa = BigDecimal.ZERO;
 
         for (LoanAccount loan : allLoans) {
-            BigDecimal outstanding = loan.getOutstandingPrincipal();
+            BigDecimal outstanding = loan.getOutstandingPrincipal() != null
+                    ? loan.getOutstandingPrincipal() : BigDecimal.ZERO;
             BigDecimal riskWeight;
 
             if (loan.getStatus().isNpa()) {

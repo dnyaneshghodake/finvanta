@@ -213,7 +213,8 @@ public class PslComplianceService {
         BigDecimal weakerSectionOutstanding = BigDecimal.ZERO;
 
         for (LoanAccount account : allActive) {
-            BigDecimal outstanding = account.getOutstandingPrincipal();
+            BigDecimal outstanding = account.getOutstandingPrincipal() != null
+                    ? account.getOutstandingPrincipal() : BigDecimal.ZERO;
             totalOutstanding = totalOutstanding.add(outstanding);
 
             if (account.isPslCertified() && account.isPslClassified()) {

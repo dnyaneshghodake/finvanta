@@ -16,6 +16,10 @@ IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='loan_a
     ALTER TABLE loan_accounts ADD psl_certified_date DATE;
 IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='loan_accounts' AND COLUMN_NAME='weaker_section')
     ALTER TABLE loan_accounts ADD weaker_section BIT NOT NULL DEFAULT 0;
+-- CBS Maker-Checker: Dedicated field for PSL classification maker identity.
+-- Prevents self-approval bypass via generic updatedBy (overwritten by batch jobs).
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='loan_accounts' AND COLUMN_NAME='psl_classified_by')
+    ALTER TABLE loan_accounts ADD psl_classified_by VARCHAR(100);
 GO
 
 -- 2. Credit Bureau Inquiries
