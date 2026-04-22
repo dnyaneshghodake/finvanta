@@ -1,8 +1,11 @@
 package com.finvanta.compliance;
 
 import com.finvanta.audit.AuditService;
+import com.finvanta.domain.entity.AmlCtrReport;
 import com.finvanta.domain.entity.AmlStrReport;
+import com.finvanta.repository.AmlCtrReportRepository;
 import com.finvanta.repository.AmlStrReportRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
@@ -62,12 +65,18 @@ public class AmlComplianceService {
 
     private final AuditService auditService;
     private final AmlStrReportRepository strReportRepository;
+    private final AmlCtrReportRepository ctrReportRepository;
+    private final BusinessDateService businessDateService;
 
     public AmlComplianceService(
             AuditService auditService,
-            AmlStrReportRepository strReportRepository) {
+            AmlStrReportRepository strReportRepository,
+            AmlCtrReportRepository ctrReportRepository,
+            BusinessDateService businessDateService) {
         this.auditService = auditService;
         this.strReportRepository = strReportRepository;
+        this.ctrReportRepository = ctrReportRepository;
+        this.businessDateService = businessDateService;
     }
 
     /**
@@ -105,12 +114,31 @@ public class AmlComplianceService {
         // Determine reporting month (first day of the transaction month)
         LocalDate reportingMonth = transactionDate.withDayOfMonth(1);
 
-        log.info("CTR record generated: ref={}, customer={}, account={}, amount={}, type={}",
-                ctrReference, customerId, accountReference, amount, transactionType);
+        // CBS CRITICAL: Persist CTR to database per PMLA 2002 Section 28(2).
+        // Without persistence, CTR records are silently lost, the monthly batch
+        // filing job has no data source, and the bank cannot demonstrate PMLA compliance.
+        AmlCtrReport ctr = new AmlCtrReport();
+        ctr.setTenantId(tenantId);
+        ctr.setCtrReference(ctrReference);
+        ctr.setReportingMonth(reportingMonth);
+        ctr.setCustomerId(customerId);
+        ctr.setAccountReference(accountReference);
+        ctr.setTransactionRef(transactionRef);
+        ctr.setTransactionDate(transactionDate);
+        ctr.setTransactionType(transactionType);
+        ctr.setAmount(amount);
+        ctr.setBranchCode(branchCode);
+        ctr.setStatus("PENDING");
+        ctr.setCreatedBy("SYSTEM");
+
+        AmlCtrReport saved = ctrReportRepository.save(ctr);
+
+        log.info("CTR record persisted: ref={}, id={}, customer={}, account={}, amount={}, type={}",
+                ctrReference, saved.getId(), customerId, accountReference, amount, transactionType);
 
         auditService.logEvent(
                 "AML_CTR",
-                null,
+                saved.getId(),
                 "CTR_GENERATED",
                 null,
                 ctrReference,
@@ -119,11 +147,6 @@ public class AmlComplianceService {
                         + ", amount=INR " + amount
                         + ", type=" + transactionType
                         + ", account=" + accountReference);
-
-        // NOTE: Actual DB persistence requires AmlCtrReportRepository.
-        // This service method defines the contract and audit trail.
-        // Repository wiring will be added when JPA entities for aml_ctr_reports
-        // are created in the next implementation chunk.
     }
 
     /**
@@ -183,7 +206,18 @@ public class AmlComplianceService {
         str.setStrReference(strReference);
         str.setCustomerId(customerId);
         str.setAccountReference(accountReference);
-        str.setDetectionDate(LocalDate.now());
+        // CBS: Use CBS business date for regulatory dates, not LocalDate.now().
+        // Per Customer.java CBS standards: uses provided business date, NOT LocalDate.now().
+        // STR detection date is a regulatory date audited against the CBS business calendar.
+        LocalDate bizDate;
+        try {
+            bizDate = businessDateService.getCurrentBusinessDate();
+        } catch (Exception e) {
+            // Fallback: if no business day is open (e.g., compliance officer filing
+            // on a holiday via admin override), use system date as last resort.
+            bizDate = LocalDate.now();
+        }
+        str.setDetectionDate(bizDate);
         str.setStrCategory(category);
         str.setSuspiciousAmount(amount);
         str.setNarrative(narrative);
