@@ -492,7 +492,7 @@ public class CustomerApiController {
                     PiiMaskingUtil.maskPan(c.getPanNumber()),
                     PiiMaskingUtil.maskAadhaar(c.getAadhaarNumber()),
                     c.getCkycNumber(),
-                    c.getMobileNumber(),
+                    PiiMaskingUtil.maskMobile(c.getMobileNumber()),
                     c.getEmail(),
                     c.getDateOfBirth() != null ? c.getDateOfBirth().toString() : null,
                     mapGender(c.getGender()),
