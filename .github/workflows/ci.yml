@@ -13,17 +13,14 @@ name: CI
 # Per Finacle/Temenos CI standards: ALL gates must pass before merge.
 # Java 17 (Temurin) matches pom.xml <java.version>17</java.version>.
 
+# Triggers on ALL branches — every push and every PR gets the full pipeline.
+# Per RBI IT Governance §7.2: code quality gates must run on every change,
+# not just protected branches. Feature branches catch issues before PR review.
 on:
   push:
     branches:
-      - master
-      - integration
-      - integration_prior_to_master_branch
+      - '**'
   pull_request:
-    branches:
-      - master
-      - integration
-      - integration_prior_to_master_branch
   workflow_dispatch:
 
 concurrency:
