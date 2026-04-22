@@ -250,23 +250,6 @@ public class AmlComplianceService {
     }
 
     /**
-     * Evaluates customer AML risk score based on configurable factors.
-     *
-     * <p>Per RBI KYC Master Direction Section 16: Risk-based approach to CDD.
-     * Risk score is a composite of:
-     * <ul>
-     *   <li>Customer type (individual=0, trust=+20, shell company=+30)</li>
-     *   <li>Geography (domestic=0, high-risk country=+25)</li>
-     *   <li>Product mix (savings=0, cash-intensive business=+15)</li>
-     *   <li>Transaction patterns (velocity, structuring indicators)</li>
-     *   <li>PEP status (+30)</li>
-     *   <li>Adverse media hits (+20)</li>
-     * </ul>
-     *
-     * @param customerId Customer to evaluate
-     * @return Computed risk score (0-100)
-     */
-    /**
      * Evaluates customer AML risk score.
      *
      * <p>Phase 1: Returns the persisted {@code aml_risk_score} from the Customer record

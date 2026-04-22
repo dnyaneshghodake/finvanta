@@ -1,6 +1,7 @@
 package com.finvanta.api;
 
 import com.finvanta.domain.entity.Customer;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CustomerCifService;
 import com.finvanta.util.PiiMaskingUtil;
 
@@ -38,11 +39,11 @@ import org.springframework.web.bind.annotation.*;
 public class CustomerApiController {
 
     private final CustomerCifService customerService;
-    private final com.finvanta.service.BusinessDateService businessDateService;
+    private final BusinessDateService businessDateService;
 
     public CustomerApiController(
             CustomerCifService customerService,
-            com.finvanta.service.BusinessDateService businessDateService) {
+            BusinessDateService businessDateService) {
         this.customerService = customerService;
         this.businessDateService = businessDateService;
     }
