@@ -1,6 +1,6 @@
 package com.finvanta.service;
 
-import com.finvanta.api.DepositAccountController.OpenAccountRequest;
+import com.finvanta.api.dto.OpenAccountRequest;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
 

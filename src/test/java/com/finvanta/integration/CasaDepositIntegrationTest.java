@@ -147,7 +147,7 @@ class CasaDepositIntegrationTest {
         Customer cust = customerRepository.findAll().stream()
                 .filter(c -> c.getTenantId().equals(TENANT))
                 .findFirst().orElseThrow();
-        var req = new com.finvanta.api.DepositAccountController.OpenAccountRequest(
+        var req = new com.finvanta.api.dto.OpenAccountRequest(
                 cust.getId(), testBranchId, "SAVINGS", "SAVINGS",
                 null, null,
                 null, null, null, null,
@@ -249,7 +249,7 @@ class CasaDepositIntegrationTest {
         Customer cust = customerRepository.findAll().stream()
                 .filter(c -> c.getTenantId().equals(TENANT))
                 .findFirst().orElseThrow();
-        var req = new com.finvanta.api.DepositAccountController.OpenAccountRequest(
+        var req = new com.finvanta.api.dto.OpenAccountRequest(
                 cust.getId(), testBranchId, "CURRENT", "CURRENT",
                 null, null,
                 null, null, null, null,

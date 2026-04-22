@@ -237,7 +237,7 @@ public class DepositController {
             // CBS: Construct OpenAccountRequest DTO from JSP form params.
             // JSP form only captures the original 7 fields — new fields are null.
             // Per @JsonIgnoreProperties(ignoreUnknown = true): null fields are safe.
-            var req = new com.finvanta.api.DepositAccountController.OpenAccountRequest(
+            var req = new com.finvanta.api.dto.OpenAccountRequest(
                     customerId, branchId, accountType,
                     productCode != null ? productCode : accountType,
                     null, // currencyCode — default INR
