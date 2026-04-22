@@ -66,12 +66,15 @@ public class PslComplianceService {
 
     private final LoanAccountRepository loanAccountRepository;
     private final AuditService auditService;
+    private final BusinessDateService businessDateService;
 
     public PslComplianceService(
             LoanAccountRepository loanAccountRepository,
-            AuditService auditService) {
+            AuditService auditService,
+            BusinessDateService businessDateService) {
         this.loanAccountRepository = loanAccountRepository;
         this.auditService = auditService;
+        this.businessDateService = businessDateService;
     }
 
     /**
@@ -170,7 +173,15 @@ public class PslComplianceService {
         }
 
         account.setPslCertified(true);
-        account.setPslCertifiedDate(LocalDate.now());
+        // CBS: Use CBS business date for regulatory dates, not LocalDate.now().
+        // PSL certification date is audited in RBI OSMOS quarterly returns.
+        LocalDate certDate;
+        try {
+            certDate = businessDateService.getCurrentBusinessDate();
+        } catch (Exception e) {
+            certDate = LocalDate.now();
+        }
+        account.setPslCertifiedDate(certDate);
         account.setUpdatedBy(currentUser);
         loanAccountRepository.save(account);
 

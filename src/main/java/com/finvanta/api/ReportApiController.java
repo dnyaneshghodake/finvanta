@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -49,12 +48,18 @@ public class ReportApiController {
 
     private final LoanAccountRepository accountRepository;
     private final BusinessDateService businessDateService;
+    private final RbiReturnsService rbiReturnsService;
+    private final CapitalAdequacyService capitalAdequacyService;
 
     public ReportApiController(
             LoanAccountRepository accountRepository,
-            BusinessDateService businessDateService) {
+            BusinessDateService businessDateService,
+            RbiReturnsService rbiReturnsService,
+            CapitalAdequacyService capitalAdequacyService) {
         this.accountRepository = accountRepository;
         this.businessDateService = businessDateService;
+        this.rbiReturnsService = rbiReturnsService;
+        this.capitalAdequacyService = capitalAdequacyService;
     }
 
     /**
@@ -267,17 +272,6 @@ public class ReportApiController {
     // ========================================================================
     // RBI Statutory Returns (GAP-01) + Basel III (GAP-06)
     // ========================================================================
-
-    private RbiReturnsService rbiReturnsService;
-    private CapitalAdequacyService capitalAdequacyService;
-
-    @Autowired
-    private void setRbiServices(
-            RbiReturnsService rbiReturnsService,
-            CapitalAdequacyService capitalAdequacyService) {
-        this.rbiReturnsService = rbiReturnsService;
-        this.capitalAdequacyService = capitalAdequacyService;
-    }
 
     /**
      * Daily Statement of Balances (DSB) per RBI Act 1934 Section 27.

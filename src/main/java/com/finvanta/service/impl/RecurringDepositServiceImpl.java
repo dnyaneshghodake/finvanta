@@ -285,6 +285,30 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
                 .divide(BigDecimal.valueOf(36500), 2, RoundingMode.HALF_UP);
         BigDecimal closureAmt = rd.getCumulativeDeposit().add(adjustedInterest);
 
+        // CBS CRITICAL: Reverse excess accrued interest before closure posting.
+        // Daily accruals were posted to GL 2041 (RD_INTEREST_PAYABLE) at the full rate.
+        // Premature closure uses a penalized rate, so adjustedInterest < accruedInterest.
+        // The difference (accruedInterest - adjustedInterest) is an orphan credit in GL 2041
+        // that must be reversed: DR RD_INTEREST_PAYABLE (2041) / CR RD_INTEREST_EXPENSE (5012).
+        // Without this reversal, the closure posting debits only adjustedInterest from 2041,
+        // leaving a permanent credit residual that corrupts EOD GL reconciliation.
+        BigDecimal excessInterest = rd.getAccruedInterest().subtract(adjustedInterest);
+        if (excessInterest.signum() > 0) {
+            transactionEngine.execute(TransactionRequest.builder()
+                    .sourceModule("RECURRING_DEPOSIT").transactionType("RD_INTEREST_REVERSAL")
+                    .accountReference(rd.getRdAccountNumber()).amount(excessInterest)
+                    .valueDate(bd).branchCode(rd.getBranchCode())
+                    .narration("RD premature penalty interest reversal: " + rdAccountNumber)
+                    .journalLines(List.of(
+                            new JournalLineRequest(GLConstants.RD_INTEREST_PAYABLE,
+                                    DebitCredit.DEBIT, excessInterest, "Reverse excess accrued interest"),
+                            new JournalLineRequest(GLConstants.RD_INTEREST_EXPENSE,
+                                    DebitCredit.CREDIT, excessInterest, "Reverse excess interest expense")))
+                    .systemGenerated(true).build());
+            log.info("RD interest reversal: rdNo={}, accrued={}, adjusted={}, reversed={}",
+                    rdAccountNumber, rd.getAccruedInterest(), adjustedInterest, excessInterest);
+        }
+
         transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("RECURRING_DEPOSIT").transactionType("RD_PREMATURE_CLOSE")
                 .accountReference(rd.getLinkedAccountNumber()).amount(closureAmt)
@@ -294,7 +318,7 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
                         new JournalLineRequest(GLConstants.RD_DEPOSITS,
                                 DebitCredit.DEBIT, rd.getCumulativeDeposit(), "RD principal"),
                         new JournalLineRequest(GLConstants.RD_INTEREST_PAYABLE,
-                                DebitCredit.DEBIT, adjustedInterest, "RD interest"),
+                                DebitCredit.DEBIT, adjustedInterest, "RD interest (penalized)"),
                         new JournalLineRequest(GLConstants.SB_DEPOSITS,
                                 DebitCredit.CREDIT, closureAmt, "RD premature to CASA")))
                 .systemGenerated(true).build());
