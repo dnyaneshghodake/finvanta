@@ -3,11 +3,12 @@
 > **Version:** 3.0 · **Base URL:** `/api/v1` · **Auth:** JWT Bearer · **Envelope:** `ApiResponse<T>` with `meta` + `error` (Tier-1 CBS Grade)
 >
 > Per RBI IT Governance Direction 2023, RBI Fair Practices Code 2023, Finacle Connect / Temenos IRIS standards.
-> **100+ endpoints** across 20 controllers · **42 error codes** · **4 CBS roles** · **4 severity levels**
+> **109+ endpoints** across 22 controllers · **42 error codes** · **4 CBS roles** · **4 severity levels**
 >
 > **What's new in v3.0:** Tier-1 response envelope (meta.apiVersion, meta.correlationId, error.severity, error.action),
-> Prometheus metrics (/actuator/prometheus), OpenAPI 3.0 docs (/swagger-ui.html — dev only),
-> JSON structured logging (prod), all controllers unified under `/api/v1/`.
+> Prometheus metrics (/actuator/prometheus), JSON structured logging (prod), all controllers unified under `/api/v1/`,
+> CIF Lookup API (30-field CifLookupResponse), 67-field CreateCustomerRequest per CERSAI CKYC v2.0,
+> DSB/CRR-SLR/CRAR regulatory reports, Compliance API (PSL, AML, Credit Bureau, Certificates).
 
 ---
 
@@ -37,7 +38,7 @@
 | 20 | [Users](#20-users) | 6 |
 | 21 | [Products](#21-products) | 6 |
 | 22 | [Audit Trail](#22-audit-trail) | 3 |
-| 23 | [Reports](#23-reports) | 3 |
+| 23 | [Reports](#23-reports) | 6 |
 | 24 | [Password Management](#24-password-management) | 1 |
 | 25 | [Charge Reversal](#25-charge-reversal) | 1 |
 | 26 | [Error Code Reference](#26-error-code-reference) | 42 codes |
@@ -296,36 +297,43 @@ POST /auth/token → store JWT in memory
 
 ## 3. Customer Onboarding
 
-**Base:** `/api/v1/customers`
+**Base:** `/api/v1/customers` · **Full Contract:** [`docs/API_CUSTOMER_CONTRACT.md`](API_CUSTOMER_CONTRACT.md)
 
-| # | Method | Path | Roles | Description |
-|---|--------|------|-------|-------------|
-| 4 | POST | `/customers` | MAKER, ADMIN | Create customer (CIF) |
-| 5 | GET | `/customers/{id}` | MAKER, CHECKER, ADMIN | Get customer by ID |
-| 6 | PUT | `/customers/{id}` | MAKER, ADMIN | Update customer (**PAN/Aadhaar immutable** — returns 400 IMMUTABLE_FIELD) |
-| 7 | POST | `/customers/{id}/verify-kyc` | CHECKER, ADMIN | Verify KYC (maker-checker: verifier != creator) |
-| 8 | POST | `/customers/{id}/deactivate` | ADMIN | Deactivate customer |
-| 9 | GET | `/customers/search?q={query}` | MAKER, CHECKER, ADMIN | Search by name, CIF number, mobile, email |
+| # | Method | Path | Roles | Response DTO | Description |
+|---|--------|------|-------|-------------|-------------|
+| 4 | POST | `/customers` | MAKER, ADMIN | `CustomerResponse` | Create CIF (67-field request) |
+| 5 | GET | `/customers/{id}` | MAKER, CHECKER, ADMIN | `CifLookupResponse` | CIF Lookup (30 fields, audit-logged) |
+| 6 | PUT | `/customers/{id}` | MAKER, ADMIN | `CustomerResponse` | Update mutable fields (**PAN/Aadhaar immutable** — 400 IMMUTABLE_FIELD) |
+| 7 | POST | `/customers/{id}/verify-kyc` | CHECKER, ADMIN | `CustomerResponse` | Verify KYC (maker-checker: verifier != creator) |
+| 8 | POST | `/customers/{id}/deactivate` | ADMIN | `CustomerResponse` | Deactivate CIF (blocked if active loans/deposits) |
+| 9 | GET | `/customers/search?q={query}` | MAKER, CHECKER, ADMIN | `List<CustomerResponse>` | Search by name, CIF, mobile, PAN (hash lookup) |
 
-**Create/Update Request:**
+**Create/Update Request — `CreateCustomerRequest` (67 fields):**
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `firstName` | string | **Yes** | |
-| `lastName` | string | **Yes** | |
-| `dateOfBirth` | date | No | YYYY-MM-DD |
-| `panNumber` | string | No | Encrypted at rest (AES-256-GCM). **Immutable after creation.** |
-| `aadhaarNumber` | string | No | Encrypted at rest (AES-256-GCM). **Immutable after creation.** |
-| `mobileNumber` | string | No | 10-digit mobile |
-| `email` | string | No | Email address |
-| `address` | string | No | Correspondence address |
-| `city` | string | No | City |
-| `state` | string | No | State |
-| `pinCode` | string | No | 6-digit PIN code |
-| `branchId` | long | **Yes** | Home branch ID |
-| `customerType` | string | No | `INDIVIDUAL` (default), `CORPORATE` |
+| Category | Fields | Regulatory |
+|----------|--------|-----------|
+| Identity (8) | `firstName`**, `lastName`**, `middleName`, `dateOfBirth`, `panNumber`, `aadhaarNumber`, `customerType`, `branchId`** | RBI KYC §3 |
+| Contact (4) | `mobileNumber`, `email`, `alternateMobile`, `communicationPref` | RBI KYC |
+| Legacy Address (4) | `address`, `city`, `state`, `pinCode` | Backward compat |
+| Demographics (10) | `gender`*, `fatherName`*, `motherName`*, `spouseName`, `nationality`, `maritalStatus`, `residentStatus`, `occupationCode`, `annualIncomeBand`, `sourceOfFunds` | CERSAI CKYC v2.0 |
+| KYC & Risk (3) | `kycRiskCategory`, `pep` (Boolean wrapper), `kycMode` | RBI KYC MD §16, FATF |
+| KYC Documents (4) | `photoIdType`, `photoIdNumber`, `addressProofType`, `addressProofNumber` | CKYC mandatory |
+| OVD (4) | `passportNumber`, `passportExpiry`, `voterId`, `drivingLicense` | RBI KYC §3 |
+| FATCA (1) | `fatcaCountry` | FATCA IGA |
+| Permanent Address (7) | `permanentAddress`, `permanentCity`, `permanentDistrict`, `permanentState`, `permanentPinCode`, `permanentCountry`, `addressSameAsPermanent` | CKYC/CERSAI |
+| Correspondence (6) | `correspondenceAddress/City/District/State/PinCode/Country` | CKYC/CERSAI |
+| Income (5) | `monthlyIncome`, `maxBorrowingLimit`, `employmentType`, `employerName`, `cibilScore` | RBI Exposure Norms |
+| Segmentation (2) | `customerSegment`, `sourceOfIntroduction` | Finacle CIF_MASTER |
+| Corporate (6) | `companyName`, `cin`, `gstin`, `dateOfIncorporation`, `constitutionType`, `natureOfBusiness` | RBI KYC §9 |
+| Nominee (3) | `nomineeDob`, `nomineeAddress`, `nomineeGuardianName` | RBI Nomination |
 
-**Response — `CustomerResponse`:** `id`, `customerNumber`, `firstName`, `lastName`, `fullName`, `customerType`, `status`, `kycVerified`, `kycVerifiedDate`, `branchCode`, `mobileNumber`, `email`, `city`, `state`
+> ** = `@NotBlank`/`@NotNull` required. * = CKYC mandatory for INDIVIDUAL/JOINT/MINOR/NRI types.
+> PAN/Aadhaar: encrypted at rest (AES-256-GCM), duplicate-checked via SHA-256 hash, **immutable on update**.
+> `pep` and `addressSameAsPermanent`: Boolean wrappers — `null` = not provided (preserves existing value).
+
+**Response — `CustomerResponse` (76 fields):** All request fields plus system-managed read-only fields (`id`, `customerNumber`, `fullName`, `kycVerified`, `kycExpiryDate`, `rekycDue`, `ckycStatus`, `ckycNumber`, `videoKycDone`, `customerGroupId`, `customerGroupName`, `relationshipManagerId`, `active`, `branchCode`, `createdAt`). PII masked: `maskedPan`, `maskedAadhaar`, `maskedMobile`. OVD document numbers NOT returned.
+
+**Response — `CifLookupResponse` (30 fields, GET /{id} only):** Optimized for frontend CifLookup widget. Gender mapped (`M`→`MALE`), `kycStatus` computed (`VERIFIED`/`PENDING`/`EXPIRED`), `status` computed (`ACTIVE`/`INACTIVE`), nested address objects. Audit-logged.
 
 ---
 
@@ -877,19 +885,29 @@ Each widget is an independent endpoint fetched in parallel by the Next.js BFF. L
 
 **Base:** `/api/v1/reports` · **Controller:** `ReportApiController` · **Roles: CHECKER, ADMIN, AUDITOR**
 
-| # | Method | Path | Description |
-|---|--------|------|-------------|
-| 102 | GET | `/reports/dpd` | DPD Distribution Report (RBI Early Warning + IRAC) |
-| 103 | GET | `/reports/irac` | IRAC Asset Classification Report (Standard/SMA/NPA) |
-| 104 | GET | `/reports/provision` | Provisioning Adequacy Report (actual vs required) |
+| # | Method | Path | Roles | Description |
+|---|--------|------|-------|-------------|
+| 102 | GET | `/reports/dpd` | CHECKER, ADMIN, AUDITOR | DPD Distribution Report (RBI Early Warning + IRAC) |
+| 103 | GET | `/reports/irac` | CHECKER, ADMIN, AUDITOR | IRAC Asset Classification Report (Standard/SMA/NPA) |
+| 104 | GET | `/reports/provision` | CHECKER, ADMIN, AUDITOR | Provisioning Adequacy Report (actual vs required) |
+| 105 | GET | `/reports/dsb?date=YYYY-MM-DD` | ADMIN, AUDITOR | Daily Statement of Balances (RBI Act 1934 §27) |
+| 106 | GET | `/reports/crr-slr` | ADMIN, AUDITOR | CRR/SLR Compliance Position (RBI Act 1934 §42/§24) |
+| 107 | GET | `/reports/crar` | ADMIN, AUDITOR | Basel III Capital Adequacy — CRAR (RBI Master Circular 2023) |
 
-All reports are branch-scoped for CHECKER, tenant-wide for ADMIN/AUDITOR.
+DPD/IRAC/Provision reports are branch-scoped for CHECKER, tenant-wide for ADMIN/AUDITOR.
+DSB/CRR-SLR/CRAR reports are tenant-wide (ADMIN/AUDITOR only).
 
 **`DpdReport`:** `buckets[]` (label, count, outstanding, provisioning), `totalAccounts`, `businessDate`
 
 **`IracReport`:** `categories[]` (Standard, SMA-0/1/2, NPA Sub-Standard/Doubtful/Loss, Restructured), `totalAccounts`, `totalOutstanding`, `businessDate`
 
 **`ProvisionReport`:** `totalAccounts`, `totalOutstanding`, `totalProvisioning`, `npaCount`, `npaOutstanding`, `npaProvisioning`, `businessDate`
+
+**`DSB`:** `reportDate`, `demandLiabilities`, `timeLiabilities`, `ndtl`, `crrPercentage`, `crrRequired`, `crrMaintained`, `crrShortfall`, `slrPercentage`, `slrRequired`, `slrMaintained`, `slrShortfall`, `totalAdvances`, `totalDeposits`
+
+**`CRR/SLR Position`:** `ndtl`, `crrPercentage`, `crrRequired`, `crrMaintained`, `crrCompliant`, `slrPercentage`, `slrRequired`, `slrMaintained`, `slrCompliant`
+
+**`CRAR`:** `tier1Capital`, `tier2Capital`, `totalCapital`, `totalRwa`, `housingRwa`, `retailRwa`, `commercialRwa`, `npaRwa`, `crar`, `tier1Ratio`, `minimumCrar` (9%), `minimumWithCcb` (11.5%), `crarCompliant`, `crarWithCcbCompliant`, `pcaStatus` (NORMAL/PCA_THRESHOLD_1/2/3), `pcaTriggered`
 
 ---
 
@@ -899,7 +917,7 @@ All reports are branch-scoped for CHECKER, tenant-wide for ADMIN/AUDITOR.
 
 | # | Method | Path | Description |
 |---|--------|------|-------------|
-| 105 | POST | `/auth/password/change` | Self-service password change |
+| 108 | POST | `/auth/password/change` | Self-service password change |
 
 **Request:** `currentPassword*`, `newPassword*`, `confirmPassword*`
 
@@ -913,7 +931,7 @@ Per RBI IT Governance Direction 2023 §8.2: complexity (upper+lower+digit+specia
 
 | # | Method | Path | Roles | Description |
 |---|--------|------|-------|-------------|
-| 106 | POST | `/charges/reverse` | CHECKER, ADMIN | Reverse a previously levied charge (symmetric contra journal) |
+| 109 | POST | `/charges/reverse` | CHECKER, ADMIN | Reverse a previously levied charge (symmetric contra journal) |
 
 **Reversal Request:** `chargeTransactionId*`, `reason*`
 
@@ -1055,9 +1073,9 @@ Per RBI IT Governance Direction 2023 §8.2: complexity (upper+lower+digit+specia
 | `GET /actuator/health` | None | All | K8s liveness/readiness probe |
 | `GET /actuator/info` | None | All | Build version and metadata |
 | `GET /actuator/prometheus` | None | All | Micrometer metrics for Prometheus scraping |
-| `GET /v3/api-docs` | None | **Dev only** | OpenAPI 3.0 JSON spec (disabled in prod) |
+| ~~`GET /v3/api-docs`~~ | — | — | **REMOVED** — springdoc-openapi removed from classpath (CRITICAL CVEs in swagger-core: CVSS 9.6, 9.1) |
 
-> **CBS SECURITY:** Swagger UI webjar is NOT included in the dependency tree — removed to eliminate GHSA-72hv-8253-57qq / WS-2026-0003 (CVSS 7.5 DOM XSS/SSRF). API docs are consumed via Postman or Swagger Editor importing from `/v3/api-docs`. The spec endpoint is disabled in production via `springdoc.api-docs.enabled=false` per RBI IT Governance §8.5. Prometheus metrics are permitted without authentication for infrastructure scraping.
+> **CBS SECURITY:** springdoc-openapi runtime dependency was **removed entirely** from the classpath due to CRITICAL CVEs in swagger-core (CVE-2025-55754 CVSS 9.6, CVE-2026-29145 CVSS 9.1). Per RBI IT Governance §8.2: no runtime dependency with CVSS >= 7.0 is acceptable. API documentation is maintained in `docs/API_REFERENCE.md` and `docs/API_CUSTOMER_CONTRACT.md`. Prometheus metrics are permitted without authentication for infrastructure scraping.
 
 ### JSON Structured Logging (Production)
 
