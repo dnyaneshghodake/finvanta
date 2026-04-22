@@ -1,10 +1,12 @@
 package com.finvanta.api;
 
+import com.finvanta.api.dto.OpenAccountRequest;
 import com.finvanta.config.BranchAwareUserDetails;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
+import com.finvanta.util.PiiMaskingUtil;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -53,10 +55,7 @@ public class DepositAccountController {
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<AccountResponse>>
             openAccount(@Valid @RequestBody OpenAccountRequest req) {
-        DepositAccount account = depositService.openAccount(
-                req.customerId(), req.branchId(), req.accountType(),
-                req.productCode() != null ? req.productCode() : req.accountType(),
-                req.initialDeposit(), req.nomineeName(), req.nomineeRelationship());
+        DepositAccount account = depositService.openAccount(req);
         return ResponseEntity.ok(ApiResponse.success(
                 AccountResponse.from(account), "Account opened in PENDING_ACTIVATION"));
     }
@@ -68,6 +67,32 @@ public class DepositAccountController {
         DepositAccount account = depositService.activateAccount(accountNumber);
         return ResponseEntity.ok(ApiResponse.success(
                 AccountResponse.from(account), "Account activated"));
+    }
+
+    /** Reject a PENDING_ACTIVATION account (CHECKER denies the maker's request). */
+    @PostMapping("/{accountNumber}/reject")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<AccountResponse>>
+            rejectAccount(@PathVariable String accountNumber,
+                    @RequestBody RejectRequest req) {
+        DepositAccount account = depositService.rejectAccount(
+                accountNumber, req.reason());
+        return ResponseEntity.ok(ApiResponse.success(
+                AccountResponse.from(account), "Account rejected"));
+    }
+
+    /**
+     * Pipeline: pending accounts awaiting checker action.
+     * Per Finacle ACCTOPN pipeline: CHECKERs see PENDING_ACTIVATION accounts
+     * for their branch. ADMIN sees all branches.
+     */
+    @GetMapping("/pipeline")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<List<AccountResponse>>>
+            getPendingAccounts() {
+        var pending = depositService.getPendingAccounts();
+        var items = pending.stream().map(AccountResponse::from).toList();
+        return ResponseEntity.ok(ApiResponse.success(items));
     }
 
     @PostMapping("/{accountNumber}/freeze")
@@ -252,15 +277,7 @@ public class DepositAccountController {
     }
 
     // === Request DTOs ===
-
-    public record OpenAccountRequest(
-            @NotNull Long customerId,
-            @NotNull Long branchId,
-            @NotBlank String accountType,
-            String productCode,
-            BigDecimal initialDeposit,
-            String nomineeName,
-            String nomineeRelationship) {}
+    // OpenAccountRequest is in com.finvanta.api.dto.OpenAccountRequest (standalone DTO)
 
     public record FinancialRequest(
             @NotNull @Positive BigDecimal amount,
@@ -281,6 +298,8 @@ public class DepositAccountController {
 
     public record ReversalRequest(String reason) {}
 
+    public record RejectRequest(String reason) {}
+
     // === Response DTOs (no JPA entity exposure) ===
 
     /**
@@ -290,6 +309,10 @@ public class DepositAccountController {
      * detail screen, freeze/close modals, and customer 360° view.
      * Per RBI passbook norms: customer name, nominee, and balance
      * breakdown are mandatory display fields.
+     *
+     * <p>PAN/Aadhaar are ALWAYS masked in the response per RBI IT Governance
+     * Direction 2023 and UIDAI Aadhaar Act 2016. Raw values never leave the
+     * service layer.
      */
     public record AccountResponse(
             Long id, String accountNumber, String accountType,
@@ -315,7 +338,20 @@ public class DepositAccountController {
             String jointHolderMode,
             // --- Facilities ---
             boolean chequeBookEnabled, boolean debitCardEnabled,
-            BigDecimal dailyWithdrawalLimit, BigDecimal dailyTransferLimit) {
+            BigDecimal dailyWithdrawalLimit, BigDecimal dailyTransferLimit,
+            // --- KYC & Personal (new fields per Account Opening contract) ---
+            String panNumber,
+            String aadhaarNumber,
+            String kycStatus,
+            Boolean pepFlag,
+            String fullName,
+            String dateOfBirth,
+            String gender,
+            String mobileNumber,
+            String email,
+            String occupation,
+            String annualIncome,
+            Boolean usTaxResident) {
         static AccountResponse from(DepositAccount a) {
             return new AccountResponse(
                     a.getId(), a.getAccountNumber(),
@@ -342,7 +378,20 @@ public class DepositAccountController {
                     a.getNomineeName(), a.getNomineeRelationship(),
                     a.getJointHolderMode(),
                     a.isChequeBookEnabled(), a.isDebitCardEnabled(),
-                    a.getDailyWithdrawalLimit(), a.getDailyTransferLimit());
+                    a.getDailyWithdrawalLimit(), a.getDailyTransferLimit(),
+                    // CBS: PAN/Aadhaar ALWAYS masked per RBI/UIDAI — never return raw
+                    PiiMaskingUtil.maskPan(a.getPanNumber()),
+                    PiiMaskingUtil.maskAadhaar(a.getAadhaarNumber()),
+                    a.getKycStatus(),
+                    a.isPepFlag(),
+                    a.getFullName(),
+                    a.getDateOfBirth() != null ? a.getDateOfBirth().toString() : null,
+                    a.getGender(),
+                    a.getMobileNumber(),
+                    a.getEmail(),
+                    a.getOccupation(),
+                    a.getAnnualIncome(),
+                    a.isUsTaxResident());
         }
     }
 

@@ -39,7 +39,7 @@ import org.springframework.web.bind.annotation.*;
  * </ul>
  */
 @RestController
-@RequestMapping("/v1/audit")
+@RequestMapping("/api/v1/audit")
 public class AuditApiController {
 
     private static final int MAX_RESULTS = 500;
@@ -86,7 +86,7 @@ public class AuditApiController {
     @PreAuthorize("hasAnyRole('AUDITOR', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<AuditLogResponse>>>
             searchLogs(
-                    @RequestParam String q,
+                    @RequestParam(required = false) String q,
                     @RequestParam(required = false) String fromDate,
                     @RequestParam(required = false) String toDate,
                     @RequestParam(defaultValue = "0") int page,

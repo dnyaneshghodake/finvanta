@@ -48,7 +48,7 @@ import org.springframework.web.bind.annotation.*;
  * </ul>
  */
 @RestController
-@RequestMapping("/v1/calendar")
+@RequestMapping("/api/v1/calendar")
 public class CalendarApiController {
 
     private final BusinessDateService businessDateService;

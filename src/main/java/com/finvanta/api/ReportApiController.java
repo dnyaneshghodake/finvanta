@@ -1,5 +1,7 @@
 package com.finvanta.api;
 
+import com.finvanta.compliance.CapitalAdequacyService;
+import com.finvanta.compliance.RbiReturnsService;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.BusinessDateService;
@@ -11,8 +13,10 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -40,7 +44,7 @@ import org.springframework.web.bind.annotation.*;
  * </ul>
  */
 @RestController
-@RequestMapping("/v1/reports")
+@RequestMapping("/api/v1/reports")
 public class ReportApiController {
 
     private final LoanAccountRepository accountRepository;
@@ -258,6 +262,60 @@ public class ReportApiController {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return new IracCategory(name, filtered.size(),
                 outstanding, provisioning);
+    }
+
+    // ========================================================================
+    // RBI Statutory Returns (GAP-01) + Basel III (GAP-06)
+    // ========================================================================
+
+    private RbiReturnsService rbiReturnsService;
+    private CapitalAdequacyService capitalAdequacyService;
+
+    @Autowired
+    private void setRbiServices(
+            RbiReturnsService rbiReturnsService,
+            CapitalAdequacyService capitalAdequacyService) {
+        this.rbiReturnsService = rbiReturnsService;
+        this.capitalAdequacyService = capitalAdequacyService;
+    }
+
+    /**
+     * Daily Statement of Balances (DSB) per RBI Act 1934 Section 27.
+     * Returns NDTL, CRR/SLR requirements, total advances/deposits.
+     */
+    @GetMapping("/dsb")
+    @PreAuthorize("hasAnyRole('ADMIN', 'AUDITOR')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>>
+            getDsb(@RequestParam(required = false) String date) {
+        LocalDate reportDate = date != null
+                ? LocalDate.parse(date)
+                : getBusinessDateSafe();
+        if (reportDate == null) reportDate = LocalDate.now();
+        return ResponseEntity.ok(ApiResponse.success(
+                rbiReturnsService.computeDsb(reportDate)));
+    }
+
+    /**
+     * CRR/SLR Compliance Position per RBI Act 1934 Sections 42/24.
+     */
+    @GetMapping("/crr-slr")
+    @PreAuthorize("hasAnyRole('ADMIN', 'AUDITOR')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>>
+            getCrrSlrPosition() {
+        return ResponseEntity.ok(ApiResponse.success(
+                rbiReturnsService.computeCrrSlrPosition()));
+    }
+
+    /**
+     * Basel III Capital Adequacy (CRAR) per RBI Master Circular 2023.
+     * Returns Tier-1/2 capital, RWA breakdown, CRAR ratio, PCA status.
+     */
+    @GetMapping("/crar")
+    @PreAuthorize("hasAnyRole('ADMIN', 'AUDITOR')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>>
+            getCrar() {
+        return ResponseEntity.ok(ApiResponse.success(
+                capitalAdequacyService.computeCrar()));
     }
 
     // === Response DTOs ===

@@ -235,6 +235,13 @@ INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance,
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2031', 'FD Interest Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '5011', 'Interest Expense - Fixed Deposits', 'EXPENSE', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
+-- Recurring Deposit GL Codes (per Finacle RD_MASTER / RBI Banking Regulation Act)
+-- Per GLConstants: RD_DEPOSITS=2040, RD_INTEREST_PAYABLE=2041, RD_INTEREST_EXPENSE=5012
+-- Without these rows, RecurringDepositServiceImpl GL postings fail with ACCOUNTING_GL_NOT_FOUND.
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2040', 'Customer Deposits - Recurring', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2041', 'RD Interest Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '5012', 'Interest Expense - Recurring Deposits', 'EXPENSE', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
 -- P0-1: CHARGE CONFIGURATIONS (Finacle CHRG_MASTER)
 -- PROCESSING_FEE: 1% of loan amount, GST applicable (18%)
 INSERT INTO charge_config (tenant_id, charge_code, charge_name, event_trigger, calculation_type, percentage, gst_applicable, gst_rate, gl_charge_income, gl_gst_payable, waiver_allowed, max_waiver_percent, product_code, is_active, version, created_at, created_by)
@@ -380,6 +387,7 @@ INSERT INTO deposit_accounts (tenant_id, account_number, customer_id, branch_id,
     ytd_interest_credited, ytd_tds_deducted,
     opened_date, last_transaction_date,
     cheque_book_enabled, debit_card_enabled,
+    pep_flag, us_tax_resident, sms_alerts,
     version, created_at, created_by, updated_by)
 VALUES ('DEFAULT', 'SB-HQ001-000001', 1, 1,
     'SAVINGS', 'SAVINGS', 'INR', 'ACTIVE',
@@ -388,6 +396,7 @@ VALUES ('DEFAULT', 'SB-HQ001-000001', 1, 1,
     0.00, 0.00,
     '2026-04-01', '2026-04-01',
     0, 0,
+    0, 0, 1,
     0, CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM');
 
 -- CUST002 (Priya Patel) — Savings at DEL001
@@ -398,6 +407,7 @@ INSERT INTO deposit_accounts (tenant_id, account_number, customer_id, branch_id,
     ytd_interest_credited, ytd_tds_deducted,
     opened_date, last_transaction_date,
     cheque_book_enabled, debit_card_enabled,
+    pep_flag, us_tax_resident, sms_alerts,
     version, created_at, created_by, updated_by)
 VALUES ('DEFAULT', 'SB-DEL001-000001', 2, 2,
     'SAVINGS', 'SAVINGS', 'INR', 'ACTIVE',
@@ -406,6 +416,7 @@ VALUES ('DEFAULT', 'SB-DEL001-000001', 2, 2,
     0.00, 0.00,
     '2026-04-01', '2026-04-01',
     0, 0,
+    0, 0, 1,
     0, CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM');
 
 -- 4. Loan Application (APPROVED) — ready for account creation + disbursement

@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -50,7 +51,10 @@ public class ApiExceptionHandler {
         log.warn("API business error: {} — {}", ex.getErrorCode(), ex.getMessage());
         exposeErrorCode(ex.getErrorCode());
         HttpStatus status = mapErrorCodeToStatus(ex.getErrorCode());
-        return ResponseEntity.status(status).body(ApiResponse.error(ex.getErrorCode(), ex.getMessage()));
+        String severity = mapErrorCodeToSeverity(ex.getErrorCode());
+        String action = mapErrorCodeToAction(ex.getErrorCode());
+        return ResponseEntity.status(status)
+                .body(ApiResponse.error(ex.getErrorCode(), ex.getMessage(), severity, action));
     }
 
     @ExceptionHandler(OptimisticLockingFailureException.class)
@@ -59,14 +63,19 @@ public class ApiExceptionHandler {
         exposeErrorCode("VERSION_CONFLICT");
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponse.error(
-                        "VERSION_CONFLICT", "Record was modified by another user. " + "Please reload and retry."));
+                        "VERSION_CONFLICT",
+                        "Record was modified by another user. Please reload and retry.",
+                        "MEDIUM", "Reload the page and retry your operation"));
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiResponse<Void>> handleAccess(AccessDeniedException ex) {
         exposeErrorCode("ACCESS_DENIED");
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(ApiResponse.error("ACCESS_DENIED", "Insufficient privileges for this " + "operation"));
+                .body(ApiResponse.error(
+                        "ACCESS_DENIED",
+                        "Insufficient privileges for this operation",
+                        "HIGH", "Contact branch manager for role elevation"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -75,13 +84,31 @@ public class ApiExceptionHandler {
         String errors = ex.getBindingResult().getFieldErrors().stream()
                 .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
                 .collect(Collectors.joining("; "));
-        return ResponseEntity.badRequest().body(ApiResponse.error("VALIDATION_FAILED", errors));
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error("VALIDATION_FAILED", errors,
+                        "LOW", "Correct the highlighted fields and resubmit"));
+    }
+
+    /**
+     * CBS: Missing required query/path parameter (e.g., ?q= omitted on search).
+     * Per Tier-1 CBS: returns 400 with the parameter name so the BFF can
+     * identify which parameter was missing without guessing.
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingParam(MissingServletRequestParameterException ex) {
+        exposeErrorCode("MISSING_PARAMETER");
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error("MISSING_PARAMETER",
+                        "Required parameter '" + ex.getParameterName() + "' is missing",
+                        "LOW", "Include the '" + ex.getParameterName() + "' query parameter and retry"));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse<Void>> handleBadArg(IllegalArgumentException ex) {
         exposeErrorCode("INVALID_REQUEST");
-        return ResponseEntity.badRequest().body(ApiResponse.error("INVALID_REQUEST", ex.getMessage()));
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error("INVALID_REQUEST", ex.getMessage(),
+                        "LOW", "Verify request parameters and retry"));
     }
 
     @ExceptionHandler(Exception.class)
@@ -89,7 +116,10 @@ public class ApiExceptionHandler {
         log.error("API unhandled error: {}", ex.getMessage(), ex);
         exposeErrorCode("INTERNAL_ERROR");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred. " + "Contact support."));
+                .body(ApiResponse.error(
+                        "INTERNAL_ERROR",
+                        "An unexpected error occurred. Contact support.",
+                        "CRITICAL", "Note the correlation ID and contact support"));
     }
 
     /**
@@ -139,7 +169,8 @@ public class ApiExceptionHandler {
                     "ALREADY_DISBURSED",
                     "ALREADY_CLOSED",
                     "CLEARING_IN_PROGRESS",
-                    "DUPLICATE_TRANSACTION" -> HttpStatus.CONFLICT;
+                    "DUPLICATE_TRANSACTION",
+                    "ACCOUNT_ALREADY_EXISTS" -> HttpStatus.CONFLICT;
             case "INSUFFICIENT_BALANCE",
                     "ACCOUNT_FROZEN",
                     "ACCOUNT_CLOSED",
@@ -152,6 +183,78 @@ public class ApiExceptionHandler {
                     "KYC_NOT_VERIFIED" -> HttpStatus.UNPROCESSABLE_ENTITY;
             case "WORKFLOW_SELF_APPROVAL", "BRANCH_ACCESS_DENIED" -> HttpStatus.FORBIDDEN;
             default -> HttpStatus.BAD_REQUEST;
+        };
+    }
+
+    /**
+     * Maps CBS error codes to severity levels per Tier-1 CBS API standards.
+     *
+     * <p>Per RBI Fair Practices Code 2023: error severity drives the BFF's
+     * UI treatment — LOW (toast), MEDIUM (modal), HIGH (blocking), CRITICAL (support).
+     *
+     * <p>Financial safety errors (INSUFFICIENT_BALANCE, ACCOUNT_FROZEN, LIEN_BLOCKED)
+     * are always HIGH because they block a financial operation and the user must
+     * take corrective action before retrying.
+     */
+    private String mapErrorCodeToSeverity(String code) {
+        if (code == null) return "MEDIUM";
+        return switch (code) {
+            case "INSUFFICIENT_BALANCE",
+                    "ACCOUNT_FROZEN",
+                    "ACCOUNT_CLOSED",
+                    "DEBIT_NOT_ALLOWED",
+                    "CREDIT_NOT_ALLOWED",
+                    "LIEN_BLOCKED",
+                    "WORKFLOW_SELF_APPROVAL",
+                    "BRANCH_ACCESS_DENIED" -> "HIGH";
+            case "DUPLICATE_CLEARING_REF",
+                    "ALREADY_TERMINAL",
+                    "ALREADY_WAIVED",
+                    "ALREADY_REVERSED",
+                    "ALREADY_DISBURSED",
+                    "ALREADY_CLOSED",
+                    "CLEARING_IN_PROGRESS",
+                    "DUPLICATE_TRANSACTION",
+                    "ACCOUNT_ALREADY_EXISTS" -> "MEDIUM";
+            case "ACCOUNT_DORMANT",
+                    "FD_NOT_ACTIVE",
+                    "PREMATURE_NOT_ALLOWED",
+                    "KYC_NOT_VERIFIED" -> "MEDIUM";
+            default -> "LOW";
+        };
+    }
+
+    /**
+     * Maps CBS error codes to user-facing remediation actions.
+     *
+     * <p>Per RBI Fair Practices Code 2023 §7.1 and Finacle API standards:
+     * every error response to the customer must include actionable guidance
+     * so the user knows what corrective step to take. The action text is
+     * designed for display in the Next.js BFF error modal.
+     */
+    private String mapErrorCodeToAction(String code) {
+        if (code == null) return null;
+        return switch (code) {
+            case "INSUFFICIENT_BALANCE" -> "Verify available balance or arrange funds before retrying";
+            case "ACCOUNT_FROZEN" -> "Contact branch to request account unfreeze";
+            case "ACCOUNT_CLOSED" -> "This account is closed. Open a new account if needed";
+            case "ACCOUNT_DORMANT" -> "Visit the branch with ID proof to reactivate the account";
+            case "DEBIT_NOT_ALLOWED", "CREDIT_NOT_ALLOWED" -> "Account restrictions apply. Contact branch";
+            case "LIEN_BLOCKED" -> "A lien is placed on this account. Contact branch for details";
+            case "KYC_NOT_VERIFIED" -> "Complete KYC verification before proceeding";
+            case "WORKFLOW_SELF_APPROVAL" -> "A different user must approve this operation";
+            case "BRANCH_ACCESS_DENIED" -> "You do not have access to this branch's data";
+            case "DUPLICATE_TRANSACTION" -> "This transaction was already processed. Check your statement";
+            case "ALREADY_WAIVED" -> "This charge has already been waived. No further action needed";
+            case "CLEARING_IN_PROGRESS" -> "A clearing cycle is in progress. Wait for completion before retrying";
+            case "DUPLICATE_CLEARING_REF" -> "This clearing reference already exists. Verify and use a unique reference";
+            case "ALREADY_TERMINAL" -> "This record is in a terminal state and cannot be modified";
+            case "ALREADY_REVERSED" -> "This transaction has already been reversed";
+            case "ALREADY_DISBURSED" -> "This loan has already been disbursed";
+            case "ALREADY_CLOSED" -> "This account/record is already closed";
+            case "ACCOUNT_ALREADY_EXISTS" -> "Customer already has this account type at this branch";
+            case "INVALID_AGE" -> "Verify the date of birth and account type eligibility";
+            default -> null;
         };
     }
 }

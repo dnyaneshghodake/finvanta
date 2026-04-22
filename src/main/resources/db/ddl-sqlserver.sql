@@ -64,34 +64,121 @@ CREATE TABLE business_calendar (
 CREATE INDEX idx_buscal_tenant_date ON business_calendar (tenant_id, business_date);
 CREATE INDEX idx_buscal_day_status ON business_calendar (tenant_id, day_status);
 
--- 4. CUSTOMERS
+-- 4. CUSTOMERS (Finacle CIF_MASTER / Temenos CUSTOMER)
+-- Per RBI KYC Master Direction 2016, PMLA 2002, CERSAI CKYC v2.0, FATCA IGA, FEMA 1999.
+-- All PII columns (PAN, Aadhaar, passport, voter ID, driving license, photo ID, address proof)
+-- are encrypted at rest via AES-256-GCM (PiiEncryptionConverter). Column length = 100 to
+-- accommodate Base64(IV + ciphertext). SHA-256 hashes stored separately for de-duplication.
 CREATE TABLE customers (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
     tenant_id       VARCHAR(20)     NOT NULL,
     customer_number VARCHAR(40)     NOT NULL,
+    -- === Identity (RBI KYC §3) ===
     first_name      VARCHAR(100)    NOT NULL,
     last_name       VARCHAR(100)    NOT NULL,
+    middle_name     VARCHAR(100),                   -- CKYC optional, identity matching
     date_of_birth   DATE,
-    pan_number      VARCHAR(100),    -- Expanded for AES-256-GCM ciphertext (RBI PII encryption)
-    aadhaar_number  VARCHAR(100),   -- Expanded for AES-256-GCM ciphertext (UIDAI/RBI mandate)
+    customer_type   VARCHAR(20)     DEFAULT 'INDIVIDUAL', -- INDIVIDUAL,JOINT,HUF,PARTNERSHIP,COMPANY,TRUST,NRI,MINOR,GOVERNMENT
+    is_active       BIT             NOT NULL DEFAULT 1,
+    -- === PII — Encrypted at rest (RBI IT Governance §8.5 / UIDAI Act 2016) ===
+    pan_number      VARCHAR(100),                   -- AES-256-GCM ciphertext
+    aadhaar_number  VARCHAR(100),                   -- AES-256-GCM ciphertext
+    pan_hash        VARCHAR(64),                    -- SHA-256 for de-duplication without decryption
+    aadhaar_hash    VARCHAR(64),                    -- SHA-256 for de-duplication without decryption
+    -- === Contact ===
     mobile_number   VARCHAR(15),
     email           VARCHAR(200),
+    alternate_mobile VARCHAR(15),                   -- CKYC optional, SMS OTP fallback
+    communication_pref VARCHAR(10),                 -- EMAIL, SMS, BOTH, NONE
+    -- === Legacy Address (backward compat — use permanent_address for new CIFs) ===
     address         VARCHAR(500),
     city            VARCHAR(100),
     state           VARCHAR(100),
     pin_code        VARCHAR(6),
+    -- === KYC Lifecycle (RBI KYC MD §16) ===
     kyc_verified    BIT             NOT NULL DEFAULT 0,
     kyc_verified_date DATE,
     kyc_verified_by VARCHAR(100),
+    kyc_risk_category VARCHAR(10)   DEFAULT 'MEDIUM', -- LOW (10yr re-KYC), MEDIUM (8yr), HIGH (2yr)
+    kyc_expiry_date DATE,                           -- Computed: kyc_verified_date + risk-based period
+    rekyc_due       BIT             NOT NULL DEFAULT 0, -- Set by EOD batch when expiry approaching
+    -- === PEP / AML (FATF Rec 12, RBI KYC §2(1)(fa)) ===
+    is_pep          BIT             NOT NULL DEFAULT 0, -- PEP → auto HIGH risk + EDD
+    -- === Credit Score (CICRA 2005) ===
     cibil_score     INT,
-    customer_type   VARCHAR(20),
-    is_active       BIT             NOT NULL DEFAULT 1,
+    -- === Branch (Finacle SOL) ===
     branch_id       BIGINT          NOT NULL,
-    -- CBS Customer Exposure Limits (Finacle CIF_LIMIT / RBI Exposure Norms)
+    -- === Exposure Limits (Finacle CIF_LIMIT / RBI Exposure Norms) ===
     monthly_income  DECIMAL(18,2),
     max_borrowing_limit DECIMAL(18,2),
-    employment_type VARCHAR(30),
+    employment_type VARCHAR(30),                    -- SALARIED, SELF_EMPLOYED, BUSINESS, RETIRED, OTHER
     employer_name   VARCHAR(200),
+    -- === Group Exposure (RBI Large Exposure Framework) ===
+    customer_group_id BIGINT,
+    customer_group_name VARCHAR(200),
+    -- === CKYC / CERSAI (PMLA Rules 2014 Rule 9(1A)) ===
+    ckyc_number     VARCHAR(14),                    -- 14-digit KIN from CERSAI
+    ckyc_status     VARCHAR(30)     DEFAULT 'NOT_REGISTERED', -- NOT_REGISTERED,PENDING_UPLOAD,UPLOADED,REGISTERED,DOWNLOAD_VERIFIED,FAILED
+    ckyc_upload_date DATE,
+    ckyc_download_date DATE,
+    ckyc_account_type VARCHAR(20)   DEFAULT 'INDIVIDUAL', -- INDIVIDUAL, NON_INDIVIDUAL
+    -- === Demographics (CERSAI v2.0 Part I — mandatory for INDIVIDUAL) ===
+    gender          VARCHAR(1),                     -- M, F, T per NALSA 2014
+    father_name     VARCHAR(200),                   -- CKYC mandatory
+    mother_name     VARCHAR(200),                   -- CKYC mandatory
+    spouse_name     VARCHAR(200),                   -- CKYC mandatory if married
+    nationality     VARCHAR(20)     DEFAULT 'INDIAN', -- INDIAN, NRI, PIO, OCI, FOREIGN
+    marital_status  VARCHAR(20),                    -- SINGLE, MARRIED, DIVORCED, WIDOWED, SEPARATED
+    resident_status VARCHAR(30)     DEFAULT 'RESIDENT', -- RESIDENT, NRI, PIO, OCI, FOREIGN_NATIONAL (FEMA 1999)
+    -- === Occupation (CERSAI v2.0) ===
+    occupation_code VARCHAR(30),                    -- SALARIED_PRIVATE, SALARIED_GOVT, BUSINESS, PROFESSIONAL, etc.
+    annual_income_band VARCHAR(20),                 -- BELOW_1L, 1L_TO_5L, 5L_TO_10L, 10L_TO_25L, 25L_TO_1CR, ABOVE_1CR
+    source_of_funds VARCHAR(100),                   -- PMLA mandatory for high-value accounts
+    -- === KYC Document Details (CKYC mandatory) ===
+    kyc_mode        VARCHAR(20),                    -- IN_PERSON, VIDEO_KYC, DIGITAL_KYC, CKYC_DOWNLOAD
+    photo_id_type   VARCHAR(30),                    -- PASSPORT, VOTER_ID, DRIVING_LICENSE, NREGA_CARD, PAN_CARD, AADHAAR
+    photo_id_number VARCHAR(100),                   -- Encrypted at rest
+    address_proof_type VARCHAR(30),                 -- PASSPORT, VOTER_ID, DRIVING_LICENSE, UTILITY_BILL, etc.
+    address_proof_number VARCHAR(100),              -- Encrypted at rest
+    video_kyc_done  BIT             NOT NULL DEFAULT 0, -- Per RBI/2020-21/12
+    -- === OVD — Officially Valid Documents (RBI KYC §3, encrypted at rest) ===
+    passport_number VARCHAR(100),                   -- AES-256-GCM ciphertext
+    passport_expiry DATE,
+    voter_id        VARCHAR(100),                   -- AES-256-GCM ciphertext
+    driving_license VARCHAR(100),                   -- AES-256-GCM ciphertext
+    -- === FATCA / CRS (Foreign Account Tax Compliance Act) ===
+    fatca_country   VARCHAR(2),                     -- ISO 3166 alpha-2; NULL = Indian tax resident only
+    -- === Permanent Address (CKYC requires separate permanent + correspondence) ===
+    permanent_address VARCHAR(500),
+    permanent_city  VARCHAR(100),
+    permanent_district VARCHAR(100),                -- CKYC mandatory (separate from city)
+    permanent_state VARCHAR(100),
+    permanent_pin_code VARCHAR(6),
+    permanent_country VARCHAR(50)    DEFAULT 'INDIA',
+    address_same_as_permanent BIT   NOT NULL DEFAULT 1,
+    -- === Correspondence Address (CKYC/CERSAI) ===
+    correspondence_address VARCHAR(500),
+    correspondence_city VARCHAR(100),
+    correspondence_district VARCHAR(100),
+    correspondence_state VARCHAR(100),
+    correspondence_pin_code VARCHAR(6),
+    correspondence_country VARCHAR(50),
+    -- === Segmentation (Finacle CIF_MASTER / Temenos CUSTOMER) ===
+    customer_segment VARCHAR(30),                   -- RETAIL, PREMIUM, HNI, CORPORATE, MSME, AGRICULTURE
+    source_of_introduction VARCHAR(100),
+    relationship_manager_id VARCHAR(50),
+    -- === Corporate / Non-Individual (RBI KYC §9) ===
+    company_name    VARCHAR(300),
+    cin             VARCHAR(21),                    -- Corporate Identification Number
+    gstin           VARCHAR(15),                    -- GST registration number
+    date_of_incorporation DATE,
+    constitution_type VARCHAR(30),                  -- PROPRIETORSHIP, PARTNERSHIP, LLP, PRIVATE_LIMITED, etc.
+    nature_of_business VARCHAR(200),
+    -- === Nominee (RBI Nomination Guidelines) ===
+    nominee_dob     DATE,
+    nominee_address VARCHAR(500),
+    nominee_guardian_name VARCHAR(200),             -- Required if nominee is minor
+    -- === Audit (BaseEntity) ===
     version         BIGINT          NOT NULL DEFAULT 0,
     created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
     updated_at      DATETIME2,
@@ -100,9 +187,16 @@ CREATE TABLE customers (
     CONSTRAINT uq_cust_tenant_custno UNIQUE (tenant_id, customer_number),
     CONSTRAINT fk_cust_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
 );
+-- === Indexes (per Finacle CIF_MASTER query patterns) ===
 CREATE INDEX idx_cust_tenant_custno ON customers (tenant_id, customer_number);
 CREATE INDEX idx_cust_pan ON customers (tenant_id, pan_number);
 CREATE INDEX idx_cust_aadhaar ON customers (tenant_id, aadhaar_number);
+CREATE INDEX idx_cust_pan_hash ON customers (tenant_id, pan_hash);
+CREATE INDEX idx_cust_aadhaar_hash ON customers (tenant_id, aadhaar_hash);
+CREATE INDEX idx_cust_kyc_expiry ON customers (tenant_id, kyc_expiry_date);
+CREATE INDEX idx_cust_tenant_branch ON customers (tenant_id, branch_id);
+CREATE INDEX idx_cust_ckyc ON customers (tenant_id, ckyc_number);
+CREATE INDEX idx_cust_ckyc_status ON customers (tenant_id, ckyc_status);
 
 -- 5. PRODUCT MASTER (Finacle PDDEF / Temenos AA.PRODUCT.CATALOG)
 CREATE TABLE product_master (
@@ -970,6 +1064,34 @@ CREATE TABLE deposit_accounts (
     debit_card_enabled BIT          NOT NULL DEFAULT 0,
     daily_withdrawal_limit DECIMAL(18,2),
     daily_transfer_limit DECIMAL(18,2),
+    -- KYC & Regulatory (per RBI KYC MD 2016 / PMLA 2002 — denormalized from Customer for account-level)
+    pan_number      VARCHAR(100),                   -- AES-256-GCM ciphertext (PiiEncryptionConverter)
+    aadhaar_number  VARCHAR(100),                   -- AES-256-GCM ciphertext
+    kyc_status      VARCHAR(20),                    -- FULL_KYC, MIN_KYC, RE_KYC
+    pep_flag        BIT             NOT NULL DEFAULT 0, -- PEP indicator per RBI KYC §2(1)(fa)
+    -- Personal Details (denormalized for account-level display per RBI passbook norms)
+    full_name       VARCHAR(200),
+    date_of_birth   DATE,
+    gender          VARCHAR(10),                    -- MALE, FEMALE, OTHER
+    father_spouse_name VARCHAR(200),
+    nationality     VARCHAR(20),
+    -- Contact (denormalized for account-level notifications)
+    mobile_number   VARCHAR(15),
+    email           VARCHAR(200),
+    -- Address (denormalized for account-level correspondence)
+    address_line1   VARCHAR(500),
+    address_line2   VARCHAR(500),
+    city            VARCHAR(100),
+    state           VARCHAR(100),
+    pin_code        VARCHAR(6),
+    -- Occupation & Financial Profile (per RBI PMLA / CERSAI)
+    occupation      VARCHAR(30),
+    annual_income   VARCHAR(20),
+    source_of_funds VARCHAR(30),
+    -- FATCA / CRS (Foreign Account Tax Compliance Act)
+    us_tax_resident BIT             NOT NULL DEFAULT 0,
+    -- Account Configuration
+    sms_alerts      BIT             NOT NULL DEFAULT 1,
     version         BIGINT          NOT NULL DEFAULT 0,
     created_at      DATETIME2       NOT NULL DEFAULT GETDATE(),
     updated_at      DATETIME2,

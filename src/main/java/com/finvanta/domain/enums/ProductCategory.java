@@ -53,7 +53,10 @@ public enum ProductCategory {
     CASA_CURRENT,
 
     /** Term Deposit (FD) — fixed-term deposit with predetermined maturity */
-    TERM_DEPOSIT;
+    TERM_DEPOSIT,
+
+    /** Recurring Deposit (RD) — monthly installment-based term deposit per RBI */
+    RECURRING_DEPOSIT;
 
     /** Returns true if this is a loan product category */
     public boolean isLoan() {
@@ -70,9 +73,14 @@ public enum ProductCategory {
         return this == TERM_DEPOSIT;
     }
 
-    /** Returns true if this is any deposit product (CASA or FD) */
+    /** Returns true if this is a recurring deposit (RD) product category */
+    public boolean isRecurringDeposit() {
+        return this == RECURRING_DEPOSIT;
+    }
+
+    /** Returns true if this is any deposit product (CASA, FD, or RD) */
     public boolean isDeposit() {
-        return isCasa() || isTermDeposit();
+        return isCasa() || isTermDeposit() || isRecurringDeposit();
     }
 
     /**

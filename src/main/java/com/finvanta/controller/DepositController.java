@@ -3,6 +3,7 @@ package com.finvanta.controller;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
 import com.finvanta.accounting.ProductGLResolver;
+import com.finvanta.api.dto.OpenAccountRequest;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.domain.enums.DebitCredit;
@@ -234,14 +235,24 @@ public class DepositController {
             @RequestParam(required = false) String nomineeRelationship,
             RedirectAttributes ra) {
         try {
-            DepositAccount account = depositService.openAccount(
-                    customerId,
-                    branchId,
-                    accountType,
+            // CBS: Construct OpenAccountRequest DTO from JSP form params.
+            // JSP form only captures the original 7 fields — new fields are null.
+            // Per @JsonIgnoreProperties(ignoreUnknown = true): null fields are safe.
+            var req = new OpenAccountRequest(
+                    customerId, branchId, accountType,
                     productCode != null ? productCode : accountType,
-                    null, // initialDeposit: not used in maker-checker flow (deposit after activation)
-                    nomineeName,
-                    nomineeRelationship);
+                    null, // currencyCode — default INR
+                    null, // initialDeposit — not used in maker-checker flow
+                    null, null, null, null, // KYC fields
+                    null, // fullName — will be null from JSP (backward compat)
+                    null, null, null, null, // personal details
+                    null, null, // contact
+                    null, null, null, null, null, // address
+                    null, null, null, // occupation
+                    nomineeName, nomineeRelationship,
+                    null, // usTaxResident
+                    null, null, null); // config flags
+            DepositAccount account = depositService.openAccount(req);
             ra.addFlashAttribute("success", "Account opened: " + account.getAccountNumber());
             return "redirect:/deposit/view/" + account.getAccountNumber();
         } catch (Exception e) {

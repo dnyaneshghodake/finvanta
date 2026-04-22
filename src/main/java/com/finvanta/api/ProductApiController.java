@@ -35,7 +35,7 @@ import org.springframework.web.bind.annotation.*;
  * Product configuration is a system-level operation.
  */
 @RestController
-@RequestMapping("/v1/products")
+@RequestMapping("/api/v1/products")
 public class ProductApiController {
 
     private final ProductMasterService productService;
@@ -78,7 +78,7 @@ public class ProductApiController {
     @GetMapping("/search")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<List<ProductResponse>>>
-            searchProducts(@RequestParam String q) {
+            searchProducts(@RequestParam(required = false) String q) {
         String tenantId = TenantContext.getCurrentTenant();
         List<ProductMaster> products;
         if (q != null && q.trim().length() >= 2) {
