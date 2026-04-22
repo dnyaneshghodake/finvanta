@@ -235,6 +235,13 @@ INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance,
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2031', 'FD Interest Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '5011', 'Interest Expense - Fixed Deposits', 'EXPENSE', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
+-- Recurring Deposit GL Codes (per Finacle RD_MASTER / RBI Banking Regulation Act)
+-- Per GLConstants: RD_DEPOSITS=2040, RD_INTEREST_PAYABLE=2041, RD_INTEREST_EXPENSE=5012
+-- Without these rows, RecurringDepositServiceImpl GL postings fail with ACCOUNTING_GL_NOT_FOUND.
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2040', 'Customer Deposits - Recurring', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '2041', 'RD Interest Payable', 'LIABILITY', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO gl_master (tenant_id, gl_code, gl_name, account_type, debit_balance, credit_balance, is_active, is_header_account, version, created_at, created_by) VALUES ('DEFAULT', '5012', 'Interest Expense - Recurring Deposits', 'EXPENSE', 0.00, 0.00, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
 -- P0-1: CHARGE CONFIGURATIONS (Finacle CHRG_MASTER)
 -- PROCESSING_FEE: 1% of loan amount, GST applicable (18%)
 INSERT INTO charge_config (tenant_id, charge_code, charge_name, event_trigger, calculation_type, percentage, gst_applicable, gst_rate, gl_charge_income, gl_gst_payable, waiver_allowed, max_waiver_percent, product_code, is_active, version, created_at, created_by)
