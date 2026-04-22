@@ -165,8 +165,19 @@ public class PslComplianceService {
         // updatedBy is overwritten by ANY mutation (EOD batch sets it to "SYSTEM",
         // interest accrual, NPA classification, etc.). If we compared updatedBy,
         // the original MAKER could self-certify after any intervening batch update.
+        // CBS CRITICAL: pslClassifiedBy MUST be non-null for certification.
+        // If null (pre-migration loan, batch import, or admin DB override), the
+        // maker-checker trail is incomplete — block certification until a MAKER
+        // explicitly classifies via classifyLoan(), which sets pslClassifiedBy.
+        // Without this guard, a single user could self-certify any loan with
+        // null pslClassifiedBy, defeating the dual-control requirement.
         String classifiedBy = account.getPslClassifiedBy();
-        if (classifiedBy != null && classifiedBy.equals(currentUser)) {
+        if (classifiedBy == null) {
+            throw new BusinessException("PSL_CLASSIFIER_UNKNOWN",
+                    "PSL classification for " + accountNumber + " has no recorded classifier. "
+                            + "Re-classify via the PSL Classification screen before certifying.");
+        }
+        if (classifiedBy.equals(currentUser)) {
             throw new BusinessException("WORKFLOW_SELF_APPROVAL",
                     "PSL certification requires a different user than the one who classified. "
                             + "Classified by: " + classifiedBy + ", current user: " + currentUser);

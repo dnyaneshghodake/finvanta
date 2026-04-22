@@ -387,7 +387,7 @@ public class DepositAccountController {
                     a.getFullName(),
                     a.getDateOfBirth() != null ? a.getDateOfBirth().toString() : null,
                     a.getGender(),
-                    a.getMobileNumber(),
+                    PiiMaskingUtil.maskMobile(a.getMobileNumber()),
                     a.getEmail(),
                     a.getOccupation(),
                     a.getAnnualIncome(),
