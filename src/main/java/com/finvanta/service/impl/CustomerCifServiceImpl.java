@@ -7,6 +7,7 @@ import com.finvanta.domain.enums.CustomerType;
 import com.finvanta.domain.enums.KycRiskCategory;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
+import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CbsReferenceService;
@@ -19,6 +20,7 @@ import com.finvanta.util.TenantContext;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,7 +54,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
     private final CustomerRepository customerRepo;
     private final BranchRepository branchRepo;
     private final LoanAccountRepository loanRepo;
-    private final com.finvanta.repository.DepositAccountRepository depositRepo;
+    private final DepositAccountRepository depositRepo;
     private final AuditService auditSvc;
     private final BranchAccessValidator branchValidator;
     private final CbsReferenceService refService;
@@ -62,7 +64,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
             CustomerRepository customerRepo,
             BranchRepository branchRepo,
             LoanAccountRepository loanRepo,
-            com.finvanta.repository.DepositAccountRepository depositRepo,
+            DepositAccountRepository depositRepo,
             AuditService auditSvc,
             BranchAccessValidator branchValidator,
             CbsReferenceService refService,
@@ -732,7 +734,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         String trimmed = query.trim().toUpperCase();
         if (trimmed.matches("^[A-Z]{5}[0-9]{4}[A-Z]$")) {
             String panHash = PiiHashUtil.computeSha256(trimmed);
-            java.util.Optional<Customer> panMatch = customerRepo.findByTenantIdAndPanHashAndActiveTrue(tid, panHash);
+            Optional<Customer> panMatch = customerRepo.findByTenantIdAndPanHashAndActiveTrue(tid, panHash);
             if (panMatch.isPresent()) {
                 Customer c = panMatch.get();
                 // CBS: Branch isolation — MAKER/CHECKER can only see their branch's customers
@@ -779,7 +781,7 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         String trimmed = query.trim().toUpperCase();
         if (trimmed.matches("^[A-Z]{5}[0-9]{4}[A-Z]$")) {
             String panHash = PiiHashUtil.computeSha256(trimmed);
-            java.util.Optional<Customer> panMatch = customerRepo.findByTenantIdAndPanHashAndActiveTrue(tid, panHash);
+            Optional<Customer> panMatch = customerRepo.findByTenantIdAndPanHashAndActiveTrue(tid, panHash);
             if (panMatch.isPresent()) {
                 Customer c = panMatch.get();
                 if (SecurityUtil.isAdminRole() || SecurityUtil.isAuditorRole()) {
