@@ -3,6 +3,7 @@ package com.finvanta.controller;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
 import com.finvanta.accounting.ProductGLResolver;
+import com.finvanta.api.dto.OpenAccountRequest;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.domain.enums.DebitCredit;
@@ -237,7 +238,7 @@ public class DepositController {
             // CBS: Construct OpenAccountRequest DTO from JSP form params.
             // JSP form only captures the original 7 fields — new fields are null.
             // Per @JsonIgnoreProperties(ignoreUnknown = true): null fields are safe.
-            var req = new com.finvanta.api.dto.OpenAccountRequest(
+            var req = new OpenAccountRequest(
                     customerId, branchId, accountType,
                     productCode != null ? productCode : accountType,
                     null, // currencyCode — default INR

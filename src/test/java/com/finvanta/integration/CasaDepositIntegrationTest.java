@@ -1,6 +1,7 @@
 package com.finvanta.integration;
 
 import com.finvanta.accounting.LedgerService;
+import com.finvanta.api.dto.OpenAccountRequest;
 import com.finvanta.config.BranchAwareUserDetails;
 import com.finvanta.domain.entity.*;
 import com.finvanta.domain.enums.*;
@@ -147,7 +148,7 @@ class CasaDepositIntegrationTest {
         Customer cust = customerRepository.findAll().stream()
                 .filter(c -> c.getTenantId().equals(TENANT))
                 .findFirst().orElseThrow();
-        var req = new com.finvanta.api.dto.OpenAccountRequest(
+        var req = new OpenAccountRequest(
                 cust.getId(), testBranchId, "SAVINGS", "SAVINGS",
                 null, null,
                 null, null, null, null,
@@ -249,7 +250,7 @@ class CasaDepositIntegrationTest {
         Customer cust = customerRepository.findAll().stream()
                 .filter(c -> c.getTenantId().equals(TENANT))
                 .findFirst().orElseThrow();
-        var req = new com.finvanta.api.dto.OpenAccountRequest(
+        var req = new OpenAccountRequest(
                 cust.getId(), testBranchId, "CURRENT", "CURRENT",
                 null, null,
                 null, null, null, null,
