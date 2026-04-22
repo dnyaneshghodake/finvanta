@@ -333,13 +333,8 @@ public class CustomerApiController {
             LegacyAddressDto address) {
 
         static CifLookupResponse from(Customer c) {
-            // Compute status from active flag + KYC state
-            String status;
-            if (!c.isActive()) {
-                status = "INACTIVE";
-            } else {
-                status = "ACTIVE";
-            }
+            // Compute status from active flag
+            String status = c.isActive() ? "ACTIVE" : "INACTIVE";
 
             // Compute kycStatus from boolean + expiry
             String kycStatus;
@@ -406,7 +401,7 @@ public class CustomerApiController {
                     c.getMobileNumber(),
                     c.getEmail(),
                     c.getDateOfBirth() != null ? c.getDateOfBirth().toString() : null,
-                    c.getGender(),
+                    mapGender(c.getGender()),
                     c.getNationality(),
                     c.getResidentStatus(),
                     fatherOrSpouse,
@@ -421,6 +416,21 @@ public class CustomerApiController {
                     permAddr,
                     corrAddr,
                     legacyAddr);
+        }
+
+        /**
+         * Maps CERSAI single-char gender code to contract enum.
+         * Entity stores M/F/T per CERSAI v2.0 / NALSA 2014.
+         * Contract expects MALE/FEMALE/OTHER per CIF Lookup §3.15.
+         */
+        private static String mapGender(String gender) {
+            if (gender == null) return null;
+            return switch (gender) {
+                case "M" -> "MALE";
+                case "F" -> "FEMALE";
+                case "T" -> "OTHER";
+                default -> gender;
+            };
         }
 
         /**
