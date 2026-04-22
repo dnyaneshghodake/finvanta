@@ -133,6 +133,14 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
     /** Accounts by branch (for branch isolation) */
     List<DepositAccount> findByTenantIdAndBranchId(String tenantId, Long branchId);
 
+    /** Accounts by status — used for pipeline (PENDING_ACTIVATION) queries. */
+    List<DepositAccount> findByTenantIdAndAccountStatus(
+            String tenantId, DepositAccountStatus accountStatus);
+
+    /** Accounts by branch + status — branch-scoped pipeline for CHECKER. */
+    List<DepositAccount> findByTenantIdAndBranchIdAndAccountStatus(
+            String tenantId, Long branchId, DepositAccountStatus accountStatus);
+
     /** Active accounts by branch. JOIN FETCH for JSP rendering (OSIV disabled). */
     @Query("SELECT da FROM DepositAccount da JOIN FETCH da.customer JOIN FETCH da.branch "
             + "WHERE da.tenantId = :tenantId "
