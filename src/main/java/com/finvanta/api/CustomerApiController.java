@@ -67,14 +67,26 @@ public class CustomerApiController {
                         + saved.getCustomerNumber()));
     }
 
-    /** Get customer by ID. Branch access enforced. */
+    /**
+     * CIF Lookup — single customer by ID.
+     *
+     * <p>Per CIF Lookup API Contract v1.0: returns 30 fields covering identity,
+     * KYC, contact, address, occupation, risk, and compliance. PAN/Aadhaar are
+     * masked per RBI IT Governance §8.5. Nested address objects provided for
+     * permanent, correspondence, and legacy fallback.
+     *
+     * <p>Used by 12+ frontend screens (Account Opening, Transfers, FD, Loans,
+     * KYC Verification, Freeze, Statements, etc.) via the shared CifLookup widget.
+     *
+     * <p>Branch access enforced. Every lookup audit-logged per RBI §8.3.
+     */
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<CustomerResponse>>
+    public ResponseEntity<ApiResponse<CifLookupResponse>>
             getCustomer(@PathVariable Long id) {
-        Customer c = customerService.getCustomer(id);
+        Customer c = customerService.getCustomerWithAudit(id);
         return ResponseEntity.ok(ApiResponse.success(
-                CustomerResponse.from(c)));
+                CifLookupResponse.from(c)));
     }
 
     /**
@@ -239,6 +251,219 @@ public class CustomerApiController {
                     c.isActive(),
                     c.getBranch() != null ? c.getBranch().getBranchCode() : null,
                     c.getCreatedAt() != null ? c.getCreatedAt().toString() : null);
+        }
+    }
+
+    // === CIF Lookup Response DTO (per CIF Lookup API Contract v1.0) ===
+    //
+    // 30 fields consumed by the shared CifLookup.tsx widget across 12+ screens.
+    // Field naming matches the frontend CifCustomer TypeScript type exactly.
+    // PAN masked as ABCD***34F, Aadhaar masked as **** **** 1234.
+    // Nested address objects for permanent, correspondence, and legacy fallback.
+
+    /**
+     * Nested address object per CIF Lookup Contract §3.27-28.
+     * Used for permanentAddress and correspondenceAddress.
+     */
+    public record AddressDto(
+            String line1,
+            String line2,
+            String city,
+            String district,
+            String state,
+            String pincode,
+            String country) {}
+
+    /**
+     * Legacy flat address for backward compatibility per CIF Lookup Contract §3.29.
+     * Used only if permanentAddress is null.
+     */
+    public record LegacyAddressDto(
+            String street,
+            String city,
+            String state,
+            String pincode) {}
+
+    /**
+     * CIF Lookup Response per CIF Lookup API Contract v1.0.
+     *
+     * <p>30 fields covering identity (7), KYC (4), contact (2), personal (6),
+     * occupation (3), risk (3), branch (1), and addresses (3 nested objects).
+     *
+     * <p>Per RBI IT Governance §8.5: PAN/Aadhaar NEVER exposed raw in API responses.
+     * Masking applied at the DTO boundary — decrypted PII never reaches the wire.
+     */
+    public record CifLookupResponse(
+            // §3 Identity (7 fields)
+            Long id,
+            String customerNumber,
+            String firstName,
+            String lastName,
+            String fullName,
+            String customerType,
+            String status,
+            // §3 KYC & Compliance (4 fields)
+            String kycStatus,
+            String pan,
+            String aadhaar,
+            String ckycNumber,
+            // §3 Contact (2 fields)
+            String mobile,
+            String email,
+            // §3 Personal (6 fields)
+            String dob,
+            String gender,
+            String nationality,
+            String residentStatus,
+            String fatherOrSpouseName,
+            String maritalStatus,
+            // §3 Occupation & Financial (3 fields)
+            String occupation,
+            String annualIncomeRange,
+            String sourceOfFunds,
+            // §3 Risk & Compliance (3 fields)
+            String riskCategory,
+            Boolean pepFlag,
+            String fatcaCountry,
+            // §3 Branch (1 field)
+            String branchCode,
+            // §3 Addresses (nested objects)
+            AddressDto permanentAddress,
+            AddressDto correspondenceAddress,
+            LegacyAddressDto address) {
+
+        static CifLookupResponse from(Customer c) {
+            // Compute status from active flag + KYC state
+            String status;
+            if (!c.isActive()) {
+                status = "INACTIVE";
+            } else {
+                status = "ACTIVE";
+            }
+
+            // Compute kycStatus from boolean + expiry
+            String kycStatus;
+            if (c.isKycVerified()) {
+                kycStatus = c.isKycExpired() ? "EXPIRED" : "VERIFIED";
+            } else {
+                kycStatus = "PENDING";
+            }
+
+            // Compute fatherOrSpouseName — prefer spouse, fall back to father
+            String fatherOrSpouse = c.getSpouseName() != null && !c.getSpouseName().isBlank()
+                    ? c.getSpouseName() : c.getFatherName();
+
+            // Map occupationCode → occupation per contract enum values
+            String occupation = mapOccupation(c.getOccupationCode(), c.getEmploymentType());
+
+            // Map annualIncomeBand → annualIncomeRange per contract enum values
+            String annualIncomeRange = mapIncomeRange(c.getAnnualIncomeBand());
+
+            // Build permanent address (nested)
+            AddressDto permAddr = null;
+            if (c.getPermanentAddress() != null && !c.getPermanentAddress().isBlank()) {
+                permAddr = new AddressDto(
+                        c.getPermanentAddress(), null,
+                        c.getPermanentCity(),
+                        c.getPermanentDistrict(),
+                        c.getPermanentState(),
+                        c.getPermanentPinCode(),
+                        c.getPermanentCountry());
+            }
+
+            // Build correspondence address (nested)
+            AddressDto corrAddr = null;
+            if (c.getCorrespondenceAddress() != null && !c.getCorrespondenceAddress().isBlank()) {
+                corrAddr = new AddressDto(
+                        c.getCorrespondenceAddress(), null,
+                        c.getCorrespondenceCity(),
+                        c.getCorrespondenceDistrict(),
+                        c.getCorrespondenceState(),
+                        c.getCorrespondencePinCode(),
+                        c.getCorrespondenceCountry());
+            }
+
+            // Build legacy flat address (backward compat)
+            LegacyAddressDto legacyAddr = null;
+            if (c.getAddress() != null && !c.getAddress().isBlank()) {
+                legacyAddr = new LegacyAddressDto(
+                        c.getAddress(), c.getCity(),
+                        c.getState(), c.getPinCode());
+            }
+
+            return new CifLookupResponse(
+                    c.getId(),
+                    c.getCustomerNumber(),
+                    c.getFirstName(),
+                    c.getLastName(),
+                    c.getFullName(),
+                    c.getCustomerType(),
+                    status,
+                    kycStatus,
+                    PiiMaskingUtil.maskPan(c.getPanNumber()),
+                    PiiMaskingUtil.maskAadhaar(c.getAadhaarNumber()),
+                    c.getCkycNumber(),
+                    c.getMobileNumber(),
+                    c.getEmail(),
+                    c.getDateOfBirth() != null ? c.getDateOfBirth().toString() : null,
+                    c.getGender(),
+                    c.getNationality(),
+                    c.getResidentStatus(),
+                    fatherOrSpouse,
+                    c.getMaritalStatus(),
+                    occupation,
+                    annualIncomeRange,
+                    c.getSourceOfFunds(),
+                    c.getKycRiskCategory(),
+                    c.isPep(),
+                    c.getFatcaCountry(),
+                    c.getBranch() != null ? c.getBranch().getBranchCode() : null,
+                    permAddr,
+                    corrAddr,
+                    legacyAddr);
+        }
+
+        /**
+         * Maps internal occupationCode/employmentType to contract occupation enum.
+         * Contract values: SALARIED, SELF_EMPLOYED, BUSINESS, PROFESSIONAL,
+         *                  RETIRED, STUDENT, HOMEMAKER
+         */
+        private static String mapOccupation(String occupationCode, String employmentType) {
+            if (occupationCode != null && !occupationCode.isBlank()) {
+                return switch (occupationCode) {
+                    case "SALARIED_PRIVATE", "SALARIED_GOVT" -> "SALARIED";
+                    case "SELF_EMPLOYED" -> "SELF_EMPLOYED";
+                    case "BUSINESS" -> "BUSINESS";
+                    case "PROFESSIONAL" -> "PROFESSIONAL";
+                    case "RETIRED" -> "RETIRED";
+                    case "STUDENT" -> "STUDENT";
+                    case "HOUSEWIFE" -> "HOMEMAKER";
+                    case "AGRICULTURIST" -> "SELF_EMPLOYED";
+                    default -> occupationCode;
+                };
+            }
+            // Fall back to employmentType if occupationCode is not set
+            if (employmentType != null && !employmentType.isBlank()) {
+                return employmentType;
+            }
+            return null;
+        }
+
+        /**
+         * Maps internal annualIncomeBand to contract annualIncomeRange enum.
+         * Contract values: BELOW_1L, 1L_5L, 5L_10L, 10L_25L, 25L_50L, ABOVE_50L
+         */
+        private static String mapIncomeRange(String annualIncomeBand) {
+            if (annualIncomeBand == null) return null;
+            return switch (annualIncomeBand) {
+                case "BELOW_1L" -> "BELOW_1L";
+                case "1L_TO_5L" -> "1L_5L";
+                case "5L_TO_10L" -> "5L_10L";
+                case "10L_TO_25L" -> "10L_25L";
+                case "25L_TO_1CR" -> "25L_50L";
+                case "ABOVE_1CR" -> "ABOVE_50L";
+                default -> annualIncomeBand;
+            };
         }
     }
 
