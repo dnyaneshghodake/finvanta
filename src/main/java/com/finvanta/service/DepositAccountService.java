@@ -103,6 +103,27 @@ public interface DepositAccountService {
     DepositAccount activateAccount(String accountNumber);
 
     /**
+     * Reject a PENDING_ACTIVATION account (checker denies maker's request).
+     * Per Finacle ACCTOPN: checker can approve (activate) or reject.
+     * Rejected accounts move to CLOSED status with rejection reason.
+     * Per RBI maker-checker: rejection must be audited with reason.
+     *
+     * @param accountNumber Account to reject
+     * @param reason Mandatory rejection reason for audit trail
+     * @return Rejected account (status = CLOSED)
+     */
+    DepositAccount rejectAccount(String accountNumber, String reason);
+
+    /**
+     * Get all PENDING_ACTIVATION accounts for the current user's branch scope.
+     * Per Finacle ACCTOPN pipeline: CHECKERs see their branch's pending accounts.
+     * ADMIN sees all branches.
+     *
+     * @return List of pending accounts
+     */
+    List<DepositAccount> getPendingAccounts();
+
+    /**
      * Freeze account per court order, regulatory directive, or AML.
      * freezeType: DEBIT_FREEZE, CREDIT_FREEZE, TOTAL_FREEZE.
      * Only ADMIN role can freeze (enforced via SecurityConfig).

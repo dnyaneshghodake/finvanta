@@ -70,6 +70,32 @@ public class DepositAccountController {
                 AccountResponse.from(account), "Account activated"));
     }
 
+    /** Reject a PENDING_ACTIVATION account (CHECKER denies the maker's request). */
+    @PostMapping("/{accountNumber}/reject")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<AccountResponse>>
+            rejectAccount(@PathVariable String accountNumber,
+                    @RequestBody RejectRequest req) {
+        DepositAccount account = depositService.rejectAccount(
+                accountNumber, req.reason());
+        return ResponseEntity.ok(ApiResponse.success(
+                AccountResponse.from(account), "Account rejected"));
+    }
+
+    /**
+     * Pipeline: pending accounts awaiting checker action.
+     * Per Finacle ACCTOPN pipeline: CHECKERs see PENDING_ACTIVATION accounts
+     * for their branch. ADMIN sees all branches.
+     */
+    @GetMapping("/pipeline")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<List<AccountResponse>>>
+            getPendingAccounts() {
+        var pending = depositService.getPendingAccounts();
+        var items = pending.stream().map(AccountResponse::from).toList();
+        return ResponseEntity.ok(ApiResponse.success(items));
+    }
+
     @PostMapping("/{accountNumber}/freeze")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<AccountResponse>>
@@ -280,6 +306,8 @@ public class DepositAccountController {
     public record CloseRequest(String reason) {}
 
     public record ReversalRequest(String reason) {}
+
+    public record RejectRequest(String reason) {}
 
     // === Response DTOs (no JPA entity exposure) ===
 
