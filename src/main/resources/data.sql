@@ -380,6 +380,7 @@ INSERT INTO deposit_accounts (tenant_id, account_number, customer_id, branch_id,
     ytd_interest_credited, ytd_tds_deducted,
     opened_date, last_transaction_date,
     cheque_book_enabled, debit_card_enabled,
+    pep_flag, us_tax_resident, sms_alerts,
     version, created_at, created_by, updated_by)
 VALUES ('DEFAULT', 'SB-HQ001-000001', 1, 1,
     'SAVINGS', 'SAVINGS', 'INR', 'ACTIVE',
@@ -388,6 +389,7 @@ VALUES ('DEFAULT', 'SB-HQ001-000001', 1, 1,
     0.00, 0.00,
     '2026-04-01', '2026-04-01',
     0, 0,
+    0, 0, 1,
     0, CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM');
 
 -- CUST002 (Priya Patel) — Savings at DEL001
@@ -398,6 +400,7 @@ INSERT INTO deposit_accounts (tenant_id, account_number, customer_id, branch_id,
     ytd_interest_credited, ytd_tds_deducted,
     opened_date, last_transaction_date,
     cheque_book_enabled, debit_card_enabled,
+    pep_flag, us_tax_resident, sms_alerts,
     version, created_at, created_by, updated_by)
 VALUES ('DEFAULT', 'SB-DEL001-000001', 2, 2,
     'SAVINGS', 'SAVINGS', 'INR', 'ACTIVE',
@@ -406,6 +409,7 @@ VALUES ('DEFAULT', 'SB-DEL001-000001', 2, 2,
     0.00, 0.00,
     '2026-04-01', '2026-04-01',
     0, 0,
+    0, 0, 1,
     0, CURRENT_TIMESTAMP, 'SYSTEM', 'SYSTEM');
 
 -- 4. Loan Application (APPROVED) — ready for account creation + disbursement
