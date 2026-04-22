@@ -172,3 +172,137 @@ Used by `POST` (create) and `PUT` (update). All optional unless **Required**.
 | 65 | `nomineeDob` | `LocalDate` | Required for minor nominees |
 | 66 | `nomineeAddress` | `String` | |
 | 67 | `nomineeGuardianName` | `String` | Required if nominee is minor |
+
+---
+
+## 4. CustomerResponse — 76 Fields
+
+Returned by endpoints 1, 3, 4, 5, 6. Contains all request fields plus system-managed read-only fields.
+
+### PII Masking (RBI IT Governance Section 8.5)
+
+| Response Field | Source | Masking |
+|---------------|---------|---------|
+| `maskedPan` | `panNumber` | `XXXXXX234F` (last 4) |
+| `maskedAadhaar` | `aadhaarNumber` | `XXXXXXXX9012` (last 4) |
+| `maskedMobile` | `mobileNumber` | `XXXXXX3210` (last 4) |
+
+OVD document **numbers** are NOT returned. Only `photoIdType` and `addressProofType` are exposed.
+
+### System-Managed Fields (read-only)
+
+| Field | Type | Set By |
+|-------|------|--------|
+| `id` | `Long` | Auto PK |
+| `customerNumber` | `String` | `CbsReferenceService` |
+| `fullName` | `String` | Computed: firstName + lastName |
+| `kycVerified` | `boolean` | `verifyKyc()` endpoint |
+| `kycExpiryDate` | `String` | Computed from verified date + risk period |
+| `rekycDue` | `boolean` | EOD batch |
+| `ckycStatus` | `String` | CKYC upload batch |
+| `ckycNumber` | `String` | CERSAI response |
+| `videoKycDone` | `boolean` | V-KYC workflow engine |
+| `customerGroupId` | `Long` | Group management |
+| `customerGroupName` | `String` | Group management |
+| `relationshipManagerId` | `String` | RM assignment |
+| `active` | `boolean` | `deactivate()` endpoint |
+| `branchCode` | `String` | From Branch entity |
+| `createdAt` | `String` | `@CreationTimestamp` |
+
+---
+
+## 5. CifLookupResponse — 30 Fields
+
+Returned by `GET /api/v1/customers/{id}`. Optimized for the frontend `CifLookup.tsx` widget.
+
+Key differences from `CustomerResponse`:
+
+- Field names match frontend `CifCustomer` TypeScript type
+- Gender mapped: `M` to `MALE`, `F` to `FEMALE`, `T` to `OTHER`
+- `kycStatus` computed: `VERIFIED` / `PENDING` / `EXPIRED`
+- `status` computed: `ACTIVE` / `INACTIVE`
+- Addresses as nested objects (`permanentAddress.line1`, etc.)
+- Audit-logged via `getCustomerWithAudit()`
+
+---
+
+## 6. Immutability Rules
+
+| Field | Immutable After | Enforcement |
+|-------|----------------|-------------|
+| `panNumber` | CIF creation | API rejects `IMMUTABLE_FIELD`. Service skips. `@PreUpdate` JPA guard |
+| `aadhaarNumber` | CIF creation | Same triple enforcement |
+| `customerNumber` | CIF creation | Never in request DTO |
+
+---
+
+## 7. Maker-Checker Rules
+
+| Operation | Maker | Checker | Enforcement |
+|-----------|-------|---------|-------------|
+| Create CIF | MAKER/ADMIN | -- | `@PreAuthorize` |
+| Verify KYC | -- | CHECKER/ADMIN | `@PreAuthorize` + self-verify blocked (`SELF_VERIFY_PROHIBITED`) |
+| Update CIF | MAKER/ADMIN | -- | `@PreAuthorize` |
+| Deactivate | -- | ADMIN only | `@PreAuthorize` + active loans/deposits check |
+
+---
+
+## 8. Error Codes
+
+| Code | HTTP | Severity | Scenario |
+|------|------|----------|----------|
+| `CUSTOMER_NOT_FOUND` | 404 | HIGH | CIF ID does not exist |
+| `FIRST_NAME_REQUIRED` | 400 | LOW | First name blank |
+| `LAST_NAME_REQUIRED` | 400 | LOW | Last name blank |
+| `INVALID_PAN_FORMAT` | 400 | LOW | PAN not AAAAA0000A |
+| `DUPLICATE_PAN` | 409 | MEDIUM | PAN already exists (one PAN = one CIF) |
+| `INVALID_AADHAAR_FORMAT` | 400 | LOW | Aadhaar not 12 digits |
+| `INVALID_AADHAAR_CHECKSUM` | 400 | LOW | Verhoeff checksum failed |
+| `DUPLICATE_AADHAAR` | 409 | MEDIUM | Aadhaar already exists |
+| `INVALID_MOBILE_FORMAT` | 400 | LOW | Mobile not 10 digits starting 6-9 |
+| `INVALID_PINCODE_FORMAT` | 400 | LOW | PIN not 6 digits |
+| `INVALID_EMAIL_FORMAT` | 400 | LOW | Email invalid |
+| `GENDER_REQUIRED` | 400 | LOW | Gender missing for INDIVIDUAL |
+| `INVALID_GENDER` | 400 | LOW | Gender not M/F/T |
+| `DOB_REQUIRED` | 400 | LOW | DOB missing for INDIVIDUAL |
+| `FATHER_NAME_REQUIRED` | 400 | LOW | Father name missing for INDIVIDUAL |
+| `MOTHER_NAME_REQUIRED` | 400 | LOW | Mother name missing for INDIVIDUAL |
+| `BRANCH_NOT_FOUND` | 404 | HIGH | Branch ID invalid or inactive |
+| `IMMUTABLE_FIELD` | 400 | MEDIUM | PAN/Aadhaar change attempted on update |
+| `SELF_VERIFY_PROHIBITED` | 403 | HIGH | Same user created and verifying KYC |
+| `INVALID_KYC_RISK_CATEGORY` | 400 | LOW | Risk category not LOW/MEDIUM/HIGH |
+| `CONCURRENT_MODIFICATION` | 409 | MEDIUM | Optimistic lock version mismatch |
+| `CUSTOMER_HAS_ACTIVE_LOANS` | 409 | HIGH | Deactivation blocked by active loans |
+| `CUSTOMER_HAS_ACTIVE_DEPOSITS` | 409 | HIGH | Deactivation blocked by non-closed CASA |
+| `UNAUTHORIZED` | 401 | HIGH | Missing or invalid JWT |
+
+---
+
+## 9. Security
+
+| Requirement | Implementation |
+|-------------|---------------|
+| PAN encrypted at rest | `@Convert(converter = PiiEncryptionConverter.class)` AES-256-GCM |
+| Aadhaar encrypted at rest | Same as PAN |
+| OVD documents encrypted | Passport, Voter ID, Driving License, Photo ID, Address Proof |
+| PII never raw in response | `PiiMaskingUtil.maskPan()` / `maskAadhaar()` / `maskMobile()` |
+| PII hash for dedup | SHA-256 hash stored in `pan_hash` / `aadhaar_hash` columns |
+| PII immutability | `@PreUpdate` JPA guard + API rejection + service-layer skip |
+| Branch-scoped access | `BranchAccessValidator.validateAccess()` on every operation |
+| Audit trail | `AuditService.logEvent()` on create, update, view, KYC verify, deactivate |
+| Tenant isolation | Hibernate `@Filter` on `tenant_id` + `TenantContext` |
+| CSRF | Stateless JWT chain (no CSRF needed) |
+
+---
+
+## 10. Search Behavior
+
+`GET /api/v1/customers/search?q={query}`
+
+| Query Pattern | Behavior |
+|--------------|----------|
+| Empty / < 2 chars | Returns all active customers (branch-scoped) |
+| PAN format (`AAAAA0000A`) | SHA-256 hash lookup (exact match) |
+| Customer number / name / mobile | LIKE search on `customer_number`, `first_name`, `last_name`, `mobile_number` |
+| ADMIN/AUDITOR | Sees all branches |
+| MAKER/CHECKER | Sees own branch only |
