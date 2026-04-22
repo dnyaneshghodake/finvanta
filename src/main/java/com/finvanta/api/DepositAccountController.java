@@ -5,11 +5,19 @@ import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
+import com.finvanta.util.PiiMaskingUtil;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -53,10 +61,7 @@ public class DepositAccountController {
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<AccountResponse>>
             openAccount(@Valid @RequestBody OpenAccountRequest req) {
-        DepositAccount account = depositService.openAccount(
-                req.customerId(), req.branchId(), req.accountType(),
-                req.productCode() != null ? req.productCode() : req.accountType(),
-                req.initialDeposit(), req.nomineeName(), req.nomineeRelationship());
+        DepositAccount account = depositService.openAccount(req);
         return ResponseEntity.ok(ApiResponse.success(
                 AccountResponse.from(account), "Account opened in PENDING_ACTIVATION"));
     }
@@ -279,14 +284,62 @@ public class DepositAccountController {
 
     // === Request DTOs ===
 
+    /**
+     * CBS CASA Account Opening Request per Finacle ACCTOPN / Temenos ACCOUNT.OPENING.
+     *
+     * <p>Flat DTO — all 29 API fields from the frontend Account Opening Blueprint.
+     * Unknown fields are ignored for forward compatibility ({@code @JsonIgnoreProperties}).
+     * BFF injects branchId from server session; frontend sends it but BFF overrides.
+     *
+     * <p>Per RBI KYC Master Direction 2016: PAN/Aadhaar are encrypted at entity level
+     * via {@code PiiEncryptionConverter}. This DTO carries plaintext for validation only.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record OpenAccountRequest(
+            // §1 Product Selection
             @NotNull Long customerId,
             @NotNull Long branchId,
             @NotBlank String accountType,
             String productCode,
-            BigDecimal initialDeposit,
-            String nomineeName,
-            String nomineeRelationship) {}
+            String currencyCode,
+            @DecimalMin("0") @Digits(integer = 15, fraction = 2) BigDecimal initialDeposit,
+            // §3 KYC & Regulatory
+            @Pattern(regexp = "[A-Z]{5}[0-9]{4}[A-Z]", message = "PAN must be 10-char alphanumeric (e.g. ABCDE1234F)")
+            String panNumber,
+            @Pattern(regexp = "\\d{12}", message = "Aadhaar must be exactly 12 digits")
+            String aadhaarNumber,
+            String kycStatus,
+            Boolean pepFlag,
+            // §4 Personal Details
+            @NotBlank @Size(max = 200) String fullName,
+            LocalDate dateOfBirth,
+            String gender,
+            @Size(max = 200) String fatherSpouseName,
+            String nationality,
+            // §5 Contact Details
+            @Pattern(regexp = "[6-9]\\d{9}", message = "Mobile must be 10-digit Indian number starting with 6-9")
+            String mobileNumber,
+            @Email String email,
+            // §6 Address
+            @Size(max = 500) String addressLine1,
+            @Size(max = 500) String addressLine2,
+            @Size(max = 100) String city,
+            @Size(max = 100) String state,
+            @Pattern(regexp = "\\d{6}", message = "PIN code must be exactly 6 digits")
+            String pinCode,
+            // §7 Occupation & Financial Profile
+            String occupation,
+            String annualIncome,
+            String sourceOfFunds,
+            // §8 Nominee
+            @Size(max = 200) String nomineeName,
+            String nomineeRelationship,
+            // §9 FATCA / CRS
+            Boolean usTaxResident,
+            // §10 Account Configuration
+            Boolean chequeBookRequired,
+            Boolean debitCardRequired,
+            Boolean smsAlerts) {}
 
     public record FinancialRequest(
             @NotNull @Positive BigDecimal amount,
@@ -318,6 +371,10 @@ public class DepositAccountController {
      * detail screen, freeze/close modals, and customer 360° view.
      * Per RBI passbook norms: customer name, nominee, and balance
      * breakdown are mandatory display fields.
+     *
+     * <p>PAN/Aadhaar are ALWAYS masked in the response per RBI IT Governance
+     * Direction 2023 and UIDAI Aadhaar Act 2016. Raw values never leave the
+     * service layer.
      */
     public record AccountResponse(
             Long id, String accountNumber, String accountType,
@@ -343,7 +400,20 @@ public class DepositAccountController {
             String jointHolderMode,
             // --- Facilities ---
             boolean chequeBookEnabled, boolean debitCardEnabled,
-            BigDecimal dailyWithdrawalLimit, BigDecimal dailyTransferLimit) {
+            BigDecimal dailyWithdrawalLimit, BigDecimal dailyTransferLimit,
+            // --- KYC & Personal (new fields per Account Opening contract) ---
+            String panNumber,
+            String aadhaarNumber,
+            String kycStatus,
+            Boolean pepFlag,
+            String fullName,
+            String dateOfBirth,
+            String gender,
+            String mobileNumber,
+            String email,
+            String occupation,
+            String annualIncome,
+            Boolean usTaxResident) {
         static AccountResponse from(DepositAccount a) {
             return new AccountResponse(
                     a.getId(), a.getAccountNumber(),
@@ -370,7 +440,20 @@ public class DepositAccountController {
                     a.getNomineeName(), a.getNomineeRelationship(),
                     a.getJointHolderMode(),
                     a.isChequeBookEnabled(), a.isDebitCardEnabled(),
-                    a.getDailyWithdrawalLimit(), a.getDailyTransferLimit());
+                    a.getDailyWithdrawalLimit(), a.getDailyTransferLimit(),
+                    // CBS: PAN/Aadhaar ALWAYS masked per RBI/UIDAI — never return raw
+                    PiiMaskingUtil.maskPan(a.getPanNumber()),
+                    PiiMaskingUtil.maskAadhaar(a.getAadhaarNumber()),
+                    a.getKycStatus(),
+                    a.isPepFlag(),
+                    a.getFullName(),
+                    a.getDateOfBirth() != null ? a.getDateOfBirth().toString() : null,
+                    a.getGender(),
+                    a.getMobileNumber(),
+                    a.getEmail(),
+                    a.getOccupation(),
+                    a.getAnnualIncome(),
+                    a.isUsTaxResident());
         }
     }
 

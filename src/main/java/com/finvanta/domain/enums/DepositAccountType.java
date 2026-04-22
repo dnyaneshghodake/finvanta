@@ -38,6 +38,9 @@ public enum DepositAccountType {
     /** Business current account, zero interest per RBI norms */
     CURRENT("Current Account", false),
 
+    /** Salary account (employer-linked savings, zero-balance allowed) */
+    SALARY("Salary Account", true),
+
     /** Current with overdraft facility */
     CURRENT_OD("Current Account with OD", false);
 
