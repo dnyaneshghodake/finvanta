@@ -62,9 +62,9 @@ public enum DepositAccountType {
         return interestBearing;
     }
 
-    /** Whether this is a savings account type (starts with SAVINGS) */
+    /** Whether this is a savings account type (SAVINGS* or SALARY — uses SB GL 2010) */
     public boolean isSavings() {
-        return name().startsWith("SAVINGS");
+        return name().startsWith("SAVINGS") || this == SALARY;
     }
 
     /** Whether this is a current account type (starts with CURRENT) */
