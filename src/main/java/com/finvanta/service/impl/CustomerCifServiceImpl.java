@@ -358,14 +358,21 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         existing.setEmployerName(updated.getEmployerName());
 
         // CBS CKYC: Demographics (mutable — can be updated on re-KYC)
+        existing.setMiddleName(updated.getMiddleName());
         existing.setGender(updated.getGender());
         existing.setFatherName(updated.getFatherName());
         existing.setMotherName(updated.getMotherName());
         existing.setSpouseName(updated.getSpouseName());
         existing.setNationality(updated.getNationality());
         existing.setMaritalStatus(updated.getMaritalStatus());
+        if (updated.getResidentStatus() != null) existing.setResidentStatus(updated.getResidentStatus());
         existing.setOccupationCode(updated.getOccupationCode());
         existing.setAnnualIncomeBand(updated.getAnnualIncomeBand());
+        existing.setSourceOfFunds(updated.getSourceOfFunds());
+
+        // CBS: Contact (mutable)
+        existing.setAlternateMobile(updated.getAlternateMobile());
+        existing.setCommunicationPref(updated.getCommunicationPref());
 
         // CBS CKYC: KYC document details (mutable on re-KYC)
         existing.setKycMode(updated.getKycMode());
@@ -374,9 +381,20 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         existing.setAddressProofType(updated.getAddressProofType());
         existing.setAddressProofNumber(updated.getAddressProofNumber());
 
+        // CBS OVD: Officially Valid Documents (mutable on re-KYC per RBI KYC §3)
+        // Note: OVD numbers are PII — encrypted at rest via PiiEncryptionConverter.
+        existing.setPassportNumber(updated.getPassportNumber());
+        existing.setPassportExpiry(updated.getPassportExpiry());
+        existing.setVoterId(updated.getVoterId());
+        existing.setDrivingLicense(updated.getDrivingLicense());
+
+        // CBS FATCA / CRS (mutable — tax residency can change)
+        existing.setFatcaCountry(updated.getFatcaCountry());
+
         // CBS CKYC: Permanent address (mutable)
         existing.setPermanentAddress(updated.getPermanentAddress());
         existing.setPermanentCity(updated.getPermanentCity());
+        existing.setPermanentDistrict(updated.getPermanentDistrict());
         existing.setPermanentState(updated.getPermanentState());
         existing.setPermanentPinCode(updated.getPermanentPinCode());
         existing.setPermanentCountry(updated.getPermanentCountry());
@@ -389,11 +407,28 @@ public class CustomerCifServiceImpl implements CustomerCifService {
         if (updated.isAddressSameAsPermanent()) {
             existing.setAddressSameAsPermanent(true);
         } else if (updated.getPermanentAddress() != null && !updated.getPermanentAddress().isBlank()) {
-            // Caller explicitly provided permanent address data → honor the false flag
             existing.setAddressSameAsPermanent(false);
         }
-        // If updated.addressSameAsPermanent=true (default) and no permanent address provided,
-        // preserve existing value — prevents silent override from API partial updates.
+
+        // CBS CKYC: Correspondence address (mutable)
+        existing.setCorrespondenceAddress(updated.getCorrespondenceAddress());
+        existing.setCorrespondenceCity(updated.getCorrespondenceCity());
+        existing.setCorrespondenceDistrict(updated.getCorrespondenceDistrict());
+        existing.setCorrespondenceState(updated.getCorrespondenceState());
+        existing.setCorrespondencePinCode(updated.getCorrespondencePinCode());
+        existing.setCorrespondenceCountry(updated.getCorrespondenceCountry());
+
+        // CBS: Segmentation (mutable by ADMIN)
+        existing.setCustomerSegment(updated.getCustomerSegment());
+        existing.setSourceOfIntroduction(updated.getSourceOfIntroduction());
+
+        // CBS: Corporate / Non-Individual (RBI KYC §9 — mutable)
+        existing.setCompanyName(updated.getCompanyName());
+        existing.setCin(updated.getCin());
+        existing.setGstin(updated.getGstin());
+        existing.setDateOfIncorporation(updated.getDateOfIncorporation());
+        existing.setConstitutionType(updated.getConstitutionType());
+        existing.setNatureOfBusiness(updated.getNatureOfBusiness());
 
         // CBS: Nominee details (mutable — per RBI Nomination Guidelines)
         existing.setNomineeDob(updated.getNomineeDob());

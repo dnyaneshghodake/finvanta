@@ -167,26 +167,31 @@ public class CustomerApiController {
     public record CreateCustomerRequest(
             @NotBlank String firstName,
             @NotBlank String lastName,
+            String middleName,
             LocalDate dateOfBirth,
             String panNumber,
             String aadhaarNumber,
             String mobileNumber,
             String email,
+            String alternateMobile,
+            String communicationPref,
             String address,
             String city,
             String state,
             String pinCode,
             String customerType,
             @NotNull Long branchId,
-            // CBS CKYC Demographics
+            // CBS CKYC Demographics (CERSAI v2.0 Part I)
             String gender,
             String fatherName,
             String motherName,
             String spouseName,
             String nationality,
             String maritalStatus,
+            String residentStatus,
             String occupationCode,
             String annualIncomeBand,
+            String sourceOfFunds,
             String kycRiskCategory,
             // CBS: Boolean wrapper — null means "not provided" (omitted from JSON).
             // Primitive boolean defaults to false when omitted, which would silently
@@ -198,20 +203,45 @@ public class CustomerApiController {
             String photoIdNumber,
             String addressProofType,
             String addressProofNumber,
+            // CBS OVD — Officially Valid Documents (RBI KYC §3)
+            String passportNumber,
+            LocalDate passportExpiry,
+            String voterId,
+            String drivingLicense,
+            // CBS FATCA / CRS (Foreign Account Tax Compliance Act)
+            String fatcaCountry,
             // CBS Permanent Address (CKYC/CERSAI)
             String permanentAddress,
             String permanentCity,
+            String permanentDistrict,
             String permanentState,
             String permanentPinCode,
             String permanentCountry,
             // CBS: Boolean wrapper — same rationale as pep above.
             Boolean addressSameAsPermanent,
+            // CBS Correspondence Address (CKYC/CERSAI — separate from permanent)
+            String correspondenceAddress,
+            String correspondenceCity,
+            String correspondenceDistrict,
+            String correspondenceState,
+            String correspondencePinCode,
+            String correspondenceCountry,
             // CBS Income & Exposure (RBI Norms)
             BigDecimal monthlyIncome,
             BigDecimal maxBorrowingLimit,
             String employmentType,
             String employerName,
             Integer cibilScore,
+            // CBS Segmentation (Finacle CIF_MASTER)
+            String customerSegment,
+            String sourceOfIntroduction,
+            // CBS Corporate / Non-Individual (RBI KYC §9)
+            String companyName,
+            String cin,
+            String gstin,
+            LocalDate dateOfIncorporation,
+            String constitutionType,
+            String natureOfBusiness,
             // CBS Nominee Details (RBI Nomination Guidelines)
             LocalDate nomineeDob,
             String nomineeAddress,
@@ -220,34 +250,80 @@ public class CustomerApiController {
     // === Response DTO (PII masked per RBI IT Governance §8.5) ===
 
     public record CustomerResponse(
+            // Identity
             Long id, String customerNumber, String firstName, String lastName,
+            String middleName, String fullName, String customerType,
             String maskedPan, String maskedAadhaar, String maskedMobile,
-            String email, String customerType, String gender, String dateOfBirth,
-            String maritalStatus, String fatherName, String motherName, String nationality,
-            String occupationCode, String annualIncomeBand,
+            String email, String alternateMobile, String communicationPref,
+            String dateOfBirth,
+            // Demographics (CERSAI v2.0)
+            String gender, String fatherName, String motherName, String spouseName,
+            String nationality, String maritalStatus, String residentStatus,
+            String occupationCode, String annualIncomeBand, String sourceOfFunds,
+            // KYC Lifecycle
             boolean kycVerified, String kycRiskCategory, String kycExpiryDate,
-            boolean rekycDue, boolean pep, String ckycStatus, String ckycNumber, String kycMode,
+            boolean rekycDue, boolean pep, String ckycStatus, String ckycNumber,
+            String kycMode, boolean videoKycDone,
+            // OVD (masked per RBI — only type exposed, not number)
+            String photoIdType, String addressProofType,
+            // FATCA
+            String fatcaCountry,
+            // Legacy Address
             String address, String city, String state, String pinCode,
+            // Permanent Address (CKYC)
+            String permanentAddress, String permanentCity, String permanentDistrict,
+            String permanentState, String permanentPinCode, String permanentCountry,
+            boolean addressSameAsPermanent,
+            // Correspondence Address (CKYC)
+            String correspondenceAddress, String correspondenceCity, String correspondenceDistrict,
+            String correspondenceState, String correspondencePinCode, String correspondenceCountry,
+            // Income & Exposure
             BigDecimal monthlyIncome, BigDecimal maxBorrowingLimit,
             String employmentType, String employerName, Integer cibilScore,
+            // Segmentation
+            String customerSegment, String sourceOfIntroduction, String relationshipManagerId,
+            // Corporate (RBI KYC §9)
+            String companyName, String cin, String gstin,
+            String dateOfIncorporation, String constitutionType, String natureOfBusiness,
+            // Group Exposure
+            Long customerGroupId, String customerGroupName,
+            // Nominee
+            String nomineeDob, String nomineeAddress, String nomineeGuardianName,
+            // Status & Audit
             boolean active, String branchCode, String createdAt) {
         static CustomerResponse from(Customer c) {
             return new CustomerResponse(
                     c.getId(), c.getCustomerNumber(), c.getFirstName(), c.getLastName(),
+                    c.getMiddleName(), c.getFullName(), c.getCustomerType(),
                     PiiMaskingUtil.maskPan(c.getPanNumber()),
                     PiiMaskingUtil.maskAadhaar(c.getAadhaarNumber()),
                     PiiMaskingUtil.maskMobile(c.getMobileNumber()),
-                    c.getEmail(), c.getCustomerType(), c.getGender(),
+                    c.getEmail(), c.getAlternateMobile(), c.getCommunicationPref(),
                     c.getDateOfBirth() != null ? c.getDateOfBirth().toString() : null,
-                    c.getMaritalStatus(), c.getFatherName(), c.getMotherName(),
-                    c.getNationality(), c.getOccupationCode(), c.getAnnualIncomeBand(),
+                    c.getGender(), c.getFatherName(), c.getMotherName(), c.getSpouseName(),
+                    c.getNationality(), c.getMaritalStatus(), c.getResidentStatus(),
+                    c.getOccupationCode(), c.getAnnualIncomeBand(), c.getSourceOfFunds(),
                     c.isKycVerified(), c.getKycRiskCategory(),
                     c.getKycExpiryDate() != null ? c.getKycExpiryDate().toString() : null,
                     c.isRekycDue(), c.isPep(), c.getCkycStatus(), c.getCkycNumber(),
-                    c.getKycMode(),
+                    c.getKycMode(), c.isVideoKycDone(),
+                    c.getPhotoIdType(), c.getAddressProofType(),
+                    c.getFatcaCountry(),
                     c.getAddress(), c.getCity(), c.getState(), c.getPinCode(),
+                    c.getPermanentAddress(), c.getPermanentCity(), c.getPermanentDistrict(),
+                    c.getPermanentState(), c.getPermanentPinCode(), c.getPermanentCountry(),
+                    c.isAddressSameAsPermanent(),
+                    c.getCorrespondenceAddress(), c.getCorrespondenceCity(), c.getCorrespondenceDistrict(),
+                    c.getCorrespondenceState(), c.getCorrespondencePinCode(), c.getCorrespondenceCountry(),
                     c.getMonthlyIncome(), c.getMaxBorrowingLimit(),
                     c.getEmploymentType(), c.getEmployerName(), c.getCibilScore(),
+                    c.getCustomerSegment(), c.getSourceOfIntroduction(), c.getRelationshipManagerId(),
+                    c.getCompanyName(), c.getCin(), c.getGstin(),
+                    c.getDateOfIncorporation() != null ? c.getDateOfIncorporation().toString() : null,
+                    c.getConstitutionType(), c.getNatureOfBusiness(),
+                    c.getCustomerGroupId(), c.getCustomerGroupName(),
+                    c.getNomineeDob() != null ? c.getNomineeDob().toString() : null,
+                    c.getNomineeAddress(), c.getNomineeGuardianName(),
                     c.isActive(),
                     c.getBranch() != null ? c.getBranch().getBranchCode() : null,
                     c.getCreatedAt() != null ? c.getCreatedAt().toString() : null);
@@ -486,35 +562,40 @@ public class CustomerApiController {
      * kycVerified, etc.) so this method safely copies ALL user-provided fields.
      */
     private void populateCustomerFromRequest(Customer c, CreateCustomerRequest req) {
+        // Identity
         c.setFirstName(req.firstName());
         c.setLastName(req.lastName());
+        c.setMiddleName(req.middleName());
         c.setDateOfBirth(req.dateOfBirth());
         c.setPanNumber(req.panNumber());
         c.setAadhaarNumber(req.aadhaarNumber());
+        c.setCustomerType(req.customerType());
+        // Contact
         c.setMobileNumber(req.mobileNumber());
         c.setEmail(req.email());
+        c.setAlternateMobile(req.alternateMobile());
+        c.setCommunicationPref(req.communicationPref());
+        // Legacy Address
         c.setAddress(req.address());
         c.setCity(req.city());
         c.setState(req.state());
         c.setPinCode(req.pinCode());
-        c.setCustomerType(req.customerType());
-        // CKYC Demographics
+        // CKYC Demographics (CERSAI v2.0 Part I)
         c.setGender(req.gender());
         c.setFatherName(req.fatherName());
         c.setMotherName(req.motherName());
         c.setSpouseName(req.spouseName());
         c.setNationality(req.nationality());
         c.setMaritalStatus(req.maritalStatus());
+        if (req.residentStatus() != null) c.setResidentStatus(req.residentStatus());
         c.setOccupationCode(req.occupationCode());
         c.setAnnualIncomeBand(req.annualIncomeBand());
+        c.setSourceOfFunds(req.sourceOfFunds());
         // CBS: Only set kycRiskCategory if explicitly provided (non-null).
         // Null = not provided in JSON → preserve entity default ("MEDIUM").
-        // Without this guard, omitting kycRiskCategory from API request overwrites
-        // the Customer entity default of "MEDIUM" (Customer.java:136) with null,
-        // leaving customers with no risk category — violates RBI KYC Section 16.
         if (req.kycRiskCategory() != null) c.setKycRiskCategory(req.kycRiskCategory());
-        // CBS: Only set PEP if explicitly provided (non-null). Null = not provided in JSON.
-        // Prevents silent clearing of PEP flag on partial updates per FATF Recommendation 12.
+        // CBS: Only set PEP if explicitly provided (non-null).
+        // Prevents silent clearing of PEP flag on partial updates per FATF Rec 12.
         if (req.pep() != null) c.setPep(req.pep());
         // KYC Document Details
         c.setKycMode(req.kycMode());
@@ -522,20 +603,44 @@ public class CustomerApiController {
         c.setPhotoIdNumber(req.photoIdNumber());
         c.setAddressProofType(req.addressProofType());
         c.setAddressProofNumber(req.addressProofNumber());
-        // Permanent Address
+        // OVD — Officially Valid Documents (RBI KYC §3)
+        c.setPassportNumber(req.passportNumber());
+        c.setPassportExpiry(req.passportExpiry());
+        c.setVoterId(req.voterId());
+        c.setDrivingLicense(req.drivingLicense());
+        // FATCA / CRS
+        c.setFatcaCountry(req.fatcaCountry());
+        // Permanent Address (CKYC/CERSAI)
         c.setPermanentAddress(req.permanentAddress());
         c.setPermanentCity(req.permanentCity());
+        c.setPermanentDistrict(req.permanentDistrict());
         c.setPermanentState(req.permanentState());
         c.setPermanentPinCode(req.permanentPinCode());
         c.setPermanentCountry(req.permanentCountry());
-        // CBS: Only set addressSameAsPermanent if explicitly provided (non-null).
         if (req.addressSameAsPermanent() != null) c.setAddressSameAsPermanent(req.addressSameAsPermanent());
+        // Correspondence Address (CKYC/CERSAI)
+        c.setCorrespondenceAddress(req.correspondenceAddress());
+        c.setCorrespondenceCity(req.correspondenceCity());
+        c.setCorrespondenceDistrict(req.correspondenceDistrict());
+        c.setCorrespondenceState(req.correspondenceState());
+        c.setCorrespondencePinCode(req.correspondencePinCode());
+        c.setCorrespondenceCountry(req.correspondenceCountry());
         // Income & Exposure
         c.setMonthlyIncome(req.monthlyIncome());
         c.setMaxBorrowingLimit(req.maxBorrowingLimit());
         c.setEmploymentType(req.employmentType());
         c.setEmployerName(req.employerName());
         c.setCibilScore(req.cibilScore());
+        // Segmentation
+        c.setCustomerSegment(req.customerSegment());
+        c.setSourceOfIntroduction(req.sourceOfIntroduction());
+        // Corporate / Non-Individual (RBI KYC §9)
+        c.setCompanyName(req.companyName());
+        c.setCin(req.cin());
+        c.setGstin(req.gstin());
+        c.setDateOfIncorporation(req.dateOfIncorporation());
+        c.setConstitutionType(req.constitutionType());
+        c.setNatureOfBusiness(req.natureOfBusiness());
         // Nominee
         c.setNomineeDob(req.nomineeDob());
         c.setNomineeAddress(req.nomineeAddress());
