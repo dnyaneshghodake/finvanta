@@ -1194,6 +1194,54 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         return saved;
     }
 
+    // === Reject Account (Maker-Checker) ===
+    // Per Finacle ACCTOPN: CHECKER can reject a PENDING_ACTIVATION account.
+    @Override
+    @Transactional
+    public DepositAccount rejectAccount(String acn, String reason) {
+        String tid = TenantContext.getCurrentTenant();
+        var acct = lockAccount(tid, acn);
+        if (acct.getAccountStatus() != DepositAccountStatus.PENDING_ACTIVATION) {
+            throw new BusinessException(
+                    "INVALID_STATE",
+                    "Only PENDING_ACTIVATION accounts can be rejected. Current: " + acct.getAccountStatus());
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException("REASON_REQUIRED", "Rejection reason is mandatory per RBI audit norms");
+        }
+        acct.setAccountStatus(DepositAccountStatus.CLOSED);
+        acct.setClosedDate(businessDateService.getCurrentBusinessDate());
+        acct.setClosureReason("REJECTED: " + reason);
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        var saved = accountRepository.save(acct);
+
+        auditService.logEvent(
+                "DepositAccount", saved.getId(), "ACCOUNT_REJECTED",
+                "PENDING_ACTIVATION", "CLOSED", "DEPOSIT",
+                "Account rejected: " + acn + " | Reason: " + reason
+                        + " | By: " + SecurityUtil.getCurrentUsername());
+
+        log.info("CASA rejected: num={}, reason={}, checker={}", acn, reason, SecurityUtil.getCurrentUsername());
+        return saved;
+    }
+
+    // === Pending Accounts Pipeline ===
+    // Per Finacle ACCTOPN pipeline: returns PENDING_ACTIVATION accounts for checker action.
+    @Override
+    @Transactional(readOnly = true)
+    public List<DepositAccount> getPendingAccounts() {
+        String tid = TenantContext.getCurrentTenant();
+        if (SecurityUtil.isAdminRole()) {
+            return accountRepository.findByTenantIdAndAccountStatus(tid, DepositAccountStatus.PENDING_ACTIVATION);
+        }
+        Long branchId = SecurityUtil.getCurrentUserBranchId();
+        if (branchId != null) {
+            return accountRepository.findByTenantIdAndBranchIdAndAccountStatus(
+                    tid, branchId, DepositAccountStatus.PENDING_ACTIVATION);
+        }
+        return List.of();
+    }
+
     // === Freeze ===
     @Override
     @Transactional
