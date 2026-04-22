@@ -169,7 +169,8 @@ public class ApiExceptionHandler {
                     "ALREADY_DISBURSED",
                     "ALREADY_CLOSED",
                     "CLEARING_IN_PROGRESS",
-                    "DUPLICATE_TRANSACTION" -> HttpStatus.CONFLICT;
+                    "DUPLICATE_TRANSACTION",
+                    "ACCOUNT_ALREADY_EXISTS" -> HttpStatus.CONFLICT;
             case "INSUFFICIENT_BALANCE",
                     "ACCOUNT_FROZEN",
                     "ACCOUNT_CLOSED",
@@ -213,7 +214,8 @@ public class ApiExceptionHandler {
                     "ALREADY_DISBURSED",
                     "ALREADY_CLOSED",
                     "CLEARING_IN_PROGRESS",
-                    "DUPLICATE_TRANSACTION" -> "MEDIUM";
+                    "DUPLICATE_TRANSACTION",
+                    "ACCOUNT_ALREADY_EXISTS" -> "MEDIUM";
             case "ACCOUNT_DORMANT",
                     "FD_NOT_ACTIVE",
                     "PREMATURE_NOT_ALLOWED",
@@ -250,6 +252,8 @@ public class ApiExceptionHandler {
             case "ALREADY_REVERSED" -> "This transaction has already been reversed";
             case "ALREADY_DISBURSED" -> "This loan has already been disbursed";
             case "ALREADY_CLOSED" -> "This account/record is already closed";
+            case "ACCOUNT_ALREADY_EXISTS" -> "Customer already has this account type at this branch";
+            case "INVALID_AGE" -> "Verify the date of birth and account type eligibility";
             default -> null;
         };
     }

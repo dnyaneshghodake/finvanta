@@ -147,9 +147,17 @@ class CasaDepositIntegrationTest {
         Customer cust = customerRepository.findAll().stream()
                 .filter(c -> c.getTenantId().equals(TENANT))
                 .findFirst().orElseThrow();
-        DepositAccount acct = depositService.openAccount(
+        var req = new com.finvanta.api.DepositAccountController.OpenAccountRequest(
                 cust.getId(), testBranchId, "SAVINGS", "SAVINGS",
-                null, "Nominee", "SPOUSE");
+                null, null,
+                null, null, null, null,
+                null, null, null, null, null,
+                null, null,
+                null, null, null, null, null,
+                null, null, null,
+                "Nominee", "SPOUSE",
+                null, null, null, null);
+        DepositAccount acct = depositService.openAccount(req);
         depositService.activateAccount(acct.getAccountNumber());
         return depositService.getAccount(acct.getAccountNumber());
     }
@@ -241,9 +249,17 @@ class CasaDepositIntegrationTest {
         Customer cust = customerRepository.findAll().stream()
                 .filter(c -> c.getTenantId().equals(TENANT))
                 .findFirst().orElseThrow();
-        DepositAccount acct = depositService.openAccount(
+        var req = new com.finvanta.api.DepositAccountController.OpenAccountRequest(
                 cust.getId(), testBranchId, "CURRENT", "CURRENT",
-                null, "Nominee", "SPOUSE");
+                null, null,
+                null, null, null, null,
+                null, null, null, null, null,
+                null, null,
+                null, null, null, null, null,
+                null, null, null,
+                "Nominee", "SPOUSE",
+                null, null, null, null);
+        DepositAccount acct = depositService.openAccount(req);
         depositService.activateAccount(acct.getAccountNumber());
         return depositService.getAccount(acct.getAccountNumber());
     }
