@@ -230,6 +230,11 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
                 .orElseThrow(() -> new BusinessException(
                         "RD_NOT_FOUND", "RD not found: " + rdAccountNumber));
 
+        if (!rd.isActive()) {
+            throw new BusinessException("RD_NOT_ACTIVE",
+                    "RD is not active for maturity processing: " + rdAccountNumber);
+        }
+
         BigDecimal maturityAmt = rd.getMaturityAmount();
         transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("RECURRING_DEPOSIT").transactionType("RD_MATURITY")
