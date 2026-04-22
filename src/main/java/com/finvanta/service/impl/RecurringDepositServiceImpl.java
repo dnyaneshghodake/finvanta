@@ -201,6 +201,13 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
         // DR RD Interest Expense (5012) / CR RD Interest Payable (2041)
         // Without this, the maturity GL posting debits 2041 which was never
         // credited, and EOD reconciliation flags subledger-vs-GL mismatch daily.
+        // CBS CRITICAL: GL posting and subledger update MUST be coupled.
+        // If daily rounds to 0.00, skip BOTH GL posting AND subledger update.
+        // Without this guard, accruedInterest drifts from GL 2041 (RD_INTEREST_PAYABLE)
+        // over time, and the maturity posting at processMaturity() debits an amount
+        // from 2041 that was never fully credited — creating a GL imbalance.
+        // Per Finacle RD_ENGINE: zero-accrual days are valid — advance lastAccrualDate
+        // only when a non-zero amount is posted to maintain GL-subledger parity.
         if (daily.signum() > 0) {
             transactionEngine.execute(TransactionRequest.builder()
                     .sourceModule("RECURRING_DEPOSIT").transactionType("RD_INTEREST_ACCRUAL")
@@ -213,11 +220,11 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
                             new JournalLineRequest(GLConstants.RD_INTEREST_PAYABLE,
                                     DebitCredit.CREDIT, daily, "RD interest payable")))
                     .systemGenerated(true).build());
-        }
 
-        rd.setAccruedInterest(rd.getAccruedInterest().add(daily));
-        rd.setLastAccrualDate(businessDate);
-        rdRepository.save(rd);
+            rd.setAccruedInterest(rd.getAccruedInterest().add(daily));
+            rd.setLastAccrualDate(businessDate);
+            rdRepository.save(rd);
+        }
     }
 
     @Override

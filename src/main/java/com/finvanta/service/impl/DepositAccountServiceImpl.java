@@ -436,14 +436,21 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                             + Arrays.toString(DepositAccountType.values()));
         }
 
+        // CBS CRITICAL: Resolve business date BEFORE age validation.
+        // businessDateService.getCurrentBusinessDate() throws BusinessException("NO_BUSINESS_DAY_OPEN")
+        // if no day is open. This must be validated before sequence allocation (line 540),
+        // and age validation must use the CBS business date — NOT LocalDate.now().
+        // Per Customer.java CBS standards: uses provided business date, NOT LocalDate.now().
+        LocalDate bizDate = businessDateService.getCurrentBusinessDate();
+
         // --- CBS: Age validation from dateOfBirth per RBI norms ---
         // Regular accounts: age >= 18. Minor accounts (SAVINGS_MINOR): age >= 10.
-        // Per Finacle ACCTOPN: age is calculated from DOB to current date.
+        // Per Finacle ACCTOPN: age is calculated from DOB to CBS business date.
         if (req.dateOfBirth() != null) {
-            if (req.dateOfBirth().isAfter(LocalDate.now())) {
+            if (req.dateOfBirth().isAfter(bizDate)) {
                 throw new BusinessException("INVALID_AGE", "Date of birth cannot be in the future");
             }
-            long age = ChronoUnit.YEARS.between(req.dateOfBirth(), LocalDate.now());
+            long age = ChronoUnit.YEARS.between(req.dateOfBirth(), bizDate);
             if (parsedAccountType == DepositAccountType.SAVINGS_MINOR) {
                 if (age < MIN_AGE_MINOR) {
                     throw new BusinessException("INVALID_AGE",
@@ -491,13 +498,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                             + ". Per Finacle ACCTOPN: one account per CIF per type per branch.");
         }
 
-        // CBS CRITICAL: Resolve business date BEFORE sequence allocation.
-        // businessDateService.getCurrentBusinessDate() throws BusinessException("NO_BUSINESS_DAY_OPEN")
-        // if no day is open. This must be validated before consuming the DB-backed sequence,
-        // because REQUIRES_NEW propagation commits the sequence independently — a failed
-        // business date check after sequence allocation wastes the number.
+        // CBS: bizDate already resolved above (before age validation).
         // Per Finacle ACCTOPN / Temenos ACCOUNT.OPENING: validate-first, allocate-last.
-        LocalDate bizDate = businessDateService.getCurrentBusinessDate();
 
         // CBS Phase 2: Product-driven rate and minimum balance per Finacle PDDEF.
         // Interest rate and minimum balance are resolved from ProductMaster, not hardcoded.
