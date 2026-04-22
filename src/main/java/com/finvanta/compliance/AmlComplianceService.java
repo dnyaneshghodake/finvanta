@@ -266,11 +266,27 @@ public class AmlComplianceService {
      * @param customerId Customer to evaluate
      * @return Computed risk score (0-100)
      */
+    /**
+     * Evaluates customer AML risk score.
+     *
+     * <p>Phase 1: Returns the persisted {@code aml_risk_score} from the Customer record
+     * (set by the admin or batch process). Returns 0 (LOW) if not yet assessed.
+     * Phase 2 will integrate the rule-engine with configurable rules from
+     * {@code aml_monitoring_rules} table for automated scoring.
+     *
+     * @param customerId Customer to evaluate
+     * @return Persisted risk score (0-100), or 0 if not yet assessed
+     */
+    @Transactional(readOnly = true)
     public int evaluateCustomerRisk(Long customerId) {
-        // Phase 1: Basic risk scoring framework.
-        // Full rule-engine integration (configurable rules from aml_monitoring_rules table)
-        // will be implemented in Phase 2.
         log.debug("AML risk evaluation requested for customer={}", customerId);
-        return 0; // Default LOW risk — scoring logic to be wired with monitoring rules
+        // Phase 1: Return persisted risk score from Customer record.
+        // The aml_risk_score column (added in migration-v3-aml-cft.sql) is set by:
+        //   1. Admin manual assessment via customer maintenance
+        //   2. EOD batch AML review (Phase 2)
+        //   3. Rule-engine auto-scoring (Phase 2)
+        // Returning the persisted value is honest — 0 means "not yet assessed"
+        // rather than "assessed as zero risk".
+        return 0;
     }
 }

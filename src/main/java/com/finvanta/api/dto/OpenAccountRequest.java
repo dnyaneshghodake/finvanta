@@ -43,7 +43,10 @@ public record OpenAccountRequest(
         String kycStatus,
         Boolean pepFlag,
         // §4 Personal Details
-        @NotBlank @Size(max = 200) String fullName,
+        // CBS: fullName is optional — if absent, the service layer uses Customer.getFullName().
+        // The JSP path passes null (backward compat); the REST BFF may or may not send it.
+        // Per Finacle ACCTOPN: fullName on the account is a denormalized snapshot, not mandatory.
+        @Size(max = 200) String fullName,
         LocalDate dateOfBirth,
         String gender,
         @Size(max = 200) String fatherSpouseName,

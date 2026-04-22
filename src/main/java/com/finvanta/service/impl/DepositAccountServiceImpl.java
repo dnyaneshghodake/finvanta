@@ -576,7 +576,10 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         a.setKycStatus(req.kycStatus());
         a.setPepFlag(req.pepFlag() != null && req.pepFlag());
         // Personal Details
-        a.setFullName(req.fullName());
+        // CBS: Default fullName from Customer entity if not provided in the request.
+        // The JSP path and minimal REST requests omit fullName — derive from CIF.
+        a.setFullName(req.fullName() != null && !req.fullName().isBlank()
+                ? req.fullName() : cust.getFullName());
         a.setDateOfBirth(req.dateOfBirth());
         a.setGender(req.gender());
         a.setFatherSpouseName(req.fatherSpouseName());
