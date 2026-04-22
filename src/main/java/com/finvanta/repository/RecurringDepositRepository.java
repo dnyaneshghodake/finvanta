@@ -1,6 +1,7 @@
 package com.finvanta.repository;
 
 import com.finvanta.domain.entity.RecurringDeposit;
+import com.finvanta.domain.enums.RdStatus;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -57,5 +58,5 @@ public interface RecurringDepositRepository extends JpaRepository<RecurringDepos
     List<RecurringDeposit> findDefaultCandidates(
             @Param("tenantId") String tenantId);
 
-    long countByTenantIdAndStatus(String tenantId, String status);
+    long countByTenantIdAndStatus(String tenantId, RdStatus status);
 }
