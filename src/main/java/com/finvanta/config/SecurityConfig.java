@@ -122,7 +122,7 @@ public class SecurityConfig {
                                             + "\"severity\":\"HIGH\","
                                             + "\"action\":\"Login to obtain an access token\"},"
                                             + "\"meta\":{\"apiVersion\":\"v1\","
-                                            + "\"correlationId\":\"" + (correlationId != null ? correlationId : "") + "\","
+                                            + "\"correlationId\":\"" + correlationId + "\","
                                             + "\"timestamp\":\"" + timestamp + "\"}}");
                                 }))
                 // CBS: rate limit auth endpoints BEFORE JWT auth so token issuance
