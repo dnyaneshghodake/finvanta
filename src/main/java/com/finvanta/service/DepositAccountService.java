@@ -1,5 +1,6 @@
 package com.finvanta.service;
 
+import com.finvanta.api.DepositAccountController.OpenAccountRequest;
 import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
 
@@ -28,18 +29,20 @@ public interface DepositAccountService {
 
     /**
      * Open a new savings or current account per Finacle ACCTOPN.
-     * Validates: KYC verified, active customer, active branch, valid account type.
-     * RBI: Current accounts cannot bear interest. Savings rate floor tracked.
+     *
+     * <p>Accepts the full 29-field {@link OpenAccountRequest} DTO from the frontend
+     * Account Opening Blueprint. Validates: KYC verified, active customer, active branch,
+     * valid account type, age from dateOfBirth (≥18 regular, ≥10 minor), NRI nationality
+     * only for SAVINGS_NRI, PEP flag triggers risk scoring.
+     *
+     * <p>RBI: Current accounts cannot bear interest. Savings rate floor tracked.
      * GL: Initial deposit via TransactionEngine if amount > 0.
+     *
+     * @param req Full account opening request DTO (29 fields, all optional except
+     *            customerId, branchId, accountType, fullName)
+     * @return Created account in PENDING_ACTIVATION status
      */
-    DepositAccount openAccount(
-            Long customerId,
-            Long branchId,
-            String accountType,
-            String productCode,
-            BigDecimal initialDeposit,
-            String nomineeName,
-            String nomineeRelationship);
+    DepositAccount openAccount(OpenAccountRequest req);
 
     /**
      * Cash deposit - DR Bank Ops (1100) / CR Customer Deposits (2010/2020).

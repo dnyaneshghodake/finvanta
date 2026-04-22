@@ -3,6 +3,7 @@ package com.finvanta.service.impl;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
 import com.finvanta.accounting.ProductGLResolver;
+import com.finvanta.api.DepositAccountController.OpenAccountRequest;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
