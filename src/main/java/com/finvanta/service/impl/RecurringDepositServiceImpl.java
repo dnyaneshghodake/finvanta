@@ -283,6 +283,15 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
         BigDecimal adjustedInterest = rd.getCumulativeDeposit()
                 .multiply(effectiveRate).multiply(BigDecimal.valueOf(days))
                 .divide(BigDecimal.valueOf(36500), 2, RoundingMode.HALF_UP);
+        // CBS CRITICAL: Cap adjustedInterest at accruedInterest to prevent GL imbalance.
+        // adjustedInterest uses simple-interest formula over actual tenure at the penalized rate.
+        // accruedInterest is the sum of daily accruals at the full rate (what was credited to GL 2041).
+        // If simple-interest calc > sum of daily accruals (due to rounding or partial-accrual gaps),
+        // the closure posting would debit more from 2041 than was ever credited — GL imbalance.
+        // Per Finacle RD_ENGINE: the payout is always bounded by what was actually accrued.
+        if (adjustedInterest.compareTo(rd.getAccruedInterest()) > 0) {
+            adjustedInterest = rd.getAccruedInterest();
+        }
         BigDecimal closureAmt = rd.getCumulativeDeposit().add(adjustedInterest);
 
         // CBS CRITICAL: Reverse excess accrued interest before closure posting.
@@ -309,18 +318,30 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
                     rdAccountNumber, rd.getAccruedInterest(), adjustedInterest, excessInterest);
         }
 
-        transactionEngine.execute(TransactionRequest.builder()
-                .sourceModule("RECURRING_DEPOSIT").transactionType("RD_PREMATURE_CLOSE")
-                .accountReference(rd.getLinkedAccountNumber()).amount(closureAmt)
-                .valueDate(bd).branchCode(rd.getBranchCode())
-                .narration("RD premature closure: " + reason)
-                .journalLines(List.of(
+        // CBS: Omit the interest DEBIT line when adjustedInterest is zero.
+        // A zero-amount journal line may be rejected by TransactionEngine's amount
+        // validation, and is accounting-meaningless. When effective rate is zero
+        // (penalty >= rate) or the full accrued interest was already reversed above,
+        // the closure posting becomes a simple DR RD_DEPOSITS / CR SB_DEPOSITS.
+        List<JournalLineRequest> closureLines = adjustedInterest.signum() > 0
+                ? List.of(
                         new JournalLineRequest(GLConstants.RD_DEPOSITS,
                                 DebitCredit.DEBIT, rd.getCumulativeDeposit(), "RD principal"),
                         new JournalLineRequest(GLConstants.RD_INTEREST_PAYABLE,
                                 DebitCredit.DEBIT, adjustedInterest, "RD interest (penalized)"),
                         new JournalLineRequest(GLConstants.SB_DEPOSITS,
-                                DebitCredit.CREDIT, closureAmt, "RD premature to CASA")))
+                                DebitCredit.CREDIT, closureAmt, "RD premature to CASA"))
+                : List.of(
+                        new JournalLineRequest(GLConstants.RD_DEPOSITS,
+                                DebitCredit.DEBIT, rd.getCumulativeDeposit(), "RD principal"),
+                        new JournalLineRequest(GLConstants.SB_DEPOSITS,
+                                DebitCredit.CREDIT, closureAmt, "RD premature to CASA"));
+        transactionEngine.execute(TransactionRequest.builder()
+                .sourceModule("RECURRING_DEPOSIT").transactionType("RD_PREMATURE_CLOSE")
+                .accountReference(rd.getLinkedAccountNumber()).amount(closureAmt)
+                .valueDate(bd).branchCode(rd.getBranchCode())
+                .narration("RD premature closure: " + reason)
+                .journalLines(closureLines)
                 .systemGenerated(true).build());
 
         rd.setStatus(RdStatus.PREMATURE_CLOSED);
