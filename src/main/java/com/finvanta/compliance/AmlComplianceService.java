@@ -252,24 +252,30 @@ public class AmlComplianceService {
     /**
      * Evaluates customer AML risk score.
      *
-     * <p>Phase 1: Returns the persisted {@code aml_risk_score} from the Customer record
-     * (set by the admin or batch process). Returns 0 (LOW) if not yet assessed.
-     * Phase 2 will integrate the rule-engine with configurable rules from
-     * {@code aml_monitoring_rules} table for automated scoring.
+     * <p><b>Phase 1 STUB:</b> Always returns 0 (LOW / not yet assessed). The
+     * {@code aml_risk_score} column is provisioned by {@code migration-v3-aml-cft.sql}
+     * but is NOT yet mapped on the {@link com.finvanta.domain.entity.Customer} entity.
+     * Until the field is wired on the entity (Phase 2), this method cannot read the
+     * persisted score — returning 0 is the honest, safe default (no caller is misled
+     * into treating a real HIGH-risk customer as LOW).
+     *
+     * <p><b>Phase 2 will:</b>
+     * <ul>
+     *   <li>Add {@code amlRiskScore} mapping on the Customer entity</li>
+     *   <li>Inject {@code CustomerRepository} here and return the persisted value</li>
+     *   <li>Integrate the rule-engine with configurable rules from
+     *       {@code aml_monitoring_rules} table for automated scoring</li>
+     * </ul>
      *
      * @param customerId Customer to evaluate
-     * @return Persisted risk score (0-100), or 0 if not yet assessed
+     * @return Always 0 in Phase 1 — callers must not rely on this for risk gating
      */
     @Transactional(readOnly = true)
     public int evaluateCustomerRisk(Long customerId) {
-        log.debug("AML risk evaluation requested for customer={}", customerId);
-        // Phase 1: Return persisted risk score from Customer record.
-        // The aml_risk_score column (added in migration-v3-aml-cft.sql) is set by:
-        //   1. Admin manual assessment via customer maintenance
-        //   2. EOD batch AML review (Phase 2)
-        //   3. Rule-engine auto-scoring (Phase 2)
-        // Returning the persisted value is honest — 0 means "not yet assessed"
-        // rather than "assessed as zero risk".
+        log.debug("AML risk evaluation (Phase 1 stub) requested for customer={}", customerId);
+        // Phase 1 stub: the aml_risk_score column exists in the DB but is not
+        // yet mapped on the Customer entity, so there is no accessor to read it.
+        // Returning 0 (unassessed) is safer than a fabricated value.
         return 0;
     }
 }

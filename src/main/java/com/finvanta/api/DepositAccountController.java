@@ -74,7 +74,7 @@ public class DepositAccountController {
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<AccountResponse>>
             rejectAccount(@PathVariable String accountNumber,
-                    @RequestBody RejectRequest req) {
+                    @Valid @RequestBody RejectRequest req) {
         DepositAccount account = depositService.rejectAccount(
                 accountNumber, req.reason());
         return ResponseEntity.ok(ApiResponse.success(
@@ -298,7 +298,7 @@ public class DepositAccountController {
 
     public record ReversalRequest(String reason) {}
 
-    public record RejectRequest(String reason) {}
+    public record RejectRequest(@NotBlank String reason) {}
 
     // === Response DTOs (no JPA entity exposure) ===
 

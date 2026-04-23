@@ -105,25 +105,35 @@ public class SecurityConfig {
                                             "application/json");
                                     // CBS v3.0 Envelope: include error + meta per API_REFERENCE.md
                                     // so BFF clients reading response.error.code get a consistent shape.
-                                    // CBS SECURITY: Read correlationId from MDC (validated by
-                                    // CorrelationIdMdcFilter) instead of raw header to prevent
-                                    // JSON injection via crafted X-Correlation-Id values.
+                                    // CBS SECURITY: Build the JSON body via Jackson rather than string
+                                    // concatenation. CorrelationIdMdcFilter validates the MDC value
+                                    // against a strict regex, but using a real JSON serializer removes
+                                    // all risk of response-splitting / JSON-injection if any field is
+                                    // ever added that is not pre-validated. Timestamps are emitted in
+                                    // a stable ISO-8601 format independent of JVM locale.
                                     String correlationId = org.slf4j.MDC.get("correlationId");
                                     if (correlationId == null) {
                                         correlationId = "";
                                     }
-                                    String timestamp = java.time.LocalDateTime.now().toString();
-                                    res.getWriter().write(
-                                            "{\"status\":\"ERROR\","
-                                            + "\"errorCode\":\"UNAUTHORIZED\","
-                                            + "\"message\":\"Authentication required. Provide Bearer token.\","
-                                            + "\"error\":{\"code\":\"UNAUTHORIZED\","
-                                            + "\"message\":\"Authentication required. Provide Bearer token.\","
-                                            + "\"severity\":\"HIGH\","
-                                            + "\"action\":\"Login to obtain an access token\"},"
-                                            + "\"meta\":{\"apiVersion\":\"v1\","
-                                            + "\"correlationId\":\"" + correlationId + "\","
-                                            + "\"timestamp\":\"" + timestamp + "\"}}");
+                                    String timestamp = java.time.OffsetDateTime.now(
+                                            java.time.ZoneOffset.UTC).toString();
+                                    java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+                                    body.put("status", "ERROR");
+                                    body.put("errorCode", "UNAUTHORIZED");
+                                    body.put("message", "Authentication required. Provide Bearer token.");
+                                    java.util.Map<String, Object> error = new java.util.LinkedHashMap<>();
+                                    error.put("code", "UNAUTHORIZED");
+                                    error.put("message", "Authentication required. Provide Bearer token.");
+                                    error.put("severity", "HIGH");
+                                    error.put("action", "Login to obtain an access token");
+                                    body.put("error", error);
+                                    java.util.Map<String, Object> meta = new java.util.LinkedHashMap<>();
+                                    meta.put("apiVersion", "v1");
+                                    meta.put("correlationId", correlationId);
+                                    meta.put("timestamp", timestamp);
+                                    body.put("meta", meta);
+                                    new com.fasterxml.jackson.databind.ObjectMapper()
+                                            .writeValue(res.getWriter(), body);
                                 }))
                 // CBS: rate limit auth endpoints BEFORE JWT auth so token issuance
                 // cannot be brute-forced. Per RBI Cyber Security Framework 2024 §6.2.
