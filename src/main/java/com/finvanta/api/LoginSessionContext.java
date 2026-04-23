@@ -43,7 +43,8 @@ public record LoginSessionContext(
         BusinessDayContext businessDay,
         RoleContext role,
         LimitsContext limits,
-        OperationalConfig operationalConfig) {
+        OperationalConfig operationalConfig,
+        List<FeatureFlagEntry> featureFlags) {
 
     // === A. Token Info (transport layer) ===
 
@@ -162,4 +163,24 @@ public record LoginSessionContext(
             String roundingMode,
             int fiscalYearStartMonth,
             String businessDayPolicy) {}
+
+    // === H. Feature Flags ===
+
+    /**
+     * Per RBI IT Governance Direction 2023: runtime feature availability.
+     * The BFF uses these to:
+     * <ul>
+     *   <li>Show/hide payment rail options (NEFT, RTGS, IMPS, UPI)</li>
+     *   <li>Show/hide product modules (Gold Loan, RD, Education Loan)</li>
+     *   <li>Enable/disable system features (ISO20022, NEFT_24x7)</li>
+     * </ul>
+     *
+     * <p>Per RBI: banks must be able to immediately disable a payment rail
+     * during a security incident. The BFF must re-fetch feature flags on
+     * bootstrap refresh to pick up runtime changes.
+     */
+    public record FeatureFlagEntry(
+            String flagCode,
+            String category,
+            boolean enabled) {}
 }

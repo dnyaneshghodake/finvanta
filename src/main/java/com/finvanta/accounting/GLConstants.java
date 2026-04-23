@@ -132,4 +132,13 @@ public final class GLConstants {
     public static final String FD_INTEREST_PAYABLE = "2031";
     /** FD Interest Expense — P&L charge for FD interest payouts */
     public static final String FD_INTEREST_EXPENSE = "5011";
+
+    // --- RECURRING DEPOSIT GL Codes (per Finacle RD_MASTER / RBI Banking Regulation Act) ---
+
+    /** Recurring Deposit Liability — customer RD cumulative deposits held by bank */
+    public static final String RD_DEPOSITS = "2040";
+    /** RD Interest Payable — accrued RD interest not yet paid/credited */
+    public static final String RD_INTEREST_PAYABLE = "2041";
+    /** RD Interest Expense — P&L charge for RD interest payouts */
+    public static final String RD_INTEREST_EXPENSE = "5012";
 }

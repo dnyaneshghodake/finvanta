@@ -18,8 +18,8 @@ class DepositAccountTypeTest {
 
     @ParameterizedTest
     @EnumSource(value = DepositAccountType.class, names = {
-            "SAVINGS", "SAVINGS_NRI", "SAVINGS_MINOR", "SAVINGS_JOINT", "SAVINGS_PMJDY"})
-    @DisplayName("All SAVINGS variants return isSavings()=true")
+            "SAVINGS", "SAVINGS_NRI", "SAVINGS_MINOR", "SAVINGS_JOINT", "SAVINGS_PMJDY", "SALARY"})
+    @DisplayName("All SAVINGS variants (incl. SALARY) return isSavings()=true")
     void savingsTypes_isSavings_true(DepositAccountType type) {
         assertTrue(type.isSavings());
         assertFalse(type.isCurrent());
@@ -35,8 +35,8 @@ class DepositAccountTypeTest {
 
     @ParameterizedTest
     @EnumSource(value = DepositAccountType.class, names = {
-            "SAVINGS", "SAVINGS_NRI", "SAVINGS_MINOR", "SAVINGS_JOINT", "SAVINGS_PMJDY"})
-    @DisplayName("All SAVINGS types are interest-bearing per RBI")
+            "SAVINGS", "SAVINGS_NRI", "SAVINGS_MINOR", "SAVINGS_JOINT", "SAVINGS_PMJDY", "SALARY"})
+    @DisplayName("All SAVINGS types (incl. SALARY) are interest-bearing per RBI")
     void savingsTypes_isInterestBearing_true(DepositAccountType type) {
         assertTrue(type.isInterestBearing());
     }
@@ -50,8 +50,8 @@ class DepositAccountTypeTest {
 
     @ParameterizedTest
     @EnumSource(value = DepositAccountType.class, names = {
-            "SAVINGS", "SAVINGS_NRI", "SAVINGS_MINOR", "SAVINGS_JOINT", "SAVINGS_PMJDY"})
-    @DisplayName("Savings accounts map to GL 2010 (SB Deposits)")
+            "SAVINGS", "SAVINGS_NRI", "SAVINGS_MINOR", "SAVINGS_JOINT", "SAVINGS_PMJDY", "SALARY"})
+    @DisplayName("Savings accounts (incl. SALARY) map to GL 2010 (SB Deposits)")
     void savingsTypes_glCode_2010(DepositAccountType type) {
         assertEquals("2010", type.getDepositGlCode());
     }
@@ -81,8 +81,8 @@ class DepositAccountTypeTest {
     }
 
     @Test
-    @DisplayName("Enum has exactly 7 values matching Finacle PDDEF")
+    @DisplayName("Enum has exactly 8 values matching Finacle PDDEF (incl. SALARY)")
     void enumSize_matches_finacle() {
-        assertEquals(7, DepositAccountType.values().length);
+        assertEquals(8, DepositAccountType.values().length);
     }
 }

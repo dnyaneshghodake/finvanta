@@ -3,12 +3,14 @@ package com.finvanta.service;
 import com.finvanta.api.LoginSessionContext;
 import com.finvanta.api.LoginSessionContext.BranchContext;
 import com.finvanta.api.LoginSessionContext.BusinessDayContext;
+import com.finvanta.api.LoginSessionContext.FeatureFlagEntry;
 import com.finvanta.api.LoginSessionContext.LimitsContext;
 import com.finvanta.api.LoginSessionContext.OperationalConfig;
 import com.finvanta.api.LoginSessionContext.RoleContext;
 import com.finvanta.api.LoginSessionContext.TokenInfo;
 import com.finvanta.api.LoginSessionContext.TransactionLimitEntry;
 import com.finvanta.api.LoginSessionContext.UserContext;
+import com.finvanta.domain.entity.FeatureFlag;
 import com.finvanta.domain.entity.AppUser;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.BusinessCalendar;
@@ -17,6 +19,7 @@ import com.finvanta.domain.entity.Tenant;
 import com.finvanta.domain.entity.TransactionLimit;
 import com.finvanta.repository.AppUserRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
+import com.finvanta.repository.FeatureFlagRepository;
 import com.finvanta.repository.RolePermissionRepository;
 import com.finvanta.repository.TenantRepository;
 import com.finvanta.repository.TransactionLimitRepository;
@@ -68,18 +71,21 @@ public class SessionContextService {
     private final BusinessCalendarRepository calendarRepository;
     private final RolePermissionRepository rolePermissionRepository;
     private final TransactionLimitRepository transactionLimitRepository;
+    private final FeatureFlagRepository featureFlagRepository;
 
     public SessionContextService(
             AppUserRepository userRepository,
             TenantRepository tenantRepository,
             BusinessCalendarRepository calendarRepository,
             RolePermissionRepository rolePermissionRepository,
-            TransactionLimitRepository transactionLimitRepository) {
+            TransactionLimitRepository transactionLimitRepository,
+            FeatureFlagRepository featureFlagRepository) {
         this.userRepository = userRepository;
         this.tenantRepository = tenantRepository;
         this.calendarRepository = calendarRepository;
         this.rolePermissionRepository = rolePermissionRepository;
         this.transactionLimitRepository = transactionLimitRepository;
+        this.featureFlagRepository = featureFlagRepository;
     }
 
     /**
@@ -108,7 +114,8 @@ public class SessionContextService {
                 buildBusinessDayContext(tenantId, user.getBranch()),
                 buildRoleContext(tenantId, user),
                 buildLimitsContext(tenantId, user),
-                buildOperationalConfig(tenantId));
+                buildOperationalConfig(tenantId),
+                buildFeatureFlags(tenantId));
     }
 
     /**
@@ -144,7 +151,8 @@ public class SessionContextService {
                 buildBusinessDayContext(tenantId, user.getBranch()),
                 buildRoleContext(tenantId, user),
                 buildLimitsContext(tenantId, user),
-                buildOperationalConfig(tenantId));
+                buildOperationalConfig(tenantId),
+                buildFeatureFlags(tenantId));
     }
 
     // ========================================================================
@@ -355,5 +363,24 @@ public class SessionContextService {
                 "HALF_UP", // Per RBI rounding rules for INR
                 tenant.getFiscalYearStartMonth(),
                 tenant.getBusinessDayPolicy());
+    }
+
+    // ========================================================================
+    // H. Feature Flags
+    // ========================================================================
+
+    /**
+     * Per RBI IT Governance Direction 2023: load all feature flags for the
+     * tenant so the BFF can show/hide payment rails, product modules, and
+     * system features based on runtime configuration.
+     */
+    private List<FeatureFlagEntry> buildFeatureFlags(String tenantId) {
+        List<FeatureFlag> flags = featureFlagRepository.findByTenantId(tenantId);
+        return flags.stream()
+                .map(ff -> new FeatureFlagEntry(
+                        ff.getFlagCode(),
+                        ff.getCategory(),
+                        ff.isEnabled()))
+                .toList();
     }
 }

@@ -3,6 +3,7 @@ package com.finvanta.service.impl;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
 import com.finvanta.accounting.ProductGLResolver;
+import com.finvanta.api.dto.OpenAccountRequest;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.Branch;
 import com.finvanta.domain.entity.Customer;
@@ -394,19 +395,26 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 result, txnRef, idempotencyKey, channel, counterparty, acct.getLedgerBalance());
     }
 
+    /** Minimum age for regular accounts per RBI */
+    private static final int MIN_AGE_REGULAR = 18;
+    /** Minimum age for minor accounts per RBI */
+    private static final int MIN_AGE_MINOR = 10;
+
     // === Account Opening ===
     @Override
     @Transactional
-    public DepositAccount openAccount(
-            Long customerId,
-            Long branchId,
-            String accountType,
-            String productCode,
-            BigDecimal initialDeposit,
-            String nomineeName,
-            String nomineeRelationship) {
+    public DepositAccount openAccount(OpenAccountRequest req) {
         String tid = TenantContext.getCurrentTenant();
         String user = SecurityUtil.getCurrentUsername();
+
+        // --- Extract DTO fields (backward-compatible: null-safe for all new fields) ---
+        Long customerId = req.customerId();
+        Long branchId = req.branchId();
+        String accountType = req.accountType();
+        String productCode = req.productCode();
+        String nomineeName = req.nomineeName();
+        String nomineeRelationship = req.nomineeRelationship();
+
         Customer cust = customerRepository
                 .findById(customerId)
                 .filter(c -> tid.equals(c.getTenantId()))
@@ -428,6 +436,52 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                             + Arrays.toString(DepositAccountType.values()));
         }
 
+        // CBS CRITICAL: Resolve business date BEFORE age validation.
+        // businessDateService.getCurrentBusinessDate() throws BusinessException("NO_BUSINESS_DAY_OPEN")
+        // if no day is open. This must be validated before sequence allocation (line 540),
+        // and age validation must use the CBS business date — NOT LocalDate.now().
+        // Per Customer.java CBS standards: uses provided business date, NOT LocalDate.now().
+        LocalDate bizDate = businessDateService.getCurrentBusinessDate();
+
+        // --- CBS: Age validation from dateOfBirth per RBI norms ---
+        // Regular accounts: age >= 18. Minor accounts (SAVINGS_MINOR): age >= 10.
+        // Per Finacle ACCTOPN: age is calculated from DOB to CBS business date.
+        if (req.dateOfBirth() != null) {
+            if (req.dateOfBirth().isAfter(bizDate)) {
+                throw new BusinessException("INVALID_AGE", "Date of birth cannot be in the future");
+            }
+            long age = ChronoUnit.YEARS.between(req.dateOfBirth(), bizDate);
+            if (parsedAccountType == DepositAccountType.SAVINGS_MINOR) {
+                if (age < MIN_AGE_MINOR) {
+                    throw new BusinessException("INVALID_AGE",
+                            "Minor account requires age >= " + MIN_AGE_MINOR
+                                    + ". Applicant age: " + age);
+                }
+            } else {
+                if (age < MIN_AGE_REGULAR) {
+                    throw new BusinessException("INVALID_AGE",
+                            "Account opening requires age >= " + MIN_AGE_REGULAR
+                                    + ". Applicant age: " + age + ". Use SAVINGS_MINOR for minors.");
+                }
+            }
+        }
+
+        // --- CBS: NRI nationality validation per FEMA guidelines ---
+        // NRI nationality is only allowed for SAVINGS_NRI account type.
+        if ("NRI".equalsIgnoreCase(req.nationality())
+                && parsedAccountType != DepositAccountType.SAVINGS_NRI) {
+            throw new BusinessException("INVALID_ACCOUNT_TYPE",
+                    "NRI nationality requires SAVINGS_NRI account type. "
+                            + "Current type: " + parsedAccountType);
+        }
+
+        // --- CBS: Minor account requires fatherSpouseName per RBI ---
+        if (parsedAccountType == DepositAccountType.SAVINGS_MINOR
+                && (req.fatherSpouseName() == null || req.fatherSpouseName().isBlank())) {
+            throw new BusinessException("VALIDATION_FAILED",
+                    "Father/Spouse name is mandatory for SAVINGS_MINOR accounts per RBI norms");
+        }
+
         // CBS Gap #3: Duplicate CIF+Type+Branch check per Finacle ACCTOPN.
         // Per Finacle: one account per CIF per account type per branch (configurable).
         // Prevents a customer from having two SAVINGS accounts at the same branch.
@@ -438,19 +492,14 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                         && !existing.isClosed())
                 .count();
         if (existingCount > 0) {
-            throw new BusinessException("DUPLICATE_ACCOUNT",
+            throw new BusinessException("ACCOUNT_ALREADY_EXISTS",
                     "Customer " + cust.getCustomerNumber() + " already has an active "
                             + parsedAccountType + " account at branch " + branch.getBranchCode()
                             + ". Per Finacle ACCTOPN: one account per CIF per type per branch.");
         }
 
-        // CBS CRITICAL: Resolve business date BEFORE sequence allocation.
-        // businessDateService.getCurrentBusinessDate() throws BusinessException("NO_BUSINESS_DAY_OPEN")
-        // if no day is open. This must be validated before consuming the DB-backed sequence,
-        // because REQUIRES_NEW propagation commits the sequence independently — a failed
-        // business date check after sequence allocation wastes the number.
+        // CBS: bizDate already resolved above (before age validation).
         // Per Finacle ACCTOPN / Temenos ACCOUNT.OPENING: validate-first, allocate-last.
-        LocalDate bizDate = businessDateService.getCurrentBusinessDate();
 
         // CBS Phase 2: Product-driven rate and minimum balance per Finacle PDDEF.
         // Interest rate and minimum balance are resolved from ProductMaster, not hardcoded.
@@ -519,6 +568,46 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         a.setLastTransactionDate(bizDate);
         a.setNomineeName(nomineeName);
         a.setNomineeRelationship(nomineeRelationship);
+
+        // --- CBS Phase 3: Extended account opening fields per frontend contract ---
+        // KYC & Regulatory
+        a.setPanNumber(req.panNumber());
+        a.setAadhaarNumber(req.aadhaarNumber());
+        a.setKycStatus(req.kycStatus());
+        a.setPepFlag(req.pepFlag() != null && req.pepFlag());
+        // Personal Details
+        // CBS: Default fullName from Customer entity if not provided in the request.
+        // The JSP path and minimal REST requests omit fullName — derive from CIF.
+        a.setFullName(req.fullName() != null && !req.fullName().isBlank()
+                ? req.fullName() : cust.getFullName());
+        a.setDateOfBirth(req.dateOfBirth());
+        a.setGender(req.gender());
+        a.setFatherSpouseName(req.fatherSpouseName());
+        a.setNationality(req.nationality());
+        // Contact Details
+        a.setMobileNumber(req.mobileNumber());
+        a.setEmail(req.email());
+        // Address
+        a.setAddressLine1(req.addressLine1());
+        a.setAddressLine2(req.addressLine2());
+        a.setCity(req.city());
+        a.setState(req.state());
+        a.setPinCode(req.pinCode());
+        // Occupation & Financial Profile
+        a.setOccupation(req.occupation());
+        a.setAnnualIncome(req.annualIncome());
+        a.setSourceOfFunds(req.sourceOfFunds());
+        // FATCA / CRS
+        a.setUsTaxResident(req.usTaxResident() != null && req.usTaxResident());
+        // Account Configuration
+        a.setChequeBookEnabled(req.chequeBookRequired() != null && req.chequeBookRequired());
+        a.setDebitCardEnabled(req.debitCardRequired() != null && req.debitCardRequired());
+        a.setSmsAlerts(req.smsAlerts() == null || req.smsAlerts()); // Default true
+        // Currency code (default INR if absent)
+        if (req.currencyCode() != null && !req.currencyCode().isBlank()) {
+            a.setCurrencyCode(req.currencyCode());
+        }
+
         a.setCreatedBy(user);
         a.setUpdatedBy(user);
         DepositAccount saved = accountRepository.save(a);
@@ -1192,6 +1281,54 @@ public class DepositAccountServiceImpl implements DepositAccountService {
 
         log.info("CASA activated: num={}, checker={}", acn, SecurityUtil.getCurrentUsername());
         return saved;
+    }
+
+    // === Reject Account (Maker-Checker) ===
+    // Per Finacle ACCTOPN: CHECKER can reject a PENDING_ACTIVATION account.
+    @Override
+    @Transactional
+    public DepositAccount rejectAccount(String acn, String reason) {
+        String tid = TenantContext.getCurrentTenant();
+        var acct = lockAccount(tid, acn);
+        if (acct.getAccountStatus() != DepositAccountStatus.PENDING_ACTIVATION) {
+            throw new BusinessException(
+                    "INVALID_STATE",
+                    "Only PENDING_ACTIVATION accounts can be rejected. Current: " + acct.getAccountStatus());
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException("REASON_REQUIRED", "Rejection reason is mandatory per RBI audit norms");
+        }
+        acct.setAccountStatus(DepositAccountStatus.CLOSED);
+        acct.setClosedDate(businessDateService.getCurrentBusinessDate());
+        acct.setClosureReason("REJECTED: " + reason);
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        var saved = accountRepository.save(acct);
+
+        auditService.logEvent(
+                "DepositAccount", saved.getId(), "ACCOUNT_REJECTED",
+                "PENDING_ACTIVATION", "CLOSED", "DEPOSIT",
+                "Account rejected: " + acn + " | Reason: " + reason
+                        + " | By: " + SecurityUtil.getCurrentUsername());
+
+        log.info("CASA rejected: num={}, reason={}, checker={}", acn, reason, SecurityUtil.getCurrentUsername());
+        return saved;
+    }
+
+    // === Pending Accounts Pipeline ===
+    // Per Finacle ACCTOPN pipeline: returns PENDING_ACTIVATION accounts for checker action.
+    @Override
+    @Transactional(readOnly = true)
+    public List<DepositAccount> getPendingAccounts() {
+        String tid = TenantContext.getCurrentTenant();
+        if (SecurityUtil.isAdminRole()) {
+            return accountRepository.findByTenantIdAndAccountStatus(tid, DepositAccountStatus.PENDING_ACTIVATION);
+        }
+        Long branchId = SecurityUtil.getCurrentUserBranchId();
+        if (branchId != null) {
+            return accountRepository.findByTenantIdAndBranchIdAndAccountStatus(
+                    tid, branchId, DepositAccountStatus.PENDING_ACTIVATION);
+        }
+        return List.of();
     }
 
     // === Freeze ===

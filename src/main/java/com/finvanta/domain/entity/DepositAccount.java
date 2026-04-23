@@ -1,5 +1,6 @@
 package com.finvanta.domain.entity;
 
+import com.finvanta.config.PiiEncryptionConverter;
 import com.finvanta.domain.enums.DepositAccountStatus;
 import com.finvanta.domain.enums.DepositAccountType;
 
@@ -204,6 +205,115 @@ public class DepositAccount extends BaseEntity {
 
     @Column(name = "daily_transfer_limit", precision = 18, scale = 2)
     private BigDecimal dailyTransferLimit;
+
+    // --- KYC & Regulatory (per RBI KYC Master Direction 2016 / PMLA 2002) ---
+
+    /**
+     * PAN number — encrypted at rest per RBI IT Governance Direction 2023.
+     * Captured at account opening for cross-referencing with CIF PAN.
+     * Per RBI: PAN is mandatory for accounts exceeding INR 50,000 initial deposit.
+     */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "pan_number", length = 100)
+    private String panNumber;
+
+    /**
+     * Aadhaar number — encrypted at rest per UIDAI / RBI IT Governance Direction 2023.
+     * Per UIDAI guidelines, Aadhaar must never be stored in plaintext.
+     */
+    @Convert(converter = PiiEncryptionConverter.class)
+    @Column(name = "aadhaar_number", length = 100)
+    private String aadhaarNumber;
+
+    /** KYC status at account opening: FULL_KYC, MIN_KYC, RE_KYC */
+    @Column(name = "kyc_status", length = 20)
+    private String kycStatus;
+
+    /**
+     * Politically Exposed Person flag per RBI KYC Direction Section 2(1)(fa).
+     * If true, triggers enhanced due diligence (EDD) and HIGH risk classification.
+     */
+    @Column(name = "pep_flag", nullable = false)
+    private boolean pepFlag = false;
+
+    // --- Personal Details (per RBI KYC / CKYC / CERSAI) ---
+
+    /** Full name as per PAN/Aadhaar — denormalized from Customer for account-level display */
+    @Column(name = "full_name", length = 200)
+    private String fullName;
+
+    /** Date of birth — used for age validation (≥18 regular, ≥10 minor) */
+    @Column(name = "date_of_birth")
+    private LocalDate dateOfBirth;
+
+    /** Gender: MALE, FEMALE, OTHER */
+    @Column(name = "gender", length = 10)
+    private String gender;
+
+    /** Father/Spouse name — mandatory for SAVINGS_MINOR per RBI */
+    @Column(name = "father_spouse_name", length = 200)
+    private String fatherSpouseName;
+
+    /** Nationality: INDIAN, NRI */
+    @Column(name = "nationality", length = 20)
+    private String nationality;
+
+    // --- Contact Details ---
+
+    /** 10-digit Indian mobile number */
+    @Column(name = "mobile_number", length = 15)
+    private String mobileNumber;
+
+    /** Email address */
+    @Column(name = "email", length = 200)
+    private String email;
+
+    // --- Address (permanent address at account opening) ---
+
+    @Column(name = "address_line1", length = 500)
+    private String addressLine1;
+
+    @Column(name = "address_line2", length = 500)
+    private String addressLine2;
+
+    @Column(name = "city", length = 100)
+    private String city;
+
+    @Column(name = "state", length = 100)
+    private String state;
+
+    /** Indian PIN code (6-digit) */
+    @Column(name = "pin_code", length = 6)
+    private String pinCode;
+
+    // --- Occupation & Financial Profile (per RBI PMLA / CERSAI) ---
+
+    /** Occupation: SALARIED, SELF_EMPLOYED, BUSINESS, PROFESSIONAL, RETIRED, STUDENT, HOMEMAKER */
+    @Column(name = "occupation", length = 30)
+    private String occupation;
+
+    /** Annual income band: BELOW_1L, 1L_5L, 5L_10L, 10L_25L, 25L_50L, ABOVE_50L */
+    @Column(name = "annual_income", length = 20)
+    private String annualIncome;
+
+    /** Source of funds: SALARY, BUSINESS, INVESTMENT, AGRICULTURE, PENSION, OTHER */
+    @Column(name = "source_of_funds", length = 30)
+    private String sourceOfFunds;
+
+    // --- FATCA / CRS (Foreign Account Tax Compliance Act) ---
+
+    /**
+     * US tax resident flag per FATCA IGA India-US.
+     * If true, account is flagged for FATCA reporting to IRS via CBDT.
+     */
+    @Column(name = "us_tax_resident", nullable = false)
+    private boolean usTaxResident = false;
+
+    // --- Account Configuration Flags ---
+
+    /** Whether SMS alerts are enabled for this account */
+    @Column(name = "sms_alerts", nullable = false)
+    private boolean smsAlerts = true;
 
     // --- Helpers ---
 

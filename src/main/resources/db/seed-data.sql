@@ -32,14 +32,17 @@ INSERT INTO business_calendar (tenant_id, business_date, is_holiday, is_eod_comp
 VALUES ('DEFAULT', '2026-04-06', 0, 0, 0, 0, 'SYSTEM');
 
 -- 4. CUSTOMERS
-INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, branch_id, version, created_by)
-VALUES ('DEFAULT', 'CUST001', 'Rajesh', 'Sharma', '1985-03-15', 'ABCDE1234F', '123456789012', '9876543210', 'rajesh.sharma@email.com', '123 MG Road', 'Mumbai', 'Maharashtra', '400001', 1, '2026-01-15', 'admin', 750, 'INDIVIDUAL', 1, 1, 0, 'SYSTEM');
+-- Per CBS standards: all NOT NULL boolean columns must be explicitly specified.
+-- Java field defaults (false/true) do NOT apply to raw SQL INSERTs.
+-- NOT NULL columns: kyc_verified, is_active, is_pep, rekyc_due, address_same_as_permanent, video_kyc_done
+INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, is_pep, rekyc_due, kyc_risk_category, address_same_as_permanent, video_kyc_done, branch_id, version, created_by)
+VALUES ('DEFAULT', 'CUST001', 'Rajesh', 'Sharma', '1985-03-15', 'ABCDE1234F', '123456789012', '9876543210', 'rajesh.sharma@email.com', '123 MG Road', 'Mumbai', 'Maharashtra', '400001', 1, '2026-01-15', 'admin', 750, 'INDIVIDUAL', 1, 0, 0, 'LOW', 1, 0, 1, 0, 'SYSTEM');
 
-INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, branch_id, version, created_by)
-VALUES ('DEFAULT', 'CUST002', 'Priya', 'Patel', '1990-07-22', 'FGHIJ5678K', '234567890123', '9876543211', 'priya.patel@email.com', '456 Ring Road', 'Delhi', 'Delhi', '110002', 1, '2026-02-10', 'admin', 820, 'INDIVIDUAL', 1, 2, 0, 'SYSTEM');
+INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, kyc_verified_date, kyc_verified_by, cibil_score, customer_type, is_active, is_pep, rekyc_due, kyc_risk_category, address_same_as_permanent, video_kyc_done, branch_id, version, created_by)
+VALUES ('DEFAULT', 'CUST002', 'Priya', 'Patel', '1990-07-22', 'FGHIJ5678K', '234567890123', '9876543211', 'priya.patel@email.com', '456 Ring Road', 'Delhi', 'Delhi', '110002', 1, '2026-02-10', 'admin', 820, 'INDIVIDUAL', 1, 0, 0, 'MEDIUM', 1, 0, 2, 0, 'SYSTEM');
 
-INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, cibil_score, customer_type, is_active, branch_id, version, created_by)
-VALUES ('DEFAULT', 'CUST003', 'Arun', 'Kumar', '1978-11-05', 'KLMNO9012P', '345678901234', '9876543212', 'arun.kumar@email.com', '789 Brigade Road', 'Bangalore', 'Karnataka', '560002', 0, 580, 'INDIVIDUAL', 1, 3, 0, 'SYSTEM');
+INSERT INTO customers (tenant_id, customer_number, first_name, last_name, date_of_birth, pan_number, aadhaar_number, mobile_number, email, address, city, state, pin_code, kyc_verified, cibil_score, customer_type, is_active, is_pep, rekyc_due, kyc_risk_category, address_same_as_permanent, video_kyc_done, branch_id, version, created_by)
+VALUES ('DEFAULT', 'CUST003', 'Arun', 'Kumar', '1978-11-05', 'KLMNO9012P', '345678901234', '9876543212', 'arun.kumar@email.com', '789 Brigade Road', 'Bangalore', 'Karnataka', '560002', 0, 580, 'INDIVIDUAL', 1, 0, 0, 'MEDIUM', 1, 0, 3, 0, 'SYSTEM');
 
 -- 5. GL MASTER (Chart of Accounts)
 -- Assets

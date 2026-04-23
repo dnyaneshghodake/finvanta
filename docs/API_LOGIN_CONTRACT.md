@@ -1,9 +1,16 @@
 # Finvanta CBS — Login API Contract for Frontend Integration
 
-> **Version:** 2.0
-> **Backend Commit:** `7823bf3`
-> **Compliance:** RBI IT Governance Direction 2023 §8.1, §8.3, §8.4
+> **Version:** 3.0
+> **Backend Commit:** `5266c0bc`
+> **Compliance:** RBI IT Governance Direction 2023 §8.1, §8.3, §8.4, RBI Fair Practices Code 2023
 > **Architecture:** Tier-1 CBS (Finacle/T24/Flexcube) — Auth ≠ Context ≠ Dashboard
+>
+> **What's new in v3.0:**
+> - Response envelope upgraded with `meta` (apiVersion, correlationId, timestamp) and structured `error` (code, message, severity, action)
+> - All error responses now carry severity (LOW/MEDIUM/HIGH/CRITICAL) and remediation action per RBI Fair Practices Code 2023
+> - Password change endpoint moved to `/api/v1/auth/password/change` (JWT API chain)
+> - JJWT upgraded to 0.12.6 (CVE-2024-31033 patched)
+> - Legacy flat fields (`errorCode`, `message`, `timestamp`) retained for backward compatibility
 
 ---
 
@@ -168,11 +175,24 @@ Returned when request body fields are missing or blank.
   "status": "ERROR",
   "errorCode": "VALIDATION_FAILED",
   "message": "username: Username is required; password: Password is required",
-  "timestamp": "2026-04-19T15:30:00"
+  "timestamp": "2026-04-19T15:30:00",
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "username: Username is required; password: Password is required",
+    "severity": "LOW",
+    "action": "Correct the highlighted fields and resubmit"
+  },
+  "meta": {
+    "apiVersion": "v1",
+    "correlationId": "7f3c1e40-52ea-4c7a-9b8d-19f2a51bf4d9",
+    "timestamp": "2026-04-19T15:30:00"
+  }
 }
 ```
 
-Source: `ApiExceptionHandler.java:78-82`
+Source: `ApiExceptionHandler.java:83-86`
+
+> **Envelope note:** All error responses now include `error` (structured detail with severity/action) and `meta` (apiVersion, correlationId). Legacy flat fields (`errorCode`, `message`, `timestamp`) are retained for backward compatibility.
 
 ### Response: Wrong Password / User Not Found (HTTP 401)
 
@@ -183,7 +203,16 @@ Source: `ApiExceptionHandler.java:78-82`
   "status": "ERROR",
   "errorCode": "AUTH_FAILED",
   "message": "Invalid credentials",
-  "timestamp": "2026-04-19T15:30:00"
+  "timestamp": "2026-04-19T15:30:00",
+  "error": {
+    "code": "AUTH_FAILED",
+    "message": "Invalid credentials"
+  },
+  "meta": {
+    "apiVersion": "v1",
+    "correlationId": "7f3c1e40-52ea-4c7a-9b8d-19f2a51bf4d9",
+    "timestamp": "2026-04-19T15:30:00"
+  }
 }
 ```
 
@@ -259,11 +288,20 @@ Returned when password is correct and user has MFA enrolled. **No tokens are iss
     "challengeId": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJtYWtlcjEi...",
     "channel": "TOTP"
   },
-  "timestamp": "2026-04-19T15:30:00"
+  "timestamp": "2026-04-19T15:30:00",
+  "error": {
+    "code": "MFA_REQUIRED",
+    "message": "MFA step-up required to complete sign-in"
+  },
+  "meta": {
+    "apiVersion": "v1",
+    "correlationId": "7f3c1e40-52ea-4c7a-9b8d-19f2a51bf4d9",
+    "timestamp": "2026-04-19T15:30:00"
+  }
 }
 ```
 
-Source: `AuthController.java:231-248` → throws `MfaRequiredException` → `ApiExceptionHandler.java:34-44`
+Source: `AuthController.java:231-248` → throws `MfaRequiredException` → `ApiExceptionHandler.java:38-46`
 
 | Field | Description |
 |---|---|
@@ -272,7 +310,7 @@ Source: `AuthController.java:231-248` → throws `MfaRequiredException` → `Api
 
 **Backend side-effect:** `failedLoginAttempts` reset to 0 (line 239). MFA OTP failures start counting fresh.
 
-**Frontend action:** Store `challengeId` in component state (NOT localStorage). Show OTP input modal. Submit to `POST /v1/auth/mfa/verify`.
+**Frontend action:** Store `challengeId` in component state (NOT localStorage). Show OTP input modal. Submit to `POST /api/v1/auth/mfa/verify`.
 
 ### Response: Login Success — No MFA (HTTP 200)
 
@@ -296,7 +334,12 @@ Source: `AuthController.java:231-248` → throws `MfaRequiredException` → `Api
       "mfaEnabled": false
     }
   },
-  "timestamp": "2026-04-19T15:30:00"
+  "timestamp": "2026-04-19T15:30:00",
+  "meta": {
+    "apiVersion": "v1",
+    "correlationId": "7f3c1e40-52ea-4c7a-9b8d-19f2a51bf4d9",
+    "timestamp": "2026-04-19T15:30:00"
+  }
 }
 ```
 
@@ -755,7 +798,7 @@ Source: `ContextBootstrapController.java:72-77` → `SessionContextService.assem
 └──────┬──────┘
        │ User submits username + password
        ▼
-POST /v1/auth/token
+POST /api/v1/auth/token
        │
        ├── 401 AUTH_FAILED ──────────────────► Show error, stay on login
        ├── 401 ACCOUNT_DISABLED ─────────────► Show disabled message
@@ -767,7 +810,7 @@ POST /v1/auth/token
        │                                        └──────┬───────┘
        │                                               │ User submits OTP
        │                                               ▼
-       │                                   POST /v1/auth/mfa/verify
+       │                                   POST /api/v1/auth/mfa/verify
        │                                               │
        │   ┌── 401 MFA_VERIFICATION_FAILED ◄───────────┤ (retry same challengeId)
        │   │                                            │
@@ -777,9 +820,9 @@ POST /v1/auth/token
        │   │                                            │
        │   └───────────────────────────────────────────►│
        │                                               │
-       │                                    200 + LoginSessionContext
+       │                                    200 + AuthResponse
        │                                               │
-       ├── 200 + LoginSessionContext ◄─────────────────┘
+       ├── 200 + AuthResponse ◄────────────────────────┘
        │
        ▼
 ┌─────────────┐
@@ -788,7 +831,7 @@ POST /v1/auth/token
        │
        │ Access token nearing expiry (14 min mark)
        ▼
-POST /v1/auth/refresh
+POST /api/v1/auth/refresh
        │
        ├── 200 + TokenResponse ──────────────► Update tokens, stay logged in
        ├── 401 (any) ────────────────────────► Clear session, redirect to login
@@ -810,7 +853,7 @@ Browser              Next.js BFF              Spring Boot CBS
   │                      │                          │
   │  Submit login form   │                          │
   │─────────────────────►│                          │
-  │                      │  POST /v1/auth/token     │
+  │                      │  POST /api/v1/auth/token  │
   │                      │  X-Tenant-Id: DEFAULT    │
   │                      │  X-Correlation-Id: uuid1 │
   │                      │  {username, password}     │
@@ -819,9 +862,8 @@ Browser              Next.js BFF              Spring Boot CBS
   │                      │                          │ Check active/locked/expired
   │                      │                          │ user.mfaEnabled = false
   │                      │                          │ Generate access + refresh JWT
-  │                      │                          │ Assemble COC (4-5 queries)
   │                      │                          │ recordSuccessfulLogin()
-  │                      │    200 + LoginSession    │
+  │                      │    200 + AuthResponse    │
   │                      │◄─────────────────────────│
   │                      │                          │
   │                      │ Store tokens in server   │
@@ -840,7 +882,7 @@ Browser              Next.js BFF              Spring Boot CBS
   │                      │                          │
   │  Submit login form   │                          │
   │─────────────────────►│                          │
-  │                      │  POST /v1/auth/token     │
+  │                      │  POST /api/v1/auth/token  │
   │                      │  X-Correlation-Id: uuid1 │
   │                      │  {username, password}     │
   │                      │─────────────────────────►│
@@ -861,7 +903,8 @@ Browser              Next.js BFF              Spring Boot CBS
   │                      │                          │
   │  Submit OTP: 123456  │                          │
   │─────────────────────►│                          │
-  │                      │  POST /v1/auth/mfa/verify│
+  │                      │  POST /api/v1/auth/mfa/  │
+  │                      │  verify                  │
   │                      │  X-Correlation-Id: uuid1 │ ◄── SAME correlation ID
   │                      │  {challengeId, otp}      │
   │                      │─────────────────────────►│
@@ -871,9 +914,8 @@ Browser              Next.js BFF              Spring Boot CBS
   │                      │                          │ Verify TOTP code
   │                      │                          │ Burn challenge (denylist jti)
   │                      │                          │ Generate access + refresh JWT
-  │                      │                          │ Assemble COC
   │                      │                          │
-  │                      │    200 + LoginSession    │
+  │                      │    200 + AuthResponse    │
   │                      │    authLevel: "MFA"      │
   │                      │◄─────────────────────────│
   │                      │                          │
@@ -892,7 +934,8 @@ Browser              Next.js BFF              Spring Boot CBS
   │                      │                          │
   │  Submit OTP: 999999  │                          │
   │─────────────────────►│                          │
-  │                      │  POST /v1/auth/mfa/verify│
+  │                      │  POST /api/v1/auth/      │
+  │                      │  mfa/verify              │
   │                      │  {challengeId, "999999"} │
   │                      │─────────────────────────►│
   │                      │                          │ TOTP verify → false
@@ -908,14 +951,15 @@ Browser              Next.js BFF              Spring Boot CBS
   │                      │                          │
   │  Submit OTP: 123456  │                          │
   │─────────────────────►│                          │
-  │                      │  POST /v1/auth/mfa/verify│
+  │                      │  POST /api/v1/auth/      │
+  │                      │  mfa/verify              │
   │                      │  {challengeId, "123456"} │ ◄── SAME challengeId
   │                      │─────────────────────────►│
   │                      │                          │ TOTP verify → true
   │                      │                          │ Burn challenge jti
-  │                      │                          │ Issue tokens + COC
+  │                      │                          │ Issue tokens
   │                      │                          │
-  │                      │    200 + LoginSession    │
+  │                      │    200 + AuthResponse    │
   │                      │◄─────────────────────────│
   │                      │                          │
   │  Redirect /dashboard │                          │
@@ -929,7 +973,8 @@ Browser              Next.js BFF              Spring Boot CBS
   │                      │                          │
   │  (14 min after login │                          │
   │   — proactive timer) │                          │
-  │                      │  POST /v1/auth/refresh   │
+  │                      │  POST /api/v1/auth/      │
+  │                      │  refresh                 │
   │                      │  {refreshToken: "eyJ.."} │
   │                      │─────────────────────────►│
   │                      │                          │ Validate refresh JWT
@@ -1005,14 +1050,29 @@ Source: `JwtTokenService.java:197-208` — Expiry: 5 minutes. Single-use: `jti` 
 ## 12. TypeScript Interfaces
 
 ```typescript
-// === API Envelope ===
+// === API Envelope (Tier-1 CBS Grade — v3.0) ===
 
 interface ApiResponse<T> {
   status: 'SUCCESS' | 'ERROR';
   data?: T;
-  errorCode?: string;
-  message?: string;
-  timestamp: string;
+  errorCode?: string;          // Legacy flat field — prefer error.code
+  message?: string;            // Legacy flat field — prefer error.message
+  timestamp: string;           // Legacy flat field — prefer meta.timestamp
+  error?: ErrorDetail;         // NEW in v3.0: structured error with severity/action
+  meta: ResponseMeta;          // NEW in v3.0: apiVersion, correlationId, timestamp
+}
+
+interface ErrorDetail {
+  code: string;                // Same as errorCode (machine-readable)
+  message: string;             // Same as top-level message (human-readable)
+  severity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  action?: string;             // User-facing remediation guidance per RBI Fair Practices
+}
+
+interface ResponseMeta {
+  apiVersion: string;          // Always "v1" — incremented on breaking changes
+  correlationId: string | null; // From X-Correlation-Id header (or server-generated UUID)
+  timestamp: string;           // ISO 8601
 }
 
 // === Login Response (200 from /token or /mfa/verify) — identity + tokens ONLY ===
@@ -1097,6 +1157,11 @@ interface MfaChallengeResponse {
     challengeId: string;         // Opaque JWT — pass back to /mfa/verify
     channel: 'TOTP';
   };
+  error: {                       // NEW in v3.0
+    code: 'MFA_REQUIRED';
+    message: string;
+  };
+  meta: ResponseMeta;            // NEW in v3.0
   timestamp: string;
 }
 
@@ -1113,8 +1178,10 @@ interface TokenResponse {
 
 interface ErrorResponse {
   status: 'ERROR';
-  errorCode: string;
-  message: string;
+  errorCode: string;             // Legacy — prefer error.code
+  message: string;               // Legacy — prefer error.message
+  error: ErrorDetail;            // NEW in v3.0: severity + action
+  meta: ResponseMeta;            // NEW in v3.0: apiVersion + correlationId
   timestamp: string;
 }
 ```
@@ -1143,11 +1210,11 @@ Every API request passes through these filters in order:
 | Order | Filter | Purpose | Runs On |
 |---|---|---|---|
 | 0 | `CorrelationIdMdcFilter` | Read/generate `X-Correlation-Id`, set SLF4J MDC | All requests |
-| 1 | `TenantFilter` | Resolve `X-Tenant-Id`, validate format, set `TenantContext` + MDC | All requests |
-| — | `AuthRateLimitFilter` | Rate-limit `/v1/auth/**` endpoints | Auth endpoints only |
-| — | `JwtAuthenticationFilter` | Validate `Authorization: Bearer` JWT, set `SecurityContext` | Protected endpoints only |
+| 1 | `TenantFilter` | Resolve `X-Tenant-Id`, validate format, set `TenantContext` + MDC. Rejects missing/malformed header on `/api/v1/**` with HTTP 400 | All requests |
+| — | `AuthRateLimitFilter` | Token-bucket rate-limit on `/api/v1/auth/**` (20 req/IP burst, 1 token/6s refill) | Auth endpoints only |
+| — | `JwtAuthenticationFilter` | Validate `Authorization: Bearer` JWT, set `SecurityContext` with role/branch/tenant | `/api/v1/**` only (skipped for non-API) |
 
-For `/v1/auth/token` and `/v1/auth/mfa/verify`: `JwtAuthenticationFilter` is **skipped** (these are `permitAll`). Only CorrelationId → Tenant → RateLimit → Controller.
+For `/api/v1/auth/token` and `/api/v1/auth/mfa/verify`: `JwtAuthenticationFilter` still runs but finds no `Authorization` header → passes through as anonymous. Rate limiter applies. Only CorrelationId → Tenant → RateLimit → Controller.
 
 ---
 
@@ -1186,3 +1253,9 @@ For `/v1/auth/token` and `/v1/auth/mfa/verify`: `JwtAuthenticationFilter` is **s
 16. **Dashboard widgets are independent.** Fetch each widget endpoint in parallel. A failed widget does NOT break the dashboard. Use skeleton placeholders. See `API_REFERENCE.md` Section 17 for widget registry and refresh intervals.
 
 17. **Every API call must attach `X-Tenant-Id` and `X-Correlation-Id`.** Use an Axios/fetch interceptor in the BFF to inject these headers automatically from the server-side session.
+
+18. **Use `response.meta.correlationId` for error reporting.** Every response (success and error) now carries `meta.correlationId`. Display this in error modals so users can quote it to support. The correlation ID ties the BFF request → CBS API → audit log → SIEM for end-to-end traceability.
+
+19. **Use `response.error.severity` for UI treatment.** Error responses carry `error.severity` (LOW/MEDIUM/HIGH/CRITICAL) and `error.action` (remediation text). Map severity to UI behavior: LOW → toast auto-dismiss, MEDIUM → warning modal, HIGH → blocking error with action text, CRITICAL → "contact support with correlation ID" modal.
+
+20. **Legacy flat fields are deprecated.** `response.errorCode`, `response.message`, and `response.timestamp` are retained for backward compatibility but deprecated. New BFF code should read `response.error.code`, `response.error.message`, and `response.meta.timestamp` instead.

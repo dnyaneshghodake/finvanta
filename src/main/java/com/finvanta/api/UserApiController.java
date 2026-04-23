@@ -38,7 +38,7 @@ import org.springframework.web.bind.annotation.*;
  * or password history. Only operational metadata is returned.
  */
 @RestController
-@RequestMapping("/v1/users")
+@RequestMapping("/api/v1/users")
 public class UserApiController {
 
     private final UserService userService;
@@ -75,7 +75,7 @@ public class UserApiController {
     @GetMapping("/search")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<List<UserResponse>>>
-            searchUsers(@RequestParam String q) {
+            searchUsers(@RequestParam(required = false) String q) {
         String tenantId = TenantContext.getCurrentTenant();
         List<AppUser> users;
         if (q != null && q.trim().length() >= 2) {

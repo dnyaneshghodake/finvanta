@@ -41,7 +41,7 @@ import org.springframework.web.bind.annotation.*;
  * </ul>
  */
 @RestController
-@RequestMapping("/v1/branches")
+@RequestMapping("/api/v1/branches")
 public class BranchApiController {
 
     private final BranchService branchService;
@@ -91,7 +91,7 @@ public class BranchApiController {
     @GetMapping("/search")
     @PreAuthorize("hasAnyRole('MAKER', 'CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<BranchResponse>>>
-            searchBranches(@RequestParam String q) {
+            searchBranches(@RequestParam(required = false) String q) {
         String tenantId = TenantContext.getCurrentTenant();
         List<Branch> branches;
         if (q != null && q.trim().length() >= 2) {

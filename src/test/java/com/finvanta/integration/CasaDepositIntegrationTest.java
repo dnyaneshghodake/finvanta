@@ -1,6 +1,7 @@
 package com.finvanta.integration;
 
 import com.finvanta.accounting.LedgerService;
+import com.finvanta.api.dto.OpenAccountRequest;
 import com.finvanta.config.BranchAwareUserDetails;
 import com.finvanta.domain.entity.*;
 import com.finvanta.domain.enums.*;
@@ -147,9 +148,17 @@ class CasaDepositIntegrationTest {
         Customer cust = customerRepository.findAll().stream()
                 .filter(c -> c.getTenantId().equals(TENANT))
                 .findFirst().orElseThrow();
-        DepositAccount acct = depositService.openAccount(
+        var req = new OpenAccountRequest(
                 cust.getId(), testBranchId, "SAVINGS", "SAVINGS",
-                null, "Nominee", "SPOUSE");
+                null, null,
+                null, null, null, null,
+                null, null, null, null, null,
+                null, null,
+                null, null, null, null, null,
+                null, null, null,
+                "Nominee", "SPOUSE",
+                null, null, null, null);
+        DepositAccount acct = depositService.openAccount(req);
         depositService.activateAccount(acct.getAccountNumber());
         return depositService.getAccount(acct.getAccountNumber());
     }
@@ -241,9 +250,17 @@ class CasaDepositIntegrationTest {
         Customer cust = customerRepository.findAll().stream()
                 .filter(c -> c.getTenantId().equals(TENANT))
                 .findFirst().orElseThrow();
-        DepositAccount acct = depositService.openAccount(
+        var req = new OpenAccountRequest(
                 cust.getId(), testBranchId, "CURRENT", "CURRENT",
-                null, "Nominee", "SPOUSE");
+                null, null,
+                null, null, null, null,
+                null, null, null, null, null,
+                null, null,
+                null, null, null, null, null,
+                null, null, null,
+                "Nominee", "SPOUSE",
+                null, null, null, null);
+        DepositAccount acct = depositService.openAccount(req);
         depositService.activateAccount(acct.getAccountNumber());
         return depositService.getAccount(acct.getAccountNumber());
     }

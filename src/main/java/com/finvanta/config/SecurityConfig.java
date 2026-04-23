@@ -103,14 +103,27 @@ public class SecurityConfig {
                                     res.setStatus(401);
                                     res.setContentType(
                                             "application/json");
+                                    // CBS v3.0 Envelope: include error + meta per API_REFERENCE.md
+                                    // so BFF clients reading response.error.code get a consistent shape.
+                                    // CBS SECURITY: Read correlationId from MDC (validated by
+                                    // CorrelationIdMdcFilter) instead of raw header to prevent
+                                    // JSON injection via crafted X-Correlation-Id values.
+                                    String correlationId = org.slf4j.MDC.get("correlationId");
+                                    if (correlationId == null) {
+                                        correlationId = "";
+                                    }
+                                    String timestamp = java.time.LocalDateTime.now().toString();
                                     res.getWriter().write(
                                             "{\"status\":\"ERROR\","
-                                            + "\"errorCode\":"
-                                            + "\"UNAUTHORIZED\","
-                                            + "\"message\":"
-                                            + "\"Authentication "
-                                            + "required. Provide "
-                                            + "Bearer token.\"}");
+                                            + "\"errorCode\":\"UNAUTHORIZED\","
+                                            + "\"message\":\"Authentication required. Provide Bearer token.\","
+                                            + "\"error\":{\"code\":\"UNAUTHORIZED\","
+                                            + "\"message\":\"Authentication required. Provide Bearer token.\","
+                                            + "\"severity\":\"HIGH\","
+                                            + "\"action\":\"Login to obtain an access token\"},"
+                                            + "\"meta\":{\"apiVersion\":\"v1\","
+                                            + "\"correlationId\":\"" + correlationId + "\","
+                                            + "\"timestamp\":\"" + timestamp + "\"}}");
                                 }))
                 // CBS: rate limit auth endpoints BEFORE JWT auth so token issuance
                 // cannot be brute-forced. Per RBI Cyber Security Framework 2024 §6.2.
@@ -143,10 +156,14 @@ public class SecurityConfig {
                                     "/fonts/**",
                                     "/img/**",
                                     "/actuator/health",
-                                    "/actuator/info")
+                                    "/actuator/info",
+                                    "/actuator/prometheus")
                             .permitAll();
                     if (isDevProfile()) {
                         auth.requestMatchers("/h2-console/**").permitAll();
+                        // CBS SECURITY: springdoc-openapi removed from classpath due to
+                        // CRITICAL CVEs in swagger-core (CVSS 9.6, 9.1). No /v3/api-docs
+                        // or /swagger-ui endpoints exist. API docs: docs/API_REFERENCE.md.
                     }
                     // CBS: Explicit rule for branch-switching admin endpoint per Finacle
                     // BRANCH_CONTEXT / Temenos BRANCH.SWITCH. Declared BEFORE /admin/**
