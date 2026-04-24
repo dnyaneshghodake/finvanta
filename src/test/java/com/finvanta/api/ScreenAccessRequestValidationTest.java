@@ -48,7 +48,7 @@ class ScreenAccessRequestValidationTest {
     @DisplayName("Blank, empty, or null screenCode violates @NotBlank")
     void blankScreenCode_isRejected(String screenCode) {
         AuditApiController.ScreenAccessRequest req =
-                new AuditApiController.ScreenAccessRequest(screenCode, null, null);
+                new AuditApiController.ScreenAccessRequest(screenCode, null, null, null);
 
         Set<ConstraintViolation<AuditApiController.ScreenAccessRequest>> violations =
                 validator.validate(req);
@@ -65,7 +65,7 @@ class ScreenAccessRequestValidationTest {
     void validPayload_isAccepted() {
         AuditApiController.ScreenAccessRequest req =
                 new AuditApiController.ScreenAccessRequest(
-                        "CUSTOMER_VIEW", "/customers", "/dashboard");
+                        "CUSTOMER_VIEW", "Customer Details", "/customers", "/dashboard");
 
         assertThat(validator.validate(req)).isEmpty();
     }
@@ -74,7 +74,7 @@ class ScreenAccessRequestValidationTest {
     @DisplayName("Null optional fields pass validation")
     void nullOptionalFields_areAccepted() {
         AuditApiController.ScreenAccessRequest req =
-                new AuditApiController.ScreenAccessRequest("DASHBOARD", null, null);
+                new AuditApiController.ScreenAccessRequest("DASHBOARD", null, null, null);
 
         assertThat(validator.validate(req)).isEmpty();
     }
@@ -84,7 +84,7 @@ class ScreenAccessRequestValidationTest {
     void oversizedScreenCode_isRejected() {
         String tooLong = "A".repeat(201);
         AuditApiController.ScreenAccessRequest req =
-                new AuditApiController.ScreenAccessRequest(tooLong, null, null);
+                new AuditApiController.ScreenAccessRequest(tooLong, null, null, null);
 
         Set<ConstraintViolation<AuditApiController.ScreenAccessRequest>> violations =
                 validator.validate(req);
@@ -101,7 +101,7 @@ class ScreenAccessRequestValidationTest {
         String tooLong = "/" + "a".repeat(500);
         AuditApiController.ScreenAccessRequest req =
                 new AuditApiController.ScreenAccessRequest(
-                        "/dashboard", tooLong, null);
+                        "DASHBOARD", null, tooLong, null);
 
         Set<ConstraintViolation<AuditApiController.ScreenAccessRequest>> violations =
                 validator.validate(req);

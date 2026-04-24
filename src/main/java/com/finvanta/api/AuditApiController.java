@@ -1,5 +1,6 @@
 package com.finvanta.api;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.AuditLog;
 import com.finvanta.repository.AuditLogRepository;
@@ -189,6 +190,9 @@ public class AuditApiController {
 
     private static String buildDescription(ScreenAccessRequest req) {
         StringBuilder sb = new StringBuilder("screenCode=").append(req.screenCode());
+        if (req.screenLabel() != null && !req.screenLabel().isBlank()) {
+            sb.append(" | screenLabel=").append(req.screenLabel());
+        }
         if (req.returnTo() != null && !req.returnTo().isBlank()) {
             sb.append(" | returnTo=").append(req.returnTo());
         }
@@ -205,13 +209,21 @@ public class AuditApiController {
      *
      * <p>Field name {@code screenCode} matches the Next.js BFF contract —
      * it sends a screen identifier (e.g. "DASHBOARD", "CUSTOMER_VIEW"), not
-     * a raw URL path. Field sizes match the audit trail's {@code description}
-     * column capacity and are intentionally restrictive — this endpoint is
-     * hit on every page load so oversized payloads are rejected at the
-     * boundary rather than truncated in the DB.
+     * a raw URL path. {@code screenLabel} is the human-readable title shown
+     * to the user (e.g. "Customer Details"). Field sizes match the audit
+     * trail's {@code description} column capacity and are intentionally
+     * restrictive — this endpoint is hit on every page load so oversized
+     * payloads are rejected at the boundary rather than truncated in the DB.
+     *
+     * <p>{@link JsonIgnoreProperties ignoreUnknown=true} lets the BFF evolve
+     * its payload (e.g. add timing metrics, viewport size) without breaking
+     * the backend. Extra fields are silently dropped. Bean Validation still
+     * fires on the fields we declare.
      */
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record ScreenAccessRequest(
             @NotBlank @Size(max = 200) String screenCode,
+            @Size(max = 200) String screenLabel,
             @Size(max = 500) String returnTo,
             @Size(max = 500) String referrer) {}
 
