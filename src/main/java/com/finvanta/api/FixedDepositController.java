@@ -59,20 +59,11 @@ public class FixedDepositController {
 
     // === Financial Operations ===
 
-    /**
-     * Book a new FD. GL: DR CASA / CR FD Deposits. MAKER/ADMIN.
-     *
-     * <p>CBS IDEMPOTENCY: Clients MAY supply an {@code Idempotency-Key} header
-     * (RFC draft-ietf-httpapi-idempotency-key-header). When present, the service
-     * layer deduplicates retries so a network retry of the same booking does not
-     * create two FDs / two CASA debits. Absent header → legacy non-idempotent path.
-     */
+    /** Book a new FD. GL: DR CASA / CR FD Deposits. MAKER/ADMIN. */
     @PostMapping("/book")
     @PreAuthorize("hasAnyRole('MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<FdResponse>>
-            bookFd(@Valid @RequestBody BookFdRequest req,
-                    @RequestHeader(value = "Idempotency-Key", required = false)
-                            String idempotencyKey) {
+            bookFd(@Valid @RequestBody BookFdRequest req) {
         FixedDeposit fd = fdService.bookFd(
                 req.customerId(), req.branchId(),
                 req.linkedAccountNumber(),
@@ -81,8 +72,7 @@ public class FixedDepositController {
                 req.interestPayoutMode(),
                 req.autoRenewalMode(),
                 req.nomineeName(),
-                req.nomineeRelationship(),
-                idempotencyKey);
+                req.nomineeRelationship());
         return ResponseEntity.ok(ApiResponse.success(
                 FdResponse.from(fd),
                 "FD booked: " + fd.getFdAccountNumber()));

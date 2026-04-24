@@ -46,6 +46,43 @@ public interface FixedDepositService {
             String nomineeRelationship);
 
     /**
+     * Idempotent variant of {@link #bookFd}.
+     *
+     * <p>The {@code idempotencyKey} is forwarded to {@link
+     * com.finvanta.transaction.TransactionRequest}, where {@code TransactionEngine}
+     * (Step 1 of its validation chain) looks it up in {@code idempotency_registry}
+     * and short-circuits on duplicate submission — preventing a retried FD booking
+     * from posting a second DR CASA / CR FD_DEPOSITS voucher and debiting the
+     * customer's CASA twice.
+     *
+     * <p>Follows the same default-delegation pattern as {@link
+     * #prematureClose(String, String, String)}: callers may pass a null/blank key
+     * to fall back to the non-idempotent path (e.g. system-generated bookings).
+     *
+     * @param idempotencyKey client-supplied X-Idempotency-Key header value;
+     *                       {@code null} or blank → no idempotency protection.
+     */
+    default FixedDeposit bookFd(
+            Long customerId, Long branchId,
+            String linkedAccountNumber,
+            BigDecimal principalAmount,
+            BigDecimal interestRate,
+            int tenureDays,
+            String interestPayoutMode,
+            String autoRenewalMode,
+            String nomineeName,
+            String nomineeRelationship,
+            String idempotencyKey) {
+        // Default delegation keeps existing implementations source-compatible
+        // until they override this method to plumb idempotencyKey into
+        // TransactionRequest.
+        return bookFd(customerId, branchId, linkedAccountNumber,
+                principalAmount, interestRate, tenureDays,
+                interestPayoutMode, autoRenewalMode,
+                nomineeName, nomineeRelationship);
+    }
+
+    /**
      * Premature closure with penalty rate reduction.
      * Per RBI Fair Practices: effective rate = applicable_rate - penalty.
      * Interest recalculated at reduced rate for actual tenure held.

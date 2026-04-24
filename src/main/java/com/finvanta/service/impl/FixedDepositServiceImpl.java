@@ -62,27 +62,6 @@ public class FixedDepositServiceImpl implements FixedDepositService {
     @Override @Transactional
     public FixedDeposit bookFd(Long cId, Long bId, String casa, BigDecimal amt,
             BigDecimal rate, int days, String payout, String renew, String nom, String nomR) {
-        // Back-compat overload: delegate with null idempotency key (legacy callers).
-        return bookFd(cId, bId, casa, amt, rate, days, payout, renew, nom, nomR, null);
-    }
-
-    @Override @Transactional
-    public FixedDeposit bookFd(Long cId, Long bId, String casa, BigDecimal amt,
-            BigDecimal rate, int days, String payout, String renew, String nom, String nomR,
-            String idempotencyKey) {
-        // CBS IDEMPOTENCY (Chunk 3 wiring — dedupe store lookup lands in a later chunk):
-        // When idempotencyKey != null, we must:
-        //   1. Look up (tenantId, idempotencyKey) in the idempotency store.
-        //   2. If found + response cached → return the cached FD (do NOT re-post GL).
-        //   3. If found + in-flight → 409 CONFLICT (concurrent retry).
-        //   4. Else reserve the key, run the booking below, then persist the result.
-        // TODO(chunk-4): inject IdempotencyStore and implement the lookup/reserve/commit
-        // around the block below. Until then, the key is accepted but not enforced —
-        // this commit only plumbs the parameter end-to-end so the API contract is stable.
-        if (idempotencyKey != null) {
-            log.debug("FD bookFd received Idempotency-Key={} (enforcement pending chunk-4)",
-                    idempotencyKey);
-        }
         String t = TenantContext.getCurrentTenant(); String u = SecurityUtil.getCurrentUsername();
         LocalDate bd = bdSvc.getCurrentBusinessDate();
         if (amt == null || amt.signum() <= 0) throw new BusinessException("INVALID_AMOUNT", "positive");
