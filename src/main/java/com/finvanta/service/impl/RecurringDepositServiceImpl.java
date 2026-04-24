@@ -261,15 +261,15 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
                                 DebitCredit.CREDIT, maturityAmt, "RD maturity to CASA")))
                 .systemGenerated(true).build());
 
-        // CBS CRITICAL: RD↔CASA subledger sync — mirrors prematureClose pattern.
-        // The GL posting above credits SB_DEPOSITS (2030) but does not update the
-        // linked CASA account's ledgerBalance on the subledger. Without this call,
-        // GL and CASA subledger drift and the customer cannot withdraw the maturity
-        // payout. Idempotency key "RD-MT-<rdNo>" ensures retried EOD batch runs
-        // do not double-credit the CASA account.
-        casaSvc.deposit(rd.getLinkedAccountNumber(), maturityAmt, bd,
+        // CBS CRITICAL: RD↔CASA subledger sync — the GL posting above already
+        // credits SB_DEPOSITS (2030). Use creditSubledgerOnly (NOT deposit()) to
+        // update the CASA balance without posting a second GL entry. Using
+        // deposit() here would double-credit SB_DEPOSITS and introduce a spurious
+        // DR BANK_OPERATIONS leg, breaking GL-subledger parity at EOD.
+        casaSvc.creditSubledgerOnly(rd.getLinkedAccountNumber(), maturityAmt, bd,
                 "RD maturity: " + rdAccountNumber,
-                "RD-MT-" + rdAccountNumber, "SYSTEM");
+                "RD_MATURITY", rdAccountNumber,
+                maturityGl.getJournalEntryId(), maturityGl.getVoucherNumber());
 
         rd.setStatus(RdStatus.MATURED);
         rd.setClosureDate(bd);
@@ -367,15 +367,15 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
                 .journalLines(closureLines)
                 .systemGenerated(true).build());
 
-        // CBS CRITICAL: RD↔CASA subledger sync. The closure journal above credits
-        // GL SB_DEPOSITS (2030) but does not update the linked CASA account's
-        // ledgerBalance on the subledger. Per FD prematureClose precedent
-        // (FixedDepositServiceImpl), we must call casaSvc.deposit() so the
-        // customer's CASA balance reflects the RD payout. Without this, GL and
-        // CASA subledger drift and the customer cannot withdraw the payout.
-        casaSvc.deposit(rd.getLinkedAccountNumber(), closureAmt, bd,
+        // CBS CRITICAL: RD↔CASA subledger sync. The closure journal above already
+        // credits GL SB_DEPOSITS (2030). Use creditSubledgerOnly (NOT deposit())
+        // so the CASA balance is updated without posting a second GL entry. Using
+        // deposit() here would double-credit SB_DEPOSITS and add a spurious DR
+        // BANK_OPERATIONS leg, breaking GL-subledger parity at EOD.
+        casaSvc.creditSubledgerOnly(rd.getLinkedAccountNumber(), closureAmt, bd,
                 "RD premature closure: " + rdAccountNumber,
-                "RD-PM-" + rdAccountNumber, "SYSTEM");
+                "RD_PREMATURE_CLOSE", rdAccountNumber,
+                closureGl.getJournalEntryId(), closureGl.getVoucherNumber());
 
         rd.setStatus(RdStatus.PREMATURE_CLOSED);
         rd.setClosureDate(bd);
