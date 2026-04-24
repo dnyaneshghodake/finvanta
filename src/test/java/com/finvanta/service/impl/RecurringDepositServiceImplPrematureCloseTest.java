@@ -72,6 +72,7 @@ class RecurringDepositServiceImplPrematureCloseTest {
         // closureJournalId; return a non-null result by default.
         TransactionResult result = Mockito.mock(TransactionResult.class);
         Mockito.lenient().when(result.getJournalEntryId()).thenReturn(9001L);
+        Mockito.lenient().when(result.getVoucherNumber()).thenReturn("VCH-9001");
         Mockito.lenient().when(transactionEngine.execute(Mockito.any())).thenReturn(result);
     }
 
@@ -121,14 +122,19 @@ class RecurringDepositServiceImplPrematureCloseTest {
         assertEquals(RdStatus.PREMATURE_CLOSED, rd.getStatus());
         assertEquals(BD, rd.getClosureDate());
         assertEquals(0, BigDecimal.ZERO.compareTo(rd.getAccruedInterest()));
-        // RD↔CASA sync: linked CASA must be credited with closureAmt.
-        verify(casaSvc).deposit(org.mockito.ArgumentMatchers.eq("SB/BR01/0001"),
+        // RD↔CASA sync: linked CASA must be credited with closureAmt via
+        // creditSubledgerOnly (no second GL posting). See
+        // RecurringDepositServiceImpl.java:375-378.
+        verify(casaSvc).creditSubledgerOnly(
+                org.mockito.ArgumentMatchers.eq("SB/BR01/0001"),
                 org.mockito.ArgumentMatchers.argThat(
                         a -> new BigDecimal("12000.00").compareTo(a) == 0),
                 org.mockito.ArgumentMatchers.eq(BD),
                 org.mockito.ArgumentMatchers.contains("RD premature closure"),
-                org.mockito.ArgumentMatchers.eq("RD-PM-" + RD_NO),
-                org.mockito.ArgumentMatchers.eq("SYSTEM"));
+                org.mockito.ArgumentMatchers.eq("RD_PREMATURE_CLOSE"),
+                org.mockito.ArgumentMatchers.eq(RD_NO),
+                org.mockito.ArgumentMatchers.eq(9001L),
+                org.mockito.ArgumentMatchers.eq("VCH-9001"));
         assertEquals(9001L, rd.getClosureJournalId());
         verify(rdRepository).save(rd);
     }
@@ -152,13 +158,16 @@ class RecurringDepositServiceImplPrematureCloseTest {
         assertEquals(0, new BigDecimal("12010.00").compareTo(closure.getAmount()));
         assertEquals(3, closure.getJournalLines().size());
         assertEquals(0, new BigDecimal("10.00").compareTo(rd.getAccruedInterest()));
-        verify(casaSvc).deposit(org.mockito.ArgumentMatchers.eq("SB/BR01/0001"),
+        verify(casaSvc).creditSubledgerOnly(
+                org.mockito.ArgumentMatchers.eq("SB/BR01/0001"),
                 org.mockito.ArgumentMatchers.argThat(
                         a -> new BigDecimal("12010.00").compareTo(a) == 0),
                 org.mockito.ArgumentMatchers.eq(BD),
                 org.mockito.ArgumentMatchers.contains("RD premature closure"),
-                org.mockito.ArgumentMatchers.eq("RD-PM-" + RD_NO),
-                org.mockito.ArgumentMatchers.eq("SYSTEM"));
+                org.mockito.ArgumentMatchers.eq("RD_PREMATURE_CLOSE"),
+                org.mockito.ArgumentMatchers.eq(RD_NO),
+                org.mockito.ArgumentMatchers.eq(9001L),
+                org.mockito.ArgumentMatchers.eq("VCH-9001"));
         assertEquals(9001L, rd.getClosureJournalId());
     }
 
