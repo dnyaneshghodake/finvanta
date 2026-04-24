@@ -99,7 +99,7 @@ public class DepositAccountController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<AccountResponse>>
             freezeAccount(@PathVariable String accountNumber,
-                    @RequestBody FreezeRequest req) {
+                    @Valid @RequestBody FreezeRequest req) {
         DepositAccount account = depositService.freezeAccount(
                 accountNumber, req.freezeType(), req.reason());
         return ResponseEntity.ok(ApiResponse.success(
@@ -119,7 +119,7 @@ public class DepositAccountController {
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<AccountResponse>>
             closeAccount(@PathVariable String accountNumber,
-                    @RequestBody CloseRequest req) {
+                    @Valid @RequestBody CloseRequest req) {
         DepositAccount account = depositService.closeAccount(accountNumber, req.reason());
         return ResponseEntity.ok(ApiResponse.success(
                 AccountResponse.from(account), "Account closed"));
@@ -165,7 +165,7 @@ public class DepositAccountController {
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<TxnResponse>>
             reverseTransaction(@PathVariable String transactionRef,
-                    @RequestBody ReversalRequest req) {
+                    @Valid @RequestBody ReversalRequest req) {
         LocalDate bd = businessDateService.getCurrentBusinessDate();
         DepositTransaction txn = depositService.reverseTransaction(
                 transactionRef, req.reason(), bd);
@@ -292,11 +292,13 @@ public class DepositAccountController {
             String narration,
             String idempotencyKey) {}
 
-    public record FreezeRequest(String freezeType, String reason) {}
+    public record FreezeRequest(
+            @NotBlank String freezeType,
+            @NotBlank String reason) {}
 
-    public record CloseRequest(String reason) {}
+    public record CloseRequest(@NotBlank String reason) {}
 
-    public record ReversalRequest(String reason) {}
+    public record ReversalRequest(@NotBlank String reason) {}
 
     public record RejectRequest(@NotBlank String reason) {}
 

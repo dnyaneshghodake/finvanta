@@ -293,6 +293,14 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
         // If simple-interest calc > sum of daily accruals (due to rounding or partial-accrual gaps),
         // the closure posting would debit more from 2041 than was ever credited — GL imbalance.
         // Per Finacle RD_ENGINE: the payout is always bounded by what was actually accrued.
+        // CBS GUARD: reject negative-tenure scenarios (business date before booking date).
+        // Should never happen under a correctly-configured BusinessDateService, but a
+        // backdated run or corrupt state would produce a negative days count →
+        // negative adjustedInterest → GL imbalance that the cap below would not catch.
+        if (bd.isBefore(rd.getBookingDate())) {
+            throw new BusinessException("INVALID_TENURE",
+                    "Business date " + bd + " is before RD booking date " + rd.getBookingDate());
+        }
         if (adjustedInterest.compareTo(rd.getAccruedInterest()) > 0) {
             adjustedInterest = rd.getAccruedInterest();
         }
