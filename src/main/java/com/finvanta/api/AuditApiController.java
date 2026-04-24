@@ -188,7 +188,7 @@ public class AuditApiController {
     }
 
     private static String buildDescription(ScreenAccessRequest req) {
-        StringBuilder sb = new StringBuilder("screen=").append(req.screen());
+        StringBuilder sb = new StringBuilder("screenCode=").append(req.screenCode());
         if (req.returnTo() != null && !req.returnTo().isBlank()) {
             sb.append(" | returnTo=").append(req.returnTo());
         }
@@ -203,13 +203,15 @@ public class AuditApiController {
     /**
      * Screen-access audit payload from the BFF.
      *
-     * <p>Field sizes match the audit trail's {@code description} column capacity
-     * and are intentionally restrictive — this endpoint is hit on every page
-     * load so oversized payloads are rejected at the boundary rather than
-     * truncated in the DB.
+     * <p>Field name {@code screenCode} matches the Next.js BFF contract —
+     * it sends a screen identifier (e.g. "DASHBOARD", "CUSTOMER_VIEW"), not
+     * a raw URL path. Field sizes match the audit trail's {@code description}
+     * column capacity and are intentionally restrictive — this endpoint is
+     * hit on every page load so oversized payloads are rejected at the
+     * boundary rather than truncated in the DB.
      */
     public record ScreenAccessRequest(
-            @NotBlank @Size(max = 200) String screen,
+            @NotBlank @Size(max = 200) String screenCode,
             @Size(max = 500) String returnTo,
             @Size(max = 500) String referrer) {}
 
