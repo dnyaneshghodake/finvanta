@@ -43,6 +43,14 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    // CBS SECURITY: Reuse a single ObjectMapper instance. Jackson's ObjectMapper
+    // is thread-safe once configured and is expensive to construct (classpath
+    // scanning + reflection). Instantiating per-request in the 401 entry point
+    // wastes cycles on every unauthenticated hit and contradicts Jackson's
+    // documented best practice.
+    private static final com.fasterxml.jackson.databind.ObjectMapper ERROR_RESPONSE_MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
     private final MfaAuthenticationSuccessHandler mfaSuccessHandler;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
@@ -132,8 +140,7 @@ public class SecurityConfig {
                                     meta.put("correlationId", correlationId);
                                     meta.put("timestamp", timestamp);
                                     body.put("meta", meta);
-                                    new com.fasterxml.jackson.databind.ObjectMapper()
-                                            .writeValue(res.getWriter(), body);
+                                    ERROR_RESPONSE_MAPPER.writeValue(res.getWriter(), body);
                                 }))
                 // CBS: rate limit auth endpoints BEFORE JWT auth so token issuance
                 // cannot be brute-forced. Per RBI Cyber Security Framework 2024 §6.2.
