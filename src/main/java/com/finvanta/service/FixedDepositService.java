@@ -55,6 +55,34 @@ public interface FixedDepositService {
     FixedDeposit prematureClose(String fdNumber, String reason);
 
     /**
+     * Idempotent variant of {@link #prematureClose(String, String)}.
+     *
+     * <p>Per RBI Cyber Security Framework 2024 §8.4 and blueprint step 1
+     * (Idempotency Check), every customer-initiated mutation must be retry-safe.
+     * The {@code idempotencyKey} is forwarded to {@code TransactionRequest} so
+     * {@code TransactionEngine} can short-circuit on duplicate submissions
+     * (e.g. double-click, network retry, BFF replay) and return the previously
+     * posted {@code transactionRef} / {@code voucherNumber} instead of posting
+     * a second closure voucher.
+     *
+     * <p>Without this plumbing, a duplicate call would post two
+     * DR FD_DEPOSITS / CR CASA vouchers — crediting the customer twice and
+     * driving GL 2030 negative. This is the exact failure class that the
+     * RD {@code adjustedInterest} cap was added to defend against.
+     *
+     * @param idempotencyKey client-supplied X-Idempotency-Key header value;
+     *                       if {@code null} or blank, behaves like the
+     *                       two-arg overload (no idempotency protection).
+     */
+    default FixedDeposit prematureClose(String fdNumber, String reason, String idempotencyKey) {
+        // Default delegation keeps existing implementations source-compatible
+        // until they override this method in Chunk 3. Once FixedDepositServiceImpl
+        // overrides this method to plumb idempotencyKey into TransactionRequest,
+        // the delegation path is no longer taken.
+        return prematureClose(fdNumber, reason);
+    }
+
+    /**
      * Normal maturity closure — full interest + principal to CASA.
      * GL: DR FD Deposits (2030) + DR FD Interest Payable (2031)
      *     / CR CASA (2010/2020)
