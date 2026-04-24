@@ -12,6 +12,7 @@ import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.RecurringDepositRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.DepositAccountService;
 import com.finvanta.service.RecurringDepositService;
 import com.finvanta.service.SequenceGeneratorService;
 import com.finvanta.transaction.TransactionEngine;
@@ -52,6 +53,7 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
     private final BusinessDateService businessDateService;
     private final SequenceGeneratorService sequenceGenerator;
     private final AuditService auditService;
+    private final DepositAccountService casaSvc;
 
     public RecurringDepositServiceImpl(
             RecurringDepositRepository rdRepository,
@@ -60,7 +62,8 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
             TransactionEngine transactionEngine,
             BusinessDateService businessDateService,
             SequenceGeneratorService sequenceGenerator,
-            AuditService auditService) {
+            AuditService auditService,
+            DepositAccountService casaSvc) {
         this.rdRepository = rdRepository;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
@@ -68,6 +71,7 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
         this.businessDateService = businessDateService;
         this.sequenceGenerator = sequenceGenerator;
         this.auditService = auditService;
+        this.casaSvc = casaSvc;
     }
 
     @Override
@@ -336,7 +340,7 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
                                 DebitCredit.DEBIT, rd.getCumulativeDeposit(), "RD principal"),
                         new JournalLineRequest(GLConstants.SB_DEPOSITS,
                                 DebitCredit.CREDIT, closureAmt, "RD premature to CASA"));
-        transactionEngine.execute(TransactionRequest.builder()
+        TransactionResult closureGl = transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("RECURRING_DEPOSIT").transactionType("RD_PREMATURE_CLOSE")
                 .accountReference(rd.getLinkedAccountNumber()).amount(closureAmt)
                 .valueDate(bd).branchCode(rd.getBranchCode())
@@ -344,9 +348,20 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
                 .journalLines(closureLines)
                 .systemGenerated(true).build());
 
+        // CBS CRITICAL: RD↔CASA subledger sync. The closure journal above credits
+        // GL SB_DEPOSITS (2030) but does not update the linked CASA account's
+        // ledgerBalance on the subledger. Per FD prematureClose precedent
+        // (FixedDepositServiceImpl), we must call casaSvc.deposit() so the
+        // customer's CASA balance reflects the RD payout. Without this, GL and
+        // CASA subledger drift and the customer cannot withdraw the payout.
+        casaSvc.deposit(rd.getLinkedAccountNumber(), closureAmt, bd,
+                "RD premature closure: " + rdAccountNumber,
+                "RD-PM-" + rdAccountNumber, "SYSTEM");
+
         rd.setStatus(RdStatus.PREMATURE_CLOSED);
         rd.setClosureDate(bd);
         rd.setAccruedInterest(adjustedInterest);
+        rd.setClosureJournalId(closureGl.getJournalEntryId());
         rdRepository.save(rd);
         return rd;
     }

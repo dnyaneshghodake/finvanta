@@ -14,11 +14,15 @@ import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.RecurringDepositRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.DepositAccountService;
 import com.finvanta.service.SequenceGeneratorService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
+import com.finvanta.transaction.TransactionResult;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
+
+import org.mockito.Mockito;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -53,6 +57,7 @@ class RecurringDepositServiceImplPrematureCloseTest {
     @Mock private BusinessDateService businessDateService;
     @Mock private SequenceGeneratorService sequenceGenerator;
     @Mock private AuditService auditService;
+    @Mock private DepositAccountService casaSvc;
 
     private RecurringDepositServiceImpl service;
 
@@ -61,8 +66,13 @@ class RecurringDepositServiceImplPrematureCloseTest {
         service = new RecurringDepositServiceImpl(
                 rdRepository, customerRepository, branchRepository,
                 transactionEngine, businessDateService,
-                sequenceGenerator, auditService);
+                sequenceGenerator, auditService, casaSvc);
         TenantContext.setCurrentTenant(TENANT);
+        // Closure path reads TransactionResult.getJournalEntryId() to persist
+        // closureJournalId; return a non-null result by default.
+        TransactionResult result = Mockito.mock(TransactionResult.class);
+        Mockito.lenient().when(result.getJournalEntryId()).thenReturn(9001L);
+        Mockito.lenient().when(transactionEngine.execute(Mockito.any())).thenReturn(result);
     }
 
     @AfterEach
@@ -111,6 +121,15 @@ class RecurringDepositServiceImplPrematureCloseTest {
         assertEquals(RdStatus.PREMATURE_CLOSED, rd.getStatus());
         assertEquals(BD, rd.getClosureDate());
         assertEquals(0, BigDecimal.ZERO.compareTo(rd.getAccruedInterest()));
+        // RD↔CASA sync: linked CASA must be credited with closureAmt.
+        verify(casaSvc).deposit(org.mockito.ArgumentMatchers.eq("SB/BR01/0001"),
+                org.mockito.ArgumentMatchers.argThat(
+                        a -> new BigDecimal("12000.00").compareTo(a) == 0),
+                org.mockito.ArgumentMatchers.eq(BD),
+                org.mockito.ArgumentMatchers.contains("RD premature closure"),
+                org.mockito.ArgumentMatchers.eq("RD-PM-" + RD_NO),
+                org.mockito.ArgumentMatchers.eq("SYSTEM"));
+        assertEquals(9001L, rd.getClosureJournalId());
         verify(rdRepository).save(rd);
     }
 
@@ -133,6 +152,14 @@ class RecurringDepositServiceImplPrematureCloseTest {
         assertEquals(0, new BigDecimal("12010.00").compareTo(closure.getAmount()));
         assertEquals(3, closure.getJournalLines().size());
         assertEquals(0, new BigDecimal("10.00").compareTo(rd.getAccruedInterest()));
+        verify(casaSvc).deposit(org.mockito.ArgumentMatchers.eq("SB/BR01/0001"),
+                org.mockito.ArgumentMatchers.argThat(
+                        a -> new BigDecimal("12010.00").compareTo(a) == 0),
+                org.mockito.ArgumentMatchers.eq(BD),
+                org.mockito.ArgumentMatchers.contains("RD premature closure"),
+                org.mockito.ArgumentMatchers.eq("RD-PM-" + RD_NO),
+                org.mockito.ArgumentMatchers.eq("SYSTEM"));
+        assertEquals(9001L, rd.getClosureJournalId());
     }
 
     @Test
