@@ -247,7 +247,7 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
         }
 
         BigDecimal maturityAmt = rd.getMaturityAmount();
-        transactionEngine.execute(TransactionRequest.builder()
+        TransactionResult maturityGl = transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("RECURRING_DEPOSIT").transactionType("RD_MATURITY")
                 .accountReference(rd.getLinkedAccountNumber()).amount(maturityAmt)
                 .valueDate(bd).branchCode(rd.getBranchCode())
@@ -261,8 +261,19 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
                                 DebitCredit.CREDIT, maturityAmt, "RD maturity to CASA")))
                 .systemGenerated(true).build());
 
+        // CBS CRITICAL: RD↔CASA subledger sync — mirrors prematureClose pattern.
+        // The GL posting above credits SB_DEPOSITS (2030) but does not update the
+        // linked CASA account's ledgerBalance on the subledger. Without this call,
+        // GL and CASA subledger drift and the customer cannot withdraw the maturity
+        // payout. Idempotency key "RD-MT-<rdNo>" ensures retried EOD batch runs
+        // do not double-credit the CASA account.
+        casaSvc.deposit(rd.getLinkedAccountNumber(), maturityAmt, bd,
+                "RD maturity: " + rdAccountNumber,
+                "RD-MT-" + rdAccountNumber, "SYSTEM");
+
         rd.setStatus(RdStatus.MATURED);
         rd.setClosureDate(bd);
+        rd.setClosureJournalId(maturityGl.getJournalEntryId());
         rdRepository.save(rd);
     }
 
