@@ -756,6 +756,70 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 balanceBefore);
     }
 
+    // === Subledger-Only Credit (internal inter-module transfers) ===
+    // CBS Tier-1: Used by RD/FD/Loan modules when they own the GL posting.
+    // The caller has already posted (DR module_deposit / CR SB_DEPOSITS) via
+    // TransactionEngine. This method ONLY updates the CASA subledger (balance
+    // + DepositTransaction row) — no additional GL posting.
+    //
+    // Using deposit() for these internal transfers would double-post SB_DEPOSITS
+    // (caller's CR + deposit()'s CR) and introduce a spurious DR BANK_OPERATIONS,
+    // breaking GL-subledger parity at EOD reconciliation.
+    @Override
+    @Transactional
+    public DepositTransaction creditSubledgerOnly(
+            String accountNumber,
+            BigDecimal amount,
+            LocalDate businessDate,
+            String narration,
+            String transactionType,
+            String counterpartyRef,
+            Long sourceJournalEntryId,
+            String sourceVoucherNumber) {
+        String tid = TenantContext.getCurrentTenant();
+        DepositAccount acct = lockAccount(tid, accountNumber);
+        if (!acct.isCreditAllowed())
+            throw new BusinessException("ACCOUNT_NOT_CREDITABLE", "Status " + acct.getAccountStatus());
+
+        // CBS Tier-1: Capture balance BEFORE mutation for audit trail
+        BigDecimal balanceBefore = acct.getLedgerBalance();
+        acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
+        recomputeAvailable(acct);
+        acct.setLastTransactionDate(businessDate);
+        if (acct.isDormant()) {
+            acct.setAccountStatus(DepositAccountStatus.ACTIVE);
+            acct.setDormantDate(null);
+            // CBS CRITICAL: logEventInline (REQUIRED) — we hold PESSIMISTIC_WRITE
+            // on the account row; logEvent(REQUIRES_NEW) would suspend TX without
+            // releasing the lock (same deadlock vector as deposit()).
+            auditService.logEventInline(
+                    "DepositAccount", acct.getId(), "DORMANCY_REACTIVATED",
+                    "DORMANT", "ACTIVE", "DEPOSIT",
+                    "Account reactivated via " + transactionType + ": " + accountNumber
+                            + " | Amount: INR " + amount + " | Channel: SYSTEM");
+        }
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        accountRepository.save(acct);
+
+        // Build a synthetic TransactionResult carrying the caller's journal/voucher
+        // refs so the DepositTransaction subledger row links back to the owning
+        // GL posting. No new GL entry is created here.
+        TransactionResult linked = new TransactionResult(
+                ReferenceGenerator.generateTransactionRef(),
+                sourceVoucherNumber,
+                sourceJournalEntryId,
+                null,
+                amount,
+                amount,
+                businessDate,
+                LocalDateTime.now(),
+                "POSTED");
+        return buildTxn(
+                acct, amount, transactionType, "CREDIT", businessDate,
+                narration, linked, linked.getTransactionRef(),
+                null, "SYSTEM", counterpartyRef, balanceBefore);
+    }
+
     // === Withdrawal ===
     @Override
     @Transactional

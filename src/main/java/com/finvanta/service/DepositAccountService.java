@@ -258,6 +258,28 @@ public interface DepositAccountService {
             LocalDate businessDate);
 
     /**
+     * CBS Tier-1: Subledger-only credit for internal inter-module transfers
+     * (RD maturity/closure → CASA, FD maturity/closure → CASA, Loan disbursement → CASA).
+     *
+     * <p>Unlike {@link #deposit}, this method does NOT post to the GL. The calling
+     * module (RD/FD/Loan) owns the GL posting via its own TransactionEngine call,
+     * which already includes the CR SB_DEPOSITS leg. This method only:
+     *   - Updates ledgerBalance / availableBalance on the CASA account
+     *   - Inserts a DepositTransaction row linked to the caller's journalEntryId/voucherNumber
+     *
+     * <p>Using {@link #deposit} for internal transfers double-posts the GL
+     * (CR SB_DEPOSITS twice + spurious DR BANK_OPERATIONS) and breaks
+     * GL-subledger parity at EOD.
+     *
+     * @param sourceJournalEntryId journalEntryId from the caller's TransactionResult
+     * @param sourceVoucherNumber voucherNumber from the caller's TransactionResult
+     */
+    DepositTransaction creditSubledgerOnly(
+            String accountNumber, BigDecimal amount, LocalDate businessDate,
+            String narration, String transactionType, String counterpartyRef,
+            Long sourceJournalEntryId, String sourceVoucherNumber);
+
+    /**
      * Reverse a deposit transaction per Finacle TRAN_REVERSAL.
      * Creates contra GL entries via TransactionEngine and marks original as reversed.
      * Per CBS audit rules: original transaction is never deleted, only marked reversed.

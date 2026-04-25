@@ -113,8 +113,10 @@ public class FixedDepositServiceImpl implements FixedDepositService {
         BigDecimal intr = fd.getCurrentPrincipal().multiply(r).multiply(BigDecimal.valueOf(d))
                 .divide(BigDecimal.valueOf(36500), 2, RoundingMode.HALF_UP);
         BigDecimal pay = fd.getCurrentPrincipal().add(intr);
-        casaSvc.deposit(fd.getLinkedAccountNumber(), pay, bd, "FD premature", "FD-PM-" + fdNo, "SYSTEM");
-        txnEng.execute(TransactionRequest.builder().sourceModule("FIXED_DEPOSIT")
+        // CBS: GL posting FIRST, then subledger sync via creditSubledgerOnly.
+        // Using casaSvc.deposit() would double-post SB_DEPOSITS (caller's CR here
+        // plus deposit()'s own CR) and add a spurious DR BANK_OPERATIONS leg.
+        TransactionResult pmGl = txnEng.execute(TransactionRequest.builder().sourceModule("FIXED_DEPOSIT")
                 .transactionType("FD_PREMATURE").accountReference(fd.getLinkedAccountNumber())
                 .amount(pay).valueDate(bd).branchCode(fd.getBranchCode()).narration("FD premature")
                 .journalLines(List.of(
@@ -124,6 +126,9 @@ public class FixedDepositServiceImpl implements FixedDepositService {
                                 intr, "FD interest penalized"),
                         new JournalLineRequest(GLConstants.SB_DEPOSITS, DebitCredit.CREDIT, pay, "FD closure")))
                 .systemGenerated(true).initiatedBy(u).build());
+        casaSvc.creditSubledgerOnly(fd.getLinkedAccountNumber(), pay, bd,
+                "FD premature: " + fdNo, "FD_PREMATURE", fdNo,
+                pmGl.getJournalEntryId(), pmGl.getVoucherNumber());
         fd.setStatus(FdStatus.PREMATURE_CLOSED); fd.setClosureDate(bd);
         fd.setTotalInterestPaid(intr); fd.setUpdatedBy(u); fdRepo.save(fd);
         return fd;
@@ -136,8 +141,9 @@ public class FixedDepositServiceImpl implements FixedDepositService {
         if (fd.getStatus() != FdStatus.ACTIVE && fd.getStatus() != FdStatus.MATURED)
             throw new BusinessException("FD_NOT_ACTIVE", fd.getStatus().name());
         BigDecimal pay = fd.getCurrentPrincipal().add(fd.getAccruedInterest());
-        casaSvc.deposit(fd.getLinkedAccountNumber(), pay, bd, "FD maturity", "FD-MT-" + fdNo, "SYSTEM");
-        txnEng.execute(TransactionRequest.builder().sourceModule("FIXED_DEPOSIT")
+        // CBS: GL posting FIRST, then subledger sync via creditSubledgerOnly
+        // (see prematureClose comment above for rationale).
+        TransactionResult mtGl = txnEng.execute(TransactionRequest.builder().sourceModule("FIXED_DEPOSIT")
                 .transactionType("FD_MATURITY").accountReference(fd.getLinkedAccountNumber())
                 .amount(pay).valueDate(bd).branchCode(fd.getBranchCode()).narration("FD maturity")
                 .journalLines(List.of(
@@ -147,6 +153,9 @@ public class FixedDepositServiceImpl implements FixedDepositService {
                                 fd.getAccruedInterest(), "FD interest"),
                         new JournalLineRequest(GLConstants.SB_DEPOSITS, DebitCredit.CREDIT, pay, "FD maturity")))
                 .systemGenerated(true).initiatedBy(u).build());
+        casaSvc.creditSubledgerOnly(fd.getLinkedAccountNumber(), pay, bd,
+                "FD maturity: " + fdNo, "FD_MATURITY", fdNo,
+                mtGl.getJournalEntryId(), mtGl.getVoucherNumber());
         fd.setStatus(FdStatus.CLOSED); fd.setClosureDate(bd);
         fd.setTotalInterestPaid(fd.getTotalInterestPaid().add(fd.getAccruedInterest()));
         fd.setAccruedInterest(BigDecimal.ZERO); fd.setUpdatedBy(u); fdRepo.save(fd);
