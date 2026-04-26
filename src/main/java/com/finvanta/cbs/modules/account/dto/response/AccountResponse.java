@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
- * CBS CASA Account Response DTO per Finacle ACCTINQ / Temenos ACCOUNT.DETAILS.
+ * CBS CASA Account Response DTO per CBS ACCTINQ standard.
  *
  * <p>Projects only the fields required by the API contract. Entity-internal
  * fields (version, hibernate proxies, lazy collections) are never exposed.

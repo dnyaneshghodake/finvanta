@@ -6,7 +6,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 
 /**
- * CBS Loan Account Domain Logic per Finacle LOANLIMIT / Temenos ARRANGEMENT.
+ * CBS Loan Account Domain Logic per CBS LOANLIMIT standard.
  *
  * <p>This is a DOMAIN class (not a JPA entity). Per DDD standards, domain
  * classes contain business logic and invariant enforcement, while entities
@@ -52,7 +52,7 @@ public class LoanAccountDomain {
      * <p>Formula: EMI = P * r * (1+r)^n / ((1+r)^n - 1)
      * where P = principal, r = monthly rate, n = tenure in months.
      *
-     * <p>Per Finacle LNEMI: this is the standard CBS EMI calculation used
+     * <p>Per CBS LNEMI: this is the standard CBS EMI calculation used
      * across all loan products (Home, Vehicle, Personal, Gold, LAP).
      *
      * @param principal    sanctioned/outstanding principal amount
@@ -91,7 +91,7 @@ public class LoanAccountDomain {
      *
      * <p>Formula: Daily Interest = (Outstanding Principal * Annual Rate) / (Days in Year)
      *
-     * <p>Per Finacle LNINTCALC: uses actual/365 day count convention for INR loans
+     * <p>Per CBS LNINTCALC: uses actual/365 day count convention for INR loans
      * (as mandated by RBI for INR-denominated products).
      *
      * @param outstandingPrincipal current outstanding principal

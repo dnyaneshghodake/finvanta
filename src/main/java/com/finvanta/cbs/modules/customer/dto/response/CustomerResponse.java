@@ -3,7 +3,7 @@ package com.finvanta.cbs.modules.customer.dto.response;
 import java.time.LocalDate;
 
 /**
- * CBS CIF Response DTO per Finacle CIF_INQ / Temenos CUSTOMER.DETAILS.
+ * CBS CIF Response DTO per CBS CIF_INQ standard.
  *
  * <p>PII fields (PAN, Aadhaar) are ALWAYS masked in this DTO.
  * The masking is enforced by {@code CustomerMapper} -- the entity itself

@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
  * CBS Account Module Mapper per Tier-1 DTO isolation standards.
  *
  * <p>Centralizes all entity-to-DTO conversions for the Account bounded context.
- * Per Finacle/Temenos architecture: mappers enforce PII masking at the boundary
+ * Per CBS Tier-1 architecture: mappers enforce PII masking at the boundary
  * so no entity with unmasked PII can leak to the API layer.
  *
  * <p>Design decisions:

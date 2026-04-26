@@ -42,7 +42,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * CBS CASA Module Service Implementation per Finacle CUSTACCT / Temenos ACCOUNT.
+ * CBS CASA Module Service Implementation per CBS CUSTACCT standard.
  *
  * <p>REFACTORED Tier-1 CBS service demonstrating the target architecture:
  * <ul>
@@ -213,7 +213,7 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         }
 
         account.setAccountStatus(DepositAccountStatus.CLOSED);
-        account.setClosedDate(LocalDate.now());
+        account.setClosedDate(businessDateService.getCurrentBusinessDate());
         account.setClosureReason(reason);
         DepositAccount saved = accountRepository.save(account);
 
@@ -437,11 +437,7 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                     .valueDate(businessDate)
                     .branchCode(acct.getBranch().getBranchCode())
                     .narration("REVERSAL: " + reason + " [Orig: " + transactionRef + "]")
-                    .journalLines(List.of(
-                            new JournalLineRequest(GLConstants.BANK_OPERATIONS,
-                                    DebitCredit.DEBIT, original.getAmount(), "Reversal"),
-                            new JournalLineRequest(glForAccount(acct),
-                                    DebitCredit.CREDIT, original.getAmount(), "Reversal")))
+                    .journalLines(buildReversalJournalLines(original, acct))
                     .build());
 
             // Reverse the balance effect
@@ -526,6 +522,29 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         }
         return a.getAccountType().name().startsWith("CURRENT")
                 ? GLConstants.CA_DEPOSITS : GLConstants.SB_DEPOSITS;
+    }
+
+    /**
+     * Builds reversal GL journal lines by swapping DR/CR based on original transaction direction.
+     * Per CBS double-entry reversal: a deposit reversal (original CREDIT) posts DR account_GL / CR BANK_OPS;
+     * a withdrawal reversal (original DEBIT) posts DR BANK_OPS / CR account_GL.
+     */
+    private List<JournalLineRequest> buildReversalJournalLines(DepositTransaction original, DepositAccount acct) {
+        String gl = glForAccount(acct);
+        boolean wasDebit = "DEBIT".equals(original.getDebitCredit());
+        if (wasDebit) {
+            return List.of(
+                    new JournalLineRequest(GLConstants.BANK_OPERATIONS,
+                            DebitCredit.DEBIT, original.getAmount(), "Reversal"),
+                    new JournalLineRequest(gl,
+                            DebitCredit.CREDIT, original.getAmount(), "Reversal"));
+        } else {
+            return List.of(
+                    new JournalLineRequest(gl,
+                            DebitCredit.DEBIT, original.getAmount(), "Reversal"),
+                    new JournalLineRequest(GLConstants.BANK_OPERATIONS,
+                            DebitCredit.CREDIT, original.getAmount(), "Reversal"));
+        }
     }
 
     private DepositTransaction buildAndSaveTxn(

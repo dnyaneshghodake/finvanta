@@ -19,7 +19,7 @@ public interface DashboardService {
 
     /**
      * Computes aggregated CBS dashboard metrics for the current tenant.
-     * Per Finacle DASHBOARD: all metrics computed server-side in a single
+     * Per CBS DASHBOARD: all metrics computed server-side in a single
      * read-only transaction to ensure consistency.
      *
      * @return complete dashboard summary with all computed metrics

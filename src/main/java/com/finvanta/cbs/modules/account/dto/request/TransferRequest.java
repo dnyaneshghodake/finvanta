@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 
 /**
- * CBS Fund Transfer Request DTO per Finacle ACCTXFER / Temenos FT.INPUT.
+ * CBS Fund Transfer Request DTO per CBS ACCTXFER standard.
  */
 public record TransferRequest(
 

@@ -13,7 +13,7 @@ import java.time.LocalDate;
 import org.springframework.stereotype.Component;
 
 /**
- * CBS Account Module Business Validator per Finacle ACCTVAL / Temenos ACCOUNT.VALIDATE.
+ * CBS Account Module Business Validator per CBS ACCTVAL standard.
  *
  * <p>Centralizes complex business validations that go beyond Jakarta Bean Validation.
  * Per Tier-1 CBS standards: validators are separate from services to enable
@@ -32,7 +32,7 @@ public class AccountValidator {
 
     /**
      * Validates prerequisites for account opening.
-     * Per Finacle ACCTOPN: customer must be active, KYC verified, and branch accessible.
+     * Per CBS ACCTOPN: customer must be active, KYC verified, and branch accessible.
      */
     public void validateAccountOpening(OpenAccountRequest request, Customer customer, LocalDate businessDate) {
         if (customer == null) {
@@ -54,7 +54,7 @@ public class AccountValidator {
 
     /**
      * Validates that an account is in a state that permits financial transactions.
-     * Per Finacle TRAN_VALIDATION: only ACTIVE accounts accept debits/credits.
+     * Per CBS TRAN_VALIDATION: only ACTIVE accounts accept debits/credits.
      */
     public void validateAccountForTransaction(DepositAccount account) {
         if (account == null) {
@@ -79,7 +79,7 @@ public class AccountValidator {
 
     /**
      * Validates sufficient balance for a debit (withdrawal/transfer).
-     * Per Finacle BAL_CHK: considers effective available balance.
+     * Per CBS BAL_CHK: considers effective available balance.
      */
     public void validateSufficientBalance(DepositAccount account, BigDecimal amount) {
         BigDecimal effectiveAvailable = account.getEffectiveAvailable();
@@ -92,7 +92,7 @@ public class AccountValidator {
 
     /**
      * Validates transfer-specific rules.
-     * Per Finacle ACCTXFER: same-account transfers are rejected.
+     * Per CBS ACCTXFER: same-account transfers are rejected.
      */
     public void validateTransfer(TransferRequest request) {
         if (request.fromAccount().equalsIgnoreCase(request.toAccount())) {

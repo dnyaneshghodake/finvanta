@@ -5,7 +5,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * CBS Deposit Transaction Response DTO per Finacle TRAN_INQ / Temenos STMT.ENTRY.
+ * CBS Deposit Transaction Response DTO per CBS TRAN_INQ standard.
  *
  * <p>Immutable projection of {@code DepositTransaction} for API consumers.
  * Contains only the fields needed for statement rendering and reconciliation.

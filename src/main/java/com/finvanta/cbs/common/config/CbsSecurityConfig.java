@@ -10,7 +10,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * CBS Tier-1 Web MVC Configuration for the refactored architecture.
  *
  * <p>Registers cross-cutting interceptors that apply to ALL endpoints
- * (both legacy v1 and refactored v2 API paths). Per Finacle/Temenos
+ * (both legacy v1 and refactored v2 API paths). Per CBS Tier-1
  * architecture: interceptors handle infrastructure concerns (audit, timing,
  * correlation) while controllers handle business request/response mapping.
  *

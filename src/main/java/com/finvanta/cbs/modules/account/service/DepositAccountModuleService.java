@@ -10,7 +10,7 @@ import com.finvanta.domain.entity.DepositTransaction;
 import java.util.List;
 
 /**
- * CBS CASA Module Service Interface per Finacle CUSTACCT / Temenos ACCOUNT.
+ * CBS CASA Module Service Interface per CBS CUSTACCT standard.
  *
  * <p>This is the refactored service interface for the Account bounded context.
  * Per Tier-1 CBS standards:

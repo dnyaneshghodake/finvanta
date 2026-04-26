@@ -1,7 +1,7 @@
 package com.finvanta.cbs.common.constants;
 
 /**
- * CBS Tier-1 Error Code Registry per ISO 20022 / Finacle ERROR_MASTER.
+ * CBS Tier-1 Error Code Registry per ISO 20022 CBS ERROR_MASTER standard.
  *
  * <p>Format: {@code CBS-MODULE-NNN} where MODULE is a 4-letter bounded context
  * abbreviation and NNN is a sequential code within the module.

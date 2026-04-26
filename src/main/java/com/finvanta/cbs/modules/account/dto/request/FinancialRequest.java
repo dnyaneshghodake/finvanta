@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 
 /**
- * CBS Financial Transaction Request DTO per Finacle TRAN_INPUT / Temenos FT.INPUT.
+ * CBS Financial Transaction Request DTO per CBS TRAN_INPUT standard.
  *
  * <p>Used for deposit, withdrawal, and single-account financial operations.
  * Transfer operations use {@code TransferRequest} which carries two account references.

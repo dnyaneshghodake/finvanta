@@ -19,7 +19,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * CBS CASA REST API Controller per Finacle CUSTACCT_API / Temenos IRIS Account.
+ * CBS CASA REST API Controller per CBS CUSTACCT_API standard.
  *
  * <p>This is a REFACTORED Tier-1 CBS controller demonstrating the target architecture:
  * <ul>

@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 /**
  * CBS Tier-1 Performance Monitoring Aspect.
  *
- * <p>Per Finacle/Temenos SLA standards: all service-layer methods must be
+ * <p>Per CBS Tier-1 SLA standards: all service-layer methods must be
  * monitored for execution time to detect performance regressions early.
  *
  * <p>Thresholds (per CBS operations benchmark):

@@ -3,7 +3,7 @@ package com.finvanta.cbs.modules.account.dto.response;
 import java.math.BigDecimal;
 
 /**
- * CBS Real-Time Balance Inquiry Response per Finacle BAL_INQ / Temenos ACCOUNT.BALANCE.
+ * CBS Real-Time Balance Inquiry Response per CBS BAL_INQ standard.
  *
  * <p>Used by UPI/IMPS/NEFT for real-time balance checks.
  * Minimal projection -- no PII, no account metadata.

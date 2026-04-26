@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 
 /**
- * CBS CASA Account Opening Request DTO per Finacle ACCTOPN / Temenos ACCOUNT.INPUT.
+ * CBS CASA Account Opening Request DTO per CBS ACCTOPN standard.
  *
  * <p>Decoupled from the {@code DepositAccount} entity to enforce API contract
  * stability per Tier-1 CBS standards. Schema changes in the persistence model
