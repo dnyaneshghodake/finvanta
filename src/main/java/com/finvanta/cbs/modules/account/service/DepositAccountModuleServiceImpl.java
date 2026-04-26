@@ -25,9 +25,10 @@ import com.finvanta.service.BusinessDateService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
+import com.finvanta.service.CbsReferenceService;
 import com.finvanta.util.BranchAccessValidator;
 import com.finvanta.util.BusinessException;
-import com.finvanta.util.SecurityUtil;
+import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
@@ -81,6 +82,7 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
     private final AuditService auditService;
     private final AccountValidator accountValidator;
     private final BranchAccessValidator branchAccessValidator;
+    private final CbsReferenceService cbsReferenceService;
 
     public DepositAccountModuleServiceImpl(
             DepositAccountRepository accountRepository,
@@ -93,7 +95,8 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
             BusinessDateService businessDateService,
             AuditService auditService,
             AccountValidator accountValidator,
-            BranchAccessValidator branchAccessValidator) {
+            BranchAccessValidator branchAccessValidator,
+            CbsReferenceService cbsReferenceService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
@@ -105,6 +108,7 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         this.auditService = auditService;
         this.accountValidator = accountValidator;
         this.branchAccessValidator = branchAccessValidator;
+        this.cbsReferenceService = cbsReferenceService;
     }
 
     // === Account Lifecycle ===
@@ -124,15 +128,24 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                 .orElseThrow(() -> new BusinessException("CBS-TXN-005", "Branch not found"));
         branchAccessValidator.validateAccess(branch);
 
+        DepositAccountType parsedAccountType = DepositAccountType.valueOf(request.accountType());
+        String accNo = cbsReferenceService.generateDepositAccountNumber(
+                branch.getBranchCode(), parsedAccountType.isSavings());
+
         DepositAccount account = new DepositAccount();
+        account.setTenantId(tenantId);
+        account.setAccountNumber(accNo);
         account.setCustomer(customer);
         account.setBranch(branch);
-        account.setAccountType(DepositAccountType.valueOf(request.accountType()));
+        account.setAccountType(parsedAccountType);
         account.setProductCode(request.productCode());
         account.setCurrencyCode(request.currencyCode());
         account.setAccountStatus(DepositAccountStatus.PENDING_ACTIVATION);
         account.setOpenedDate(businessDate);
-        account.setTenantId(tenantId);
+        account.setLedgerBalance(BigDecimal.ZERO);
+        account.setAvailableBalance(BigDecimal.ZERO);
+        account.setHoldAmount(BigDecimal.ZERO);
+        account.setUnclearedAmount(BigDecimal.ZERO);
 
         DepositAccount saved = accountRepository.save(account);
 
@@ -400,15 +413,40 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
             accountRepository.save(src);
 
             // Credit destination
-            dst.setLedgerBalance(dst.getLedgerBalance().add(request.amount()));
+            BigDecimal dstBalBefore = dst.getLedgerBalance();
+            dst.setLedgerBalance(dstBalBefore.add(request.amount()));
             dst.setAvailableBalance(dst.getAvailableBalance().add(request.amount()));
             dst.setLastTransactionDate(businessDate);
             accountRepository.save(dst);
 
-            return buildAndSaveTxn(src, r, request.amount(), DebitCredit.DEBIT,
+            // Record TRANSFER_DEBIT for source account
+            DepositTransaction debitTxn = buildAndSaveTxn(src, r, request.amount(), DebitCredit.DEBIT,
                     "TRANSFER_DEBIT", "Transfer to " + request.toAccount(), "API",
                     srcBalBefore, src.getLedgerBalance(),
                     businessDate, request.idempotencyKey(), tenantId);
+
+            // Record TRANSFER_CREDIT for destination account (separate txn ref for unique constraint)
+            String creditTxnRef = ReferenceGenerator.generateTransactionRef();
+            DepositTransaction creditTxn = new DepositTransaction();
+            creditTxn.setDepositAccount(dst);
+            creditTxn.setBranch(dst.getBranch());
+            creditTxn.setBranchCode(dst.getBranch().getBranchCode());
+            creditTxn.setTransactionRef(creditTxnRef);
+            creditTxn.setTransactionType("TRANSFER_CREDIT");
+            creditTxn.setDebitCredit(DebitCredit.CREDIT.name());
+            creditTxn.setAmount(request.amount());
+            creditTxn.setBalanceBefore(dstBalBefore);
+            creditTxn.setBalanceAfter(dst.getLedgerBalance());
+            creditTxn.setValueDate(businessDate);
+            creditTxn.setPostingDate(LocalDateTime.now());
+            creditTxn.setNarration("Transfer from " + request.fromAccount());
+            creditTxn.setChannel("API");
+            creditTxn.setVoucherNumber(r.getVoucherNumber());
+            creditTxn.setJournalEntryId(r.getJournalEntryId());
+            creditTxn.setTenantId(tenantId);
+            transactionRepository.save(creditTxn);
+
+            return debitTxn;
         } finally {
             accountingService.clearEngineToken();
         }

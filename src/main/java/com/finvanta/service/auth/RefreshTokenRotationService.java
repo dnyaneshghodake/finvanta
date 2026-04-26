@@ -3,7 +3,6 @@ package com.finvanta.service.auth;
 import com.finvanta.domain.entity.RevokedRefreshToken;
 import com.finvanta.repository.RevokedRefreshTokenRepository;
 
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
