@@ -27,6 +27,7 @@
          DepositAccountServiceImpl.openAccount; tracked separately.
          Remove this exclusion once the catch block is refactored. -->
     <Match>
+        <Class name="com.finvanta.service.impl.DepositAccountServiceImpl"/>
         <Bug pattern="DCN_NULLPOINTER_EXCEPTION"/>
     </Match>
 
