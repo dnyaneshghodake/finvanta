@@ -580,7 +580,10 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
      */
     private String glForAccount(DepositAccount a) {
         ProductMaster product = glResolver.getProduct(a.getProductCode());
-        if (product != null && product.getGlLoanAsset() != null) {
+        if (product != null
+                && product.getProductCategory() != null
+                && product.getProductCategory().isDeposit()
+                && product.getGlLoanAsset() != null) {
             return product.getGlLoanAsset();
         }
         return a.getAccountType().name().startsWith("CURRENT")
