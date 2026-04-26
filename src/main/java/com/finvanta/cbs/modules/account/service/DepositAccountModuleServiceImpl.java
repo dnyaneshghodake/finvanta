@@ -463,6 +463,11 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                 .orElseThrow(() -> new BusinessException("CBS-TXN-001",
                         "Transaction not found: " + transactionRef));
 
+        if (original.isReversed()) {
+            throw new BusinessException("CBS-TXN-001",
+                    "Transaction " + transactionRef + " is already reversed");
+        }
+
         DepositAccount acct = lockAccount(original.getDepositAccount().getAccountNumber());
 
         accountingService.generateEngineToken();
