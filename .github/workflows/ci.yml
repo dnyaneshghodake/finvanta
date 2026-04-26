@@ -91,7 +91,8 @@ jobs:
       # bound to the test/verify lifecycle). The `check` goal's <rules> are a
       # nested type and cannot be set via -D properties, so they must live in
       # the POM. Running `verify` triggers prepare-agent -> test -> report ->
-      # check, which enforces the 70% line / 60% branch minimums.
+      # check, which enforces the coverage minimums configured in pom.xml
+      # (currently 25% line / 15% branch — staged rollout toward 70%/60%).
       - name: Run tests and enforce coverage thresholds
         run: mvn -B -ntp clean verify
 
