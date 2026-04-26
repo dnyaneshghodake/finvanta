@@ -6,7 +6,7 @@ name: CI
 # ============================================================
 #
 # Gate 1: Build & Test — compile, unit tests, ArchUnit, Spring context, war packaging
-# Gate 2: Code Coverage — JaCoCo with 70% line/branch minimum (CBS Tier-1 standard)
+# Gate 2: Code Coverage — JaCoCo (staged rollout: 25% line / 15% branch toward 70%/60% target)
 # Gate 3: Static Analysis — SpotBugs (bug detection: null-deref, concurrency, resource leaks)
 # Gate 4: Dependency Audit — TEMPORARILY REMOVED. To be re-enabled in a
 #         dedicated security PR that bumps Spring Boot, Tomcat, Spring
