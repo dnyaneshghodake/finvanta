@@ -104,6 +104,9 @@ public class LoanAccountDomain {
         if (outstandingPrincipal == null || outstandingPrincipal.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
+        if (annualRate == null || annualRate.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
         BigDecimal rate = annualRate.divide(BigDecimal.valueOf(100), 10, ROUNDING);
         return outstandingPrincipal.multiply(rate)
                 .divide(BigDecimal.valueOf(daysInYear), SCALE, ROUNDING);

@@ -220,6 +220,16 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
     public DepositAccount closeAccount(String accountNumber, String reason) {
         DepositAccount account = lockAccount(accountNumber);
 
+        if (account.getAccountStatus() == DepositAccountStatus.CLOSED) {
+            throw new BusinessException("CBS-ACCT-004",
+                    "Account is already closed: " + accountNumber);
+        }
+
+        if (account.getHoldAmount() != null && account.getHoldAmount().signum() > 0) {
+            throw new BusinessException("CBS-ACCT-010",
+                    "Account has active hold/lien. Release all holds before closure.");
+        }
+
         if (account.getLedgerBalance().compareTo(BigDecimal.ZERO) != 0) {
             throw new BusinessException("CBS-ACCT-007",
                     "Account balance must be zero to close. Current: " + account.getLedgerBalance());
