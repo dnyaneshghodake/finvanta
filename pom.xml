@@ -328,6 +328,66 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <!--
+              JaCoCo — code coverage instrumentation and threshold enforcement.
+              Per RBI IT Governance Direction 2023 §7.2: CBS Tier-1 minimum
+              coverage is 70% line and 60% branch. The `check` goal's `rules`
+              parameter is a complex nested type and MUST be configured here
+              (cannot be set via Maven -D system properties).
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <!--
+                                              STAGED ROLLOUT: baseline is 0.27 line / 0.16 branch
+                                              on integration as of this PR. Thresholds are set
+                                              just below baseline to prevent regression while a
+                                              follow-up effort raises coverage toward the CBS
+                                              Tier-1 target of 0.70 line / 0.60 branch.
+                                              Tracking issue: TODO link before merge.
+                                            -->
+                                            <minimum>0.25</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.15</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 

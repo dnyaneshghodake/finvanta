@@ -1,47 +1,43 @@
 name: CI
 
-# CBS Tier-1 CI gate per RBI IT Governance Direction 2023 §7.2 + §8.3.
+# ============================================================
+# Finvanta CBS — Tier-1 CI Pipeline
+# Per RBI IT Governance Direction 2023 §7.2 + §8.3
+# ============================================================
 #
-# Every commit into master/integration and every PR must pass:
-#   - Full unit + ArchUnit + Spring Boot context test suite (`mvn clean test`).
-#     ArchUnit rules in CbsArchitectureTest enforce critical invariants:
-#       * AccountingService.postJournalEntry has exactly two callers inside
-#         TransactionEngine (single-posting-point guarantee).
-#       * Non-legacy production code MUST NOT depend on com.finvanta.legacy.*
-#         (prevents divergent code paths during deprecation).
-#       * TenantContext/branch filter invariants on base entities.
-#   - War packaging (`mvn -DskipTests package`) to verify the Tomcat war
-#     assembles without runtime classloader surprises.
+# Gate 1: Build & Test — compile, unit tests, ArchUnit, Spring context, war packaging
+# Gate 2: Code Coverage — JaCoCo (staged rollout: 25% line / 15% branch toward 70%/60% target)
+# Gate 3: Static Analysis — SpotBugs (bug detection: null-deref, concurrency, resource leaks)
+# Gate 4: Dependency Audit — TEMPORARILY REMOVED. To be re-enabled in a
+#         dedicated security PR that bumps Spring Boot, Tomcat, Spring
+#         Security, mssql-jdbc, log4j-api, hibernate-validator, and
+#         angus-activation to clear pre-existing CVEs (CVSS up to 9.8).
+#         Tracking issue: TODO link before merge.
 #
-# NOTE: Spotless (Palantir Java Format) is intentionally NOT enforced in CI
-# yet. The `integration` branch currently has ~150 files with pre-existing
-# formatting drift that would fail `mvn spotless:check`. Normalizing that
-# must be a dedicated reformat PR so the diff is reviewable independently
-# from this CI wiring. Spotless will be added as a gate in the follow-up.
-#
+# Per Finacle/Temenos CI standards: ALL gates must pass before merge.
 # Java 17 (Temurin) matches pom.xml <java.version>17</java.version>.
-# The Maven repository is cached (keyed on pom.xml) so cold builds run in
-# roughly 2 minutes and warm builds in about 1.
 
+# Triggers on ALL branches — every push and every PR gets the full pipeline.
+# Per RBI IT Governance §7.2: code quality gates must run on every change,
+# not just protected branches. Feature branches catch issues before PR review.
 on:
   push:
     branches:
-      - master
-      - integration
+      - '**'
   pull_request:
-    branches:
-      - master
-      - integration
   workflow_dispatch:
 
-# Cancel in-flight runs on the same branch when a new commit lands.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+
+  # ================================================================
+  # GATE 1: Build, Test, Package
+  # ================================================================
   build-and-test:
-    name: Build & Test (Java 17, H2)
+    name: "Gate 1: Build & Test"
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -56,22 +52,105 @@ jobs:
           java-version: '17'
           cache: maven
 
-      # Full unit + ArchUnit + Spring Boot context test suite against H2.
-      # `clean` avoids stale target/ artifacts after rename refactors (which
-      # is precisely how the ArchUnit regression that became audit finding H1
-      # landed on integration after Phase 1's com.finvanta.legacy package move —
-      # see PR #29).
-      - name: Unit + ArchUnit + Spring context tests
-        run: mvn -B -ntp -U clean test
+      - name: Compile
+        run: mvn -B -ntp -U clean compile -DskipTests
 
-      # Verify the war packages cleanly. Skips tests (already run above).
-      - name: Package war
+      - name: Unit + ArchUnit + Integration tests
+        run: mvn -B -ntp test
+
+      - name: Package WAR
         run: mvn -B -ntp -DskipTests package
 
-      - name: Upload surefire reports on failure
+      - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: surefire-reports-${{ github.run_number }}
           path: target/surefire-reports/
           retention-days: 7
+
+  # ================================================================
+  # GATE 2: Code Coverage (JaCoCo)
+  # Per RBI IT Governance §7.2: test coverage must be measured and
+  # enforced. CBS Tier-1 minimum: 70% line, 60% branch.
+  # ================================================================
+  coverage:
+    name: "Gate 2: Coverage (JaCoCo)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: build-and-test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # JaCoCo plugin is configured in pom.xml (prepare-agent, report, check
+      # bound to the test/verify lifecycle). The `check` goal's <rules> are a
+      # nested type and cannot be set via -D properties, so they must live in
+      # the POM. Running `verify` triggers prepare-agent -> test -> report ->
+      # check, which enforces the coverage minimums configured in pom.xml
+      # (currently 25% line / 15% branch — staged rollout toward 70%/60%).
+      - name: Run tests and enforce coverage thresholds
+        run: mvn -B -ntp clean verify
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report-${{ github.run_number }}
+          path: target/site/jacoco/
+          retention-days: 14
+
+  # ================================================================
+  # GATE 3: Static Analysis (SpotBugs)
+  # Per RBI IT Governance §7.2: automated code quality enforcement.
+  # SpotBugs: null-deref, resource leaks, concurrency bugs.
+  # PMD/CPD intentionally omitted — stylistic, not Tier-1 mandatory.
+  # ================================================================
+  static-analysis:
+    name: "Gate 3: Static Analysis"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: build-and-test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Compile (required for SpotBugs bytecode analysis)
+        run: mvn -B -ntp -U clean compile -DskipTests
+
+      - name: SpotBugs — bug detection
+        # excludeFilterFile silences Spring-DI EI_EXPOSE_REP* noise and
+        # explicitly-tracked findings; see .github/spotbugs-exclude.xml.
+        run: |
+          mvn -B -ntp com.github.spotbugs:spotbugs-maven-plugin:4.8.6.6:check \
+            -Dspotbugs.effort=Max \
+            -Dspotbugs.threshold=High \
+            -Dspotbugs.failOnError=true \
+            -Dspotbugs.excludeFilterFile=.github/spotbugs-exclude.xml
+
+      - name: Upload analysis reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-analysis-${{ github.run_number }}
+          path: |
+            target/spotbugsXml.xml
+            target/site/
+          retention-days: 14
+
