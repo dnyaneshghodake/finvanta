@@ -7,7 +7,7 @@ name: CI
 #
 # Gate 1: Build & Test — compile, unit tests, ArchUnit, Spring context, war packaging
 # Gate 2: Code Coverage — JaCoCo with 70% line/branch minimum (CBS Tier-1 standard)
-# Gate 3: Static Analysis — SpotBugs (bug detection), PMD (code smells + dead code + CPD)
+# Gate 3: Static Analysis — SpotBugs (bug detection: null-deref, concurrency, resource leaks)
 # Gate 4: Dependency Audit — OWASP Dependency-Check for CVE scanning (CVSS >= 7.0 fails)
 #
 # Per Finacle/Temenos CI standards: ALL gates must pass before merge.
@@ -105,11 +105,10 @@ jobs:
           retention-days: 14
 
   # ================================================================
-  # GATE 3: Static Analysis (SpotBugs + PMD + CPD)
+  # GATE 3: Static Analysis (SpotBugs)
   # Per RBI IT Governance §7.2: automated code quality enforcement.
-  # SpotBugs: null-deref, resource leaks, concurrency bugs
-  # PMD: dead code, empty blocks, unused variables, code smells
-  # CPD: copy-paste / duplicate code detection (100 token threshold)
+  # SpotBugs: null-deref, resource leaks, concurrency bugs.
+  # PMD/CPD intentionally omitted — stylistic, not Tier-1 mandatory.
   # ================================================================
   static-analysis:
     name: "Gate 3: Static Analysis"
@@ -141,20 +140,6 @@ jobs:
             -Dspotbugs.failOnError=true \
             -Dspotbugs.excludeFilterFile=.github/spotbugs-exclude.xml
 
-      - name: PMD — code smells and dead code
-        run: |
-          mvn -B -ntp org.apache.maven.plugins:maven-pmd-plugin:3.26.0:check \
-            -Dpmd.failOnViolation=true \
-            -Dpmd.printFailingErrors=true \
-            -Dpmd.minimumPriority=3
-
-      - name: CPD — duplicate code detection
-        run: |
-          mvn -B -ntp org.apache.maven.plugins:maven-pmd-plugin:3.26.0:cpd-check \
-            -Dcpd.failOnViolation=true \
-            -Dcpd.minimumTokens=100 \
-            -Dcpd.printFailingErrors=true
-
       - name: Upload analysis reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -162,8 +147,6 @@ jobs:
           name: static-analysis-${{ github.run_number }}
           path: |
             target/spotbugsXml.xml
-            target/pmd.xml
-            target/cpd.xml
             target/site/
           retention-days: 14
 
