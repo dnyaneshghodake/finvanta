@@ -274,7 +274,9 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
 
         DepositAccount acct = lockAccount(accountNumber);
         branchAccessValidator.validateAccess(acct.getBranch());
-        accountValidator.validateAccountForTransaction(acct);
+        // Deposit is a CREDIT: honors DEBIT_FREEZE (credits allowed) and
+        // DORMANT (credits may reactivate) per RBI Freeze Guidelines.
+        accountValidator.validateAccountForCredit(acct);
 
         String gl = glForAccount(acct);
 
@@ -331,7 +333,8 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
 
         DepositAccount acct = lockAccount(accountNumber);
         branchAccessValidator.validateAccess(acct.getBranch());
-        accountValidator.validateAccountForTransaction(acct);
+        // Withdrawal is a DEBIT: blocked on DEBIT_FREEZE, TOTAL_FREEZE, DORMANT, CLOSED.
+        accountValidator.validateAccountForDebit(acct);
         accountValidator.validateSufficientBalance(acct, request.amount());
 
         String gl = glForAccount(acct);
@@ -400,8 +403,12 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         DepositAccount dst = first.equals(request.fromAccount()) ? secondAcct : firstAcct;
 
         branchAccessValidator.validateAccess(src.getBranch());
-        accountValidator.validateAccountForTransaction(src);
-        accountValidator.validateAccountForTransaction(dst);
+        // Transfer is a DEBIT on src and a CREDIT on dst. Validating each leg with
+        // the direction-appropriate check preserves RBI/PMLA partial freeze semantics:
+        // a DEBIT_FROZEN destination can still receive the transfer-in credit, and
+        // a CREDIT_FROZEN source can still be debited.
+        accountValidator.validateAccountForDebit(src);
+        accountValidator.validateAccountForCredit(dst);
         accountValidator.validateSufficientBalance(src, request.amount());
 
         String srcGl = glForAccount(src);
@@ -478,14 +485,30 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         String tenantId = TenantContext.getCurrentTenant();
         LocalDate businessDate = businessDateService.getCurrentBusinessDate();
 
+        // CBS TOCTOU safety: acquire PESSIMISTIC_WRITE on the transaction row FIRST,
+        // then re-check isReversed inside the lock. Two concurrent reversals of the
+        // same transactionRef will serialize here; the second will see isReversed=true
+        // and be rejected -- preventing double reversal and GL/subledger corruption.
         DepositTransaction original = transactionRepository
-                .findByTenantIdAndTransactionRef(tenantId, transactionRef)
+                .findAndLockByTenantIdAndTransactionRef(tenantId, transactionRef)
                 .orElseThrow(() -> new BusinessException("CBS-TXN-001",
                         "Transaction not found: " + transactionRef));
 
         if (original.isReversed()) {
             throw new BusinessException("CBS-TXN-001",
                     "Transaction " + transactionRef + " is already reversed");
+        }
+
+        // Transfer reversals require atomic reversal of BOTH legs (debit + credit).
+        // The legacy DepositAccountServiceImpl has dedicated reverseTransfer() logic
+        // for this; reversing only one leg here would corrupt the counterparty account.
+        // Until that flow is ported, reject transfer reversals explicitly rather than
+        // silently performing an unbalanced single-leg reversal.
+        String txnType = original.getTransactionType();
+        if ("TRANSFER_DEBIT".equals(txnType) || "TRANSFER_CREDIT".equals(txnType)) {
+            throw new BusinessException("CBS-TXN-012",
+                    "Transfer reversals must be executed via the transfer reversal flow "
+                            + "(both legs reversed atomically). Original txn: " + transactionRef);
         }
 
         DepositAccount acct = lockAccount(original.getDepositAccount().getAccountNumber());

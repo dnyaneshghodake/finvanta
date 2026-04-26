@@ -53,8 +53,13 @@ public class AccountValidator {
     }
 
     /**
-     * Validates that an account is in a state that permits financial transactions.
-     * Per CBS TRAN_VALIDATION: only ACTIVE accounts accept debits/credits.
+     * Validates that an account is in a normal operational state (ACTIVE, not frozen,
+     * not closed). Used for lifecycle operations (freeze, unfreeze, close) where
+     * partial-freeze semantics do not apply.
+     *
+     * <p>For financial debit/credit operations, use {@link #validateAccountForDebit}
+     * or {@link #validateAccountForCredit} instead -- those honor RBI/PMLA partial
+     * freeze semantics (DEBIT_FREEZE / CREDIT_FREEZE / TOTAL_FREEZE).
      */
     public void validateAccountForTransaction(DepositAccount account) {
         if (account == null) {
@@ -74,6 +79,65 @@ public class AccountValidator {
             throw new BusinessException("CBS-ACCT-002",
                     "Account is not active: " + account.getAccountNumber()
                             + ". Current status: " + status);
+        }
+    }
+
+    /**
+     * Validates that an account can accept a DEBIT (withdrawal, transfer-out, charge).
+     *
+     * <p>Per RBI Freeze Guidelines / PMLA 2002 and CBS TRAN_VALIDATION:
+     * <ul>
+     *   <li>DEBIT_FREEZE   -- debits blocked, credits allowed</li>
+     *   <li>CREDIT_FREEZE  -- debits allowed, credits blocked</li>
+     *   <li>TOTAL_FREEZE   -- both blocked</li>
+     *   <li>DORMANT        -- debits blocked (account must be reactivated)</li>
+     *   <li>CLOSED         -- nothing allowed</li>
+     * </ul>
+     *
+     * <p>Delegates to {@link DepositAccount#isDebitAllowed()} which is the single
+     * source of truth for freeze-type semantics.
+     */
+    public void validateAccountForDebit(DepositAccount account) {
+        if (account == null) {
+            throw new BusinessException("CBS-ACCT-001", "Account not found");
+        }
+        if (account.isClosed()) {
+            throw new BusinessException("CBS-ACCT-004",
+                    "Account is closed: " + account.getAccountNumber());
+        }
+        if (!account.isDebitAllowed()) {
+            throw new BusinessException("CBS-ACCT-003",
+                    "Debit not allowed on account " + account.getAccountNumber()
+                            + ". Status: " + account.getAccountStatus()
+                            + (account.getFreezeType() != null
+                                    ? ", freeze: " + account.getFreezeType() : ""));
+        }
+    }
+
+    /**
+     * Validates that an account can accept a CREDIT (deposit, transfer-in, interest credit).
+     *
+     * <p>Per RBI Freeze Guidelines / PMLA 2002: CREDIT_FREEZE and TOTAL_FREEZE block
+     * credits; DEBIT_FREEZE allows them. DORMANT accounts accept credits (which may
+     * trigger reactivation per RBI dormancy rules).
+     *
+     * <p>Delegates to {@link DepositAccount#isCreditAllowed()} which is the single
+     * source of truth for freeze-type semantics.
+     */
+    public void validateAccountForCredit(DepositAccount account) {
+        if (account == null) {
+            throw new BusinessException("CBS-ACCT-001", "Account not found");
+        }
+        if (account.isClosed()) {
+            throw new BusinessException("CBS-ACCT-004",
+                    "Account is closed: " + account.getAccountNumber());
+        }
+        if (!account.isCreditAllowed()) {
+            throw new BusinessException("CBS-ACCT-003",
+                    "Credit not allowed on account " + account.getAccountNumber()
+                            + ". Status: " + account.getAccountStatus()
+                            + (account.getFreezeType() != null
+                                    ? ", freeze: " + account.getFreezeType() : ""));
         }
     }
 

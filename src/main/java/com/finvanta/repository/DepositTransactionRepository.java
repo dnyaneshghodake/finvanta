@@ -2,13 +2,18 @@ package com.finvanta.repository;
 
 import com.finvanta.domain.entity.DepositTransaction;
 
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -19,6 +24,19 @@ import org.springframework.stereotype.Repository;
 public interface DepositTransactionRepository extends JpaRepository<DepositTransaction, Long> {
 
     Optional<DepositTransaction> findByTenantIdAndTransactionRef(String tenantId, String transactionRef);
+
+    /**
+     * CBS Reversal Safety: acquire PESSIMISTIC_WRITE lock on the transaction row before
+     * evaluating the isReversed flag. Closes the TOCTOU window where two concurrent
+     * reversal requests could both observe isReversed=false and double-reverse.
+     * 30s lock timeout per CBS TRAN_LOCK standard.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
+    @Query("SELECT dt FROM DepositTransaction dt WHERE dt.tenantId = :tenantId "
+            + "AND dt.transactionRef = :transactionRef")
+    Optional<DepositTransaction> findAndLockByTenantIdAndTransactionRef(
+            @Param("tenantId") String tenantId, @Param("transactionRef") String transactionRef);
 
     List<DepositTransaction> findByTenantIdAndDepositAccountIdOrderByPostingDateDesc(
             String tenantId, Long depositAccountId);
