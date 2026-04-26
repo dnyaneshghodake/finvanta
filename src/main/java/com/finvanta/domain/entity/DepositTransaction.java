@@ -40,7 +40,12 @@ import lombok.Setter;
             @Index(name = "idx_deptxn_value_date", columnList = "tenant_id, value_date"),
             @Index(name = "idx_deptxn_type", columnList = "tenant_id, transaction_type"),
             @Index(name = "idx_deptxn_voucher", columnList = "tenant_id, voucher_number"),
-            @Index(name = "idx_deptxn_branch_date", columnList = "tenant_id, branch_id, value_date")
+            @Index(name = "idx_deptxn_branch_date", columnList = "tenant_id, branch_id, value_date"),
+            // CBS Idempotency: mirrors the filtered unique index in ddl-sqlserver.sql:1148.
+            // On H2/dev this degrades to a plain unique index (NULLs still permitted by H2
+            // when only one NULL value is present; multiple NULL idempotency keys require
+            // either an application-level guard or the prod-only partial unique index).
+            @Index(name = "uq_deptxn_idempotency", columnList = "tenant_id, idempotency_key", unique = true)
         })
 @Getter
 @Setter

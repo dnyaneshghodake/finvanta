@@ -147,6 +147,38 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         account.setHoldAmount(BigDecimal.ZERO);
         account.setUnclearedAmount(BigDecimal.ZERO);
 
+        // Nominee details per RBI Nomination Guidelines (DeposAcct Rules 1985 Section 45ZA).
+        // Concatenate first + last to match the entity's single nominee_name column.
+        String nomineeFirst = request.nomineeFirstName();
+        String nomineeLast = request.nomineeLastName();
+        if ((nomineeFirst != null && !nomineeFirst.isBlank())
+                || (nomineeLast != null && !nomineeLast.isBlank())) {
+            StringBuilder nomineeName = new StringBuilder();
+            if (nomineeFirst != null && !nomineeFirst.isBlank()) {
+                nomineeName.append(nomineeFirst.trim());
+            }
+            if (nomineeLast != null && !nomineeLast.isBlank()) {
+                if (nomineeName.length() > 0) nomineeName.append(' ');
+                nomineeName.append(nomineeLast.trim());
+            }
+            account.setNomineeName(nomineeName.toString());
+        }
+        if (request.nomineeRelationship() != null && !request.nomineeRelationship().isBlank()) {
+            account.setNomineeRelationship(request.nomineeRelationship());
+        }
+
+        // NOTE: request.jointHolderCif(), request.operatingInstructions(), request.initialDeposit(),
+        // and request.idempotencyKey() are accepted by the DTO but intentionally not persisted here:
+        //   - jointHolderCif -> requires the Customer join-holder link table (not yet implemented
+        //     in the refactored module); legacy v1 handles this via a separate endpoint.
+        //   - operatingInstructions -> no column on DepositAccount; belongs on the customer-mandate
+        //     record once that module lands.
+        //   - initialDeposit -> would require posting a CREDIT through TransactionEngine. Account
+        //     opens in PENDING_ACTIVATION with zero balance; the initial deposit is booked as a
+        //     separate deposit() call post-activation (matches legacy v1 behavior).
+        //   - idempotencyKey -> openAccount is not currently idempotent; the caller re-check is
+        //     via (tenantId, customerId, productCode) uniqueness at the DB level.
+
         DepositAccount saved = accountRepository.save(account);
 
         auditService.logEvent("DepositAccount", saved.getId(), "OPEN",
