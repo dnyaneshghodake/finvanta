@@ -26,9 +26,11 @@ import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
 import com.finvanta.service.CbsReferenceService;
+import com.finvanta.repository.ProductMasterRepository;
 import com.finvanta.util.BranchAccessValidator;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
+import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
@@ -76,6 +78,7 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
     private final ProductGLResolver glResolver;
+    private final ProductMasterRepository productMasterRepository;
     private final TransactionEngine transactionEngine;
     private final AccountingService accountingService;
     private final BusinessDateService businessDateService;
@@ -90,6 +93,7 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
             CustomerRepository customerRepository,
             BranchRepository branchRepository,
             ProductGLResolver glResolver,
+            ProductMasterRepository productMasterRepository,
             TransactionEngine transactionEngine,
             AccountingService accountingService,
             BusinessDateService businessDateService,
@@ -102,6 +106,7 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
         this.glResolver = glResolver;
+        this.productMasterRepository = productMasterRepository;
         this.transactionEngine = transactionEngine;
         this.accountingService = accountingService;
         this.businessDateService = businessDateService;
@@ -129,8 +134,51 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         branchAccessValidator.validateAccess(branch);
 
         DepositAccountType parsedAccountType = DepositAccountType.valueOf(request.accountType());
+
+        // CBS Duplicate Guard per CBS ACCTOPN: one active account per CIF per type per branch.
+        // Mirrors the legacy DepositAccountServiceImpl check (lines 489-499). Closed accounts
+        // do NOT count as duplicates so a customer who closed and reopens the same product is
+        // permitted. This must run BEFORE sequence allocation to avoid wasting account numbers.
+        long existingActiveCount = accountRepository
+                .findByTenantIdAndCustomerId(tenantId, request.customerId()).stream()
+                .filter(existing -> existing.getAccountType() == parsedAccountType
+                        && existing.getBranch().getId().equals(request.branchId())
+                        && !existing.isClosed())
+                .count();
+        if (existingActiveCount > 0) {
+            throw new BusinessException("CBS-ACCT-008",
+                    "Customer " + customer.getCustomerNumber() + " already has an active "
+                            + parsedAccountType + " account at branch " + branch.getBranchCode()
+                            + ". Per CBS ACCTOPN: one account per CIF per type per branch.");
+        }
+
+        // CBS Product-driven defaults per CBS PDDEF: interest rate and minimum balance are
+        // resolved from ProductMaster, not hardcoded. Mirrors legacy lines 504-530.
+        BigDecimal interestRate = parsedAccountType.isInterestBearing()
+                ? new BigDecimal("4.0000") : BigDecimal.ZERO;
+        BigDecimal minimumBalance = BigDecimal.ZERO;
+        var productOpt = productMasterRepository
+                .findByTenantIdAndProductCode(tenantId, request.productCode());
+        if (productOpt.isPresent()) {
+            var product = productOpt.get();
+            if (product.getMinInterestRate() != null) {
+                interestRate = product.getMinInterestRate();
+            }
+            if (product.getMinLoanAmount() != null) {
+                // CBS: minLoanAmount is repurposed as minimum balance for CASA products.
+                minimumBalance = product.getMinLoanAmount();
+            }
+        } else {
+            log.warn("CASA product not found: {}, using defaults (rate={}, minBal={})",
+                    request.productCode(), interestRate, minimumBalance);
+        }
+
+        // CBS sequence allocation is the LAST step before entity construction. All
+        // throwable validations above complete first so we don't waste sequence numbers
+        // on rejected requests.
         String accNo = cbsReferenceService.generateDepositAccountNumber(
                 branch.getBranchCode(), parsedAccountType.isSavings());
+        String currentUser = SecurityUtil.getCurrentUsername();
 
         DepositAccount account = new DepositAccount();
         account.setTenantId(tenantId);
@@ -142,10 +190,20 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         account.setCurrencyCode(request.currencyCode());
         account.setAccountStatus(DepositAccountStatus.PENDING_ACTIVATION);
         account.setOpenedDate(businessDate);
+        account.setLastTransactionDate(businessDate);
         account.setLedgerBalance(BigDecimal.ZERO);
         account.setAvailableBalance(BigDecimal.ZERO);
         account.setHoldAmount(BigDecimal.ZERO);
         account.setUnclearedAmount(BigDecimal.ZERO);
+        account.setOdLimit(BigDecimal.ZERO);
+        account.setMinimumBalance(minimumBalance);
+        account.setInterestRate(interestRate);
+        account.setAccruedInterest(BigDecimal.ZERO);
+        account.setYtdInterestCredited(BigDecimal.ZERO);
+        account.setYtdTdsDeducted(BigDecimal.ZERO);
+        // CBS: Default fullName from CIF so the account-level passbook always has a name
+        // even when the request omits one. Matches legacy behavior at lines 581-582.
+        account.setFullName(customer.getFullName());
 
         // Nominee details per RBI Nomination Guidelines (DeposAcct Rules 1985 Section 45ZA).
         // Concatenate first + last to match the entity's single nominee_name column.
@@ -167,17 +225,31 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
             account.setNomineeRelationship(request.nomineeRelationship());
         }
 
-        // NOTE: request.jointHolderCif(), request.operatingInstructions(), request.initialDeposit(),
-        // and request.idempotencyKey() are accepted by the DTO but intentionally not persisted here:
-        //   - jointHolderCif -> requires the Customer join-holder link table (not yet implemented
-        //     in the refactored module); legacy v1 handles this via a separate endpoint.
-        //   - operatingInstructions -> no column on DepositAccount; belongs on the customer-mandate
-        //     record once that module lands.
-        //   - initialDeposit -> would require posting a CREDIT through TransactionEngine. Account
-        //     opens in PENDING_ACTIVATION with zero balance; the initial deposit is booked as a
-        //     separate deposit() call post-activation (matches legacy v1 behavior).
-        //   - idempotencyKey -> openAccount is not currently idempotent; the caller re-check is
-        //     via (tenantId, customerId, productCode) uniqueness at the DB level.
+        // CBS Joint Holder Mandate per RBI Joint Account Guidelines:
+        // operatingInstructions on the request maps to the entity's jointHolderMode column,
+        // which encodes the operational mandate (EITHER_SURVIVOR, FORMER_SURVIVOR, JOINTLY).
+        // The withdrawal/transfer paths consult this field to enforce multi-signatory rules.
+        if (request.operatingInstructions() != null && !request.operatingInstructions().isBlank()) {
+            account.setJointHolderMode(request.operatingInstructions().trim());
+        }
+
+        // CBS Audit Fields per RBI IT Governance Direction 2023 §8.3:
+        // every state-changing record must carry createdBy and updatedBy.
+        account.setCreatedBy(currentUser);
+        account.setUpdatedBy(currentUser);
+
+        // NOTE: request.jointHolderCif(), request.initialDeposit(), and request.idempotencyKey()
+        // are accepted by the DTO but intentionally not persisted on the DepositAccount entity:
+        //   - jointHolderCif -> requires the Customer<->Customer joint-holder link table
+        //     (not yet implemented in the refactored module). The duplicate-CIF check above
+        //     guards against the same primary CIF opening duplicate accounts.
+        //   - initialDeposit -> per CBS ACCTOPN, account opening and initial funding are TWO
+        //     separate transactions. Account opens in PENDING_ACTIVATION with zero balance;
+        //     the initial deposit is booked as a separate deposit() call post-activation.
+        //     Matches legacy v1 behavior at DepositAccountServiceImpl.java:650-657.
+        //   - idempotencyKey -> openAccount is not currently idempotent at the API level;
+        //     the duplicate guard above (CIF + type + branch + active) is the enforcement
+        //     mechanism. A caller retrying with the same key gets the duplicate exception.
 
         DepositAccount saved = accountRepository.save(account);
 
