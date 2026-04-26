@@ -101,7 +101,6 @@ jobs:
             -Djacoco.rules.rule.limit.counter=LINE \
             -Djacoco.rules.rule.limit.value=COVEREDRATIO \
             -Djacoco.rules.rule.limit.minimum=0.70
-        continue-on-error: true
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -143,7 +142,6 @@ jobs:
             -Dspotbugs.effort=Max \
             -Dspotbugs.threshold=Medium \
             -Dspotbugs.failOnError=true
-        continue-on-error: true
 
       - name: PMD — code smells and dead code
         run: |
@@ -151,7 +149,6 @@ jobs:
             -Dpmd.failOnViolation=false \
             -Dpmd.printFailingErrors=true \
             -Dpmd.minimumPriority=3
-        continue-on-error: true
 
       - name: CPD — duplicate code detection
         run: |
@@ -159,7 +156,6 @@ jobs:
             -Dcpd.failOnViolation=false \
             -Dcpd.minimumTokens=100 \
             -Dcpd.printFailingErrors=true
-        continue-on-error: true
 
       - name: Upload analysis reports
         if: always()
@@ -201,7 +197,6 @@ jobs:
             -DfailBuildOnCVSS=7 \
             -DsuppressionFile=.github/owasp-suppressions.xml \
             -Dformats=HTML,JSON
-        continue-on-error: true
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
