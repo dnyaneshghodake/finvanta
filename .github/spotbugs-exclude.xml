@@ -34,6 +34,7 @@
          its storage root in the constructor, which is the correct fail-fast
          behaviour for a CBS startup-time configuration check. -->
     <Match>
+        <Class name="com.finvanta.service.impl.FileSystemDocumentStorageService"/>
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
     </Match>
 
