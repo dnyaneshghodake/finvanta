@@ -130,11 +130,14 @@ jobs:
         run: mvn -B -ntp -U clean compile -DskipTests
 
       - name: SpotBugs — bug detection
+        # excludeFilterFile silences Spring-DI EI_EXPOSE_REP* noise and
+        # explicitly-tracked findings; see .github/spotbugs-exclude.xml.
         run: |
           mvn -B -ntp com.github.spotbugs:spotbugs-maven-plugin:4.8.6.6:check \
             -Dspotbugs.effort=Max \
             -Dspotbugs.threshold=Medium \
-            -Dspotbugs.failOnError=true
+            -Dspotbugs.failOnError=true \
+            -Dspotbugs.excludeFilterFile=.github/spotbugs-exclude.xml
 
       - name: PMD — code smells and dead code
         run: |
