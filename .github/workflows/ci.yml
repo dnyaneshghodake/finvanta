@@ -87,20 +87,13 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Run tests with JaCoCo agent
-        run: |
-          mvn -B -ntp clean test \
-            -Djacoco.destFile=target/jacoco.exec \
-            org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent \
-            org.jacoco:jacoco-maven-plugin:0.8.12:report
-
-      - name: Enforce coverage thresholds
-        run: |
-          mvn -B -ntp org.jacoco:jacoco-maven-plugin:0.8.12:check \
-            -Djacoco.rules.rule.element=BUNDLE \
-            -Djacoco.rules.rule.limit.counter=LINE \
-            -Djacoco.rules.rule.limit.value=COVEREDRATIO \
-            -Djacoco.rules.rule.limit.minimum=0.70
+      # JaCoCo plugin is configured in pom.xml (prepare-agent, report, check
+      # bound to the test/verify lifecycle). The `check` goal's <rules> are a
+      # nested type and cannot be set via -D properties, so they must live in
+      # the POM. Running `verify` triggers prepare-agent -> test -> report ->
+      # check, which enforces the 70% line / 60% branch minimums.
+      - name: Run tests and enforce coverage thresholds
+        run: mvn -B -ntp clean verify
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -146,14 +139,14 @@ jobs:
       - name: PMD — code smells and dead code
         run: |
           mvn -B -ntp org.apache.maven.plugins:maven-pmd-plugin:3.26.0:check \
-            -Dpmd.failOnViolation=false \
+            -Dpmd.failOnViolation=true \
             -Dpmd.printFailingErrors=true \
             -Dpmd.minimumPriority=3
 
       - name: CPD — duplicate code detection
         run: |
           mvn -B -ntp org.apache.maven.plugins:maven-pmd-plugin:3.26.0:cpd-check \
-            -Dcpd.failOnViolation=false \
+            -Dcpd.failOnViolation=true \
             -Dcpd.minimumTokens=100 \
             -Dcpd.printFailingErrors=true
 
