@@ -65,11 +65,11 @@ public class LoanAccountDomain {
         if (principal == null || principal.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
-        if (annualRate == null || annualRate.compareTo(BigDecimal.ZERO) <= 0) {
-            return principal.divide(BigDecimal.valueOf(tenureMonths), SCALE, ROUNDING);
-        }
         if (tenureMonths <= 0) {
             return BigDecimal.ZERO;
+        }
+        if (annualRate == null || annualRate.compareTo(BigDecimal.ZERO) <= 0) {
+            return principal.divide(BigDecimal.valueOf(tenureMonths), SCALE, ROUNDING);
         }
 
         BigDecimal monthlyRate = annualRate.divide(

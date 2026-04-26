@@ -365,6 +365,16 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         String tenantId = TenantContext.getCurrentTenant();
         LocalDate businessDate = businessDateService.getCurrentBusinessDate();
 
+        // Idempotency check (same pattern as deposit/withdraw)
+        if (request.idempotencyKey() != null) {
+            DepositTransaction dup = transactionRepository
+                    .findByTenantIdAndIdempotencyKey(tenantId, request.idempotencyKey())
+                    .orElse(null);
+            if (dup != null) {
+                return dup;
+            }
+        }
+
         accountValidator.validateTransfer(request);
 
         // Deadlock prevention: lock accounts in alphabetical order
