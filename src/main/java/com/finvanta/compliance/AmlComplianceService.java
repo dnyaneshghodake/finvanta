@@ -1,8 +1,11 @@
 package com.finvanta.compliance;
 
 import com.finvanta.audit.AuditService;
+import com.finvanta.domain.entity.AmlCtrReport;
 import com.finvanta.domain.entity.AmlStrReport;
+import com.finvanta.repository.AmlCtrReportRepository;
 import com.finvanta.repository.AmlStrReportRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
@@ -62,12 +65,18 @@ public class AmlComplianceService {
 
     private final AuditService auditService;
     private final AmlStrReportRepository strReportRepository;
+    private final AmlCtrReportRepository ctrReportRepository;
+    private final BusinessDateService businessDateService;
 
     public AmlComplianceService(
             AuditService auditService,
-            AmlStrReportRepository strReportRepository) {
+            AmlStrReportRepository strReportRepository,
+            AmlCtrReportRepository ctrReportRepository,
+            BusinessDateService businessDateService) {
         this.auditService = auditService;
         this.strReportRepository = strReportRepository;
+        this.ctrReportRepository = ctrReportRepository;
+        this.businessDateService = businessDateService;
     }
 
     /**
@@ -105,12 +114,31 @@ public class AmlComplianceService {
         // Determine reporting month (first day of the transaction month)
         LocalDate reportingMonth = transactionDate.withDayOfMonth(1);
 
-        log.info("CTR record generated: ref={}, customer={}, account={}, amount={}, type={}",
-                ctrReference, customerId, accountReference, amount, transactionType);
+        // CBS CRITICAL: Persist CTR to database per PMLA 2002 Section 28(2).
+        // Without persistence, CTR records are silently lost, the monthly batch
+        // filing job has no data source, and the bank cannot demonstrate PMLA compliance.
+        AmlCtrReport ctr = new AmlCtrReport();
+        ctr.setTenantId(tenantId);
+        ctr.setCtrReference(ctrReference);
+        ctr.setReportingMonth(reportingMonth);
+        ctr.setCustomerId(customerId);
+        ctr.setAccountReference(accountReference);
+        ctr.setTransactionRef(transactionRef);
+        ctr.setTransactionDate(transactionDate);
+        ctr.setTransactionType(transactionType);
+        ctr.setAmount(amount);
+        ctr.setBranchCode(branchCode);
+        ctr.setStatus("PENDING");
+        ctr.setCreatedBy("SYSTEM");
+
+        AmlCtrReport saved = ctrReportRepository.save(ctr);
+
+        log.info("CTR record persisted: ref={}, id={}, customer={}, account={}, amount={}, type={}",
+                ctrReference, saved.getId(), customerId, accountReference, amount, transactionType);
 
         auditService.logEvent(
                 "AML_CTR",
-                null,
+                saved.getId(),
                 "CTR_GENERATED",
                 null,
                 ctrReference,
@@ -119,11 +147,6 @@ public class AmlComplianceService {
                         + ", amount=INR " + amount
                         + ", type=" + transactionType
                         + ", account=" + accountReference);
-
-        // NOTE: Actual DB persistence requires AmlCtrReportRepository.
-        // This service method defines the contract and audit trail.
-        // Repository wiring will be added when JPA entities for aml_ctr_reports
-        // are created in the next implementation chunk.
     }
 
     /**
@@ -183,7 +206,18 @@ public class AmlComplianceService {
         str.setStrReference(strReference);
         str.setCustomerId(customerId);
         str.setAccountReference(accountReference);
-        str.setDetectionDate(LocalDate.now());
+        // CBS: Use CBS business date for regulatory dates, not LocalDate.now().
+        // Per Customer.java CBS standards: uses provided business date, NOT LocalDate.now().
+        // STR detection date is a regulatory date audited against the CBS business calendar.
+        LocalDate bizDate;
+        try {
+            bizDate = businessDateService.getCurrentBusinessDate();
+        } catch (Exception e) {
+            // Fallback: if no business day is open (e.g., compliance officer filing
+            // on a holiday via admin override), use system date as last resort.
+            bizDate = LocalDate.now();
+        }
+        str.setDetectionDate(bizDate);
         str.setStrCategory(category);
         str.setSuspiciousAmount(amount);
         str.setNarrative(narrative);
@@ -216,27 +250,32 @@ public class AmlComplianceService {
     }
 
     /**
-     * Evaluates customer AML risk score based on configurable factors.
+     * Evaluates customer AML risk score.
      *
-     * <p>Per RBI KYC Master Direction Section 16: Risk-based approach to CDD.
-     * Risk score is a composite of:
+     * <p><b>Phase 1 STUB:</b> Always returns 0 (LOW / not yet assessed). The
+     * {@code aml_risk_score} column is provisioned by {@code migration-v3-aml-cft.sql}
+     * but is NOT yet mapped on the {@link com.finvanta.domain.entity.Customer} entity.
+     * Until the field is wired on the entity (Phase 2), this method cannot read the
+     * persisted score — returning 0 is the honest, safe default (no caller is misled
+     * into treating a real HIGH-risk customer as LOW).
+     *
+     * <p><b>Phase 2 will:</b>
      * <ul>
-     *   <li>Customer type (individual=0, trust=+20, shell company=+30)</li>
-     *   <li>Geography (domestic=0, high-risk country=+25)</li>
-     *   <li>Product mix (savings=0, cash-intensive business=+15)</li>
-     *   <li>Transaction patterns (velocity, structuring indicators)</li>
-     *   <li>PEP status (+30)</li>
-     *   <li>Adverse media hits (+20)</li>
+     *   <li>Add {@code amlRiskScore} mapping on the Customer entity</li>
+     *   <li>Inject {@code CustomerRepository} here and return the persisted value</li>
+     *   <li>Integrate the rule-engine with configurable rules from
+     *       {@code aml_monitoring_rules} table for automated scoring</li>
      * </ul>
      *
      * @param customerId Customer to evaluate
-     * @return Computed risk score (0-100)
+     * @return Always 0 in Phase 1 — callers must not rely on this for risk gating
      */
+    @Transactional(readOnly = true)
     public int evaluateCustomerRisk(Long customerId) {
-        // Phase 1: Basic risk scoring framework.
-        // Full rule-engine integration (configurable rules from aml_monitoring_rules table)
-        // will be implemented in Phase 2.
-        log.debug("AML risk evaluation requested for customer={}", customerId);
-        return 0; // Default LOW risk — scoring logic to be wired with monitoring rules
+        log.debug("AML risk evaluation (Phase 1 stub) requested for customer={}", customerId);
+        // Phase 1 stub: the aml_risk_score column exists in the DB but is not
+        // yet mapped on the Customer entity, so there is no accessor to read it.
+        // Returning 0 (unassessed) is safer than a fabricated value.
+        return 0;
     }
 }

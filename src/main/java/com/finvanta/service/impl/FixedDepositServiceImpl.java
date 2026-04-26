@@ -113,17 +113,35 @@ public class FixedDepositServiceImpl implements FixedDepositService {
         BigDecimal intr = fd.getCurrentPrincipal().multiply(r).multiply(BigDecimal.valueOf(d))
                 .divide(BigDecimal.valueOf(36500), 2, RoundingMode.HALF_UP);
         BigDecimal pay = fd.getCurrentPrincipal().add(intr);
-        casaSvc.deposit(fd.getLinkedAccountNumber(), pay, bd, "FD premature", "FD-PM-" + fdNo, "SYSTEM");
-        txnEng.execute(TransactionRequest.builder().sourceModule("FIXED_DEPOSIT")
-                .transactionType("FD_PREMATURE").accountReference(fd.getLinkedAccountNumber())
-                .amount(pay).valueDate(bd).branchCode(fd.getBranchCode()).narration("FD premature")
-                .journalLines(List.of(
+        // CBS: GL posting FIRST, then subledger sync via creditSubledgerOnly.
+        // Using casaSvc.deposit() would double-post SB_DEPOSITS (caller's CR here
+        // plus deposit()'s own CR) and add a spurious DR BANK_OPERATIONS leg.
+        // CBS: Omit the FD_INTEREST_EXPENSE DEBIT line when intr is zero.
+        // intr is zero when prematurePenaltyRate >= effectiveRate (so r = max(eff-pen, 0) = 0)
+        // or on a same-day closure (d = 0). AccountingService.postJournalEntryInternal
+        // rejects zero-amount journal lines with ACCOUNTING_INVALID_AMOUNT, so leaving
+        // this line unconditionally would block any premature closure where penalty
+        // wipes out the effective rate. Same pattern as RD prematureClose
+        // (RecurringDepositServiceImpl.java:349-361).
+        List<JournalLineRequest> pmLines = intr.signum() > 0
+                ? List.of(
                         new JournalLineRequest(GLConstants.FD_DEPOSITS, DebitCredit.DEBIT,
                                 fd.getCurrentPrincipal(), "FD principal"),
                         new JournalLineRequest(GLConstants.FD_INTEREST_EXPENSE, DebitCredit.DEBIT,
                                 intr, "FD interest penalized"),
-                        new JournalLineRequest(GLConstants.SB_DEPOSITS, DebitCredit.CREDIT, pay, "FD closure")))
+                        new JournalLineRequest(GLConstants.SB_DEPOSITS, DebitCredit.CREDIT, pay, "FD closure"))
+                : List.of(
+                        new JournalLineRequest(GLConstants.FD_DEPOSITS, DebitCredit.DEBIT,
+                                fd.getCurrentPrincipal(), "FD principal"),
+                        new JournalLineRequest(GLConstants.SB_DEPOSITS, DebitCredit.CREDIT, pay, "FD closure"));
+        TransactionResult pmGl = txnEng.execute(TransactionRequest.builder().sourceModule("FIXED_DEPOSIT")
+                .transactionType("FD_PREMATURE").accountReference(fd.getLinkedAccountNumber())
+                .amount(pay).valueDate(bd).branchCode(fd.getBranchCode()).narration("FD premature")
+                .journalLines(pmLines)
                 .systemGenerated(true).initiatedBy(u).build());
+        casaSvc.creditSubledgerOnly(fd.getLinkedAccountNumber(), pay, bd,
+                "FD premature: " + fdNo, "FD_PREMATURE", fdNo,
+                pmGl.getJournalEntryId(), pmGl.getVoucherNumber());
         fd.setStatus(FdStatus.PREMATURE_CLOSED); fd.setClosureDate(bd);
         fd.setTotalInterestPaid(intr); fd.setUpdatedBy(u); fdRepo.save(fd);
         return fd;
@@ -135,18 +153,37 @@ public class FixedDepositServiceImpl implements FixedDepositService {
         LocalDate bd = bdSvc.getCurrentBusinessDate(); FixedDeposit fd = loadFd(t, fdNo);
         if (fd.getStatus() != FdStatus.ACTIVE && fd.getStatus() != FdStatus.MATURED)
             throw new BusinessException("FD_NOT_ACTIVE", fd.getStatus().name());
-        BigDecimal pay = fd.getCurrentPrincipal().add(fd.getAccruedInterest());
-        casaSvc.deposit(fd.getLinkedAccountNumber(), pay, bd, "FD maturity", "FD-MT-" + fdNo, "SYSTEM");
-        txnEng.execute(TransactionRequest.builder().sourceModule("FIXED_DEPOSIT")
-                .transactionType("FD_MATURITY").accountReference(fd.getLinkedAccountNumber())
-                .amount(pay).valueDate(bd).branchCode(fd.getBranchCode()).narration("FD maturity")
-                .journalLines(List.of(
+        BigDecimal accrued = fd.getAccruedInterest();
+        BigDecimal pay = fd.getCurrentPrincipal().add(accrued);
+        // CBS: GL posting FIRST, then subledger sync via creditSubledgerOnly
+        // (see prematureClose comment above for rationale).
+        // CBS: Omit the FD_INTEREST_PAYABLE DEBIT line when accruedInterest is zero.
+        // accrued can be zero if the EOD accrual job never ran for this FD, or if
+        // daily interest rounds to 0.00 for a tiny principal at a low rate.
+        // AccountingService rejects zero-amount journal lines with
+        // ACCOUNTING_INVALID_AMOUNT — without this guard, a zero-accrual FD gets
+        // stuck in MATURED status with no automatic recovery (findMaturingOnOrBefore
+        // queries only ACTIVE FDs; see processMaturityBatch).
+        // Same pattern as RD prematureClose (RecurringDepositServiceImpl.java:349-361).
+        List<JournalLineRequest> mtLines = accrued.signum() > 0
+                ? List.of(
                         new JournalLineRequest(GLConstants.FD_DEPOSITS, DebitCredit.DEBIT,
                                 fd.getCurrentPrincipal(), "FD principal"),
                         new JournalLineRequest(GLConstants.FD_INTEREST_PAYABLE, DebitCredit.DEBIT,
-                                fd.getAccruedInterest(), "FD interest"),
-                        new JournalLineRequest(GLConstants.SB_DEPOSITS, DebitCredit.CREDIT, pay, "FD maturity")))
+                                accrued, "FD interest"),
+                        new JournalLineRequest(GLConstants.SB_DEPOSITS, DebitCredit.CREDIT, pay, "FD maturity"))
+                : List.of(
+                        new JournalLineRequest(GLConstants.FD_DEPOSITS, DebitCredit.DEBIT,
+                                fd.getCurrentPrincipal(), "FD principal"),
+                        new JournalLineRequest(GLConstants.SB_DEPOSITS, DebitCredit.CREDIT, pay, "FD maturity"));
+        TransactionResult mtGl = txnEng.execute(TransactionRequest.builder().sourceModule("FIXED_DEPOSIT")
+                .transactionType("FD_MATURITY").accountReference(fd.getLinkedAccountNumber())
+                .amount(pay).valueDate(bd).branchCode(fd.getBranchCode()).narration("FD maturity")
+                .journalLines(mtLines)
                 .systemGenerated(true).initiatedBy(u).build());
+        casaSvc.creditSubledgerOnly(fd.getLinkedAccountNumber(), pay, bd,
+                "FD maturity: " + fdNo, "FD_MATURITY", fdNo,
+                mtGl.getJournalEntryId(), mtGl.getVoucherNumber());
         fd.setStatus(FdStatus.CLOSED); fd.setClosureDate(bd);
         fd.setTotalInterestPaid(fd.getTotalInterestPaid().add(fd.getAccruedInterest()));
         fd.setAccruedInterest(BigDecimal.ZERO); fd.setUpdatedBy(u); fdRepo.save(fd);

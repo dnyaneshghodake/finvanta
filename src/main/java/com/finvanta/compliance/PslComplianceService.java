@@ -4,6 +4,7 @@ import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.LoanAccount;
 import com.finvanta.domain.enums.PslCategory;
 import com.finvanta.repository.LoanAccountRepository;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
@@ -65,12 +66,15 @@ public class PslComplianceService {
 
     private final LoanAccountRepository loanAccountRepository;
     private final AuditService auditService;
+    private final BusinessDateService businessDateService;
 
     public PslComplianceService(
             LoanAccountRepository loanAccountRepository,
-            AuditService auditService) {
+            AuditService auditService,
+            BusinessDateService businessDateService) {
         this.loanAccountRepository = loanAccountRepository;
         this.auditService = auditService;
+        this.businessDateService = businessDateService;
     }
 
     /**
@@ -161,15 +165,34 @@ public class PslComplianceService {
         // updatedBy is overwritten by ANY mutation (EOD batch sets it to "SYSTEM",
         // interest accrual, NPA classification, etc.). If we compared updatedBy,
         // the original MAKER could self-certify after any intervening batch update.
+        // CBS CRITICAL: pslClassifiedBy MUST be non-null for certification.
+        // If null (pre-migration loan, batch import, or admin DB override), the
+        // maker-checker trail is incomplete — block certification until a MAKER
+        // explicitly classifies via classifyLoan(), which sets pslClassifiedBy.
+        // Without this guard, a single user could self-certify any loan with
+        // null pslClassifiedBy, defeating the dual-control requirement.
         String classifiedBy = account.getPslClassifiedBy();
-        if (classifiedBy != null && classifiedBy.equals(currentUser)) {
+        if (classifiedBy == null) {
+            throw new BusinessException("PSL_CLASSIFIER_UNKNOWN",
+                    "PSL classification for " + accountNumber + " has no recorded classifier. "
+                            + "Re-classify via the PSL Classification screen before certifying.");
+        }
+        if (classifiedBy.equals(currentUser)) {
             throw new BusinessException("WORKFLOW_SELF_APPROVAL",
                     "PSL certification requires a different user than the one who classified. "
                             + "Classified by: " + classifiedBy + ", current user: " + currentUser);
         }
 
         account.setPslCertified(true);
-        account.setPslCertifiedDate(LocalDate.now());
+        // CBS: Use CBS business date for regulatory dates, not LocalDate.now().
+        // PSL certification date is audited in RBI OSMOS quarterly returns.
+        LocalDate certDate;
+        try {
+            certDate = businessDateService.getCurrentBusinessDate();
+        } catch (Exception e) {
+            certDate = LocalDate.now();
+        }
+        account.setPslCertifiedDate(certDate);
         account.setUpdatedBy(currentUser);
         loanAccountRepository.save(account);
 

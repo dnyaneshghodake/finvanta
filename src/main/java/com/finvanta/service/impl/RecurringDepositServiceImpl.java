@@ -12,6 +12,7 @@ import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.RecurringDepositRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.DepositAccountService;
 import com.finvanta.service.RecurringDepositService;
 import com.finvanta.service.SequenceGeneratorService;
 import com.finvanta.transaction.TransactionEngine;
@@ -52,6 +53,7 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
     private final BusinessDateService businessDateService;
     private final SequenceGeneratorService sequenceGenerator;
     private final AuditService auditService;
+    private final DepositAccountService casaSvc;
 
     public RecurringDepositServiceImpl(
             RecurringDepositRepository rdRepository,
@@ -60,7 +62,8 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
             TransactionEngine transactionEngine,
             BusinessDateService businessDateService,
             SequenceGeneratorService sequenceGenerator,
-            AuditService auditService) {
+            AuditService auditService,
+            DepositAccountService casaSvc) {
         this.rdRepository = rdRepository;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
@@ -68,6 +71,7 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
         this.businessDateService = businessDateService;
         this.sequenceGenerator = sequenceGenerator;
         this.auditService = auditService;
+        this.casaSvc = casaSvc;
     }
 
     @Override
@@ -201,6 +205,13 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
         // DR RD Interest Expense (5012) / CR RD Interest Payable (2041)
         // Without this, the maturity GL posting debits 2041 which was never
         // credited, and EOD reconciliation flags subledger-vs-GL mismatch daily.
+        // CBS CRITICAL: GL posting and subledger update MUST be coupled.
+        // If daily rounds to 0.00, skip BOTH GL posting AND subledger update.
+        // Without this guard, accruedInterest drifts from GL 2041 (RD_INTEREST_PAYABLE)
+        // over time, and the maturity posting at processMaturity() debits an amount
+        // from 2041 that was never fully credited — creating a GL imbalance.
+        // Per Finacle RD_ENGINE: zero-accrual days are valid — advance lastAccrualDate
+        // only when a non-zero amount is posted to maintain GL-subledger parity.
         if (daily.signum() > 0) {
             transactionEngine.execute(TransactionRequest.builder()
                     .sourceModule("RECURRING_DEPOSIT").transactionType("RD_INTEREST_ACCRUAL")
@@ -213,11 +224,11 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
                             new JournalLineRequest(GLConstants.RD_INTEREST_PAYABLE,
                                     DebitCredit.CREDIT, daily, "RD interest payable")))
                     .systemGenerated(true).build());
-        }
 
-        rd.setAccruedInterest(rd.getAccruedInterest().add(daily));
-        rd.setLastAccrualDate(businessDate);
-        rdRepository.save(rd);
+            rd.setAccruedInterest(rd.getAccruedInterest().add(daily));
+            rd.setLastAccrualDate(businessDate);
+            rdRepository.save(rd);
+        }
     }
 
     @Override
@@ -236,7 +247,7 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
         }
 
         BigDecimal maturityAmt = rd.getMaturityAmount();
-        transactionEngine.execute(TransactionRequest.builder()
+        TransactionResult maturityGl = transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("RECURRING_DEPOSIT").transactionType("RD_MATURITY")
                 .accountReference(rd.getLinkedAccountNumber()).amount(maturityAmt)
                 .valueDate(bd).branchCode(rd.getBranchCode())
@@ -250,8 +261,19 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
                                 DebitCredit.CREDIT, maturityAmt, "RD maturity to CASA")))
                 .systemGenerated(true).build());
 
+        // CBS CRITICAL: RD↔CASA subledger sync — the GL posting above already
+        // credits SB_DEPOSITS (2030). Use creditSubledgerOnly (NOT deposit()) to
+        // update the CASA balance without posting a second GL entry. Using
+        // deposit() here would double-credit SB_DEPOSITS and introduce a spurious
+        // DR BANK_OPERATIONS leg, breaking GL-subledger parity at EOD.
+        casaSvc.creditSubledgerOnly(rd.getLinkedAccountNumber(), maturityAmt, bd,
+                "RD maturity: " + rdAccountNumber,
+                "RD_MATURITY", rdAccountNumber,
+                maturityGl.getJournalEntryId(), maturityGl.getVoucherNumber());
+
         rd.setStatus(RdStatus.MATURED);
         rd.setClosureDate(bd);
+        rd.setClosureJournalId(maturityGl.getJournalEntryId());
         rdRepository.save(rd);
     }
 
@@ -276,25 +298,89 @@ public class RecurringDepositServiceImpl implements RecurringDepositService {
         BigDecimal adjustedInterest = rd.getCumulativeDeposit()
                 .multiply(effectiveRate).multiply(BigDecimal.valueOf(days))
                 .divide(BigDecimal.valueOf(36500), 2, RoundingMode.HALF_UP);
+        // CBS CRITICAL: Cap adjustedInterest at accruedInterest to prevent GL imbalance.
+        // adjustedInterest uses simple-interest formula over actual tenure at the penalized rate.
+        // accruedInterest is the sum of daily accruals at the full rate (what was credited to GL 2041).
+        // If simple-interest calc > sum of daily accruals (due to rounding or partial-accrual gaps),
+        // the closure posting would debit more from 2041 than was ever credited — GL imbalance.
+        // Per Finacle RD_ENGINE: the payout is always bounded by what was actually accrued.
+        // CBS GUARD: reject negative-tenure scenarios (business date before booking date).
+        // Should never happen under a correctly-configured BusinessDateService, but a
+        // backdated run or corrupt state would produce a negative days count →
+        // negative adjustedInterest → GL imbalance that the cap below would not catch.
+        if (bd.isBefore(rd.getBookingDate())) {
+            throw new BusinessException("INVALID_TENURE",
+                    "Business date " + bd + " is before RD booking date " + rd.getBookingDate());
+        }
+        if (adjustedInterest.compareTo(rd.getAccruedInterest()) > 0) {
+            adjustedInterest = rd.getAccruedInterest();
+        }
         BigDecimal closureAmt = rd.getCumulativeDeposit().add(adjustedInterest);
 
-        transactionEngine.execute(TransactionRequest.builder()
+        // CBS CRITICAL: Reverse excess accrued interest before closure posting.
+        // Daily accruals were posted to GL 2041 (RD_INTEREST_PAYABLE) at the full rate.
+        // Premature closure uses a penalized rate, so adjustedInterest < accruedInterest.
+        // The difference (accruedInterest - adjustedInterest) is an orphan credit in GL 2041
+        // that must be reversed: DR RD_INTEREST_PAYABLE (2041) / CR RD_INTEREST_EXPENSE (5012).
+        // Without this reversal, the closure posting debits only adjustedInterest from 2041,
+        // leaving a permanent credit residual that corrupts EOD GL reconciliation.
+        BigDecimal excessInterest = rd.getAccruedInterest().subtract(adjustedInterest);
+        if (excessInterest.signum() > 0) {
+            transactionEngine.execute(TransactionRequest.builder()
+                    .sourceModule("RECURRING_DEPOSIT").transactionType("RD_INTEREST_REVERSAL")
+                    .accountReference(rd.getRdAccountNumber()).amount(excessInterest)
+                    .valueDate(bd).branchCode(rd.getBranchCode())
+                    .narration("RD premature penalty interest reversal: " + rdAccountNumber)
+                    .journalLines(List.of(
+                            new JournalLineRequest(GLConstants.RD_INTEREST_PAYABLE,
+                                    DebitCredit.DEBIT, excessInterest, "Reverse excess accrued interest"),
+                            new JournalLineRequest(GLConstants.RD_INTEREST_EXPENSE,
+                                    DebitCredit.CREDIT, excessInterest, "Reverse excess interest expense")))
+                    .systemGenerated(true).build());
+            log.info("RD interest reversal: rdNo={}, accrued={}, adjusted={}, reversed={}",
+                    rdAccountNumber, rd.getAccruedInterest(), adjustedInterest, excessInterest);
+        }
+
+        // CBS: Omit the interest DEBIT line when adjustedInterest is zero.
+        // A zero-amount journal line may be rejected by TransactionEngine's amount
+        // validation, and is accounting-meaningless. When effective rate is zero
+        // (penalty >= rate) or the full accrued interest was already reversed above,
+        // the closure posting becomes a simple DR RD_DEPOSITS / CR SB_DEPOSITS.
+        List<JournalLineRequest> closureLines = adjustedInterest.signum() > 0
+                ? List.of(
+                        new JournalLineRequest(GLConstants.RD_DEPOSITS,
+                                DebitCredit.DEBIT, rd.getCumulativeDeposit(), "RD principal"),
+                        new JournalLineRequest(GLConstants.RD_INTEREST_PAYABLE,
+                                DebitCredit.DEBIT, adjustedInterest, "RD interest (penalized)"),
+                        new JournalLineRequest(GLConstants.SB_DEPOSITS,
+                                DebitCredit.CREDIT, closureAmt, "RD premature to CASA"))
+                : List.of(
+                        new JournalLineRequest(GLConstants.RD_DEPOSITS,
+                                DebitCredit.DEBIT, rd.getCumulativeDeposit(), "RD principal"),
+                        new JournalLineRequest(GLConstants.SB_DEPOSITS,
+                                DebitCredit.CREDIT, closureAmt, "RD premature to CASA"));
+        TransactionResult closureGl = transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("RECURRING_DEPOSIT").transactionType("RD_PREMATURE_CLOSE")
                 .accountReference(rd.getLinkedAccountNumber()).amount(closureAmt)
                 .valueDate(bd).branchCode(rd.getBranchCode())
                 .narration("RD premature closure: " + reason)
-                .journalLines(List.of(
-                        new JournalLineRequest(GLConstants.RD_DEPOSITS,
-                                DebitCredit.DEBIT, rd.getCumulativeDeposit(), "RD principal"),
-                        new JournalLineRequest(GLConstants.RD_INTEREST_PAYABLE,
-                                DebitCredit.DEBIT, adjustedInterest, "RD interest"),
-                        new JournalLineRequest(GLConstants.SB_DEPOSITS,
-                                DebitCredit.CREDIT, closureAmt, "RD premature to CASA")))
+                .journalLines(closureLines)
                 .systemGenerated(true).build());
+
+        // CBS CRITICAL: RD↔CASA subledger sync. The closure journal above already
+        // credits GL SB_DEPOSITS (2030). Use creditSubledgerOnly (NOT deposit())
+        // so the CASA balance is updated without posting a second GL entry. Using
+        // deposit() here would double-credit SB_DEPOSITS and add a spurious DR
+        // BANK_OPERATIONS leg, breaking GL-subledger parity at EOD.
+        casaSvc.creditSubledgerOnly(rd.getLinkedAccountNumber(), closureAmt, bd,
+                "RD premature closure: " + rdAccountNumber,
+                "RD_PREMATURE_CLOSE", rdAccountNumber,
+                closureGl.getJournalEntryId(), closureGl.getVoucherNumber());
 
         rd.setStatus(RdStatus.PREMATURE_CLOSED);
         rd.setClosureDate(bd);
         rd.setAccruedInterest(adjustedInterest);
+        rd.setClosureJournalId(closureGl.getJournalEntryId());
         rdRepository.save(rd);
         return rd;
     }

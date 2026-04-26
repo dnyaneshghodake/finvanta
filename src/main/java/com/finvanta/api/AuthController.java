@@ -494,6 +494,7 @@ public class AuthController {
      * defence-in-depth safety net for the residual race window.
      */
     @PostMapping("/refresh")
+    @Transactional
     public ResponseEntity<ApiResponse<TokenResponse>>
             refresh(
                     @Valid @RequestBody RefreshRequest req) {

@@ -1,6 +1,7 @@
 package com.finvanta.api;
 
 import com.finvanta.domain.entity.Customer;
+import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CustomerCifService;
 import com.finvanta.util.PiiMaskingUtil;
 
@@ -38,10 +39,13 @@ import org.springframework.web.bind.annotation.*;
 public class CustomerApiController {
 
     private final CustomerCifService customerService;
+    private final BusinessDateService businessDateService;
 
     public CustomerApiController(
-            CustomerCifService customerService) {
+            CustomerCifService customerService,
+            BusinessDateService businessDateService) {
         this.customerService = customerService;
+        this.businessDateService = businessDateService;
     }
 
     // === CIF Lifecycle ===
@@ -85,8 +89,17 @@ public class CustomerApiController {
     public ResponseEntity<ApiResponse<CifLookupResponse>>
             getCustomer(@PathVariable Long id) {
         Customer c = customerService.getCustomerWithAudit(id);
+        // CBS: Resolve business date for KYC expiry check — service-layer code
+        // MUST use the parameterized isKycExpired(businessDate), not the no-arg
+        // overload that uses LocalDate.now(). Fallback to system date if no day open.
+        LocalDate bizDate;
+        try {
+            bizDate = businessDateService.getCurrentBusinessDate();
+        } catch (Exception e) {
+            bizDate = LocalDate.now();
+        }
         return ResponseEntity.ok(ApiResponse.success(
-                CifLookupResponse.from(c)));
+                CifLookupResponse.from(c, bizDate)));
     }
 
     /**
@@ -408,14 +421,19 @@ public class CustomerApiController {
             AddressDto correspondenceAddress,
             LegacyAddressDto address) {
 
-        static CifLookupResponse from(Customer c) {
+        /**
+         * Factory method accepting CBS business date for KYC expiry check.
+         * Per Customer.java:667-670: service-layer code MUST use the parameterized
+         * isKycExpired(businessDate), not the no-arg overload that uses LocalDate.now().
+         */
+        static CifLookupResponse from(Customer c, LocalDate businessDate) {
             // Compute status from active flag
             String status = c.isActive() ? "ACTIVE" : "INACTIVE";
 
-            // Compute kycStatus from boolean + expiry
+            // Compute kycStatus from boolean + expiry using CBS business date
             String kycStatus;
             if (c.isKycVerified()) {
-                kycStatus = c.isKycExpired() ? "EXPIRED" : "VERIFIED";
+                kycStatus = c.isKycExpired(businessDate) ? "EXPIRED" : "VERIFIED";
             } else {
                 kycStatus = "PENDING";
             }
@@ -474,7 +492,7 @@ public class CustomerApiController {
                     PiiMaskingUtil.maskPan(c.getPanNumber()),
                     PiiMaskingUtil.maskAadhaar(c.getAadhaarNumber()),
                     c.getCkycNumber(),
-                    c.getMobileNumber(),
+                    PiiMaskingUtil.maskMobile(c.getMobileNumber()),
                     c.getEmail(),
                     c.getDateOfBirth() != null ? c.getDateOfBirth().toString() : null,
                     mapGender(c.getGender()),

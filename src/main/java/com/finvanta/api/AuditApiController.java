@@ -1,15 +1,21 @@
 package com.finvanta.api;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.finvanta.audit.AuditService;
 import com.finvanta.domain.entity.AuditLog;
 import com.finvanta.repository.AuditLogRepository;
 import com.finvanta.util.TenantContext;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -139,6 +145,87 @@ public class AuditApiController {
                         intact ? "Audit chain intact"
                                 : "INTEGRITY VIOLATION DETECTED")));
     }
+
+    /**
+     * Record a UI screen-access event for the audit trail.
+     *
+     * <p>Called by the Next.js BFF on every authenticated screen navigation
+     * (dashboard, accounts, transfers, loans, customers, KYC, etc.) so the
+     * audit trail captures what the user viewed — not just what they mutated.
+     * Per RBI IT Governance Direction 2023 §8.3, read/view access to customer
+     * data must be auditable for inspection.
+     *
+     * <p><b>Authenticated, any role.</b> Unlike the inquiry endpoints above
+     * (AUDITOR/ADMIN only), this is written by every signed-in user as a
+     * side effect of navigation.
+     *
+     * <p><b>Returns 202 Accepted with an empty body.</b> The endpoint is
+     * fire-and-forget from the BFF's perspective; a failure to record must
+     * not block navigation. Any server error becomes a standard error envelope
+     * via the global exception handler.
+     *
+     * <p><b>Performance note — follow-up candidate.</b> {@link AuditService#logEvent}
+     * appends to the SHA-256 hash-chained {@code audit_logs} table, meaning
+     * every page navigation adds a row that participates in
+     * {@code verifyRecentChainIntegrity}. On a high-traffic tenant this will
+     * dominate the audit table. A future refactor should consider a lightweight
+     * {@code screen_access_log} table (no hash chain) for view events, keeping
+     * the cryptographic chain reserved for state-changing actions. For now we
+     * use the standard audit path to keep all access records in one place.
+     */
+    @PostMapping("/screen-access")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> recordScreenAccess(
+            @Valid @RequestBody ScreenAccessRequest req) {
+        auditService.logEvent(
+                "UI_SCREEN",
+                null,
+                "SCREEN_ACCESS",
+                null,
+                null,
+                "UI_NAVIGATION",
+                buildDescription(req));
+        return ResponseEntity.status(HttpStatus.ACCEPTED).build();
+    }
+
+    private static String buildDescription(ScreenAccessRequest req) {
+        StringBuilder sb = new StringBuilder("screenCode=").append(req.screenCode());
+        if (req.screenLabel() != null && !req.screenLabel().isBlank()) {
+            sb.append(" | screenLabel=").append(req.screenLabel());
+        }
+        if (req.returnTo() != null && !req.returnTo().isBlank()) {
+            sb.append(" | returnTo=").append(req.returnTo());
+        }
+        if (req.referrer() != null && !req.referrer().isBlank()) {
+            sb.append(" | referrer=").append(req.referrer());
+        }
+        return sb.toString();
+    }
+
+    // === Request DTOs ===
+
+    /**
+     * Screen-access audit payload from the BFF.
+     *
+     * <p>Field name {@code screenCode} matches the Next.js BFF contract —
+     * it sends a screen identifier (e.g. "DASHBOARD", "CUSTOMER_VIEW"), not
+     * a raw URL path. {@code screenLabel} is the human-readable title shown
+     * to the user (e.g. "Customer Details"). Field sizes match the audit
+     * trail's {@code description} column capacity and are intentionally
+     * restrictive — this endpoint is hit on every page load so oversized
+     * payloads are rejected at the boundary rather than truncated in the DB.
+     *
+     * <p>{@link JsonIgnoreProperties ignoreUnknown=true} lets the BFF evolve
+     * its payload (e.g. add timing metrics, viewport size) without breaking
+     * the backend. Extra fields are silently dropped. Bean Validation still
+     * fires on the fields we declare.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ScreenAccessRequest(
+            @NotBlank @Size(max = 200) String screenCode,
+            @Size(max = 200) String screenLabel,
+            @Size(max = 500) String returnTo,
+            @Size(max = 500) String referrer) {}
 
     // === Response DTOs ===
 

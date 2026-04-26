@@ -436,14 +436,21 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                             + Arrays.toString(DepositAccountType.values()));
         }
 
+        // CBS CRITICAL: Resolve business date BEFORE age validation.
+        // businessDateService.getCurrentBusinessDate() throws BusinessException("NO_BUSINESS_DAY_OPEN")
+        // if no day is open. This must be validated before sequence allocation (line 540),
+        // and age validation must use the CBS business date — NOT LocalDate.now().
+        // Per Customer.java CBS standards: uses provided business date, NOT LocalDate.now().
+        LocalDate bizDate = businessDateService.getCurrentBusinessDate();
+
         // --- CBS: Age validation from dateOfBirth per RBI norms ---
         // Regular accounts: age >= 18. Minor accounts (SAVINGS_MINOR): age >= 10.
-        // Per Finacle ACCTOPN: age is calculated from DOB to current date.
+        // Per Finacle ACCTOPN: age is calculated from DOB to CBS business date.
         if (req.dateOfBirth() != null) {
-            if (req.dateOfBirth().isAfter(LocalDate.now())) {
+            if (req.dateOfBirth().isAfter(bizDate)) {
                 throw new BusinessException("INVALID_AGE", "Date of birth cannot be in the future");
             }
-            long age = ChronoUnit.YEARS.between(req.dateOfBirth(), LocalDate.now());
+            long age = ChronoUnit.YEARS.between(req.dateOfBirth(), bizDate);
             if (parsedAccountType == DepositAccountType.SAVINGS_MINOR) {
                 if (age < MIN_AGE_MINOR) {
                     throw new BusinessException("INVALID_AGE",
@@ -491,13 +498,8 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                             + ". Per Finacle ACCTOPN: one account per CIF per type per branch.");
         }
 
-        // CBS CRITICAL: Resolve business date BEFORE sequence allocation.
-        // businessDateService.getCurrentBusinessDate() throws BusinessException("NO_BUSINESS_DAY_OPEN")
-        // if no day is open. This must be validated before consuming the DB-backed sequence,
-        // because REQUIRES_NEW propagation commits the sequence independently — a failed
-        // business date check after sequence allocation wastes the number.
+        // CBS: bizDate already resolved above (before age validation).
         // Per Finacle ACCTOPN / Temenos ACCOUNT.OPENING: validate-first, allocate-last.
-        LocalDate bizDate = businessDateService.getCurrentBusinessDate();
 
         // CBS Phase 2: Product-driven rate and minimum balance per Finacle PDDEF.
         // Interest rate and minimum balance are resolved from ProductMaster, not hardcoded.
@@ -574,7 +576,10 @@ public class DepositAccountServiceImpl implements DepositAccountService {
         a.setKycStatus(req.kycStatus());
         a.setPepFlag(req.pepFlag() != null && req.pepFlag());
         // Personal Details
-        a.setFullName(req.fullName());
+        // CBS: Default fullName from Customer entity if not provided in the request.
+        // The JSP path and minimal REST requests omit fullName — derive from CIF.
+        a.setFullName(req.fullName() != null && !req.fullName().isBlank()
+                ? req.fullName() : cust.getFullName());
         a.setDateOfBirth(req.dateOfBirth());
         a.setGender(req.gender());
         a.setFatherSpouseName(req.fatherSpouseName());
@@ -749,6 +754,70 @@ public class DepositAccountServiceImpl implements DepositAccountService {
                 channel,
                 null,
                 balanceBefore);
+    }
+
+    // === Subledger-Only Credit (internal inter-module transfers) ===
+    // CBS Tier-1: Used by RD/FD/Loan modules when they own the GL posting.
+    // The caller has already posted (DR module_deposit / CR SB_DEPOSITS) via
+    // TransactionEngine. This method ONLY updates the CASA subledger (balance
+    // + DepositTransaction row) — no additional GL posting.
+    //
+    // Using deposit() for these internal transfers would double-post SB_DEPOSITS
+    // (caller's CR + deposit()'s CR) and introduce a spurious DR BANK_OPERATIONS,
+    // breaking GL-subledger parity at EOD reconciliation.
+    @Override
+    @Transactional
+    public DepositTransaction creditSubledgerOnly(
+            String accountNumber,
+            BigDecimal amount,
+            LocalDate businessDate,
+            String narration,
+            String transactionType,
+            String counterpartyRef,
+            Long sourceJournalEntryId,
+            String sourceVoucherNumber) {
+        String tid = TenantContext.getCurrentTenant();
+        DepositAccount acct = lockAccount(tid, accountNumber);
+        if (!acct.isCreditAllowed())
+            throw new BusinessException("ACCOUNT_NOT_CREDITABLE", "Status " + acct.getAccountStatus());
+
+        // CBS Tier-1: Capture balance BEFORE mutation for audit trail
+        BigDecimal balanceBefore = acct.getLedgerBalance();
+        acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
+        recomputeAvailable(acct);
+        acct.setLastTransactionDate(businessDate);
+        if (acct.isDormant()) {
+            acct.setAccountStatus(DepositAccountStatus.ACTIVE);
+            acct.setDormantDate(null);
+            // CBS CRITICAL: logEventInline (REQUIRED) — we hold PESSIMISTIC_WRITE
+            // on the account row; logEvent(REQUIRES_NEW) would suspend TX without
+            // releasing the lock (same deadlock vector as deposit()).
+            auditService.logEventInline(
+                    "DepositAccount", acct.getId(), "DORMANCY_REACTIVATED",
+                    "DORMANT", "ACTIVE", "DEPOSIT",
+                    "Account reactivated via " + transactionType + ": " + accountNumber
+                            + " | Amount: INR " + amount + " | Channel: SYSTEM");
+        }
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
+        accountRepository.save(acct);
+
+        // Build a synthetic TransactionResult carrying the caller's journal/voucher
+        // refs so the DepositTransaction subledger row links back to the owning
+        // GL posting. No new GL entry is created here.
+        TransactionResult linked = new TransactionResult(
+                ReferenceGenerator.generateTransactionRef(),
+                sourceVoucherNumber,
+                sourceJournalEntryId,
+                null,
+                amount,
+                amount,
+                businessDate,
+                LocalDateTime.now(),
+                "POSTED");
+        return buildTxn(
+                acct, amount, transactionType, "CREDIT", businessDate,
+                narration, linked, linked.getTransactionRef(),
+                null, "SYSTEM", counterpartyRef, balanceBefore);
     }
 
     // === Withdrawal ===
