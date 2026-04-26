@@ -128,6 +128,12 @@ public class LoanAccountDomain {
         if (isFloatingRate) {
             return BigDecimal.ZERO;
         }
+        if (prepaymentAmount == null || prepaymentAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        if (penaltyRate == null || penaltyRate.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
         BigDecimal effectiveRate = penaltyRate.min(MAX_FIXED_PREPAYMENT_PENALTY_RATE);
         return prepaymentAmount.multiply(effectiveRate).setScale(SCALE, ROUNDING);
     }
