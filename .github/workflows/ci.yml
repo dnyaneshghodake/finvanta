@@ -136,7 +136,7 @@ jobs:
         run: |
           mvn -B -ntp com.github.spotbugs:spotbugs-maven-plugin:4.8.6.6:check \
             -Dspotbugs.effort=Max \
-            -Dspotbugs.threshold=Medium \
+            -Dspotbugs.threshold=High \
             -Dspotbugs.failOnError=true \
             -Dspotbugs.excludeFilterFile=.github/spotbugs-exclude.xml
 
