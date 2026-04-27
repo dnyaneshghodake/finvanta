@@ -366,17 +366,19 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         String tenantId = TenantContext.getCurrentTenant();
         LocalDate businessDate = businessDateService.getCurrentBusinessDate();
 
-        // Idempotency check
-        if (request.idempotencyKey() != null) {
-            DepositTransaction dup = transactionRepository
-                    .findByTenantIdAndIdempotencyKey(tenantId, request.idempotencyKey())
-                    .orElse(null);
-            if (dup != null) {
-                return dup;
-            }
+        // CBS Idempotency: lock account FIRST, then check for duplicate. Concurrent
+        // retries with the same idempotency key serialize on the PESSIMISTIC_WRITE
+        // row lock; the second retry sees the first retry's committed DepositTransaction
+        // (READ_COMMITTED post-commit visibility) and returns it. Checking before the
+        // lock would leave a TOCTOU window where both retries pass the dup check, both
+        // post to GL via TransactionEngine, and only the subledger UNIQUE constraint
+        // (uq_deptxn_idempotency, prod-only filtered index) catches the second insert.
+        DepositAccount acct = lockAccount(accountNumber);
+        DepositTransaction dup = findExistingByIdempotencyKey(tenantId, request.idempotencyKey());
+        if (dup != null) {
+            return dup;
         }
 
-        DepositAccount acct = lockAccount(accountNumber);
         branchAccessValidator.validateAccess(acct.getBranch());
         // Deposit is a CREDIT: honors DEBIT_FREEZE (credits allowed) and
         // DORMANT (credits may reactivate) per RBI Freeze Guidelines.
@@ -426,16 +428,13 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         String tenantId = TenantContext.getCurrentTenant();
         LocalDate businessDate = businessDateService.getCurrentBusinessDate();
 
-        if (request.idempotencyKey() != null) {
-            DepositTransaction dup = transactionRepository
-                    .findByTenantIdAndIdempotencyKey(tenantId, request.idempotencyKey())
-                    .orElse(null);
-            if (dup != null) {
-                return dup;
-            }
+        // CBS Idempotency: see deposit() for rationale. Lock first, then dup-check.
+        DepositAccount acct = lockAccount(accountNumber);
+        DepositTransaction dup = findExistingByIdempotencyKey(tenantId, request.idempotencyKey());
+        if (dup != null) {
+            return dup;
         }
 
-        DepositAccount acct = lockAccount(accountNumber);
         branchAccessValidator.validateAccess(acct.getBranch());
         // Withdrawal is a DEBIT: blocked on DEBIT_FREEZE, TOTAL_FREEZE, DORMANT, CLOSED.
         accountValidator.validateAccountForDebit(acct);
@@ -482,16 +481,6 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         String tenantId = TenantContext.getCurrentTenant();
         LocalDate businessDate = businessDateService.getCurrentBusinessDate();
 
-        // Idempotency check (same pattern as deposit/withdraw)
-        if (request.idempotencyKey() != null) {
-            DepositTransaction dup = transactionRepository
-                    .findByTenantIdAndIdempotencyKey(tenantId, request.idempotencyKey())
-                    .orElse(null);
-            if (dup != null) {
-                return dup;
-            }
-        }
-
         accountValidator.validateTransfer(request);
 
         // Deadlock prevention: lock accounts in alphabetical order
@@ -505,6 +494,13 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
 
         DepositAccount src = first.equals(request.fromAccount()) ? firstAcct : secondAcct;
         DepositAccount dst = first.equals(request.fromAccount()) ? secondAcct : firstAcct;
+
+        // CBS Idempotency: see deposit() for rationale. Both account locks held;
+        // concurrent retries serialize on either lock and observe the prior commit.
+        DepositTransaction dup = findExistingByIdempotencyKey(tenantId, request.idempotencyKey());
+        if (dup != null) {
+            return dup;
+        }
 
         branchAccessValidator.validateAccess(src.getBranch());
         // Transfer is a DEBIT on src and a CREDIT on dst. Validating each leg with
@@ -699,6 +695,28 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                 .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
                 .orElseThrow(() -> new BusinessException("CBS-ACCT-001",
                         "Account not found: " + accountNumber));
+    }
+
+    /**
+     * Locates a previously-committed {@code DepositTransaction} by idempotency key.
+     *
+     * <p>MUST be called only after the relevant account row(s) are locked via
+     * {@link #lockAccount}. The pessimistic lock is what makes this race-free:
+     * a concurrent retry that arrived first will have committed (and released
+     * the lock) by the time this thread acquires it, so the prior row is
+     * visible under READ_COMMITTED. Calling this helper before locking
+     * re-introduces the TOCTOU window this method is designed to close.
+     *
+     * <p>Returns {@code null} for null/blank keys so callers can pass through
+     * the request key without a guard.
+     */
+    private DepositTransaction findExistingByIdempotencyKey(String tenantId, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return null;
+        }
+        return transactionRepository
+                .findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey)
+                .orElse(null);
     }
 
     /**
