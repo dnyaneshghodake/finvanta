@@ -191,6 +191,44 @@ public class AccountValidator {
     }
 
     /**
+     * Validates that a debit will not breach the account's required minimum
+     * balance per CBS ACCTLIMIT / RBI CASA norms.
+     *
+     * <p>Mirrors the legacy guard at
+     * {@code src/main/java/com/finvanta/service/impl/DepositAccountServiceImpl.java:868-876}.
+     * The check is independent of {@link #validateSufficientBalance}: a customer
+     * may have funds available (per {@code effectiveAvailable}) yet still be
+     * unable to withdraw because doing so would drop the ledger below the
+     * product's minimum balance requirement.
+     *
+     * <p>Skipped when {@code minimumBalance <= 0} so PMJDY zero-balance accounts
+     * and Current accounts (which have no MAB) pass through unchanged.
+     *
+     * <p>Per Tier-1 CBS Phase 2 enhancement: penalty-based MAB breach via
+     * ChargeEngine is the alternative to outright rejection. This validator
+     * implements the strict-rejection mode used by interactive CASA channels.
+     *
+     * @throws BusinessException CBS-ACCT-007 when the post-debit balance would
+     *                           fall below the required minimum
+     */
+    public void validateMinimumBalance(DepositAccount account, BigDecimal amount) {
+        if (account == null) {
+            throw new BusinessException("CBS-ACCT-001", "Account not found");
+        }
+        BigDecimal minBalance = account.getMinimumBalance();
+        if (minBalance == null || minBalance.signum() <= 0) {
+            return;
+        }
+        BigDecimal postBalance = account.getLedgerBalance().subtract(amount);
+        if (postBalance.compareTo(minBalance) < 0) {
+            throw new BusinessException("CBS-ACCT-007",
+                    "Debit of INR " + amount + " would breach minimum balance of INR "
+                            + minBalance + " on account " + account.getAccountNumber()
+                            + ". Post-debit balance would be INR " + postBalance);
+        }
+    }
+
+    /**
      * Validates transfer-specific rules.
      * Per CBS ACCTXFER: same-account transfers are rejected.
      */

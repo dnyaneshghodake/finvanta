@@ -505,6 +505,10 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         // Withdrawal is a DEBIT: blocked on DEBIT_FREEZE, TOTAL_FREEZE, DORMANT, CLOSED.
         accountValidator.validateAccountForDebit(acct);
         accountValidator.validateSufficientBalance(acct, request.amount());
+        // CBS Minimum Balance per RBI CASA norms: even with sufficient available
+        // balance, a withdrawal that would drop the ledger below the product's
+        // minimum balance is rejected. Skipped on PMJDY accounts (minBal=0).
+        accountValidator.validateMinimumBalance(acct, request.amount());
 
         String gl = glForAccount(acct);
 
@@ -584,6 +588,10 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         accountValidator.validateAccountForDebit(src);
         accountValidator.validateAccountForCredit(dst);
         accountValidator.validateSufficientBalance(src, request.amount());
+        // CBS Minimum Balance enforcement on transfer source per RBI CASA norms.
+        // Same semantics as withdraw(): the destination account does NOT need a
+        // minimum-balance check because credits cannot breach a minimum.
+        accountValidator.validateMinimumBalance(src, request.amount());
 
         String srcGl = glForAccount(src);
         String dstGl = glForAccount(dst);
