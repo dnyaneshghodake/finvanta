@@ -129,7 +129,14 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                 .orElseThrow(() -> new BusinessException("CBS-TXN-005", "Branch not found"));
         branchAccessValidator.validateAccess(branch);
 
-        DepositAccountType parsedAccountType = DepositAccountType.valueOf(request.accountType());
+        DepositAccountType parsedAccountType;
+        try {
+            parsedAccountType = DepositAccountType.valueOf(request.accountType());
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException("CBS-ACCT-002",
+                    "Invalid account type: " + request.accountType()
+                            + ". Valid types: " + java.util.Arrays.toString(DepositAccountType.values()));
+        }
 
         // CBS Duplicate Guard per CBS ACCTOPN: one active account per CIF per type per branch.
         // Mirrors the legacy DepositAccountServiceImpl check (lines 489-499). Closed accounts
