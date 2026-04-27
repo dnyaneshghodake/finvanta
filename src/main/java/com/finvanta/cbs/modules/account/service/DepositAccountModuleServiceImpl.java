@@ -426,6 +426,12 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         acct.setLedgerBalance(balanceBefore.add(request.amount()));
         recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
+
+        // CBS Dormancy Reactivation per RBI KYC §38: a customer-initiated credit
+        // on a DORMANT account transitions it back to ACTIVE. Must happen BEFORE
+        // save() so the state change persists in the same row update as the balance.
+        reactivateIfDormant(acct, "deposit of INR " + request.amount());
+
         accountRepository.save(acct);
 
         // Record module-specific transaction
@@ -552,6 +558,10 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         dst.setLedgerBalance(dstBalBefore.add(request.amount()));
         recomputeAvailable(dst);
         dst.setLastTransactionDate(businessDate);
+        // CBS Dormancy Reactivation per RBI KYC §38: a transfer credit on a
+        // DORMANT destination transitions it back to ACTIVE. Matches the legacy
+        // DepositAccountServiceImpl.transfer() behavior (lines 1040-1055).
+        reactivateIfDormant(dst, "transfer from " + request.fromAccount());
         accountRepository.save(dst);
 
         // Record TRANSFER_DEBIT for source account
@@ -697,6 +707,39 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                 .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
                 .orElseThrow(() -> new BusinessException("CBS-ACCT-001",
                         "Account not found: " + accountNumber));
+    }
+
+    /**
+     * CBS Dormancy Reactivation on Credit per RBI Master Direction on KYC 2016 §38.
+     *
+     * <p>Any customer-initiated credit (deposit, transfer-in) on a DORMANT account
+     * MUST transition the account back to ACTIVE. Without reactivation the account
+     * receives the funds but stays DORMANT, and subsequent debits are blocked by
+     * {@link DepositAccount#isDebitAllowed()} -- leaving the customer with
+     * inaccessible money and a passbook that lies about the real account state.
+     *
+     * <p>Mirrors the legacy behavior at
+     * {@code src/main/java/com/finvanta/service/impl/DepositAccountServiceImpl.java:723-741}
+     * (deposit path) and {@code :1040-1055} (transfer destination path).
+     *
+     * <p>Audit: uses {@link AuditService#logEventInline} (REQUIRED propagation)
+     * because the caller holds a PESSIMISTIC_WRITE lock on the account row.
+     * Using {@code logEvent} (REQUIRES_NEW) would suspend the outer TX without
+     * releasing the row lock -- a deadlock vector on SQL Server.
+     *
+     * @param acct       the credited account (lock already held by caller)
+     * @param reasonTxt  short narration for the audit trail (e.g. "deposit", "transfer from X")
+     */
+    private void reactivateIfDormant(DepositAccount acct, String reasonTxt) {
+        if (!acct.isDormant()) {
+            return;
+        }
+        acct.setAccountStatus(DepositAccountStatus.ACTIVE);
+        acct.setDormantDate(null);
+        auditService.logEventInline(
+                "DepositAccount", acct.getId(), "DORMANCY_REACTIVATED",
+                "DORMANT", "ACTIVE", "ACCOUNT",
+                "Account " + acct.getAccountNumber() + " reactivated via " + reasonTxt);
     }
 
     /**

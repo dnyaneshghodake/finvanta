@@ -41,8 +41,16 @@ public interface DepositTransactionRepository extends JpaRepository<DepositTrans
     List<DepositTransaction> findByTenantIdAndDepositAccountIdOrderByPostingDateDesc(
             String tenantId, Long depositAccountId);
 
-    /** Mini statement: last N transactions */
-    @Query("SELECT dt FROM DepositTransaction dt WHERE dt.tenantId = :tenantId "
+    /**
+     * Mini statement: last N transactions.
+     *
+     * <p>JOIN FETCH dt.depositAccount so downstream mappers (e.g. {@code AccountMapper.toTxnResponse})
+     * can read the account number without triggering LazyInitializationException once the
+     * read-only service transaction closes. OSIV is disabled cluster-wide; every query whose
+     * result is surfaced to a controller MUST eager-fetch the relations the mapper touches.
+     */
+    @Query("SELECT dt FROM DepositTransaction dt JOIN FETCH dt.depositAccount "
+            + "WHERE dt.tenantId = :tenantId "
             + "AND dt.depositAccount.id = :accountId ORDER BY dt.postingDate DESC")
     List<DepositTransaction> findRecentTransactions(
             @Param("tenantId") String tenantId,
