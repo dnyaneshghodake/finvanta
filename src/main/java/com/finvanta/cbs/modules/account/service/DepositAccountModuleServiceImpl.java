@@ -397,8 +397,28 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
     @Transactional(readOnly = true)
     public List<DepositAccount> getPendingAccounts() {
         String tenantId = TenantContext.getCurrentTenant();
-        return accountRepository.findByTenantIdAndAccountStatus(
-                tenantId, DepositAccountStatus.PENDING_ACTIVATION);
+        // CBS Branch Isolation per Finacle BRANCH_CONTEXT / RBI Operational Risk:
+        // a CHECKER must only see PENDING accounts at their home branch. Without this
+        // gate, a CHECKER at branch A could see (and potentially activate) accounts
+        // opened by a MAKER at branch B -- a maker-checker locality violation.
+        //
+        //   ADMIN     -> sees the entire tenant pipeline (HO consolidated view).
+        //   CHECKER   -> sees only their home branch's PENDING_ACTIVATION queue.
+        //   no branch -> empty list (fail-safe per RBI Operational Risk: a user
+        //                without a branch assignment must NOT see all data).
+        //
+        // Mirrors the legacy DepositAccountServiceImpl.getPendingAccounts at
+        // src/main/java/com/finvanta/service/impl/DepositAccountServiceImpl.java:1383-1396.
+        if (SecurityUtil.isAdminRole()) {
+            return accountRepository.findByTenantIdAndAccountStatus(
+                    tenantId, DepositAccountStatus.PENDING_ACTIVATION);
+        }
+        Long branchId = SecurityUtil.getCurrentUserBranchId();
+        if (branchId == null) {
+            return List.of();
+        }
+        return accountRepository.findByTenantIdAndBranchIdAndAccountStatus(
+                tenantId, branchId, DepositAccountStatus.PENDING_ACTIVATION);
     }
 
     // === Financial Operations ===
