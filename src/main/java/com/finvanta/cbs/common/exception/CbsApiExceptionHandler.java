@@ -188,6 +188,10 @@ public class CbsApiExceptionHandler {
                     "An active hold/lien blocks this operation. Contact branch";
             case CbsErrorCodes.ACCT_DUPLICATE_NUMBER ->
                     "Customer already has this account type at this branch";
+            case CbsErrorCodes.ACCT_INVALID_TYPE ->
+                    "Select a valid account type from the product catalogue";
+            case CbsErrorCodes.ACCT_INVALID_FREEZE_TYPE ->
+                    "Use one of: DEBIT_FREEZE, CREDIT_FREEZE, TOTAL_FREEZE";
             case CbsErrorCodes.CUST_KYC_EXPIRED ->
                     "Re-KYC required per RBI Master Direction. Visit branch with current OVDs";
             case CbsErrorCodes.CUST_KYC_NOT_VERIFIED ->

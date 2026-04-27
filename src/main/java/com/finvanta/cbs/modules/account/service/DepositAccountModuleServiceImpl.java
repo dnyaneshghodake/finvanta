@@ -133,7 +133,14 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         try {
             parsedAccountType = DepositAccountType.valueOf(request.accountType());
         } catch (IllegalArgumentException e) {
-            throw new BusinessException("CBS-ACCT-002",
+            // CBS Tier-1 error semantics: distinct codes per failure class.
+            // CBS-ACCT-002 (ACCT_INACTIVE) describes an existing account whose
+            // status blocks operations -- wrong fit for a request-time enum
+            // mismatch where no account exists yet. Use CBS-ACCT-013
+            // (ACCT_INVALID_TYPE) so RBI inspection and the BFF i18n layer
+            // can distinguish "operator typed an invalid product code" from
+            // "account is dormant/closed".
+            throw new BusinessException("CBS-ACCT-013",
                     "Invalid account type: " + request.accountType()
                             + ". Valid types: " + java.util.Arrays.toString(DepositAccountType.values()));
         }
