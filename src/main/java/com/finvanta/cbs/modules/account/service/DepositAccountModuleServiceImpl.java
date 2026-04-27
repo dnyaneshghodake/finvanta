@@ -419,10 +419,12 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                                 DebitCredit.CREDIT, request.amount(), "Credit " + accountNumber)))
                 .build());
 
-        // Update subledger
+        // Update subledger. Per CBS BAL_DERIVE: ledger is the only field that moves
+        // by the txn amount; available is recomputed from (ledger - hold - uncleared)
+        // so active liens/uncleared cheques are honored. See recomputeAvailable() below.
         BigDecimal balanceBefore = acct.getLedgerBalance();
         acct.setLedgerBalance(balanceBefore.add(request.amount()));
-        acct.setAvailableBalance(acct.getAvailableBalance().add(request.amount()));
+        recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
         accountRepository.save(acct);
 
@@ -472,7 +474,7 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
 
         BigDecimal balanceBefore = acct.getLedgerBalance();
         acct.setLedgerBalance(balanceBefore.subtract(request.amount()));
-        acct.setAvailableBalance(acct.getAvailableBalance().subtract(request.amount()));
+        recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
         accountRepository.save(acct);
 
@@ -541,14 +543,14 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         // Debit source
         BigDecimal srcBalBefore = src.getLedgerBalance();
         src.setLedgerBalance(srcBalBefore.subtract(request.amount()));
-        src.setAvailableBalance(src.getAvailableBalance().subtract(request.amount()));
+        recomputeAvailable(src);
         src.setLastTransactionDate(businessDate);
         accountRepository.save(src);
 
         // Credit destination
         BigDecimal dstBalBefore = dst.getLedgerBalance();
         dst.setLedgerBalance(dstBalBefore.add(request.amount()));
-        dst.setAvailableBalance(dst.getAvailableBalance().add(request.amount()));
+        recomputeAvailable(dst);
         dst.setLastTransactionDate(businessDate);
         accountRepository.save(dst);
 
@@ -628,12 +630,13 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                 .journalLines(buildReversalJournalLines(original, acct))
                 .build());
 
-        // Reverse the balance effect
+        // Reverse the balance effect. Per CBS BAL_DERIVE: only ledger moves directly;
+        // available is recomputed from (ledger - hold - uncleared).
         BigDecimal balanceBefore = acct.getLedgerBalance();
         BigDecimal reverseAmount = "DEBIT".equals(original.getDebitCredit())
                 ? original.getAmount() : original.getAmount().negate();
         acct.setLedgerBalance(balanceBefore.add(reverseAmount));
-        acct.setAvailableBalance(acct.getAvailableBalance().add(reverseAmount));
+        recomputeAvailable(acct);
         acct.setLastTransactionDate(businessDate);
         accountRepository.save(acct);
 
@@ -694,6 +697,33 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                 .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
                 .orElseThrow(() -> new BusinessException("CBS-ACCT-001",
                         "Account not found: " + accountNumber));
+    }
+
+    /**
+     * Recomputes the account's available balance from its source fields.
+     *
+     * <p>Per CBS BAL_DERIVE: {@code availableBalance = ledgerBalance - holdAmount
+     * - unclearedAmount}. This is the SINGLE source of truth for the derivation
+     * formula, mirroring the legacy {@code DepositAccountServiceImpl.recomputeAvailable}
+     * (src/main/java/com/finvanta/service/impl/DepositAccountServiceImpl.java:153-156).
+     *
+     * <p>Why recompute rather than increment: incremental updates
+     * ({@code available += amount}) drift from {@code ledger - hold - uncleared}
+     * whenever holdAmount or unclearedAmount are non-zero (active liens, court
+     * attachments, uncleared cheques). Recomputing on every mutation keeps the
+     * invariant intact regardless of concurrent hold/clearing operations and
+     * guarantees the available figure shown on the passbook always equals
+     * {@code ledger - hold - uncleared}.
+     *
+     * <p>Caller MUST set {@code ledgerBalance}, {@code holdAmount}, and
+     * {@code unclearedAmount} BEFORE invoking this helper. Available is purely
+     * derived state -- it is never the input to any other balance calculation.
+     */
+    private void recomputeAvailable(DepositAccount acct) {
+        acct.setAvailableBalance(
+                acct.getLedgerBalance()
+                        .subtract(acct.getHoldAmount())
+                        .subtract(acct.getUnclearedAmount()));
     }
 
     /**
