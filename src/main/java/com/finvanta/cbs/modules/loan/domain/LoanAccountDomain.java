@@ -153,6 +153,9 @@ public class LoanAccountDomain {
      * @return LTV ratio as percentage (e.g., 75.00 for 75%)
      */
     public static BigDecimal calculateLtv(BigDecimal loanAmount, BigDecimal collateralValue) {
+        if (loanAmount == null || loanAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
         if (collateralValue == null || collateralValue.compareTo(BigDecimal.ZERO) <= 0) {
             return new BigDecimal("100.00");
         }
