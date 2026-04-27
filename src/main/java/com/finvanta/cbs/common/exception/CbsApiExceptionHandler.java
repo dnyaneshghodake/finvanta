@@ -3,13 +3,22 @@ package com.finvanta.cbs.common.exception;
 import com.finvanta.api.ApiResponse;
 import com.finvanta.cbs.common.constants.CbsErrorCodes;
 import com.finvanta.util.BusinessException;
+import com.finvanta.util.MfaRequiredException;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -50,6 +59,103 @@ public class CbsApiExceptionHandler {
         String action = mapErrorCodeToAction(ex.getErrorCode());
         return ResponseEntity.status(status)
                 .body(ApiResponse.error(ex.getErrorCode(), ex.getMessage(), severity, action));
+    }
+
+    /**
+     * MFA step-up challenge per RBI IT Governance Direction 2023 §8.4.
+     * Mirrors the legacy handler so v1 and v2 callers see identical 428 semantics
+     * with the {@code challengeId} / {@code channel} payload.
+     */
+    @ExceptionHandler(MfaRequiredException.class)
+    public ResponseEntity<ApiResponse<Map<String, String>>> handleMfaRequired(MfaRequiredException ex) {
+        log.info("CBS-API mfa step-up required: challenge={}", ex.getChallengeId());
+        exposeErrorCode(ex.getErrorCode());
+        Map<String, String> payload = new HashMap<>();
+        payload.put("challengeId", ex.getChallengeId());
+        payload.put("channel", ex.getChannel());
+        return ResponseEntity.status(428).body(ApiResponse.errorWithData(ex.getErrorCode(), ex.getMessage(), payload));
+    }
+
+    /**
+     * JPA optimistic-lock conflict (concurrent mutation of a {@code @Version}-tracked
+     * row). Surfaces as 409 with the same {@code VERSION_CONFLICT} code as the
+     * legacy handler so the BFF i18n layer treats both API versions identically.
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiResponse<Void>> handleOptimisticLock(OptimisticLockingFailureException ex) {
+        log.warn("CBS-API optimistic lock failure: {}", ex.getMessage());
+        exposeErrorCode("VERSION_CONFLICT");
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error(
+                        "VERSION_CONFLICT",
+                        "Record was modified by another user. Please reload and retry.",
+                        CbsErrorCodes.SEVERITY_MEDIUM,
+                        "Reload the page and retry your operation"));
+    }
+
+    /**
+     * Spring Security {@code AccessDeniedException} -- triggered by failing
+     * {@code @PreAuthorize} checks on v2 controllers. Without this dedicated
+     * handler the generic Exception catch would convert legitimate authorization
+     * failures into 500 Internal Server Errors.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccess(AccessDeniedException ex) {
+        log.warn("CBS-API access denied: {}", ex.getMessage());
+        exposeErrorCode("ACCESS_DENIED");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiResponse.error(
+                        "ACCESS_DENIED",
+                        "Insufficient privileges for this operation",
+                        CbsErrorCodes.SEVERITY_HIGH,
+                        "Contact branch manager for role elevation"));
+    }
+
+    /**
+     * Jakarta Bean Validation failure on {@code @RequestBody} -- aggregates all
+     * field errors into a single 400 response so the BFF can highlight every
+     * invalid field at once. Without this handler, validation failures would
+     * surface as a generic 500 stack trace.
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
+        exposeErrorCode("VALIDATION_FAILED");
+        String errors = ex.getBindingResult().getFieldErrors().stream()
+                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+                .collect(Collectors.joining("; "));
+        log.warn("CBS-API validation failed: {}", errors);
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error("VALIDATION_FAILED", errors,
+                        CbsErrorCodes.SEVERITY_LOW, "Correct the highlighted fields and resubmit"));
+    }
+
+    /**
+     * Missing required query/path parameter (e.g. {@code ?q=} omitted on a
+     * search endpoint). 400 with the parameter name so the BFF can identify
+     * exactly which input was missing.
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingParam(MissingServletRequestParameterException ex) {
+        exposeErrorCode("MISSING_PARAMETER");
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error("MISSING_PARAMETER",
+                        "Required parameter '" + ex.getParameterName() + "' is missing",
+                        CbsErrorCodes.SEVERITY_LOW,
+                        "Include the '" + ex.getParameterName() + "' query parameter and retry"));
+    }
+
+    /**
+     * {@code IllegalArgumentException} from path-variable / query-param parsing
+     * (e.g. invalid enum value on a path variable). 400 with the underlying
+     * message instead of letting the generic handler convert it to 500.
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBadArg(IllegalArgumentException ex) {
+        exposeErrorCode("INVALID_REQUEST");
+        log.warn("CBS-API invalid request: {}", ex.getMessage());
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error("INVALID_REQUEST", ex.getMessage(),
+                        CbsErrorCodes.SEVERITY_LOW, "Verify request parameters and retry"));
     }
 
     @ExceptionHandler(Exception.class)
