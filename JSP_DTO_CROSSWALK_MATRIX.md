@@ -80,3 +80,92 @@
 **Coverage:** 6 / 29 DTO fields (21%). All 23 missing fields are intentionally inherited from the CIF record per Finacle ACCTOPN; React UI sends all 29 directly. See `DepositController.java:241-254` for the explicit `null` fill-ins.
 
 ---
+
+## 2. CASA FINANCIAL OPS -- `deposit/deposit|withdraw|transfer.jsp` <-> v2 DTOs
+
+The JSP path uses `@RequestParam` (no DTO at HTTP boundary). The v2 REST API uses `FinancialRequest` and `TransferRequest` records (`src/main/java/com/finvanta/cbs/modules/account/dto/request/`).
+
+### 2.1 Deposit / Withdraw <-> `FinancialRequest`
+
+| JSP field | DTO field | Status | Severity | Notes |
+|---|---|---|---|---|
+| `amount` | `amount` | `[OK]` | -- | required, both |
+| `narration` | `narration` | `[OK]` | -- | optional, both |
+| -- | `idempotencyKey` | `[GAP]` | **CRITICAL** | JSP sends none; controller passes `null`. Network retries can double-post. See `DepositController.java:487, 518` (`...null, "BRANCH"` calls). |
+| -- | `channel` | `[GAP]` | MEDIUM | JSP path hard-codes `"BRANCH"` in the service call (`DepositController.java:487, 518`) |
+
+### 2.2 Transfer <-> `TransferRequest`
+
+| JSP field | DTO field | Status | Severity | Notes |
+|---|---|---|---|---|
+| `fromAccount` | `fromAccount` | `[OK]` | -- | required, both |
+| `toAccount` | `toAccount` | `[OK]` | -- | required, both |
+| `amount` | `amount` | `[OK]` | -- | required, both |
+| `narration` | `narration` | `[OK]` | -- | optional |
+| -- | `idempotencyKey` | `[GAP]` | **CRITICAL** | Same gap as deposit/withdraw |
+
+---
+
+## 3. CIF (CUSTOMER) -- `customer/add|edit.jsp` <-> `Customer` entity (`@ModelAttribute`)
+
+JSP binds directly to `Customer` entity. The REST API has a parallel `CreateCustomerRequest` DTO (used by the React BFF). This crosswalk shows JSP field -> entity property and notes any divergence vs the REST DTO.
+
+> Per `CustomerWebController.addCustomer` (`controller/CustomerWebController.java:130-148`): the entire `Customer` entity is constructed from form fields by Spring's data-binder. Field names in the JSP must exactly match `Customer` setter names.
+
+| JSP field | `Customer.<prop>` | Status | Severity | Notes |
+|---|---|---|---|---|
+| `customerType` | `customerType` | `[ENTITY]` | -- | -- |
+| `branchId` | -- | `[ALIAS]` | -- | NOT bound on entity; controller looks up `Branch` and sets it explicitly |
+| `kycRiskCategory` | `kycRiskCategory` | `[ENTITY]` | -- | -- |
+| `pep` (+ hidden `_pep`) | `pep` | `[ENTITY]` | -- | Spring checkbox idiom |
+| `firstName`, `lastName` | same | `[ENTITY]` | -- | required |
+| `gender`, `dateOfBirth`, `maritalStatus` | same | `[ENTITY]` | -- | -- |
+| `fatherName`, `motherName`, `spouseName` | same | `[ENTITY]` | -- | CERSAI CKYC mandatory |
+| `nationality`, `occupationCode`, `annualIncomeBand`, `cibilScore` | same | `[ENTITY]` | -- | -- |
+| `panNumber`, `aadhaarNumber` | same | `[ENTITY]` | -- | immutable post-create (server-enforced) |
+| `photoIdType`, `photoIdNumber`, `addressProofType`, `addressProofNumber` | same | `[ENTITY]` | -- | KYC OVD identifiers |
+| `kycMode` | `kycMode` | `[ENTITY]` | -- | IN_PERSON / VIDEO_KYC / DIGITAL_KYC / CKYC_DOWNLOAD |
+| `mobileNumber`, `email` | same | `[ENTITY]` | -- | required mobile |
+| `address`, `city`, `state`, `pinCode` | same | `[ENTITY]` | -- | correspondence address |
+| `addressSameAsPermanent` (+ `_addressSameAsPermanent`) | `addressSameAsPermanent` | `[ENTITY]` | -- | Spring checkbox idiom |
+| `permanentAddress`, `permanentCity`, `permanentState`, `permanentPinCode`, `permanentCountry` | same | `[ENTITY]` | -- | -- |
+| `monthlyIncome`, `maxBorrowingLimit`, `employmentType`, `employerName` | same | `[ENTITY]` | -- | -- |
+| `nomineeDob`, `nomineeGuardianName`, `nomineeAddress` | same | `[ENTITY]` | -- | -- |
+
+**JSP-vs-REST DTO divergence (`CreateCustomerRequest`, 67 fields per `DTO_PARITY_AUDIT_REPORT.md` Section 2.5):**
+
+| Missing on JSP form | Present in REST DTO | Severity |
+|---|---|---|
+| `middleName`, `alternateMobile`, `communicationPref` | yes | LOW |
+| `residentStatus`, `sourceOfFunds` | yes | MEDIUM (FEMA / AML) |
+| `passportNumber`, `passportExpiry`, `voterId`, `drivingLicense` | yes | LOW-MEDIUM (OVD per RBI KYC §3) |
+| `fatcaCountry` | yes | MEDIUM (FATCA / CRS) |
+| `permanentDistrict`, `correspondenceAddress|City|District|State|PinCode|Country` | yes | LOW (CKYC completeness) |
+| `customerSegment`, `sourceOfIntroduction` | yes | LOW |
+| `companyName`, `cin`, `gstin`, `dateOfIncorporation`, `constitutionType`, `natureOfBusiness` | yes | MEDIUM (corporate CIF cannot be created via JSP) |
+
+> Total: 23 fields are present in the REST DTO but absent from the JSP form. Critical impact: corporate, NRI, and FATCA customers cannot have all required attributes captured via JSP -- only via React.
+
+---
+
+## 4. LOAN APPLICATION -- `loan/apply.jsp` <-> `LoanApplication` entity (JSP) AND `SubmitApplicationRequest` DTO (REST)
+
+JSP binds directly to `LoanApplication` JPA entity via `@ModelAttribute` (`controller/LoanController.java:134-140`). The REST API uses `SubmitApplicationRequest` (`api/LoanApplicationController.java:162` -- inline `record` of 10 fields).
+
+| JSP field | `LoanApplication.<prop>` | REST DTO field (`SubmitApplicationRequest`) | Status | Severity | Notes |
+|---|---|---|---|---|---|
+| `customerId` | -- | `customerId` | `[ALIAS]` | -- | JSP: `@RequestParam`; controller looks up `Customer` and sets relation |
+| `branchId` | -- | `branchId` | `[ALIAS]` | -- | JSP: `@RequestParam`; controller looks up `Branch` |
+| `productType` | `productType` | `productType` | `[ENTITY]` + `[OK]` | -- | bound on both paths |
+| `requestedAmount` | `requestedAmount` | `requestedAmount` | `[ENTITY]` + `[OK]` | -- | -- |
+| `interestRate` | `interestRate` | `interestRate` | `[ENTITY]` + `[OK]` | -- | -- |
+| `tenureMonths` | `tenureMonths` | `tenureMonths` | `[ENTITY]` + `[OK]` | -- | -- |
+| `purpose` | `purpose` | `purpose` | `[ENTITY]` + `[OK]` | -- | optional, both |
+| `collateralReference` | `collateralReference` | `collateralReference` | `[ENTITY]` + `[OK]` | -- | optional, both |
+| `disbursementAccountNumber` | `disbursementAccountNumber` | `disbursementAccountNumber` | `[ENTITY]` + `[OK]` | -- | -- |
+| `penalRate` | `penalRate` | `penalRate` | `[ENTITY]` + `[OK]` | -- | optional |
+| `riskCategory` | -- | -- | `[JSP-ONLY]` | **HIGH** | **Silently dropped.** No corresponding entity setter and not in `SubmitApplicationRequest`. DTO uses `@JsonIgnoreProperties(ignoreUnknown = true)` so REST API would also ignore it. See `DTO_PARITY_AUDIT_REPORT.md` Section 2.6. |
+
+> JSP field count: 11. REST DTO field count: 10. Entity bind covers 8 fields directly; `customerId`/`branchId` are sidecar params that the controller resolves. The single bona fide JSP-only field (`riskCategory`) is the silent-drop bug.
+
+---
