@@ -50,6 +50,7 @@ public final class CbsErrorCodes {
     public static final String ACCT_OD_LIMIT_EXCEEDED = "CBS-ACCT-009";
     public static final String ACCT_HOLD_AMOUNT_EXCEEDED = "CBS-ACCT-010";
     public static final String ACCT_SAME_ACCOUNT_TRANSFER = "CBS-ACCT-011";
+    public static final String ACCT_INVALID_FREEZE_TYPE = "CBS-ACCT-012";
 
     // =====================================================================
     // TRANSACTION MODULE (CBS-TXN-xxx)

@@ -9,6 +9,7 @@ import com.finvanta.util.BusinessException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
@@ -29,6 +30,41 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class AccountValidator {
+
+    /**
+     * CBS Freeze Type Whitelist per RBI Freeze Guidelines / PMLA 2002.
+     *
+     * <p>These are the ONLY freeze types recognized by
+     * {@link DepositAccount#isDebitAllowed()} / {@link DepositAccount#isCreditAllowed()}.
+     * Any other value silently degrades to a total freeze (since neither helper
+     * matches it), blocking legitimate operations and creating audit ambiguity.
+     *
+     * <p>Kept in sync with the freeze-type checks in
+     * {@code DepositAccount.java} (isDebitAllowed / isCreditAllowed).
+     */
+    static final Set<String> ALLOWED_FREEZE_TYPES = Set.of(
+            "DEBIT_FREEZE", "CREDIT_FREEZE", "TOTAL_FREEZE");
+
+    /**
+     * Validates that the supplied freeze type is one of the recognized CBS
+     * freeze categories. Per CBS ACCTFRZ: unrecognized freeze types must be
+     * rejected at the API boundary so the operator gets an explicit error
+     * rather than the entity's freeze-helper falling through to "deny all".
+     *
+     * @throws BusinessException CBS-ACCT-012 if the type is null/blank or
+     *                           not in {@link #ALLOWED_FREEZE_TYPES}
+     */
+    public void validateFreezeType(String freezeType) {
+        if (freezeType == null || freezeType.isBlank()) {
+            throw new BusinessException("CBS-ACCT-012",
+                    "Freeze type is required. Allowed values: " + ALLOWED_FREEZE_TYPES);
+        }
+        if (!ALLOWED_FREEZE_TYPES.contains(freezeType)) {
+            throw new BusinessException("CBS-ACCT-012",
+                    "Invalid freeze type: '" + freezeType
+                            + "'. Allowed values: " + ALLOWED_FREEZE_TYPES);
+        }
+    }
 
     /**
      * Validates prerequisites for account opening.

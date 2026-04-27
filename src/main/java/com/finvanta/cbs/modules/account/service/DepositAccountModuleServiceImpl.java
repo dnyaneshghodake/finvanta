@@ -281,16 +281,25 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
     @Override
     @Transactional
     public DepositAccount freezeAccount(String accountNumber, String freezeType, String reason) {
+        // Normalize and whitelist-validate the freeze type BEFORE acquiring the
+        // row lock so we fail fast on bad input without holding a write lock.
+        // Per CBS ACCTFRZ: only DEBIT_FREEZE / CREDIT_FREEZE / TOTAL_FREEZE are
+        // honored by DepositAccount.isDebitAllowed/isCreditAllowed. Any other
+        // value silently degrades to a deny-all freeze, masking operator error.
+        String normalizedFreezeType = freezeType != null
+                ? freezeType.trim().toUpperCase() : null;
+        accountValidator.validateFreezeType(normalizedFreezeType);
+
         DepositAccount account = lockAccount(accountNumber);
         accountValidator.validateAccountForTransaction(account);
 
         account.setAccountStatus(DepositAccountStatus.FROZEN);
-        account.setFreezeType(freezeType);
+        account.setFreezeType(normalizedFreezeType);
         account.setFreezeReason(reason);
         DepositAccount saved = accountRepository.save(account);
 
         auditService.logEventInline("DepositAccount", saved.getId(), "FREEZE",
-                null, saved, "ACCOUNT", "Account frozen: " + freezeType);
+                null, saved, "ACCOUNT", "Account frozen: " + normalizedFreezeType);
 
         return saved;
     }
