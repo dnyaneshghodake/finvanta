@@ -164,9 +164,9 @@ JSP binds directly to `LoanApplication` JPA entity via `@ModelAttribute` (`contr
 | `collateralReference` | `collateralReference` | `collateralReference` | `[ENTITY]` + `[OK]` | -- | optional, both |
 | `disbursementAccountNumber` | `disbursementAccountNumber` | `disbursementAccountNumber` | `[ENTITY]` + `[OK]` | -- | -- |
 | `penalRate` | `penalRate` | `penalRate` | `[ENTITY]` + `[OK]` | -- | optional |
-| `riskCategory` | -- | -- | `[JSP-ONLY]` | **HIGH** | **Silently dropped.** No corresponding entity setter and not in `SubmitApplicationRequest`. DTO uses `@JsonIgnoreProperties(ignoreUnknown = true)` so REST API would also ignore it. See `DTO_PARITY_AUDIT_REPORT.md` Section 2.6. |
+| `riskCategory` | `riskCategory` (Lombok `@Setter` on entity, column `risk_category`) | **NOT** in `SubmitApplicationRequest` | `[ENTITY]` on JSP path / `[JSP-ONLY]` on REST path | MEDIUM | **CORRECTION:** `LoanApplication` entity DOES have `riskCategory` (line 94-95, Lombok-generated setter via `@Setter` at class level). Spring's `@ModelAttribute` data-binder populates it on the JSP path -- value IS persisted via `LoanApplicationServiceImpl.createApplication`. The silent-drop only happens on the **REST API path**: `SubmitApplicationRequest` does not declare `riskCategory`, and `@JsonIgnoreProperties(ignoreUnknown = true)` discards it. Symmetry fix: add `riskCategory` to the REST DTO. See `DTO_PARITY_AUDIT_REPORT.md` Section 2.6. |
 
-> JSP field count: 11. REST DTO field count: 10. Entity bind covers 8 fields directly; `customerId`/`branchId` are sidecar params that the controller resolves. The single bona fide JSP-only field (`riskCategory`) is the silent-drop bug.
+> JSP field count: 11. REST DTO field count: 10. Entity bind covers 9 fields directly (including `riskCategory` via Lombok `@Setter`); `customerId`/`branchId` are sidecar params that the controller resolves. **Per-channel asymmetry:** JSP persists `riskCategory` via `@ModelAttribute` entity bind, but the REST API discards it because `SubmitApplicationRequest` does not declare it.
 
 ---
 

@@ -169,7 +169,14 @@ public class LoanApplicationController {
             String purpose,
             String collateralReference,
             String disbursementAccountNumber,
-            BigDecimal penalRate) {}
+            BigDecimal penalRate,
+            // CBS AML/CFT per RBI KYC Master Direction 2016 Section 16:
+            // operator-asserted risk category at origination. The JSP path
+            // already persists this via @ModelAttribute entity bind; the REST
+            // path was silently dropping it because the DTO did not declare it.
+            // Allowed values mirror the JSP options: LOW / MEDIUM / HIGH /
+            // VERY_HIGH (validated by the service / loan eligibility rule).
+            String riskCategory) {}
 
     public record RemarksRequest(
             @NotBlank String remarks) {}
