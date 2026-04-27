@@ -67,6 +67,24 @@ public final class CbsErrorCodes {
     public static final String TXN_BATCH_NOT_OPEN = "CBS-TXN-009";
     public static final String TXN_VALUE_DATE_OUT_OF_WINDOW = "CBS-TXN-010";
     public static final String TXN_POSTING_SUSPENDED = "CBS-TXN-011";
+    /**
+     * Transfer reversals cannot be performed via the single-leg reversal path --
+     * both DEBIT and CREDIT legs must be reversed atomically via the dedicated
+     * transfer-reversal service. Thrown by {@code DepositAccountModuleServiceImpl
+     * .reverseTransaction} when the target txn is TRANSFER_DEBIT / TRANSFER_CREDIT.
+     */
+    public static final String TXN_TRANSFER_REVERSAL_REQUIRED = "CBS-TXN-012";
+    /**
+     * The target transaction has already been reversed; a second reversal would
+     * double-post the GL and corrupt the subledger balance. Thrown by
+     * {@code DepositAccountModuleServiceImpl.reverseTransaction} after the
+     * PESSIMISTIC_WRITE lock on the transaction row confirms {@code isReversed==true}.
+     *
+     * <p>Distinct from {@link #TXN_IDEMPOTENCY_DUPLICATE} which means "retry of
+     * an in-flight txn using the same idempotency key" -- that error returns
+     * the prior result, while this one is a hard rejection per CBS audit rules.
+     */
+    public static final String TXN_ALREADY_REVERSED = "CBS-TXN-013";
 
     // =====================================================================
     // LOAN MODULE (CBS-LOAN-xxx)

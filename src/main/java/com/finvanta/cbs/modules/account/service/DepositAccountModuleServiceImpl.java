@@ -4,6 +4,7 @@ import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
 import com.finvanta.accounting.ProductGLResolver;
 import com.finvanta.audit.AuditService;
+import com.finvanta.cbs.common.constants.CbsErrorCodes;
 import com.finvanta.cbs.modules.account.dto.request.FinancialRequest;
 import com.finvanta.cbs.modules.account.dto.request.OpenAccountRequest;
 import com.finvanta.cbs.modules.account.dto.request.TransferRequest;
@@ -715,7 +716,12 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                         "Transaction not found: " + transactionRef));
 
         if (original.isReversed()) {
-            throw new BusinessException("CBS-TXN-001",
+            // CBS: distinct from CBS-TXN-001 (idempotency-duplicate retry) -- this
+            // is a hard rejection because a second reversal would double-post the
+            // GL and corrupt subledger balance. Per CBS TRAN_REVERSAL audit rules:
+            // the original transaction is marked reversed and must never be reversed
+            // again (a subsequent correction requires a fresh contra posting).
+            throw new BusinessException(CbsErrorCodes.TXN_ALREADY_REVERSED,
                     "Transaction " + transactionRef + " is already reversed");
         }
 
@@ -726,7 +732,7 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         // silently performing an unbalanced single-leg reversal.
         String txnType = original.getTransactionType();
         if ("TRANSFER_DEBIT".equals(txnType) || "TRANSFER_CREDIT".equals(txnType)) {
-            throw new BusinessException("CBS-TXN-012",
+            throw new BusinessException(CbsErrorCodes.TXN_TRANSFER_REVERSAL_REQUIRED,
                     "Transfer reversals must be executed via the transfer reversal flow "
                             + "(both legs reversed atomically). Original txn: " + transactionRef);
         }

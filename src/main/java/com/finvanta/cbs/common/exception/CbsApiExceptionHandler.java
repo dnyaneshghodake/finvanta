@@ -212,6 +212,8 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.TXN_PENDING_APPROVAL,
                     CbsErrorCodes.LOAN_ALREADY_CLOSED,
                     CbsErrorCodes.WF_ALREADY_PROCESSED,
+                    CbsErrorCodes.TXN_ALREADY_REVERSED,
+                    CbsErrorCodes.TXN_TRANSFER_REVERSAL_REQUIRED,
                     "WORKFLOW_VERSION_MISMATCH" -> HttpStatus.CONFLICT;
             case CbsErrorCodes.ACCT_INSUFFICIENT_BALANCE,
                     CbsErrorCodes.ACCT_FROZEN,
@@ -271,6 +273,8 @@ public class CbsApiExceptionHandler {
             case CbsErrorCodes.ACCT_DUPLICATE_NUMBER,
                     CbsErrorCodes.TXN_IDEMPOTENCY_DUPLICATE,
                     CbsErrorCodes.TXN_PENDING_APPROVAL,
+                    CbsErrorCodes.TXN_ALREADY_REVERSED,
+                    CbsErrorCodes.TXN_TRANSFER_REVERSAL_REQUIRED,
                     CbsErrorCodes.LOAN_ALREADY_CLOSED,
                     CbsErrorCodes.WF_ALREADY_PROCESSED,
                     CbsErrorCodes.ACCT_DORMANT,
@@ -331,6 +335,10 @@ public class CbsApiExceptionHandler {
                     "A different user must approve this operation";
             case CbsErrorCodes.WF_ALREADY_PROCESSED ->
                     "This workflow item is already approved or rejected";
+            case CbsErrorCodes.TXN_ALREADY_REVERSED ->
+                    "This transaction has already been reversed. No further action needed";
+            case CbsErrorCodes.TXN_TRANSFER_REVERSAL_REQUIRED ->
+                    "Transfer reversals require both legs (debit + credit) to be reversed atomically. Use the transfer reversal flow";
             case CbsErrorCodes.COMP_AML_FLAG ->
                     "Transaction flagged for AML review. Contact compliance team";
             case CbsErrorCodes.AUTH_INVALID_CREDENTIALS,
