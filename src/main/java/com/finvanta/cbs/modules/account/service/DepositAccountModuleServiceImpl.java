@@ -298,15 +298,39 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         accountValidator.validateFreezeType(normalizedFreezeType);
 
         DepositAccount account = lockAccount(accountNumber);
-        accountValidator.validateAccountForTransaction(account);
 
+        // CBS ACCTFRZ: a freeze is permitted on any non-terminal status. Mirrors
+        // the legacy DepositAccountServiceImpl.freezeAccount guard
+        // (src/main/java/com/finvanta/service/impl/DepositAccountServiceImpl.java:1403)
+        // which rejects CLOSED only. Three legitimate flows are blocked if we
+        // require ACTIVE here:
+        //   1. Freeze escalation (DEBIT_FREEZE -> TOTAL_FREEZE) per PMLA 2002
+        //      / court orders -- the account is already FROZEN.
+        //   2. Regulatory freeze on a DORMANT account (court attachment, ED order)
+        //      -- the account is DORMANT but still subject to legal action.
+        //   3. Fraud freeze during activation pipeline -- PENDING_ACTIVATION
+        //      accounts must be freezable when fraud is detected mid-onboarding.
+        // CLOSED accounts are terminal: no freeze can apply because the account
+        // no longer exists from a banking standpoint.
+        if (account.isClosed()) {
+            throw new BusinessException("CBS-ACCT-004",
+                    "Cannot freeze closed account: " + accountNumber);
+        }
+
+        DepositAccountStatus prevStatus = account.getAccountStatus();
+        String prevFreezeType = account.getFreezeType();
         account.setAccountStatus(DepositAccountStatus.FROZEN);
         account.setFreezeType(normalizedFreezeType);
         account.setFreezeReason(reason);
         DepositAccount saved = accountRepository.save(account);
 
+        // CBS Audit: record FROM-state so RBI inspection can trace the escalation
+        // path (e.g. ACTIVE -> DEBIT_FREEZE -> TOTAL_FREEZE).
         auditService.logEventInline("DepositAccount", saved.getId(), "FREEZE",
-                null, saved, "ACCOUNT", "Account frozen: " + normalizedFreezeType);
+                prevStatus.name(), "FROZEN", "ACCOUNT",
+                "Account " + accountNumber + " frozen: " + normalizedFreezeType
+                        + (prevFreezeType != null ? " (was " + prevFreezeType + ")" : "")
+                        + " | Reason: " + reason);
 
         return saved;
     }
