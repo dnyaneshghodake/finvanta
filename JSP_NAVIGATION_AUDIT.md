@@ -827,3 +827,154 @@ Form fields submitted (all map to `ProductMaster.<prop>` via `@ModelAttribute`):
 | Reset password (`POST /admin/users/reset-password/{id}`) | `newPassword` | password | `@RequestParam` |
 
 ---
+
+### 21.18 `admin/mfa.jsp` / `admin/mfa-enroll.jsp` -> `AdminController` MFA endpoints
+
+| Action -> URI | Field | Element | Maps to |
+|---|---|---|---|
+| Enable (`POST /admin/mfa/enable`) | `username` | hidden | `@RequestParam` |
+| Enroll (`POST /admin/mfa/enroll`) | `username` | hidden | `@RequestParam` |
+| Verify (`POST /admin/mfa/verify`) | `username` | hidden | `@RequestParam` |
+| | `totpCode` | text (6-digit) | `@RequestParam` |
+| Disable (`POST /admin/mfa/disable`) | `username` | hidden | `@RequestParam` |
+| | `reason` | text | `@RequestParam` mandatory |
+
+---
+
+### 21.19 `admin/ib-settlement.jsp` -> `POST /admin/ib-settlement/manual-settle`
+
+| Field | Element | Maps to | Notes |
+|---|---|---|---|
+| `reason` | text | `@RequestParam String` | mandatory, audit trail |
+| `hoAuthorizationRef` | text | `@RequestParam String` | mandatory, HO auth number |
+
+---
+
+### 21.20 `calendar/list.jsp` -> `CalendarController` action forms
+
+| Action -> URI | Field | Element | Maps to |
+|---|---|---|---|
+| Day open (`POST /calendar/day-open`) | `businessDate` | date | `@RequestParam String` |
+| | `branchId` | hidden / select | `@RequestParam Long` |
+| Day close (`POST /calendar/day-close`) | `businessDate` | date | `@RequestParam String` |
+| | `branchId` | hidden / select | `@RequestParam Long` |
+| Generate (`POST /calendar/generate`) | `year` | number | `@RequestParam int` |
+| | `month` | select | `@RequestParam int` |
+| Add holiday (`POST /calendar/add-holiday`) | `date` | date | `@RequestParam String` |
+| | `description` | text | `@RequestParam String` |
+| Remove holiday (`POST /calendar/remove-holiday`) | `date` | date | `@RequestParam String` |
+
+---
+
+### 21.21 `batch/eod.jsp` -> `BatchController`
+
+| Action -> URI | Field | Element | Maps to |
+|---|---|---|---|
+| Trial (`POST /batch/eod/trial`) | `businessDate` | date | `@RequestParam String` |
+| Apply (`POST /batch/eod/apply`) | `businessDate` | date / hidden | `@RequestParam String` |
+
+### `batch/txn-batches.jsp` -> `TransactionBatchController`
+
+| Action -> URI | Field | Element | Maps to |
+|---|---|---|---|
+| Open (`POST /batch/txn/open`) | `businessDate` | hidden | `@RequestParam String` |
+| | `batchName` | text | `@RequestParam String` |
+| | `batchType` | select | `@RequestParam String` |
+| | `branchId` | select | `@RequestParam Long` (optional) |
+| Close (`POST /batch/txn/close/{id}`) | `businessDate` | hidden | `@RequestParam String` |
+
+---
+
+### 21.22 `workflow/pending.jsp` -> `WorkflowController`
+
+| Action -> URI | Field | Element | Maps to | Notes |
+|---|---|---|---|---|
+| Approve (`POST /workflow/approve/{id}`) | `remarks` | hidden | `@RequestParam String` | hard-coded value `"Approved"` in JSP |
+| Reject (`POST /workflow/reject/{id}`) | `remarks` | hidden | `@RequestParam String` | populated by a JS prompt before submit (JSP class `fv-reason-field`) |
+
+> No `version` field is captured on the JSP -- optimistic locking is not enforced at the controller layer here. React sends `version` but the backend DTO does not bind it either. See finding #4 and `DTO_PARITY_AUDIT_REPORT.md` Section 2.7.
+
+---
+
+### 21.23 `password/change.jsp` -> `POST /password/change`
+
+| Field | Element | Maps to | Notes |
+|---|---|---|---|
+| `currentPassword` | password | `@RequestParam String` | required, `autocomplete="current-password"` |
+| `newPassword` | password | `@RequestParam String` | required, `minlength=8` |
+| `confirmPassword` | password | `@RequestParam String` | required, client-side match check |
+
+> On success, session is invalidated; the login page picks up `?password_changed` query param (`PasswordController.java:83-89`).
+
+---
+
+### 21.24 `mfa/verify.jsp` -> `POST /mfa/verify`
+
+| Field | Element | Maps to | Notes |
+|---|---|---|---|
+| `totpCode` | text (6-digit, `pattern=\d{6}`) | `@RequestParam String` | required; controller also enforces `matches("\\d{6}")` |
+
+> Username comes from `SecurityContext` -- not a form field. Session attributes `MFA_FAILED_ATTEMPTS`, `MFA_VERIFIED_ATTR` are tracked server-side. `MAX_MFA_ATTEMPTS = 5` triggers session invalidation and redirect to `/login?mfa_locked`.
+
+---
+
+### 21.25 `audit/logs.jsp` -> `AuditController` (read-only filters, GET only)
+
+| Endpoint | Query param | Element | Maps to |
+|---|---|---|---|
+| `GET /audit/search` | `q` | text | `@RequestParam String` |
+| | `fromDate` | date | `@RequestParam String` |
+| | `toDate` | date | `@RequestParam String` |
+| `GET /audit/entity` | `entityType` | select | `@RequestParam String` (whitelisted) |
+| | `entityId` | number | `@RequestParam Long` |
+
+---
+
+### 21.26 `accounting/*.jsp` -> `AccountingController` (GET filters only)
+
+| Screen | Endpoint | Query param | Element | Maps to |
+|---|---|---|---|---|
+| `trial-balance.jsp` | `GET /accounting/gl/search` | `q` | text | `@RequestParam String` |
+| `journal-entries.jsp` | `GET /accounting/journal-entries` | `fromDate`, `toDate` | date | `@RequestParam String` |
+| `journal-entries.jsp` (search) | `GET /accounting/journal-entries/search` | `q`, `fromDate`, `toDate` | text + date | `@RequestParam String` |
+| `voucher-register.jsp` | `GET /accounting/voucher-register` | `businessDate` | date | `@RequestParam String` |
+
+---
+
+### 21.27 `reports/*.jsp` -> `ReportController` (GET only; no POST forms)
+
+| Screen | Endpoint | Query params |
+|---|---|---|
+| `reports/dpd.jsp` | `GET /reports/dpd` | none |
+| `reports/irac.jsp` | `GET /reports/irac` | none |
+| `reports/provision.jsp` | `GET /reports/provision` | none |
+| `reports/udgam.jsp` | `GET /reports/udgam` | none |
+| UDGAM CSV | `GET /reports/udgam/export` | none |
+
+---
+
+### 21.28 `txn360/search.jsp` -> `GET /txn360/search`
+
+| Field | Element | Maps to | Notes |
+|---|---|---|---|
+| `q` | text | `@RequestParam String q` | Resolver dispatches by prefix (VCH/TXN/JRN) |
+
+---
+
+### 21.29 Summary of screen-level @ModelAttribute entity bindings
+
+| JSP form | POST URL | `@ModelAttribute` target entity |
+|---|---|---|
+| `customer/add.jsp` | `/customer/add` | `Customer` |
+| `customer/edit.jsp` | `/customer/edit/{id}` | `Customer` |
+| `loan/apply.jsp` | `/loan/apply` | `LoanApplication` |
+| `branch/add.jsp` | `/branch/add` | `Branch` |
+| `branch/edit.jsp` | `/branch/edit/{id}` | `Branch` |
+| `admin/product-create.jsp` | `/admin/products/create` | `ProductMaster` |
+| `admin/product-edit.jsp` | `/admin/products/{id}/edit` | `ProductMaster` |
+
+Every other form on every other screen uses explicit `@RequestParam` binding -- no JPA entities crossing the request boundary. This split is the root cause of architecture finding **C3** (entity exposure at API boundary) -- see `CBS_TIER1_AUDIT_REPORT.md`.
+
+---
+
+*End of Section 21. All screen-level attribute tables are compiled from `src/main/webapp/WEB-INF/views/**/*.jsp` at merge-base commit `d509531b70188180fbfe3625dccf10ddc811d607`.*
