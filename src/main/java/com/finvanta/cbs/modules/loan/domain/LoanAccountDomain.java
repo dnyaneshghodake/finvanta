@@ -134,7 +134,8 @@ public class LoanAccountDomain {
         if (penaltyRate == null || penaltyRate.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
-        BigDecimal effectiveRate = penaltyRate.min(MAX_FIXED_PREPAYMENT_PENALTY_RATE);
+        BigDecimal effectiveRate = penaltyRate.divide(BigDecimal.valueOf(100), 10, ROUNDING)
+                .min(MAX_FIXED_PREPAYMENT_PENALTY_RATE);
         return prepaymentAmount.multiply(effectiveRate).setScale(SCALE, ROUNDING);
     }
 
