@@ -206,12 +206,13 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.LOAN_APPLICATION_NOT_FOUND,
                     CbsErrorCodes.GL_ACCOUNT_NOT_FOUND,
                     CbsErrorCodes.WF_NOT_FOUND -> HttpStatus.NOT_FOUND;
-            case CbsErrorCodes.ACCT_CLOSED,
+                    CbsErrorCodes.ACCT_CLOSED,
                     CbsErrorCodes.ACCT_DUPLICATE_NUMBER,
                     CbsErrorCodes.TXN_IDEMPOTENCY_DUPLICATE,
                     CbsErrorCodes.TXN_PENDING_APPROVAL,
                     CbsErrorCodes.LOAN_ALREADY_CLOSED,
-                    CbsErrorCodes.WF_ALREADY_PROCESSED -> HttpStatus.CONFLICT;
+                    CbsErrorCodes.WF_ALREADY_PROCESSED,
+                    "WORKFLOW_VERSION_MISMATCH" -> HttpStatus.CONFLICT;
             case CbsErrorCodes.ACCT_INSUFFICIENT_BALANCE,
                     CbsErrorCodes.ACCT_FROZEN,
                     CbsErrorCodes.ACCT_DORMANT,
