@@ -63,10 +63,17 @@ public class WorkflowController {
     }
 
     @PostMapping("/approve/{id}")
-    public String approve(@PathVariable Long id, @RequestParam String remarks, RedirectAttributes redirectAttributes) {
+    public String approve(@PathVariable Long id,
+            @RequestParam String remarks,
+            @RequestParam(required = false) Long version,
+            RedirectAttributes redirectAttributes) {
         try {
-            // Step 1: Set workflow status to APPROVED (validates maker≠checker, status=PENDING)
-            ApprovalWorkflow workflow = workflowService.approve(id, remarks);
+            // Step 1: Set workflow status to APPROVED (validates maker≠checker, status=PENDING).
+            // CBS Optimistic Lock: pass JSP-supplied version for friendly mismatch error
+            // (see ApprovalWorkflowService#approve(Long, Long, String) for rationale).
+            // Null when the JSP has not been redeployed -- service falls back to the JPA
+            // safety net.
+            ApprovalWorkflow workflow = workflowService.approve(id, version, remarks);
 
             // Step 2: If this is a Transaction workflow, trigger GL re-execution.
             // CBS Tier-1: This is the critical link that was previously missing —
@@ -129,9 +136,13 @@ public class WorkflowController {
     }
 
     @PostMapping("/reject/{id}")
-    public String reject(@PathVariable Long id, @RequestParam String remarks, RedirectAttributes redirectAttributes) {
+    public String reject(@PathVariable Long id,
+            @RequestParam String remarks,
+            @RequestParam(required = false) Long version,
+            RedirectAttributes redirectAttributes) {
         try {
-            workflowService.reject(id, remarks);
+            // CBS Optimistic Lock: see approve() above for rationale.
+            workflowService.reject(id, version, remarks);
             redirectAttributes.addFlashAttribute("success", "Rejected successfully");
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());

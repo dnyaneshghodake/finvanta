@@ -130,8 +130,9 @@ public class WorkflowApiController {
     public ResponseEntity<ApiResponse<WorkflowResponse>>
             reject(@PathVariable Long id,
                     @Valid @RequestBody WorkflowActionRequest req) {
+        // CBS Optimistic Lock: see approve() above for rationale.
         ApprovalWorkflow wf = workflowService
-                .reject(id, req.remarks());
+                .reject(id, req.version(), req.remarks());
         return ResponseEntity.ok(ApiResponse.success(
                 WorkflowResponse.from(wf),
                 "Rejected: " + wf.getEntityType()
@@ -176,6 +177,10 @@ public class WorkflowApiController {
      */
     public record WorkflowResponse(
             Long id,
+            // CBS Optimistic Lock: JPA @Version exposed to the BFF so the
+            // CHECKER's approve/reject call can echo it back. Service layer
+            // rejects mismatches with WORKFLOW_VERSION_MISMATCH.
+            Long version,
             String entityType,
             Long entityId,
             String actionType,
@@ -193,6 +198,7 @@ public class WorkflowApiController {
         static WorkflowResponse from(ApprovalWorkflow w) {
             return new WorkflowResponse(
                     w.getId(),
+                    w.getVersion(),
                     w.getEntityType(),
                     w.getEntityId(),
                     w.getActionType(),
