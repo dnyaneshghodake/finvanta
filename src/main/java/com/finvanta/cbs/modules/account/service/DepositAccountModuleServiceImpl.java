@@ -1,6 +1,5 @@
 package com.finvanta.cbs.modules.account.service;
 
-import com.finvanta.accounting.AccountingService;
 import com.finvanta.accounting.AccountingService.JournalLineRequest;
 import com.finvanta.accounting.GLConstants;
 import com.finvanta.accounting.ProductGLResolver;
@@ -80,7 +79,6 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
     private final ProductGLResolver glResolver;
     private final ProductMasterRepository productMasterRepository;
     private final TransactionEngine transactionEngine;
-    private final AccountingService accountingService;
     private final BusinessDateService businessDateService;
     private final AuditService auditService;
     private final AccountValidator accountValidator;
@@ -95,7 +93,6 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
             ProductGLResolver glResolver,
             ProductMasterRepository productMasterRepository,
             TransactionEngine transactionEngine,
-            AccountingService accountingService,
             BusinessDateService businessDateService,
             AuditService auditService,
             AccountValidator accountValidator,
@@ -108,7 +105,6 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         this.glResolver = glResolver;
         this.productMasterRepository = productMasterRepository;
         this.transactionEngine = transactionEngine;
-        this.accountingService = accountingService;
         this.businessDateService = businessDateService;
         this.auditService = auditService;
         this.accountValidator = accountValidator;
@@ -386,40 +382,39 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
 
         String gl = glForAccount(acct);
 
-        // CBS: Route through TransactionEngine -- the SINGLE enforcement point
-        accountingService.generateEngineToken();
-        try {
-            TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
-                    .sourceModule("DEPOSIT")
-                    .transactionType("CASH_DEPOSIT")
-                    .accountReference(accountNumber)
-                    .amount(request.amount())
-                    .valueDate(businessDate)
-                    .branchCode(acct.getBranch().getBranchCode())
-                    .narration(request.narration() != null ? request.narration() : "Cash deposit")
-                    .idempotencyKey(request.idempotencyKey())
-                    .journalLines(List.of(
-                            new JournalLineRequest(GLConstants.BANK_OPERATIONS,
-                                    DebitCredit.DEBIT, request.amount(), "Cash deposit"),
-                            new JournalLineRequest(gl,
-                                    DebitCredit.CREDIT, request.amount(), "Credit " + accountNumber)))
-                    .build());
+        // CBS: Route through TransactionEngine -- the SINGLE enforcement point.
+        // The engine itself manages the ENGINE_TOKEN ceremony internally
+        // (TransactionEngine.execute lines 673/715); calling generate/clear from
+        // a service violates the ArchUnit engineTokenHelpers_notUsedOutsideEngine
+        // guard and reaches into the engine's private posting plumbing.
+        TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
+                .sourceModule("DEPOSIT")
+                .transactionType("CASH_DEPOSIT")
+                .accountReference(accountNumber)
+                .amount(request.amount())
+                .valueDate(businessDate)
+                .branchCode(acct.getBranch().getBranchCode())
+                .narration(request.narration() != null ? request.narration() : "Cash deposit")
+                .idempotencyKey(request.idempotencyKey())
+                .journalLines(List.of(
+                        new JournalLineRequest(GLConstants.BANK_OPERATIONS,
+                                DebitCredit.DEBIT, request.amount(), "Cash deposit"),
+                        new JournalLineRequest(gl,
+                                DebitCredit.CREDIT, request.amount(), "Credit " + accountNumber)))
+                .build());
 
-            // Update subledger
-            BigDecimal balanceBefore = acct.getLedgerBalance();
-            acct.setLedgerBalance(balanceBefore.add(request.amount()));
-            acct.setAvailableBalance(acct.getAvailableBalance().add(request.amount()));
-            acct.setLastTransactionDate(businessDate);
-            accountRepository.save(acct);
+        // Update subledger
+        BigDecimal balanceBefore = acct.getLedgerBalance();
+        acct.setLedgerBalance(balanceBefore.add(request.amount()));
+        acct.setAvailableBalance(acct.getAvailableBalance().add(request.amount()));
+        acct.setLastTransactionDate(businessDate);
+        accountRepository.save(acct);
 
-            // Record module-specific transaction
-            return buildAndSaveTxn(acct, r, request.amount(), DebitCredit.CREDIT,
-                    "CASH_DEPOSIT", request.narration(), request.channel(),
-                    balanceBefore, acct.getLedgerBalance(),
-                    businessDate, request.idempotencyKey(), tenantId);
-        } finally {
-            accountingService.clearEngineToken();
-        }
+        // Record module-specific transaction
+        return buildAndSaveTxn(acct, r, request.amount(), DebitCredit.CREDIT,
+                "CASH_DEPOSIT", request.narration(), request.channel(),
+                balanceBefore, acct.getLedgerBalance(),
+                businessDate, request.idempotencyKey(), tenantId);
     }
 
     @Override
@@ -442,37 +437,33 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
 
         String gl = glForAccount(acct);
 
-        accountingService.generateEngineToken();
-        try {
-            TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
-                    .sourceModule("DEPOSIT")
-                    .transactionType("CASH_WITHDRAWAL")
-                    .accountReference(accountNumber)
-                    .amount(request.amount())
-                    .valueDate(businessDate)
-                    .branchCode(acct.getBranch().getBranchCode())
-                    .narration(request.narration() != null ? request.narration() : "Cash withdrawal")
-                    .idempotencyKey(request.idempotencyKey())
-                    .journalLines(List.of(
-                            new JournalLineRequest(gl,
-                                    DebitCredit.DEBIT, request.amount(), "Debit " + accountNumber),
-                            new JournalLineRequest(GLConstants.BANK_OPERATIONS,
-                                    DebitCredit.CREDIT, request.amount(), "Cash withdrawal")))
-                    .build());
+        // Engine manages its own ENGINE_TOKEN -- see deposit() for rationale.
+        TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
+                .sourceModule("DEPOSIT")
+                .transactionType("CASH_WITHDRAWAL")
+                .accountReference(accountNumber)
+                .amount(request.amount())
+                .valueDate(businessDate)
+                .branchCode(acct.getBranch().getBranchCode())
+                .narration(request.narration() != null ? request.narration() : "Cash withdrawal")
+                .idempotencyKey(request.idempotencyKey())
+                .journalLines(List.of(
+                        new JournalLineRequest(gl,
+                                DebitCredit.DEBIT, request.amount(), "Debit " + accountNumber),
+                        new JournalLineRequest(GLConstants.BANK_OPERATIONS,
+                                DebitCredit.CREDIT, request.amount(), "Cash withdrawal")))
+                .build());
 
-            BigDecimal balanceBefore = acct.getLedgerBalance();
-            acct.setLedgerBalance(balanceBefore.subtract(request.amount()));
-            acct.setAvailableBalance(acct.getAvailableBalance().subtract(request.amount()));
-            acct.setLastTransactionDate(businessDate);
-            accountRepository.save(acct);
+        BigDecimal balanceBefore = acct.getLedgerBalance();
+        acct.setLedgerBalance(balanceBefore.subtract(request.amount()));
+        acct.setAvailableBalance(acct.getAvailableBalance().subtract(request.amount()));
+        acct.setLastTransactionDate(businessDate);
+        accountRepository.save(acct);
 
-            return buildAndSaveTxn(acct, r, request.amount(), DebitCredit.DEBIT,
-                    "CASH_WITHDRAWAL", request.narration(), request.channel(),
-                    balanceBefore, acct.getLedgerBalance(),
-                    businessDate, request.idempotencyKey(), tenantId);
-        } finally {
-            accountingService.clearEngineToken();
-        }
+        return buildAndSaveTxn(acct, r, request.amount(), DebitCredit.DEBIT,
+                "CASH_WITHDRAWAL", request.narration(), request.channel(),
+                balanceBefore, acct.getLedgerBalance(),
+                businessDate, request.idempotencyKey(), tenantId);
     }
 
     @Override
@@ -514,69 +505,65 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         String srcGl = glForAccount(src);
         String dstGl = glForAccount(dst);
 
-        accountingService.generateEngineToken();
-        try {
-            TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
-                    .sourceModule("DEPOSIT")
-                    .transactionType("TRANSFER_DEBIT")
-                    .accountReference(request.fromAccount())
-                    .amount(request.amount())
-                    .valueDate(businessDate)
-                    .branchCode(src.getBranch().getBranchCode())
-                    .narration(request.narration() != null ? request.narration() : "Transfer to " + request.toAccount())
-                    .idempotencyKey(request.idempotencyKey())
-                    .journalLines(List.of(
-                            new JournalLineRequest(srcGl,
-                                    DebitCredit.DEBIT, request.amount(), "Transfer debit " + request.fromAccount()),
-                            new JournalLineRequest(dstGl,
-                                    DebitCredit.CREDIT, request.amount(), "Transfer credit " + request.toAccount())))
-                    .build());
+        // Engine manages its own ENGINE_TOKEN -- see deposit() for rationale.
+        TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
+                .sourceModule("DEPOSIT")
+                .transactionType("TRANSFER_DEBIT")
+                .accountReference(request.fromAccount())
+                .amount(request.amount())
+                .valueDate(businessDate)
+                .branchCode(src.getBranch().getBranchCode())
+                .narration(request.narration() != null ? request.narration() : "Transfer to " + request.toAccount())
+                .idempotencyKey(request.idempotencyKey())
+                .journalLines(List.of(
+                        new JournalLineRequest(srcGl,
+                                DebitCredit.DEBIT, request.amount(), "Transfer debit " + request.fromAccount()),
+                        new JournalLineRequest(dstGl,
+                                DebitCredit.CREDIT, request.amount(), "Transfer credit " + request.toAccount())))
+                .build());
 
-            // Debit source
-            BigDecimal srcBalBefore = src.getLedgerBalance();
-            src.setLedgerBalance(srcBalBefore.subtract(request.amount()));
-            src.setAvailableBalance(src.getAvailableBalance().subtract(request.amount()));
-            src.setLastTransactionDate(businessDate);
-            accountRepository.save(src);
+        // Debit source
+        BigDecimal srcBalBefore = src.getLedgerBalance();
+        src.setLedgerBalance(srcBalBefore.subtract(request.amount()));
+        src.setAvailableBalance(src.getAvailableBalance().subtract(request.amount()));
+        src.setLastTransactionDate(businessDate);
+        accountRepository.save(src);
 
-            // Credit destination
-            BigDecimal dstBalBefore = dst.getLedgerBalance();
-            dst.setLedgerBalance(dstBalBefore.add(request.amount()));
-            dst.setAvailableBalance(dst.getAvailableBalance().add(request.amount()));
-            dst.setLastTransactionDate(businessDate);
-            accountRepository.save(dst);
+        // Credit destination
+        BigDecimal dstBalBefore = dst.getLedgerBalance();
+        dst.setLedgerBalance(dstBalBefore.add(request.amount()));
+        dst.setAvailableBalance(dst.getAvailableBalance().add(request.amount()));
+        dst.setLastTransactionDate(businessDate);
+        accountRepository.save(dst);
 
-            // Record TRANSFER_DEBIT for source account
-            DepositTransaction debitTxn = buildAndSaveTxn(src, r, request.amount(), DebitCredit.DEBIT,
-                    "TRANSFER_DEBIT", "Transfer to " + request.toAccount(), "API",
-                    srcBalBefore, src.getLedgerBalance(),
-                    businessDate, request.idempotencyKey(), tenantId);
+        // Record TRANSFER_DEBIT for source account
+        DepositTransaction debitTxn = buildAndSaveTxn(src, r, request.amount(), DebitCredit.DEBIT,
+                "TRANSFER_DEBIT", "Transfer to " + request.toAccount(), "API",
+                srcBalBefore, src.getLedgerBalance(),
+                businessDate, request.idempotencyKey(), tenantId);
 
-            // Record TRANSFER_CREDIT for destination account (separate txn ref for unique constraint)
-            String creditTxnRef = ReferenceGenerator.generateTransactionRef();
-            DepositTransaction creditTxn = new DepositTransaction();
-            creditTxn.setDepositAccount(dst);
-            creditTxn.setBranch(dst.getBranch());
-            creditTxn.setBranchCode(dst.getBranch().getBranchCode());
-            creditTxn.setTransactionRef(creditTxnRef);
-            creditTxn.setTransactionType("TRANSFER_CREDIT");
-            creditTxn.setDebitCredit(DebitCredit.CREDIT.name());
-            creditTxn.setAmount(request.amount());
-            creditTxn.setBalanceBefore(dstBalBefore);
-            creditTxn.setBalanceAfter(dst.getLedgerBalance());
-            creditTxn.setValueDate(businessDate);
-            creditTxn.setPostingDate(LocalDateTime.now());
-            creditTxn.setNarration("Transfer from " + request.fromAccount());
-            creditTxn.setChannel("API");
-            creditTxn.setVoucherNumber(r.getVoucherNumber());
-            creditTxn.setJournalEntryId(r.getJournalEntryId());
-            creditTxn.setTenantId(tenantId);
-            transactionRepository.save(creditTxn);
+        // Record TRANSFER_CREDIT for destination account (separate txn ref for unique constraint)
+        String creditTxnRef = ReferenceGenerator.generateTransactionRef();
+        DepositTransaction creditTxn = new DepositTransaction();
+        creditTxn.setDepositAccount(dst);
+        creditTxn.setBranch(dst.getBranch());
+        creditTxn.setBranchCode(dst.getBranch().getBranchCode());
+        creditTxn.setTransactionRef(creditTxnRef);
+        creditTxn.setTransactionType("TRANSFER_CREDIT");
+        creditTxn.setDebitCredit(DebitCredit.CREDIT.name());
+        creditTxn.setAmount(request.amount());
+        creditTxn.setBalanceBefore(dstBalBefore);
+        creditTxn.setBalanceAfter(dst.getLedgerBalance());
+        creditTxn.setValueDate(businessDate);
+        creditTxn.setPostingDate(LocalDateTime.now());
+        creditTxn.setNarration("Transfer from " + request.fromAccount());
+        creditTxn.setChannel("API");
+        creditTxn.setVoucherNumber(r.getVoucherNumber());
+        creditTxn.setJournalEntryId(r.getJournalEntryId());
+        creditTxn.setTenantId(tenantId);
+        transactionRepository.save(creditTxn);
 
-            return debitTxn;
-        } finally {
-            accountingService.clearEngineToken();
-        }
+        return debitTxn;
     }
 
     @Override
@@ -613,55 +600,51 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
 
         DepositAccount acct = lockAccount(original.getDepositAccount().getAccountNumber());
 
-        accountingService.generateEngineToken();
-        try {
-            TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
-                    .sourceModule("DEPOSIT")
-                    .transactionType("REVERSAL")
-                    .accountReference(acct.getAccountNumber())
-                    .amount(original.getAmount())
-                    .valueDate(businessDate)
-                    .branchCode(acct.getBranch().getBranchCode())
-                    .narration("REVERSAL: " + reason + " [Orig: " + transactionRef + "]")
-                    .journalLines(buildReversalJournalLines(original, acct))
-                    .build());
+        // Engine manages its own ENGINE_TOKEN -- see deposit() for rationale.
+        TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
+                .sourceModule("DEPOSIT")
+                .transactionType("REVERSAL")
+                .accountReference(acct.getAccountNumber())
+                .amount(original.getAmount())
+                .valueDate(businessDate)
+                .branchCode(acct.getBranch().getBranchCode())
+                .narration("REVERSAL: " + reason + " [Orig: " + transactionRef + "]")
+                .journalLines(buildReversalJournalLines(original, acct))
+                .build());
 
-            // Reverse the balance effect
-            BigDecimal balanceBefore = acct.getLedgerBalance();
-            BigDecimal reverseAmount = "DEBIT".equals(original.getDebitCredit())
-                    ? original.getAmount() : original.getAmount().negate();
-            acct.setLedgerBalance(balanceBefore.add(reverseAmount));
-            acct.setAvailableBalance(acct.getAvailableBalance().add(reverseAmount));
-            acct.setLastTransactionDate(businessDate);
-            accountRepository.save(acct);
+        // Reverse the balance effect
+        BigDecimal balanceBefore = acct.getLedgerBalance();
+        BigDecimal reverseAmount = "DEBIT".equals(original.getDebitCredit())
+                ? original.getAmount() : original.getAmount().negate();
+        acct.setLedgerBalance(balanceBefore.add(reverseAmount));
+        acct.setAvailableBalance(acct.getAvailableBalance().add(reverseAmount));
+        acct.setLastTransactionDate(businessDate);
+        accountRepository.save(acct);
 
-            // Mark original as reversed
-            original.setReversed(true);
-            original.setReversedByRef(r.getTransactionRef());
-            transactionRepository.save(original);
+        // Mark original as reversed
+        original.setReversed(true);
+        original.setReversedByRef(r.getTransactionRef());
+        transactionRepository.save(original);
 
-            DepositTransaction txn = new DepositTransaction();
-            txn.setDepositAccount(acct);
-            txn.setBranch(acct.getBranch());
-            txn.setBranchCode(acct.getBranch().getBranchCode());
-            txn.setTransactionRef(r.getTransactionRef());
-            txn.setTransactionType("REVERSAL");
-            txn.setDebitCredit("DEBIT".equals(original.getDebitCredit()) ? "CREDIT" : "DEBIT");
-            txn.setAmount(original.getAmount());
-            txn.setBalanceBefore(balanceBefore);
-            txn.setBalanceAfter(acct.getLedgerBalance());
-            txn.setValueDate(businessDate);
-            txn.setPostingDate(LocalDateTime.now());
-            txn.setNarration("REVERSAL: " + reason);
-            txn.setChannel("API");
-            txn.setVoucherNumber(r.getVoucherNumber());
-            txn.setJournalEntryId(r.getJournalEntryId());
-            txn.setTenantId(tenantId);
+        DepositTransaction txn = new DepositTransaction();
+        txn.setDepositAccount(acct);
+        txn.setBranch(acct.getBranch());
+        txn.setBranchCode(acct.getBranch().getBranchCode());
+        txn.setTransactionRef(r.getTransactionRef());
+        txn.setTransactionType("REVERSAL");
+        txn.setDebitCredit("DEBIT".equals(original.getDebitCredit()) ? "CREDIT" : "DEBIT");
+        txn.setAmount(original.getAmount());
+        txn.setBalanceBefore(balanceBefore);
+        txn.setBalanceAfter(acct.getLedgerBalance());
+        txn.setValueDate(businessDate);
+        txn.setPostingDate(LocalDateTime.now());
+        txn.setNarration("REVERSAL: " + reason);
+        txn.setChannel("API");
+        txn.setVoucherNumber(r.getVoucherNumber());
+        txn.setJournalEntryId(r.getJournalEntryId());
+        txn.setTenantId(tenantId);
 
-            return transactionRepository.save(txn);
-        } finally {
-            accountingService.clearEngineToken();
-        }
+        return transactionRepository.save(txn);
     }
 
     // === Inquiry ===
