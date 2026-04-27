@@ -84,11 +84,11 @@
 | GET | `/deposit/view/{accountNumber}` | `deposit/view` | path `accountNumber` | `account`, `transactions`, `standingInstructions`, `activeAccounts`, `accountBranchCode`, `pageTitle` |
 | GET | `/deposit/preview/{accountNumber}` | `@ResponseBody` JSON (AJAX) | path `accountNumber`, `amount`, `txnType`, `narration` | JSON `TransactionPreview` |
 | GET | `/deposit/deposit/{accountNumber}` | `deposit/deposit` | path `accountNumber` | `account`, `pageTitle` |
-| POST | `/deposit/deposit/{accountNumber}` | redirect `/deposit/view/{accNo}` | path `accountNumber`, `amount`, `narration` | flash |
+| POST | `/deposit/deposit/{accountNumber}` | redirect `/deposit/view/{accNo}` | path `accountNumber`, `amount`, `narration`, `idempotencyKey` | flash |
 | GET | `/deposit/withdraw/{accountNumber}` | `deposit/withdraw` | path `accountNumber` | `account`, `pageTitle` |
-| POST | `/deposit/withdraw/{accountNumber}` | redirect `/deposit/view/{accNo}` | path `accountNumber`, `amount`, `narration` | flash |
+| POST | `/deposit/withdraw/{accountNumber}` | redirect `/deposit/view/{accNo}` | path `accountNumber`, `amount`, `narration`, `idempotencyKey` | flash |
 | GET | `/deposit/transfer` | `deposit/transfer` | -- | `accounts` (source), `allAccounts` (target), `pageTitle` |
-| POST | `/deposit/transfer` | redirect `/deposit/view/{fromAccount}` (or `/deposit/transfer` on error) | `fromAccount`, `toAccount`, `amount`, `narration` | flash |
+| POST | `/deposit/transfer` | redirect `/deposit/view/{fromAccount}` (or `/deposit/transfer` on error) | `fromAccount`, `toAccount`, `amount`, `narration`, `idempotencyKey` | flash |
 | POST | `/deposit/freeze/{accountNumber}` | redirect `/deposit/view/{accNo}` | path `accountNumber`, `freezeType`, `reason` | flash |
 | POST | `/deposit/unfreeze/{accountNumber}` | redirect `/deposit/view/{accNo}` | path `accountNumber` | flash |
 | POST | `/deposit/close/{accountNumber}` | redirect `/deposit/view/{accNo}` | path `accountNumber`, `reason` | flash |
@@ -376,10 +376,10 @@ JSP backer: `audit/logs.jsp`.
 | HTTP | URI | View / Redirect | Inputs | Model |
 |---|---|---|---|---|
 | GET | `/workflow/pending` | `workflow/pending` | -- | `pendingItems` |
-| POST | `/workflow/approve/{id}` | redirect `/workflow/pending` | path `id`, `remarks` | flash `success`/`error` (also triggers GL re-execution + DEPOSIT-module subledger apply for `Transaction` workflows; see `WorkflowController.java:74-119`) |
-| POST | `/workflow/reject/{id}` | redirect `/workflow/pending` | path `id`, `remarks` | flash |
+| POST | `/workflow/approve/{id}` | redirect `/workflow/pending` | path `id`, `remarks`, `version` | flash `success`/`error` (also triggers GL re-execution + DEPOSIT-module subledger apply for `Transaction` workflows; see `WorkflowController.java:74-119`) |
+| POST | `/workflow/reject/{id}` | redirect `/workflow/pending` | path `id`, `remarks`, `version` | flash |
 
-> The JSP `workflow/pending.jsp` posts `remarks` only. React sends an additional `version` for optimistic locking that the backend `WorkflowActionRequest` does not accept. See `DTO_PARITY_AUDIT_REPORT.md` Section 2.7.
+> **[UPDATED post-F3 fix]** Both approve and reject forms now submit `version` (hidden field from `${item.version}`). The controller forwards it to `ApprovalWorkflowService.approve(id, version, remarks)` / `.reject(id, version, remarks)`. Service throws `WORKFLOW_VERSION_MISMATCH` if stale. See `JSP_DTO_CROSSWALK_MATRIX.md` F3.
 
 JSP backer: `workflow/pending.jsp`.
 
@@ -452,13 +452,13 @@ Every JSP includes `WEB-INF/views/layout/header.jsp` + `sidebar.jsp`. The shared
 ## 20. AUDIT FINDINGS & OBSERVATIONS
 
 1. **Entity binding via `@ModelAttribute`** in `customer/add`, `customer/edit`, `loan/apply`, `branch/add`, `branch/edit`, `admin/products/create`, `admin/products/{id}/edit` directly binds JSP form fields onto JPA entities. Convenient but bypasses DTO isolation -- see Tier-1 audit `CBS_TIER1_AUDIT_REPORT.md` violation **C3** (entity exposure).
-2. **Idempotency keys missing from JSP financial flows** (`/deposit/deposit`, `/deposit/withdraw`, `/deposit/transfer`) -- the controller passes `null` to the service. React mints UUIDs; JSP retries can double-post. See `DTO_PARITY_AUDIT_REPORT.md` C2.
-3. **Loan apply JSP submits `riskCategory`** but `LoanController.submitApplication` does not consume it -- silently dropped (the `LoanApplication` entity has no such bound field). See `DTO_PARITY_AUDIT_REPORT.md` Section 2.6.
-4. **Workflow JSP has no optimistic-lock `version`** -- only `remarks` is captured; the backend `WorkflowActionRequest` doesn't expose `version` either, so concurrent approval is not gated at the controller layer.
+2. ~~**Idempotency keys missing from JSP financial flows**~~ **RESOLVED (F1):** all three JSPs now mint a server-side UUID and submit it as `idempotencyKey`; controller forwards to service. See `JSP_DTO_CROSSWALK_MATRIX.md` F1.
+3. ~~**Loan apply JSP submits `riskCategory` silently dropped**~~ **RESOLVED (F2):** JSP path was already persisting via Lombok `@Setter`; REST API `SubmitApplicationRequest` now also declares `riskCategory`. See `JSP_DTO_CROSSWALK_MATRIX.md` F2.
+4. ~~**Workflow JSP has no optimistic-lock `version`**~~ **RESOLVED (F3):** both approve and reject forms now submit `version`; controller and service gate on it. See `JSP_DTO_CROSSWALK_MATRIX.md` F3.
 5. **`@RequestMapping` ordering hazard in `Txn360Controller`** is mitigated only by declaration order. Recommend an ArchUnit rule that asserts `/{transactionRef}` is declared after the more specific mappings.
 6. **`AuditController.entityAuditTrail` whitelist** (`AuditController.java:41-45`) is hard-coded -- when new auditable entity types are added, the whitelist must be updated or audit lookups will throw `INVALID_ENTITY_TYPE`. Consider moving to an enum or a registry.
 7. **`AccountingController.searchJournalEntries`** date-range fallback resets `from`/`to` but does not clear `searchQuery` -- UX shows the "Invalid date format" error while still highlighting the search input.
-8. **`DepositController.openAccount` (POST)** constructs an `OpenAccountRequest` with most fields hard-coded to `null` (`DepositController.java:241-254`). For non-individual customers (corporate, trust) the JSP cannot capture mandatory fields -- see `DTO_PARITY_AUDIT_REPORT.md` Section 2.5.
+8. ~~**`DepositController.openAccount` cannot capture corporate fields**~~ **RESOLVED (F4/F6/F7):** `customer/add.jsp` and `customer/edit.jsp` now have Corporate Details (6 fields), Compliance & OVD (7 fields), and full enum options for photo-ID and address-proof selects. See `JSP_DTO_CROSSWALK_MATRIX.md` F4/F6/F7.
 9. **`/admin/users/reset-password/{id}`** accepts the new password in a `@RequestParam`. Verify CSRF is enforced (Spring Security default) and that the access-log filter strips the parameter from logs (RBI IT Governance Section 8.3).
 10. **`@Controller` returning `@ResponseBody` JSON** in `DepositController.previewTransaction` (`DepositController.java:303-422`) -- functional but inconsistent with the v1 REST surface that lives under `com.finvanta.api.*`. Consider moving the preview into the API package.
 
@@ -522,8 +522,23 @@ This section enumerates every form input on each JSP screen and shows where the 
 | `nomineeDob` | date | `nomineeDob` | LocalDate |
 | `nomineeGuardianName` | text | `nomineeGuardianName` | maxlength 200 |
 | `nomineeAddress` | text | `nomineeAddress` | maxlength 500 |
+| **[F6] Compliance & OVD section (added post-audit):** | | | |
+| `residentStatus` | select | `residentStatus` | RESIDENT / NRI / PIO / OCI / FOREIGN_NATIONAL |
+| `sourceOfFunds` | text | `sourceOfFunds` | maxlength 100 |
+| `fatcaCountry` | text | `fatcaCountry` | ISO 3166 alpha-2 |
+| `passportNumber` | text | `passportNumber` | encrypted at JPA layer |
+| `passportExpiry` | date | `passportExpiry` | LocalDate |
+| `voterId` | text | `voterId` | encrypted at JPA layer |
+| `drivingLicense` | text | `drivingLicense` | encrypted at JPA layer |
+| **[F4] Corporate section (conditionally shown for non-individual types):** | | | |
+| `companyName` | text | `companyName` | maxlength 300 |
+| `constitutionType` | select | `constitutionType` | 10 options (PROPRIETORSHIP..GOVERNMENT) |
+| `cin` | text | `cin` | maxlength 21 (CIN/LLPIN) |
+| `gstin` | text | `gstin` | maxlength 15 |
+| `dateOfIncorporation` | date | `dateOfIncorporation` | LocalDate |
+| `natureOfBusiness` | textarea | `natureOfBusiness` | maxlength 200 |
 
-> `customerNumber` is auto-generated server-side and is not a form field. `customer/edit.jsp` mirrors this list but disables the immutable triplet (`customerNumber`, `panNumber`, `aadhaarNumber`).
+> `customerNumber` is auto-generated server-side and is not a form field. `customer/edit.jsp` mirrors this list (including the F4/F6/F7 additions) but disables the immutable triplet (`customerNumber`, `panNumber`, `aadhaarNumber`). Photo-ID options now include `NREGA_CARD` (F7); address-proof options now include `DRIVING_LICENSE`, `BANK_STATEMENT`, `RATION_CARD`, `RENT_AGREEMENT` (F7).
 
 ---
 
@@ -548,8 +563,7 @@ This section enumerates every form input on each JSP screen and shows where the 
 |---|---|---|---|
 | `amount` | number | `@RequestParam BigDecimal amount` | min 0.01, step 0.01 |
 | `narration` | text | `@RequestParam String narration` | maxlength 500 |
-
-> No `idempotencyKey` field. Network retries can double-post. See finding #2.
+| `idempotencyKey` | hidden | `@RequestParam String idempotencyKey` | **[F1]** server-minted UUID per page render |
 
 ---
 
@@ -559,8 +573,7 @@ This section enumerates every form input on each JSP screen and shows where the 
 |---|---|---|---|
 | `amount` | number | `@RequestParam BigDecimal amount` | min 0.01, step 0.01 |
 | `narration` | text | `@RequestParam String narration` | maxlength 500 |
-
-> Same idempotency-key gap as deposit.
+| `idempotencyKey` | hidden | `@RequestParam String idempotencyKey` | **[F1]** server-minted UUID per page render |
 
 ---
 
@@ -572,6 +585,7 @@ This section enumerates every form input on each JSP screen and shows where the 
 | `toAccount` | select | `@RequestParam String toAccount` | all-branch target list |
 | `amount` | number | `@RequestParam BigDecimal amount` | min 0.01 |
 | `narration` | text | `@RequestParam String narration` | optional |
+| `idempotencyKey` | hidden | `@RequestParam String idempotencyKey` | **[F1]** server-minted UUID per page render |
 
 ---
 
@@ -890,9 +904,11 @@ Form fields submitted (all map to `ProductMaster.<prop>` via `@ModelAttribute`):
 | Action -> URI | Field | Element | Maps to | Notes |
 |---|---|---|---|---|
 | Approve (`POST /workflow/approve/{id}`) | `remarks` | hidden | `@RequestParam String` | hard-coded value `"Approved"` in JSP |
+| | `version` | hidden | `@RequestParam(required = false) Long` | **[F3]** `${item.version}` from JPA `@Version` |
 | Reject (`POST /workflow/reject/{id}`) | `remarks` | hidden | `@RequestParam String` | populated by a JS prompt before submit (JSP class `fv-reason-field`) |
+| | `version` | hidden | `@RequestParam(required = false) Long` | **[F3]** `${item.version}` from JPA `@Version` |
 
-> No `version` field is captured on the JSP -- optimistic locking is not enforced at the controller layer here. React sends `version` but the backend DTO does not bind it either. See finding #4 and `DTO_PARITY_AUDIT_REPORT.md` Section 2.7.
+> **[UPDATED post-F3 fix]** Both forms now submit `version`. Service throws `WORKFLOW_VERSION_MISMATCH` on stale-read. See `JSP_DTO_CROSSWALK_MATRIX.md` F3.
 
 ---
 
@@ -977,4 +993,4 @@ Every other form on every other screen uses explicit `@RequestParam` binding -- 
 
 ---
 
-*End of Section 21. All screen-level attribute tables are compiled from `src/main/webapp/WEB-INF/views/**/*.jsp` at merge-base commit `d509531b70188180fbfe3625dccf10ddc811d607`.*
+*End of Section 21. Screen-level attribute tables originally compiled from merge-base commit `d509531b`. Updated post-remediation to reflect F1 (idempotencyKey on deposit/withdraw/transfer), F3 (version on workflow approve/reject), F4 (corporate fields on customer add/edit), F6 (compliance/OVD fields on customer add/edit), and F7 (expanded photo-ID/address-proof enum options). See `JSP_DTO_CROSSWALK_MATRIX.md` for the full finding-by-finding resolution log.*
