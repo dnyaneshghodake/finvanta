@@ -101,8 +101,27 @@ public interface DepositTransactionRepository extends JpaRepository<DepositTrans
             @Param("username") String username,
             @Param("valueDate") LocalDate valueDate);
 
-    /** Idempotency check */
-    Optional<DepositTransaction> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
+    /**
+     * CBS Idempotency lookup: returns a previously-committed transaction matching
+     * the supplied idempotency key.
+     *
+     * <p>JOIN FETCH dt.depositAccount so callers in
+     * {@code DepositAccountModuleServiceImpl} can return this entity to a
+     * controller whose mapper ({@code AccountMapper.toTxnResponse}) reads
+     * {@code entity.getDepositAccount().getAccountNumber()}. Without the eager
+     * fetch, the lazy proxy is detached when the read-only service transaction
+     * closes (OSIV disabled cluster-wide) and the mapper trips
+     * {@code LazyInitializationException} -- the same hazard the
+     * {@link #findRecentTransactions} query was hardened against.
+     *
+     * <p>Safe for legacy callers (e.g. {@code DepositAccountServiceImpl.deposit
+     * /withdraw/transfer} idempotency early-returns): the eager load is harmless
+     * extra work for paths that don't surface the entity to a mapper.
+     */
+    @Query("SELECT dt FROM DepositTransaction dt JOIN FETCH dt.depositAccount "
+            + "WHERE dt.tenantId = :tenantId AND dt.idempotencyKey = :idempotencyKey")
+    Optional<DepositTransaction> findByTenantIdAndIdempotencyKey(
+            @Param("tenantId") String tenantId, @Param("idempotencyKey") String idempotencyKey);
 
     /**
      * CBS Transaction 360: lookup by voucher number (VCH/...).
