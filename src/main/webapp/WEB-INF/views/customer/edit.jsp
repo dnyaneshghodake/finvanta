@@ -108,6 +108,39 @@
                 </div>
 
                 </div><%-- end Permanent Address section body --%>
+                <%-- CBS Corporate / Non-Individual Section per RBI KYC Direction §9.
+                     Same conditional show/hide logic as customer/add.jsp: visible only
+                     for HUF / PARTNERSHIP / COMPANY / TRUST / GOVERNMENT customer types.
+                     Fixes JSP/REST-DTO crosswalk finding F4 for the edit path so
+                     existing corporate CIFs can have their entity-level KYC fields
+                     maintained (previously only creatable/editable via React). --%>
+                <div id="corporateSectionHeader" class="fv-section-header" style="display:none;" onclick=""><i class="bi bi-building"></i> Corporate / Non-Individual Details (RBI KYC §9) <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div id="corporateSectionBody" class="fv-section-body" style="display:none;">
+                <div class="row mb-3">
+                    <div class="col-md-6 fv-mandatory-group"><label class="form-label fv-required">Company / Entity Name</label><span class="fv-help-icon" data-fv-help="Per RBI KYC Direction §9: mandatory for COMPANY / PARTNERSHIP / TRUST / HUF / GOVERNMENT customers.">?</span><input type="text" name="companyName" class="form-control" value="<c:out value='${customer.companyName}'/>" maxlength="300" /></div>
+                    <div class="col-md-6"><label class="form-label">Constitution Type</label><span class="fv-help-icon" data-fv-help="Per RBI: legal constitution drives CKYC NON_INDIVIDUAL sub-type.">?</span><select name="constitutionType" class="form-select">
+                        <option value="">-- Select --</option>
+                        <option value="PROPRIETORSHIP" ${customer.constitutionType == 'PROPRIETORSHIP' ? 'selected' : ''}>Proprietorship</option>
+                        <option value="PARTNERSHIP" ${customer.constitutionType == 'PARTNERSHIP' ? 'selected' : ''}>Partnership</option>
+                        <option value="LLP" ${customer.constitutionType == 'LLP' ? 'selected' : ''}>LLP</option>
+                        <option value="PRIVATE_LIMITED" ${customer.constitutionType == 'PRIVATE_LIMITED' ? 'selected' : ''}>Private Limited</option>
+                        <option value="PUBLIC_LIMITED" ${customer.constitutionType == 'PUBLIC_LIMITED' ? 'selected' : ''}>Public Limited</option>
+                        <option value="TRUST" ${customer.constitutionType == 'TRUST' ? 'selected' : ''}>Trust</option>
+                        <option value="SOCIETY" ${customer.constitutionType == 'SOCIETY' ? 'selected' : ''}>Society</option>
+                        <option value="HUF" ${customer.constitutionType == 'HUF' ? 'selected' : ''}>HUF</option>
+                        <option value="COOPERATIVE" ${customer.constitutionType == 'COOPERATIVE' ? 'selected' : ''}>Cooperative</option>
+                        <option value="GOVERNMENT" ${customer.constitutionType == 'GOVERNMENT' ? 'selected' : ''}>Government</option>
+                    </select></div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-4"><label class="form-label">CIN / LLPIN</label><span class="fv-help-icon" data-fv-help="Corporate Identification Number (21 chars) or LLP Identification Number.">?</span><input type="text" name="cin" class="form-control" value="<c:out value='${customer.cin}'/>" maxlength="21" placeholder="L12345MH2000PLC123456" /></div>
+                    <div class="col-md-4"><label class="form-label">GSTIN</label><span class="fv-help-icon" data-fv-help="GST Registration Number (15 chars).">?</span><input type="text" name="gstin" class="form-control" value="<c:out value='${customer.gstin}'/>" maxlength="15" placeholder="27AAAPL1234C1Z5" /></div>
+                    <div class="col-md-4"><label class="form-label">Date of Incorporation</label><input type="date" name="dateOfIncorporation" class="form-control" value="${customer.dateOfIncorporation}" /></div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-12"><label class="form-label">Nature of Business</label><span class="fv-help-icon" data-fv-help="Per CERSAI CKYC v2.0: mandatory for NON_INDIVIDUAL customers.">?</span><textarea name="natureOfBusiness" class="form-control" rows="2" maxlength="200" placeholder="Primary business activity"><c:out value="${customer.natureOfBusiness}"/></textarea></div>
+                </div>
+                </div><%-- end Corporate section body --%>
                 <div class="fv-section-header" onclick=""><i class="bi bi-currency-rupee"></i> Income &amp; Exposure (RBI Norms) <i class="bi bi-chevron-down fv-chevron"></i></div>
                 <div class="fv-section-body">
                 <div class="row mb-3">
@@ -147,6 +180,20 @@ function togglePermanentAddr() {
     var checked = document.getElementById('addrSame').checked;
     block.style.display = checked ? 'none' : '';
 }
+
+/* CBS Corporate section toggle per RBI KYC §9 -- mirrors customer/add.jsp.
+   Visible only when customerType is HUF / PARTNERSHIP / COMPANY / TRUST /
+   GOVERNMENT (CERSAI NON_INDIVIDUAL). Runs on page load so an existing
+   corporate CIF renders with the section already open. */
+var NON_INDIVIDUAL_TYPES = ['HUF', 'PARTNERSHIP', 'COMPANY', 'TRUST', 'GOVERNMENT'];
+function toggleCorporateSection() {
+    var type = document.querySelector('select[name="customerType"]').value;
+    var show = NON_INDIVIDUAL_TYPES.indexOf(type) !== -1;
+    document.getElementById('corporateSectionHeader').style.display = show ? '' : 'none';
+    document.getElementById('corporateSectionBody').style.display = show ? '' : 'none';
+}
+document.querySelector('select[name="customerType"]').addEventListener('change', toggleCorporateSection);
+toggleCorporateSection();
 </script>
 
 <%@ include file="../layout/footer.jsp" %>
