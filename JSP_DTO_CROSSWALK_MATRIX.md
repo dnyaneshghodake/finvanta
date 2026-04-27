@@ -169,3 +169,101 @@ JSP binds directly to `LoanApplication` JPA entity via `@ModelAttribute` (`contr
 > JSP field count: 11. REST DTO field count: 10. Entity bind covers 8 fields directly; `customerId`/`branchId` are sidecar params that the controller resolves. The single bona fide JSP-only field (`riskCategory`) is the silent-drop bug.
 
 ---
+
+## 5. MAKER-CHECKER WORKFLOW -- `workflow/pending.jsp` <-> `WorkflowActionRequest` DTO
+
+JSP path uses `@RequestParam`; REST API uses `WorkflowActionRequest` record (1 field) plus a `version` long for optimistic locking on the React path.
+
+| JSP field | REST DTO field | Status | Severity | Notes |
+|---|---|---|---|---|
+| `remarks` (hidden, hard-coded `"Approved"` for approve / JS-prompted for reject) | `remarks` | `[OK]` | -- | bound on both |
+| -- (not on JSP) | `version` | `[GAP]` | HIGH | React sends `version` for optimistic locking but the backend `WorkflowActionRequest` does not declare it. JSP doesn't even attempt to capture it. Concurrent approval is not gated at the DTO layer. See `DTO_PARITY_AUDIT_REPORT.md` Section 2.7. |
+
+---
+
+## 6. JSP-ONLY FLOWS (NO REST DTO COUNTERPART)
+
+These JSP flows have no parallel REST DTO. All fields map to controller `@RequestParam` directly.
+
+### 6.1 Branch (`branch/add|edit.jsp` -> `Branch` entity)
+
+`[ENTITY]` binding -- entire form binds to `Branch` via `@ModelAttribute`. No REST DTO exists; React calls `BranchApiController` which exposes inline records. Field-level fidelity is high (no known divergence).
+
+### 6.2 Product Master (`admin/product-create|edit.jsp` -> `ProductMaster` entity)
+
+`[ENTITY]` binding. Includes 14+ GL-code fields each backed by a `select` populated from `glAccounts`. No REST DTO; React UI does not currently expose product master CRUD.
+
+### 6.3 Transaction Limits / Charges / MFA / IB Settlement / Calendar / Batch / Audit / Reports / Txn360
+
+All `@RequestParam` flows. Field names and counts are documented in `JSP_NAVIGATION_AUDIT.md` Sections 21.15-21.28. No DTOs are involved at the HTTP boundary -- the controllers either build domain objects directly (e.g., `ChargeConfig`, `TransactionLimit` constructed inside `AdminController.createCharge`/`createLimit`) or delegate to service-layer methods that take primitive params.
+
+> Crosswalk verdict for these screens: `[N/A]` (no DTO). The `@RequestParam` -> service-method-arg correspondence is enforced by Spring binding; mismatches surface immediately at compile time.
+
+---
+
+## 7. SCORECARD -- BUG CATEGORIES BY MODULE
+
+| Module | JSP fields | REST DTO fields | OK | GAP | JSP-ONLY | DTO-ONLY | Coverage |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| CASA Open (deposit/open) | 6 | 29 | 6 | 0 | 0 | 23 | 21% |
+| CASA Deposit | 2 | 4 | 2 | 0 | 0 | 2 (`idempotencyKey`, `channel`) | 50% |
+| CASA Withdraw | 2 | 4 | 2 | 0 | 0 | 2 (`idempotencyKey`, `channel`) | 50% |
+| CASA Transfer | 4 | 5 | 4 | 0 | 0 | 1 (`idempotencyKey`) | 80% |
+| CIF Customer | 44 | 67 | 44 | 0 | 0 | 23 | 66% |
+| Loan Apply | 11 | 10 | 10 | 0 | 1 (`riskCategory`) | 0 | 91% |
+| Workflow Approve/Reject | 1 | 2 | 1 | 0 | 0 | 1 (`version`) | 50% |
+| Branch / Product / Limits / Charges / MFA / IB / Calendar / Batch | 100+ | n/a | n/a | n/a | n/a | n/a | n/a (no DTO) |
+
+> **Aggregate parity** for the screens that have both JSP and REST DTO paths (Open + Deposit + Withdraw + Transfer + Customer + Loan Apply + Workflow): **68 OK / (68 OK + 1 JSP-ONLY + 52 DTO-ONLY) = ~56% field coverage**.
+
+---
+
+## 8. ACTIONABLE FINDINGS
+
+| # | Severity | Finding | Files affected | Recommended fix |
+|---|---|---|---|---|
+| F1 | **CRITICAL** | JSP financial ops (`deposit/deposit|withdraw|transfer`) send no `idempotencyKey` -- network retry double-posts. | `deposit/deposit.jsp`, `deposit/withdraw.jsp`, `deposit/transfer.jsp`, `controller/DepositController.java:486-518, 566-575` | Mint UUID in JSP `<form>` via hidden field on page load; pass to service. |
+| F2 | **HIGH** | `riskCategory` on `loan/apply.jsp` is silently dropped -- no entity setter, no DTO field. | `loan/apply.jsp:91-98`, `LoanApplication` entity, `SubmitApplicationRequest` | Either remove from JSP, or add to `SubmitApplicationRequest` and persist on `LoanApplication.riskCategory`. |
+| F3 | **HIGH** | Workflow `version` not captured anywhere in the JSP path; backend DTO ignores it on the REST path too. Optimistic locking is unenforced at the controller boundary. | `workflow/pending.jsp`, `WorkflowActionRequest`, `WorkflowController.java:65-129` | Add `version` field to `WorkflowActionRequest`, wire JSP hidden field, validate against `ApprovalWorkflow.version` before approve. |
+| F4 | **HIGH** | `customer/add.jsp` cannot capture corporate-CIF fields (`companyName`, `cin`, `gstin`, etc.). Non-individual customers can only be created via React UI. | `customer/add.jsp`, `Customer` entity | Add corporate section to JSP, conditionally rendered when `customerType` is COMPANY/TRUST/PARTNERSHIP/GOVERNMENT. |
+| F5 | MEDIUM | `deposit/open.jsp` covers only 6 of 29 DTO fields. Acceptable per Finacle ACCTOPN (CIF-inherited) but should be documented. | `deposit/open.jsp`, `DepositController.java:241-254` | Document the inheritance contract in JSP comments and `DTO_PARITY_AUDIT_REPORT.md`. |
+| F6 | MEDIUM | JSP `customer/add.jsp` lacks FATCA (`fatcaCountry`), FEMA (`residentStatus`, `sourceOfFunds`), and OVD (`passportNumber`, `voterId`, `drivingLicense`) fields. | `customer/add.jsp` | Add these to the existing CKYC section. |
+| F7 | LOW | JSP photo-ID / address-proof selects are missing `NREGA_CARD`, `BANK_STATEMENT`, `DRIVING_LICENSE` (already in backend enum). | `customer/add.jsp:67, 71` | Add missing `<option>` values to align with `Customer` enum. |
+
+---
+
+## 9. COMPLIANCE / RBI MAPPING
+
+| RBI / regulatory framework | JSP field(s) involved | DTO field(s) | Compliance status |
+|---|---|---|---|
+| RBI KYC Master Direction 2016 (PAN/Aadhaar immutability) | `panNumber`, `aadhaarNumber` on `customer/add.jsp` (immutable on `customer/edit.jsp`) | `panNumber`, `aadhaarNumber` on `OpenAccountRequest` (encrypted entity-side) | **OK** -- enforced by service layer |
+| RBI CKYC v2.0 / CERSAI | `firstName`, `lastName`, `fatherName`, `motherName`, `dateOfBirth`, `gender` | `Customer` entity full set | **OK** -- mandatory fields marked `required` on JSP |
+| RBI KYC §3 OVD | `photoIdType`, `addressProofType` plus their numbers | -- | **PARTIAL** -- enum mismatch (F7) |
+| RBI Nomination Guidelines (Banking Companies Rules 1985 §45ZA) | `nomineeName`, `nomineeRelationship` on `deposit/open.jsp` | same on `OpenAccountRequest` | **OK** |
+| RBI Fair Practices Code 2023 | `interestRate`, `penalRate` on `loan/apply.jsp` | same on `SubmitApplicationRequest` | **OK** |
+| RBI IT Governance Direction 2023 §8.2 (password strength) | `currentPassword`, `newPassword`, `confirmPassword` on `password/change.jsp` | -- (no DTO; service-validated) | **OK** -- 8-char min + history check |
+| RBI IT Governance Direction 2023 §8.4 (MFA) | `totpCode` on `mfa/verify.jsp` | -- (session attrs) | **OK** -- 5-attempt lockout |
+| RBI IT Governance Direction 2023 §8.3 (audit trail) | `entityType`, `entityId` on `/audit/entity` | -- | **OK** -- whitelist enforced |
+| FEMA / FATCA | `usTaxResident`, `fatcaCountry`, `residentStatus` | DTO has them; JSP missing | **GAP** (F6) |
+| AML/CFT (PMLA 2002) | `pep`, `kycRiskCategory`, `sourceOfFunds` | partial JSP coverage | **PARTIAL** (`sourceOfFunds` missing on JSP) |
+| RBI UDGAM Direction 2024 | -- (read-only report at `/reports/udgam`) | -- | **OK** -- CSV export available |
+| RBI IRAC Norms / Master Circular | -- (read-only `reports/irac`, `reports/dpd`, `reports/provision`) | -- | **OK** |
+
+---
+
+## 10. CONCLUSION
+
+The JSP UI is largely **DTO-bypassing** -- 4 of the 7 entity-bound JSP forms write directly to JPA entities (`Customer`, `LoanApplication`, `Branch`, `ProductMaster`), violating CBS Tier-1 architecture finding **C3** (entity-at-API-boundary). The single JSP screen that does use a DTO (`deposit/open.jsp`) populates only 21% of its fields, relying on CIF inheritance for the rest.
+
+Critical bugs surfaced by the crosswalk:
+
+1. **Idempotency gap in CASA financial ops** (`deposit/deposit|withdraw|transfer.jsp`) -- network retry can double-post; React mints UUIDs but JSP does not.
+2. **Silently-dropped `riskCategory`** on `loan/apply.jsp` -- the form captures a value the operator believes is being recorded, but it is neither bound on the entity nor on the REST DTO.
+3. **Workflow optimistic locking is unenforced** at the controller boundary -- `version` is not captured on the JSP and not declared on the DTO; React sends it but the backend ignores it.
+4. **Corporate CIF cannot be created via JSP** -- `companyName`, `cin`, `gstin`, etc. are absent from `customer/add.jsp` despite being on the `Customer` entity.
+
+These findings should drive the Tier-1 Phase-3 (DTO/Mapper extraction) and Phase-4 (Service Layer Extraction) work items in `CBS_TIER1_AUDIT_REPORT.md`. The JSP UI should converge on the same DTO contracts the React BFF uses, so a single set of validation rules and field semantics apply regardless of channel.
+
+---
+
+*End of crosswalk matrix. Companion documents: `JSP_NAVIGATION_AUDIT.md` (Section 21 -- screen-level form attributes), `DTO_PARITY_AUDIT_REPORT.md` (Backend ↔ JSP ↔ React DTO field parity), `CBS_TIER1_AUDIT_REPORT.md` (architecture violations), `CBS_COMPLIANCE_AUDIT_REPORT.md` (compliance scoring).*
