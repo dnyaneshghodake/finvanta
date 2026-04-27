@@ -68,9 +68,9 @@
                 <div class="fv-section-header" onclick=""><i class="bi bi-shield-check"></i> KYC Document Details <i class="bi bi-chevron-down fv-chevron"></i></div>
                 <div class="fv-section-body">
                 <div class="row mb-3">
-                    <div class="col-md-3"><label class="form-label">Photo ID Type</label><select name="photoIdType" class="form-select"><option value="">--</option><option value="PASSPORT" ${customer.photoIdType == 'PASSPORT' ? 'selected' : ''}>Passport</option><option value="VOTER_ID" ${customer.photoIdType == 'VOTER_ID' ? 'selected' : ''}>Voter ID</option><option value="DRIVING_LICENSE" ${customer.photoIdType == 'DRIVING_LICENSE' ? 'selected' : ''}>DL</option><option value="PAN_CARD" ${customer.photoIdType == 'PAN_CARD' ? 'selected' : ''}>PAN Card</option><option value="AADHAAR" ${customer.photoIdType == 'AADHAAR' ? 'selected' : ''}>Aadhaar</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Photo ID Type</label><select name="photoIdType" class="form-select"><option value="">--</option><option value="PASSPORT" ${customer.photoIdType == 'PASSPORT' ? 'selected' : ''}>Passport</option><option value="VOTER_ID" ${customer.photoIdType == 'VOTER_ID' ? 'selected' : ''}>Voter ID</option><option value="DRIVING_LICENSE" ${customer.photoIdType == 'DRIVING_LICENSE' ? 'selected' : ''}>DL</option><option value="NREGA_CARD" ${customer.photoIdType == 'NREGA_CARD' ? 'selected' : ''}>NREGA Card</option><option value="PAN_CARD" ${customer.photoIdType == 'PAN_CARD' ? 'selected' : ''}>PAN Card</option><option value="AADHAAR" ${customer.photoIdType == 'AADHAAR' ? 'selected' : ''}>Aadhaar</option></select></div>
                     <div class="col-md-3"><label class="form-label">Photo ID Number</label><input type="text" name="photoIdNumber" class="form-control" value="<c:out value='${customer.photoIdNumber}'/>" maxlength="30" /></div>
-                    <div class="col-md-3"><label class="form-label">Address Proof Type</label><select name="addressProofType" class="form-select"><option value="">--</option><option value="PASSPORT" ${customer.addressProofType == 'PASSPORT' ? 'selected' : ''}>Passport</option><option value="VOTER_ID" ${customer.addressProofType == 'VOTER_ID' ? 'selected' : ''}>Voter ID</option><option value="UTILITY_BILL" ${customer.addressProofType == 'UTILITY_BILL' ? 'selected' : ''}>Utility Bill</option><option value="AADHAAR" ${customer.addressProofType == 'AADHAAR' ? 'selected' : ''}>Aadhaar</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Address Proof Type</label><select name="addressProofType" class="form-select"><option value="">--</option><option value="PASSPORT" ${customer.addressProofType == 'PASSPORT' ? 'selected' : ''}>Passport</option><option value="VOTER_ID" ${customer.addressProofType == 'VOTER_ID' ? 'selected' : ''}>Voter ID</option><option value="DRIVING_LICENSE" ${customer.addressProofType == 'DRIVING_LICENSE' ? 'selected' : ''}>Driving License</option><option value="UTILITY_BILL" ${customer.addressProofType == 'UTILITY_BILL' ? 'selected' : ''}>Utility Bill</option><option value="BANK_STATEMENT" ${customer.addressProofType == 'BANK_STATEMENT' ? 'selected' : ''}>Bank Statement</option><option value="AADHAAR" ${customer.addressProofType == 'AADHAAR' ? 'selected' : ''}>Aadhaar</option><option value="RATION_CARD" ${customer.addressProofType == 'RATION_CARD' ? 'selected' : ''}>Ration Card</option><option value="RENT_AGREEMENT" ${customer.addressProofType == 'RENT_AGREEMENT' ? 'selected' : ''}>Rent Agreement</option></select></div>
                     <div class="col-md-3"><label class="form-label">Address Proof No.</label><input type="text" name="addressProofNumber" class="form-control" value="<c:out value='${customer.addressProofNumber}'/>" maxlength="30" /></div>
                 </div>
                 <div class="row mb-3">
@@ -78,6 +78,31 @@
                 </div>
 
                 </div><%-- end KYC Document section body --%>
+                <%-- CBS Compliance & OVD section per RBI KYC Direction §3 / FEMA 1999 / FATCA-CRS.
+                     Fixes JSP/REST-DTO crosswalk finding F6. Mirrors customer/add.jsp so existing
+                     customers' compliance attributes can be maintained in-place. PII fields
+                     (passport / voter ID / driving license) are encrypted via PiiEncryptionConverter
+                     at the JPA layer; this form sees plaintext but the DB stores ciphertext. --%>
+                <div class="fv-section-header" onclick=""><i class="bi bi-shield-lock"></i> Compliance &amp; Additional OVDs (RBI KYC §3 / FATCA / FEMA) <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
+                <div class="row mb-3">
+                    <div class="col-md-3"><label class="form-label">Resident Status</label><span class="fv-help-icon" data-fv-help="Per FEMA 1999: determines applicable account types and reporting obligations.">?</span><select name="residentStatus" class="form-select">
+                        <option value="RESIDENT" ${customer.residentStatus == 'RESIDENT' or empty customer.residentStatus ? 'selected' : ''}>Resident</option>
+                        <option value="NRI" ${customer.residentStatus == 'NRI' ? 'selected' : ''}>NRI</option>
+                        <option value="PIO" ${customer.residentStatus == 'PIO' ? 'selected' : ''}>PIO</option>
+                        <option value="OCI" ${customer.residentStatus == 'OCI' ? 'selected' : ''}>OCI</option>
+                        <option value="FOREIGN_NATIONAL" ${customer.residentStatus == 'FOREIGN_NATIONAL' ? 'selected' : ''}>Foreign National</option>
+                    </select></div>
+                    <div class="col-md-3"><label class="form-label">Source of Funds</label><span class="fv-help-icon" data-fv-help="Per PMLA 2002 Section 12: mandatory disclosure for high-value or risk-tagged accounts.">?</span><input type="text" name="sourceOfFunds" class="form-control" value="<c:out value='${customer.sourceOfFunds}'/>" maxlength="100" placeholder="Salary, business income, etc." /></div>
+                    <div class="col-md-3"><label class="form-label">FATCA Country</label><span class="fv-help-icon" data-fv-help="ISO 3166 alpha-2 country code of tax residence outside India.">?</span><input type="text" name="fatcaCountry" class="form-control" value="<c:out value='${customer.fatcaCountry}'/>" maxlength="2" pattern="[A-Z]{2}" placeholder="US / GB / SG" /></div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-3"><label class="form-label">Passport Number</label><span class="fv-help-icon" data-fv-help="OVD per RBI KYC §3. Encrypted at rest.">?</span><input type="text" name="passportNumber" class="form-control" value="<c:out value='${customer.passportNumber}'/>" maxlength="20" /></div>
+                    <div class="col-md-3"><label class="form-label">Passport Expiry</label><input type="date" name="passportExpiry" class="form-control" value="${customer.passportExpiry}" /></div>
+                    <div class="col-md-3"><label class="form-label">Voter ID</label><span class="fv-help-icon" data-fv-help="EPIC number. OVD per RBI KYC §3.">?</span><input type="text" name="voterId" class="form-control" value="<c:out value='${customer.voterId}'/>" maxlength="20" /></div>
+                    <div class="col-md-3"><label class="form-label">Driving License</label><span class="fv-help-icon" data-fv-help="Driving License number. OVD per RBI KYC §3.">?</span><input type="text" name="drivingLicense" class="form-control" value="<c:out value='${customer.drivingLicense}'/>" maxlength="30" /></div>
+                </div>
+                </div><%-- end Compliance & OVD section body --%>
                 <div class="fv-section-header" onclick=""><i class="bi bi-telephone"></i> Contact &amp; Correspondence Address <i class="bi bi-chevron-down fv-chevron"></i></div>
                 <div class="fv-section-body">
                 <div class="row mb-3">
