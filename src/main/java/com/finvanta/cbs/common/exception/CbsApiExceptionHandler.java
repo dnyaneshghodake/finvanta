@@ -124,10 +124,11 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.GL_POSTING_INTEGRITY_FAIL,
                     CbsErrorCodes.COMP_AML_FLAG -> HttpStatus.UNPROCESSABLE_ENTITY;
             case CbsErrorCodes.CUST_BRANCH_ACCESS_DENIED,
+            case CbsErrorCodes.CUST_BRANCH_ACCESS_DENIED,
                     CbsErrorCodes.WF_SELF_APPROVAL,
-                    CbsErrorCodes.AUTH_INVALID_CREDENTIALS,
                     CbsErrorCodes.AUTH_ACCOUNT_LOCKED,
                     CbsErrorCodes.AUTH_ACCOUNT_INACTIVE -> HttpStatus.FORBIDDEN;
+            case CbsErrorCodes.AUTH_INVALID_CREDENTIALS -> HttpStatus.UNAUTHORIZED;
             default -> HttpStatus.BAD_REQUEST;
         };
     }
