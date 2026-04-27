@@ -206,7 +206,7 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.LOAN_APPLICATION_NOT_FOUND,
                     CbsErrorCodes.GL_ACCOUNT_NOT_FOUND,
                     CbsErrorCodes.WF_NOT_FOUND -> HttpStatus.NOT_FOUND;
-                    CbsErrorCodes.ACCT_CLOSED,
+            case CbsErrorCodes.ACCT_CLOSED,
                     CbsErrorCodes.ACCT_DUPLICATE_NUMBER,
                     CbsErrorCodes.TXN_IDEMPOTENCY_DUPLICATE,
                     CbsErrorCodes.TXN_PENDING_APPROVAL,
