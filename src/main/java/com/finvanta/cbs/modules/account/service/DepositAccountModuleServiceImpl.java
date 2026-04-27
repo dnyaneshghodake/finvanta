@@ -613,7 +613,7 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         creditTxn.setChannel("API");
         creditTxn.setVoucherNumber(r.getVoucherNumber());
         creditTxn.setJournalEntryId(r.getJournalEntryId());
-        creditTxn.setIdempotencyKey(request.idempotencyKey());
+        creditTxn.setIdempotencyKey(null);
         creditTxn.setTenantId(tenantId);
         transactionRepository.save(creditTxn);
 
