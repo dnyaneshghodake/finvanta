@@ -63,6 +63,14 @@ public class LoanApplicationController {
         if (req.penalRate() != null) {
             app.setPenalRate(req.penalRate());
         }
+        // CBS AML/CFT: propagate operator-asserted risk category. The JSP path
+        // already persists this via Spring's @ModelAttribute entity bind; this
+        // line closes the symmetry gap so the REST API behaves identically.
+        // Null/blank input falls through to the eligibility-rule defaulting in
+        // the service layer (do not overwrite a service-computed value with null).
+        if (req.riskCategory() != null && !req.riskCategory().isBlank()) {
+            app.setRiskCategory(req.riskCategory());
+        }
 
         LoanApplication saved = appService
                 .createApplication(
