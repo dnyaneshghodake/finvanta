@@ -465,3 +465,365 @@ Every JSP includes `WEB-INF/views/layout/header.jsp` + `sidebar.jsp`. The shared
 ---
 
 *Report compiled for the Finvanta CBS Tier-1 audit programme. Companion documents: `CBS_TIER1_AUDIT_REPORT.md` (architecture), `CBS_COMPLIANCE_AUDIT_REPORT.md` (prohibited terms + compliance), `DTO_PARITY_AUDIT_REPORT.md` (DTO field parity across Backend/JSP/React).*
+
+---
+
+## 21. SCREEN-LEVEL FORM ATTRIBUTES (JSP -> Controller binding)
+
+This section enumerates every form input on each JSP screen and shows where the value lands on the server: either a JPA-entity property (via `@ModelAttribute`) or a controller `@RequestParam`. Attribute names are extracted directly from `name="..."` in the JSP source. CSRF tokens (`${_csrf.parameterName}`) are present on all POSTs and are intentionally not listed.
+
+> Convention: entity-binding screens (Spring `@ModelAttribute`) flow into the entity by property name. `customer/add.jsp` binds to `Customer`; `loan/apply.jsp` binds to `LoanApplication`; `branch/add.jsp` / `branch/edit.jsp` bind to `Branch`; `admin/product-create.jsp` / `admin/product-edit.jsp` bind to `ProductMaster`. Everything else is `@RequestParam` on the controller method.
+
+---
+
+### 21.1 `customer/add.jsp` -> `POST /customer/add` (binds to `Customer` + `branchId` param)
+
+| Field name | Element | Maps to (`Customer.<prop>` / param) | Notes |
+|---|---|---|---|
+| `customerType` | select | `customerType` | INDIVIDUAL / JOINT / HUF / PARTNERSHIP / COMPANY / TRUST / NRI / MINOR / GOVERNMENT |
+| `branchId` | select / hidden | `@RequestParam Long branchId` | ADMIN sees select; others get hidden field with home branch |
+| `kycRiskCategory` | select | `kycRiskCategory` | LOW / MEDIUM / HIGH |
+| `pep` + `_pep` | checkbox + hidden | `pep` | Spring checkbox idiom |
+| `firstName` | text | `firstName` | required, maxlength 100 |
+| `lastName` | text | `lastName` | required, maxlength 100 |
+| `gender` | select | `gender` | M / F / T |
+| `dateOfBirth` | date | `dateOfBirth` | LocalDate |
+| `maritalStatus` | select | `maritalStatus` | SINGLE / MARRIED / DIVORCED / WIDOWED / SEPARATED |
+| `fatherName` | text | `fatherName` | required, CERSAI CKYC |
+| `motherName` | text | `motherName` | required, CERSAI CKYC |
+| `spouseName` | text | `spouseName` | optional |
+| `nationality` | select | `nationality` | INDIAN / NRI / PIO / OCI / FOREIGN |
+| `occupationCode` | select | `occupationCode` | 10 occupation codes |
+| `annualIncomeBand` | select | `annualIncomeBand` | 6 bands (BELOW_1L .. ABOVE_1CR) |
+| `cibilScore` | number | `cibilScore` | 300 - 900 |
+| `panNumber` | text | `panNumber` | pattern `[A-Z]{5}[0-9]{4}[A-Z]`, immutable post-create |
+| `aadhaarNumber` | text | `aadhaarNumber` | 12 digits, immutable post-create |
+| `photoIdType` | select | `photoIdType` | PASSPORT / VOTER_ID / DRIVING_LICENSE / PAN_CARD / AADHAAR |
+| `photoIdNumber` | text | `photoIdNumber` | maxlength 30 |
+| `addressProofType` | select | `addressProofType` | PASSPORT / VOTER_ID / UTILITY_BILL / AADHAAR |
+| `addressProofNumber` | text | `addressProofNumber` | maxlength 30 |
+| `kycMode` | select | `kycMode` | IN_PERSON / VIDEO_KYC / DIGITAL_KYC / CKYC_DOWNLOAD |
+| `mobileNumber` | text | `mobileNumber` | required, pattern `[6-9]\d{9}` |
+| `email` | email | `email` | maxlength 200 |
+| `address` | textarea | `address` | maxlength 500 |
+| `city` | text | `city` | maxlength 100 |
+| `state` | text | `state` | maxlength 100 |
+| `pinCode` | text | `pinCode` | 6 digits |
+| `addressSameAsPermanent` + `_addressSameAsPermanent` | checkbox + hidden | `addressSameAsPermanent` | toggles permanent block visibility |
+| `permanentAddress` | textarea | `permanentAddress` | optional |
+| `permanentCity` | text | `permanentCity` | optional |
+| `permanentState` | text | `permanentState` | optional |
+| `permanentPinCode` | text | `permanentPinCode` | 6 digits |
+| `permanentCountry` | select | `permanentCountry` | INDIA / OTHER |
+| `monthlyIncome` | number | `monthlyIncome` | BigDecimal |
+| `maxBorrowingLimit` | number | `maxBorrowingLimit` | BigDecimal |
+| `employmentType` | select | `employmentType` | SALARIED / SELF_EMPLOYED / BUSINESS / RETIRED / OTHER |
+| `employerName` | text | `employerName` | -- |
+| `nomineeDob` | date | `nomineeDob` | LocalDate |
+| `nomineeGuardianName` | text | `nomineeGuardianName` | maxlength 200 |
+| `nomineeAddress` | text | `nomineeAddress` | maxlength 500 |
+
+> `customerNumber` is auto-generated server-side and is not a form field. `customer/edit.jsp` mirrors this list but disables the immutable triplet (`customerNumber`, `panNumber`, `aadhaarNumber`).
+
+---
+
+### 21.2 `deposit/open.jsp` -> `POST /deposit/open` (all params; no entity bind)
+
+| Field name | Element | Maps to controller param | Notes |
+|---|---|---|---|
+| `customerId` | select | `@RequestParam Long customerId` | KYC-verified customers only |
+| `branchId` | select | `@RequestParam Long branchId` | SOL |
+| `accountType` | select | `@RequestParam String accountType` | SAVINGS / CURRENT / SAVINGS_PMJDY / SAVINGS_NRI / SAVINGS_MINOR / SAVINGS_JOINT / CURRENT_OD |
+| `productCode` | select | `@RequestParam String productCode` | optional, defaults to accountType |
+| `nomineeName` | text | `@RequestParam String nomineeName` | optional, maxlength 200 |
+| `nomineeRelationship` | select | `@RequestParam String nomineeRelationship` | SPOUSE / CHILD / PARENT / SIBLING / OTHER |
+
+> `interestRateDisplay`, `minBalDisplay` are read-only display-only inputs (no `name`, not submitted). Currency is hard-coded INR. The `OpenAccountRequest` DTO supports 25+ fields; the JSP captures only these 6 (`DepositController.java:241-254` fills the rest with `null`). See `DTO_PARITY_AUDIT_REPORT.md` Section 2.1.
+
+---
+
+### 21.3 `deposit/deposit.jsp` -> `POST /deposit/deposit/{accountNumber}`
+
+| Field | Element | Maps to | Notes |
+|---|---|---|---|
+| `amount` | number | `@RequestParam BigDecimal amount` | min 0.01, step 0.01 |
+| `narration` | text | `@RequestParam String narration` | maxlength 500 |
+
+> No `idempotencyKey` field. Network retries can double-post. See finding #2.
+
+---
+
+### 21.4 `deposit/withdraw.jsp` -> `POST /deposit/withdraw/{accountNumber}`
+
+| Field | Element | Maps to | Notes |
+|---|---|---|---|
+| `amount` | number | `@RequestParam BigDecimal amount` | min 0.01, step 0.01 |
+| `narration` | text | `@RequestParam String narration` | maxlength 500 |
+
+> Same idempotency-key gap as deposit.
+
+---
+
+### 21.5 `deposit/transfer.jsp` -> `POST /deposit/transfer`
+
+| Field | Element | Maps to | Notes |
+|---|---|---|---|
+| `fromAccount` | select | `@RequestParam String fromAccount` | branch-scoped source list |
+| `toAccount` | select | `@RequestParam String toAccount` | all-branch target list |
+| `amount` | number | `@RequestParam BigDecimal amount` | min 0.01 |
+| `narration` | text | `@RequestParam String narration` | optional |
+
+---
+
+### 21.6 `deposit/view.jsp` (action forms embedded in detail screen)
+
+| Action -> URI | Field name | Element | Maps to |
+|---|---|---|---|
+| Maintain (`POST /deposit/maintain/{accNo}`) | `nomineeName` | text | `@RequestParam` |
+| | `nomineeRelationship` | select | `@RequestParam` |
+| | `jointHolderMode` | select | `@RequestParam` |
+| | `chequeBookEnabled` | checkbox | `@RequestParam Boolean` |
+| | `debitCardEnabled` | checkbox | `@RequestParam Boolean` |
+| | `dailyWithdrawalLimit` | number | `@RequestParam BigDecimal` |
+| | `dailyTransferLimit` | number | `@RequestParam BigDecimal` |
+| | `odLimit` | number | `@RequestParam BigDecimal` |
+| | `interestRate` | number | `@RequestParam BigDecimal` |
+| | `minimumBalance` | number | `@RequestParam BigDecimal` |
+| Freeze (`POST /deposit/freeze/{accNo}`) | `freezeType` | select | `@RequestParam`, default `TOTAL_FREEZE` |
+| | `reason` | text | `@RequestParam`, mandatory |
+| Close (`POST /deposit/close/{accNo}`) | `reason` | text | `@RequestParam`, default "Customer request" |
+| Reversal (`POST /deposit/reversal/{txnRef}`) | `reason` | text | `@RequestParam`, mandatory |
+| | `accountNumber` | hidden | `@RequestParam`, used for redirect |
+
+---
+
+### 21.7 `deposit/statement.jsp` -> `GET /deposit/statement/{accNo}`
+
+| Field | Element | Maps to | Notes |
+|---|---|---|---|
+| `fromDate` | date | `@RequestParam String fromDate` | YYYY-MM-DD |
+| `toDate` | date | `@RequestParam String toDate` | YYYY-MM-DD |
+
+---
+
+### 21.8 `loan/apply.jsp` -> `POST /loan/apply` (binds to `LoanApplication` + `customerId`/`branchId` params)
+
+| Field name | Element | Maps to (`LoanApplication.<prop>` / param) | Notes |
+|---|---|---|---|
+| `customerId` | select | `@RequestParam Long customerId` | KYC-verified customers only |
+| `branchId` | select | `@RequestParam Long branchId` | SOL |
+| `productType` | select | `productType` | from `ProductMaster` catalogue |
+| `requestedAmount` | number | `requestedAmount` | min 10000, max 50000000 |
+| `interestRate` | number | `interestRate` | step 0.25, range from product |
+| `tenureMonths` | number | `tenureMonths` | range from product |
+| `penalRate` | number | `penalRate` | step 0.25, default from product |
+| `riskCategory` | select | **NOT PERSISTED** | LOW / MEDIUM / HIGH / VERY_HIGH -- silently dropped (see `DTO_PARITY_AUDIT_REPORT.md` Section 2.6) |
+| `collateralReference` | text | `collateralReference` | optional |
+| `disbursementAccountNumber` | select | `disbursementAccountNumber` | borrower's CASA account |
+| `purpose` | textarea | `purpose` | free-text |
+
+---
+
+### 21.9 `loan/verify.jsp` (collateral + document forms; CHECKER)
+
+**Collateral registration -> `POST /loan/collateral/{applicationId}`**
+
+| Field | Element | Maps to | Applies to |
+|---|---|---|---|
+| `collateralType` | select | `@RequestParam` | All types |
+| `ownerName` | text | `@RequestParam` | All |
+| `ownerRelationship` | select | `@RequestParam`, default `SELF` | All |
+| `description` | textarea | `@RequestParam` | All |
+| `marketValue` | number | `@RequestParam BigDecimal` | All |
+| `goldPurity` | text | `@RequestParam` | GOLD only |
+| `goldWeightGrams` | number | `@RequestParam BigDecimal` | GOLD |
+| `goldNetWeightGrams` | number | `@RequestParam BigDecimal` | GOLD |
+| `goldRatePerGram` | number | `@RequestParam BigDecimal` | GOLD |
+| `propertyAddress` | textarea | `@RequestParam` | PROPERTY |
+| `propertyType` | select | `@RequestParam` | PROPERTY |
+| `propertyAreaSqft` | number | `@RequestParam BigDecimal` | PROPERTY |
+| `registrationNumber` | text | `@RequestParam` | PROPERTY |
+| `vehicleRegistration` | text | `@RequestParam` | VEHICLE |
+| `vehicleMake` | text | `@RequestParam` | VEHICLE |
+| `vehicleModel` | text | `@RequestParam` | VEHICLE |
+| `fdNumber` | text | `@RequestParam` | FD lien |
+| `fdBankName` | text | `@RequestParam` | FD lien |
+| `fdAmount` | number | `@RequestParam BigDecimal` | FD lien |
+
+**Document upload -> `POST /loan/document/{applicationId}`**
+
+| Field | Element | Maps to | Notes |
+|---|---|---|---|
+| `documentType` | select | `@RequestParam` | -- |
+| `documentName` | text | `@RequestParam` | -- |
+| `remarks` | text | `@RequestParam` | optional |
+| `mandatory` | checkbox | `@RequestParam boolean`, default `false` | -- |
+
+**Verify -> `POST /loan/document/verify/{documentId}`** | hidden `applicationId` param only.
+
+**Reject -> `POST /loan/document/reject/{documentId}`** | hidden `applicationId`, `rejectionReason` text.
+
+**Verify application -> `POST /loan/verify/{id}`** | `remarks` text, mandatory.
+
+---
+
+### 21.10 `loan/approve.jsp` -> `POST /loan/approve/{id}` / `POST /loan/reject/{id}`
+
+| Action | Field | Element | Maps to |
+|---|---|---|---|
+| Approve | `remarks` | text | `@RequestParam` mandatory |
+| Reject | `reason` | text | `@RequestParam` mandatory |
+
+---
+
+### 21.11 `loan/account-details.jsp` (action forms)
+
+| Action -> URI | Field | Element | Maps to |
+|---|---|---|---|
+| Disburse (`POST /loan/disburse/{accNo}`) | -- | -- | path only |
+| Disburse tranche (`POST /loan/disburse-tranche/{accNo}`) | `trancheAmount` | number | `@RequestParam BigDecimal` |
+| | `narration` | text | `@RequestParam` |
+| Repayment (`POST /loan/repayment/{accNo}`) | `amount` | number | `@RequestParam BigDecimal` |
+| Prepayment (`POST /loan/prepayment/{accNo}`) | `amount` | number | `@RequestParam BigDecimal` |
+| Write-off (`POST /loan/write-off/{accNo}`) | -- | -- | path only |
+| Fee (`POST /loan/fee/{accNo}`) | `feeAmount` | number | `@RequestParam BigDecimal` |
+| | `feeType` | select | `@RequestParam String` |
+| Reversal (`POST /loan/reversal/{txnRef}`) | `reason` | text | `@RequestParam` |
+| | `accountNumber` | hidden | `@RequestParam` (redirect) |
+| Restructure (`POST /loan/restructure/{accNo}`) | `newRate` | number | `@RequestParam BigDecimal` (optional) |
+| | `additionalMonths` | number | `@RequestParam int`, default 0 |
+| | `reason` | text | `@RequestParam` mandatory |
+| Moratorium (`POST /loan/moratorium/{accNo}`) | `moratoriumMonths` | number | `@RequestParam int` |
+| | `reason` | text | `@RequestParam` |
+
+---
+
+### 21.12 `loan/si-dashboard.jsp` and embedded SI forms (`/loan/si/*`)
+
+**Register SI -> `POST /loan/si/register`** (form on `deposit/view.jsp` SI panel)
+
+| Field | Element | Maps to |
+|---|---|---|
+| `customerId` | hidden | `@RequestParam Long` |
+| `sourceAccountNumber` | hidden | `@RequestParam String` |
+| `destinationType` | select | `@RequestParam String` |
+| `destinationAccountNumber` | text | `@RequestParam String` |
+| `amount` | number | `@RequestParam BigDecimal` |
+| `frequency` | select | `@RequestParam String` (SIFrequency enum) |
+| `executionDay` | number | `@RequestParam int` |
+| `startDate` | date | `@RequestParam String` |
+| `endDate` | date | `@RequestParam String` (optional) |
+| `narration` | text | `@RequestParam String` |
+
+**Approve / Reject / Pause / Resume / Cancel / Amend** -- path `siReference` plus:
+- Reject: `reason` text
+- Amend: `accountNumber` hidden, `newAmount` number, `newFrequency` select, `newExecutionDay` number
+- Pause/Resume/Cancel: `accountNumber` hidden (redirect)
+
+---
+
+### 21.13 `branch/add.jsp` / `branch/edit.jsp` -> `POST /branch/add` | `POST /branch/edit/{id}` (binds to `Branch`)
+
+| Field name | Element | Maps to (`Branch.<prop>`) | Notes |
+|---|---|---|---|
+| `branchCode` | text | `branchCode` | unique per tenant |
+| `branchName` | text | `branchName` | -- |
+| `branchType` | select | `branchType` | from `BranchType` enum |
+| `parentBranchId` | select | `parent.id` | optional |
+| `ifscCode` | text | `ifscCode` | RBI IFSC format |
+| `address`, `city`, `state`, `pinCode`, `zone`, `region` | text | corresponding entity props | -- |
+| `contactPhone`, `contactEmail` | text/email | `contactPhone`, `contactEmail` | -- |
+| `active` | checkbox | `active` | edit form only |
+
+> Exact field set is whatever Spring `@ModelAttribute Branch` finds bindable on the JSP form. The `branch/view.jsp` page does not POST a form; it only renders.
+
+---
+
+### 21.14 `admin/product-create.jsp` / `admin/product-edit.jsp` -> binds to `ProductMaster`
+
+Form fields submitted (all map to `ProductMaster.<prop>` via `@ModelAttribute`):
+
+| Field | Element | Notes |
+|---|---|---|
+| `productCode` | text | unique; immutable on edit |
+| `productName` | text | -- |
+| `productCategory` | select | enum (`SAVINGS`, `CURRENT`, `LOAN_*`, etc.) |
+| `productStatus` / `lifecycleStatus` | select | ACTIVE / SUSPENDED / RETIRED |
+| `currencyCode` | select | INR default |
+| `interestType` | select | FIXED / FLOATING |
+| `minInterestRate`, `maxInterestRate`, `defaultPenalRate` | number | BigDecimal |
+| `minLoanAmount`, `maxLoanAmount` | number | BigDecimal |
+| `minTenureMonths`, `maxTenureMonths` | number | int |
+| `glLoanAsset`, `glInterestIncome`, `glInterestAccrued`, `glPenalIncome`, `glProcessingFee`, `glChargeIncome`, etc. | select (GL dropdown) | references `GLMaster` |
+| `prepaymentPenaltyApplicable` | checkbox | boolean |
+| Description / regulatory text fields | textarea | -- |
+
+> The product form is the longest entity-bound form in admin. Per `AdminController.updateProduct`, immutable fields (`productCode`, `productCategory`) are restored from the existing record on validation failure.
+
+---
+
+### 21.15 `admin/limits.jsp` (create + edit)
+
+**Create -> `POST /admin/limits/create`**
+
+| Field | Element | Maps to |
+|---|---|---|
+| `role` | select | `@RequestParam String role` |
+| `transactionType` | select | `@RequestParam String transactionType` |
+| `perTransactionLimit` | number | `@RequestParam BigDecimal` |
+| `dailyAggregateLimit` | number | `@RequestParam BigDecimal` |
+| `description` | text | `@RequestParam String` |
+
+**Edit -> `POST /admin/limits/{id}/edit`** | `perTransactionLimit`, `dailyAggregateLimit`, `description` only.
+
+**Toggle active -> `POST /admin/limits/{id}/toggle-active`** | path only.
+
+---
+
+### 21.16 `admin/charges.jsp` (create + edit)
+
+**Create -> `POST /admin/charges/create`**
+
+| Field | Element | Maps to |
+|---|---|---|
+| `chargeCode` | text | `@RequestParam String` (uppercase, regex `[A-Z0-9_]{2,50}`) |
+| `chargeName` | text | `@RequestParam String` |
+| `chargeCategory` | select | `@RequestParam String` |
+| `eventTrigger` | select | `@RequestParam String` (e.g., `ACCOUNT_OPEN`, `TXN_AMT`, `MONTHLY_AMC`) |
+| `calculationType` | select | `@RequestParam String` (`FLAT` / `PERCENTAGE` / `SLAB`) |
+| `frequency` | select | `@RequestParam String` |
+| `baseAmount` | number | `@RequestParam BigDecimal` (FLAT) |
+| `percentage` | number | `@RequestParam BigDecimal` (PERCENTAGE) |
+| `slabJson` | textarea | `@RequestParam String` (SLAB) |
+| `minAmount`, `maxAmount` | number | `@RequestParam BigDecimal` |
+| `currencyCode` | select | `@RequestParam String`, default `INR` |
+| `gstApplicable` | checkbox | `@RequestParam boolean` |
+| `gstRate` | number | `@RequestParam BigDecimal` (when GST applicable) |
+| `glChargeIncome` | select | `@RequestParam String` (GL master) |
+| `glGstPayable` | select | `@RequestParam String` (when GST applicable) |
+| `waiverAllowed` | checkbox | `@RequestParam boolean` |
+| `maxWaiverPercent` | number | `@RequestParam BigDecimal` |
+| `productCode` | select | `@RequestParam String` (optional product scope) |
+| `channel` | select | `@RequestParam String` (e.g., `BRANCH`, `ATM`, `INTERNET`) |
+| `validFrom`, `validTo` | date | `@RequestParam String` (parsed to `LocalDate`) |
+| `customerDescription` | text | `@RequestParam String` |
+
+**Edit -> `POST /admin/charges/{id}/edit`** | same fields minus `chargeCode`. **Toggle -> `POST /admin/charges/{id}/toggle-active`** | path only.
+
+---
+
+### 21.17 `admin/users.jsp` -> `UserController` action forms
+
+| Action -> URI | Field | Element | Maps to |
+|---|---|---|---|
+| Create (`POST /admin/users/create`) | `username` | text | `@RequestParam` |
+| | `password` | password | `@RequestParam` |
+| | `fullName` | text | `@RequestParam` |
+| | `email` | email | `@RequestParam` (optional) |
+| | `role` | select | `@RequestParam` (`UserRole` enum) |
+| | `branchId` | select | `@RequestParam Long` |
+| Toggle active (`POST /admin/users/toggle-active/{id}`) | -- | -- | path only |
+| Unlock (`POST /admin/users/unlock/{id}`) | -- | -- | path only |
+| Reset password (`POST /admin/users/reset-password/{id}`) | `newPassword` | password | `@RequestParam` |
+
+---
