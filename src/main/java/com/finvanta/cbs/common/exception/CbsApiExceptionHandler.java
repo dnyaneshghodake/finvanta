@@ -229,11 +229,18 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.TXN_DAY_NOT_OPEN,
                     CbsErrorCodes.GL_POSTING_INTEGRITY_FAIL,
                     CbsErrorCodes.COMP_AML_FLAG -> HttpStatus.UNPROCESSABLE_ENTITY;
-            case CbsErrorCodes.CUST_BRANCH_ACCESS_DENIED,
+            // 403 FORBIDDEN per RFC 9110 §15.5.4: authenticated user lacks
+            // required privilege / branch access / maker-checker separation;
+            // or the account itself is locked/inactive (caller must contact
+            // admin, not retry credentials).
             case CbsErrorCodes.CUST_BRANCH_ACCESS_DENIED,
                     CbsErrorCodes.WF_SELF_APPROVAL,
                     CbsErrorCodes.AUTH_ACCOUNT_LOCKED,
                     CbsErrorCodes.AUTH_ACCOUNT_INACTIVE -> HttpStatus.FORBIDDEN;
+            // 401 UNAUTHORIZED per RFC 9110 §15.5.2: authentication failed
+            // (wrong credentials, not a privilege-elevation issue). 403 here
+            // would prevent BFF clients from re-prompting for credentials and
+            // instead show an "access denied" message.
             case CbsErrorCodes.AUTH_INVALID_CREDENTIALS -> HttpStatus.UNAUTHORIZED;
             default -> HttpStatus.BAD_REQUEST;
         };
