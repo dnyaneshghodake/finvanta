@@ -739,6 +739,15 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
 
         DepositAccount acct = lockAccount(original.getDepositAccount().getAccountNumber());
 
+        // CBS: Closed accounts must not accept reversals. A closed account has zero
+        // balance (enforced by closeAccount); reversing a txn would push the balance
+        // non-zero while status remains CLOSED -- corrupting GL↔subledger reconciliation.
+        // Mirrors legacy DepositAccountServiceImpl.reverseTransaction line 1922-1925.
+        if (acct.isClosed()) {
+            throw new BusinessException(CbsErrorCodes.ACCT_CLOSED,
+                    "Cannot reverse transaction on closed account: " + acct.getAccountNumber());
+        }
+
         // Engine manages its own ENGINE_TOKEN -- see deposit() for rationale.
         TransactionResult r = transactionEngine.execute(TransactionRequest.builder()
                 .sourceModule("DEPOSIT")
