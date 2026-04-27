@@ -160,7 +160,7 @@ JSP backers: `deposit/open.jsp`, `deposit/view.jsp`, `deposit/deposit.jsp`, `dep
 | POST | `/loan/si/cancel/{siReference}` | redirect `/loan/account/{accNo}` | path `siReference`, `accountNumber` | flash |
 | POST | `/loan/si/amend/{siReference}` | redirect `/loan/account/{accNo}` | path `siReference`, `accountNumber`, `newAmount`, `newFrequency`, `newExecutionDay` | flash |
 
-> *`riskCategory` on `loan/apply.jsp` is captured by the JSP form but is NOT a field on `LoanApplication` -- silently dropped. See `DTO_PARITY_AUDIT_REPORT.md` Section 2.6.
+> **[UPDATED post-F2 fix]** `riskCategory` on `loan/apply.jsp` IS persisted on the JSP path via Lombok `@Setter` on `LoanApplication.riskCategory` (entity line 94-95). The REST API `SubmitApplicationRequest` now also declares `riskCategory` (F2 fix). See `JSP_DTO_CROSSWALK_MATRIX.md` F2.
 
 JSP backers: `loan/apply.jsp`, `loan/applications.jsp`, `loan/verify.jsp`, `loan/approve.jsp`, `loan/accounts.jsp`, `loan/account-details.jsp`, `loan/si-dashboard.jsp`.
 
@@ -631,7 +631,7 @@ This section enumerates every form input on each JSP screen and shows where the 
 | `interestRate` | number | `interestRate` | step 0.25, range from product |
 | `tenureMonths` | number | `tenureMonths` | range from product |
 | `penalRate` | number | `penalRate` | step 0.25, default from product |
-| `riskCategory` | select | **NOT PERSISTED** | LOW / MEDIUM / HIGH / VERY_HIGH -- silently dropped (see `DTO_PARITY_AUDIT_REPORT.md` Section 2.6) |
+| `riskCategory` | select | `riskCategory` (Lombok `@Setter`) | **[F2]** LOW / MEDIUM / HIGH / VERY_HIGH -- IS persisted on JSP path via `@ModelAttribute` entity bind. REST API `SubmitApplicationRequest` also now declares it. |
 | `collateralReference` | text | `collateralReference` | optional |
 | `disbursementAccountNumber` | select | `disbursementAccountNumber` | borrower's CASA account |
 | `purpose` | textarea | `purpose` | free-text |
