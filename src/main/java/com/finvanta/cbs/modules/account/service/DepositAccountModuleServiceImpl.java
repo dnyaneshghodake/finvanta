@@ -714,8 +714,8 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                 && product.getGlLoanAsset() != null) {
             return product.getGlLoanAsset();
         }
-        return a.getAccountType().name().startsWith("CURRENT")
-                ? GLConstants.CA_DEPOSITS : GLConstants.SB_DEPOSITS;
+        return a.isSavings()
+                ? GLConstants.SB_DEPOSITS : GLConstants.CA_DEPOSITS;
     }
 
     /**
