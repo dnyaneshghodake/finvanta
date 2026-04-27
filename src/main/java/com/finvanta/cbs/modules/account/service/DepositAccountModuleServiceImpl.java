@@ -596,7 +596,6 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
 
         // Record TRANSFER_CREDIT for destination account (separate txn ref for unique constraint)
         String creditTxnRef = ReferenceGenerator.generateTransactionRef();
-        String creditTxnRef = ReferenceGenerator.generateTransactionRef();
         DepositTransaction creditTxn = new DepositTransaction();
         creditTxn.setDepositAccount(dst);
         creditTxn.setBranch(dst.getBranch());
