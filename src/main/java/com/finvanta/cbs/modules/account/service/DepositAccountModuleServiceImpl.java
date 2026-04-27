@@ -450,6 +450,22 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                                 DebitCredit.CREDIT, request.amount(), "Credit " + accountNumber)))
                 .build());
 
+        // CBS Maker-Checker Gate per CBS TRAN_AUTH (TransactionEngine Step 7):
+        // when the engine routes the txn into the maker-checker queue, NO GL
+        // posting has occurred and the subledger MUST NOT mutate. Persist a
+        // PENDING APPROVAL record with the current (unchanged) balance so the
+        // statement reflects the in-flight state and return early. Mirrors
+        // DepositAccountServiceImpl.deposit lines 701-716.
+        if (r.isPendingApproval()) {
+            BigDecimal currentBalance = acct.getLedgerBalance();
+            String pendingNarration = (request.narration() != null
+                    ? request.narration() : "Cash deposit") + " [PENDING APPROVAL]";
+            return buildAndSaveTxn(acct, r, request.amount(), DebitCredit.CREDIT,
+                    "CASH_DEPOSIT", pendingNarration, request.channel(),
+                    currentBalance, currentBalance,
+                    businessDate, request.idempotencyKey(), tenantId);
+        }
+
         // Update subledger. Per CBS BAL_DERIVE: ledger is the only field that moves
         // by the txn amount; available is recomputed from (ledger - hold - uncleared)
         // so active liens/uncleared cheques are honored. See recomputeAvailable() below.
@@ -508,6 +524,18 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                         new JournalLineRequest(GLConstants.BANK_OPERATIONS,
                                 DebitCredit.CREDIT, request.amount(), "Cash withdrawal")))
                 .build());
+
+        // CBS Maker-Checker Gate -- see deposit() for rationale.
+        // Mirrors DepositAccountServiceImpl.withdraw lines 903-915.
+        if (r.isPendingApproval()) {
+            BigDecimal currentBalance = acct.getLedgerBalance();
+            String pendingNarration = (request.narration() != null
+                    ? request.narration() : "Cash withdrawal") + " [PENDING APPROVAL]";
+            return buildAndSaveTxn(acct, r, request.amount(), DebitCredit.DEBIT,
+                    "CASH_WITHDRAWAL", pendingNarration, request.channel(),
+                    currentBalance, currentBalance,
+                    businessDate, request.idempotencyKey(), tenantId);
+        }
 
         BigDecimal balanceBefore = acct.getLedgerBalance();
         acct.setLedgerBalance(balanceBefore.subtract(request.amount()));
@@ -576,6 +604,23 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
                         new JournalLineRequest(dstGl,
                                 DebitCredit.CREDIT, request.amount(), "Transfer credit " + request.toAccount())))
                 .build());
+
+        // CBS Maker-Checker Gate -- see deposit() for rationale.
+        // Mirrors DepositAccountServiceImpl.transfer lines 1015-1027.
+        // Transfer pending: record only the DEBIT-leg subledger row with the
+        // unchanged source balance. The CREDIT-leg row is created only after
+        // the checker approves and the GL posts atomically -- recording it now
+        // would imply the destination has received funds it has not.
+        if (r.isPendingApproval()) {
+            BigDecimal currentSrcBalance = src.getLedgerBalance();
+            String pendingNarration = (request.narration() != null
+                    ? request.narration() : "Transfer to " + request.toAccount())
+                    + " [PENDING APPROVAL]";
+            return buildAndSaveTxn(src, r, request.amount(), DebitCredit.DEBIT,
+                    "TRANSFER_DEBIT", pendingNarration, "API",
+                    currentSrcBalance, currentSrcBalance,
+                    businessDate, request.idempotencyKey(), tenantId);
+        }
 
         // Debit source
         BigDecimal srcBalBefore = src.getLedgerBalance();
