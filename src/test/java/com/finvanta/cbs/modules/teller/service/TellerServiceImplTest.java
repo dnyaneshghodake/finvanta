@@ -73,6 +73,7 @@ class TellerServiceImplTest {
 
     @Mock private TellerTillRepository tillRepository;
     @Mock private CashDenominationRepository denominationRepository;
+    @Mock private FicnRegisterService ficnRegisterService;
     @Mock private DepositAccountRepository accountRepository;
     @Mock private DepositTransactionRepository transactionRepository;
     @Mock private BranchRepository branchRepository;
@@ -96,9 +97,17 @@ class TellerServiceImplTest {
         // branch isolation, which we want to test.
         branchAccessValidator = new BranchAccessValidator(new CbsSecurityContext());
 
+        // FicnRegisterService is mocked because the FICN write happens in a
+        // REQUIRES_NEW sub-transaction that the unit test cannot reproduce.
+        // The dedicated FICN service test (TellerServiceImplFicnTest) covers
+        // the delegation contract; this test only verifies that cashDeposit
+        // calls into ficnRegisterService.recordDetection on the FICN gate
+        // and propagates the FicnDetectedException -- see
+        // cashDeposit_ficnDetected_writesRegisterAndThrows below.
         service = new TellerServiceImpl(
                 tillRepository,
                 denominationRepository,
+                ficnRegisterService,
                 accountRepository,
                 transactionRepository,
                 branchRepository,
@@ -270,23 +279,95 @@ class TellerServiceImplTest {
     }
 
     @Test
-    @DisplayName("FICN: counterfeit notes reject the deposit before any mutation")
-    void cashDeposit_ficnDetected_rejectsBeforeLock() {
+    @DisplayName("FICN: counterfeit notes write register, throw FicnDetectedException, no GL/till mutation")
+    void cashDeposit_ficnDetected_writesRegisterAndThrows() {
         // 5 x 500 (genuine) + 1 x 500 (counterfeit) = 3000 physical, sum matches.
-        // Per RBI FICN: deposit rejected, customer NOT credited.
+        // Per RBI FICN: deposit rejected (Option B -- entire deposit refused),
+        // counterfeit notes impounded, customer handed an FICN ack slip.
+        //
+        // The behavior changed in the FICN refactor: the check moved from
+        // pre-lock to post-lock so the register row carries a definitive
+        // till_id / branch_id (resolved from the locked entities). This test
+        // therefore mocks the lock acquisition, expects the locks WERE taken,
+        // and asserts that ficnRegisterService.recordDetection was invoked
+        // with the locked till+branch.
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+        TellerTill till = buildOpenTill(new BigDecimal("100000.00"), new BigDecimal("100000.00"));
+        BigDecimal ledgerBefore = acct.getLedgerBalance();
+        BigDecimal tillBefore = till.getCurrentBalance();
+
         CashDepositRequest req = new CashDepositRequest(
                 "DEP001",
                 new BigDecimal("3000"),
                 List.of(new DenominationEntry(IndianCurrencyDenomination.NOTE_500, 5, 1)),
                 "idem-key-3", "Ramesh Kumar", null, null, "test", null);
 
-        BusinessException ex = assertThrows(BusinessException.class,
+        when(businessDateService.getCurrentBusinessDate()).thenReturn(BUSINESS_DATE);
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber(TENANT, "DEP001"))
+                .thenReturn(Optional.of(acct));
+        when(tillRepository.findAndLockByTellerAndDate(TENANT, TELLER_USER, BUSINESS_DATE))
+                .thenReturn(Optional.of(till));
+        // Stub the FICN-write service to return a representative slip. The
+        // service-level recordDetection logic is covered by its own test;
+        // here we only verify that cashDeposit DELEGATES to it and propagates
+        // FicnDetectedException with the slip payload.
+        com.finvanta.cbs.modules.teller.dto.response.FicnAcknowledgementResponse stubAck =
+                new com.finvanta.cbs.modules.teller.dto.response.FicnAcknowledgementResponse(
+                        "FICN/HQ001/20260401/000001",
+                        "idem-key-3",
+                        BRANCH_CODE,
+                        "Headquarters",
+                        BUSINESS_DATE,
+                        LocalDateTime.now(),
+                        TELLER_USER,
+                        "Ramesh Kumar",
+                        null, null, null,
+                        List.of(),
+                        new BigDecimal("500"),
+                        /* firRequired */ false,
+                        "PENDING",
+                        null);
+        when(ficnRegisterService.recordDetection(
+                any(CashDepositRequest.class),
+                any(),
+                eq(BRANCH_CODE),
+                eq(till.getId()),
+                eq(TELLER_USER),
+                eq(BUSINESS_DATE),
+                eq(TENANT)))
+                .thenReturn(stubAck);
+
+        com.finvanta.cbs.modules.teller.exception.FicnDetectedException ex = assertThrows(
+                com.finvanta.cbs.modules.teller.exception.FicnDetectedException.class,
                 () -> service.cashDeposit(req));
         assertEquals("CBS-TELLER-008", ex.getErrorCode());
+        assertEquals("FICN/HQ001/20260401/000001", ex.getAcknowledgement().registerRef(),
+                "exception payload must carry the register ref minted by FicnRegisterService");
 
-        verify(accountRepository, never()).findAndLockByTenantIdAndAccountNumber(any(), any());
-        verify(tillRepository, never()).findAndLockByTellerAndDate(any(), any(), any());
+        // FICN gate fired AFTER locks: the ack write happened with the locked
+        // till + branch. This is the post-lock contract -- if the FICN gate
+        // ever moves back pre-lock, this verify fails.
+        verify(ficnRegisterService, times(1)).recordDetection(
+                any(CashDepositRequest.class),
+                any(),
+                eq(BRANCH_CODE),
+                eq(till.getId()),
+                eq(TELLER_USER),
+                eq(BUSINESS_DATE),
+                eq(TENANT));
+
+        // CRITICAL invariant: customer ledger NOT mutated. The FicnDetectedException
+        // rolls back the parent transaction; in a real Spring context the
+        // mutation would also roll back. In this unit test there's no real
+        // transaction so we assert the in-memory entity was never modified.
+        assertEquals(0, ledgerBefore.compareTo(acct.getLedgerBalance()),
+                "FICN-rejected deposit must not mutate the customer ledger");
+        assertEquals(0, tillBefore.compareTo(till.getCurrentBalance()),
+                "FICN-rejected deposit must not mutate the till balance");
+
+        // No GL post, no DepositTransaction insert, no CashDenomination insert.
         verify(transactionEngine, never()).execute(any());
+        verify(transactionRepository, never()).save(any());
         verify(denominationRepository, never()).save(any());
     }
 
