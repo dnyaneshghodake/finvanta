@@ -162,8 +162,8 @@ public class VaultServiceImpl implements VaultService {
                             + "Requester: " + mov.getRequestedBy());
         }
 
-        LocalDate businessDate = businessDateService.getCurrentBusinessDate();
-        Long branchId = SecurityUtil.getCurrentUserBranchId();
+        LocalDate businessDate = mov.getBusinessDate();
+        Long branchId = mov.getBranch().getId();
 
         // Lock order: vault first, then till — prevents deadlocks.
         VaultPosition vault = vaultRepository
