@@ -2,6 +2,7 @@ package com.finvanta.cbs.common.exception;
 
 import com.finvanta.api.ApiResponse;
 import com.finvanta.cbs.common.constants.CbsErrorCodes;
+import com.finvanta.cbs.modules.teller.exception.FicnDetectedException;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.MfaRequiredException;
 
@@ -49,6 +50,49 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 public class CbsApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(CbsApiExceptionHandler.class);
+
+    /**
+     * CBS FICN handler per RBI Master Direction on Counterfeit Notes.
+     *
+     * <p>Returns HTTP 422 (UNPROCESSABLE_ENTITY) with the printable
+     * {@link com.finvanta.cbs.modules.teller.dto.response.FicnAcknowledgementResponse
+     * acknowledgement slip} as the response body so the BFF / JSP can print
+     * the customer-facing receipt directly from the API error response.
+     *
+     * <p>This handler MUST be registered in addition to the generic
+     * {@link #handleBusiness} -- although {@link FicnDetectedException}
+     * extends {@link BusinessException}, only this handler exposes the slip
+     * payload via {@link ApiResponse#errorWithData}. The generic handler
+     * would surface the same status / error code but without the impounded
+     * denomination details, which would defeat the purpose of the receipt.
+     *
+     * <p>Severity is hard-coded HIGH (not delegated to the severity-mapping
+     * switch) because every FICN incident is high-priority by RBI mandate --
+     * the customer must be handed the slip and informed about FIR / chest
+     * dispatch implications regardless of count.
+     *
+     * <p>Per the same status/severity/action mapping as the generic handler,
+     * {@code TELLER_COUNTERFEIT_DETECTED} maps to 422 + HIGH + "Counterfeit
+     * notes detected. Issue FICN acknowledgement to customer and route to
+     * FICN review" -- those are the right defaults for a row of the BFF
+     * error log, but the response body adds the impounded-denomination
+     * detail the operator screen needs.
+     */
+    @ExceptionHandler(FicnDetectedException.class)
+    public ResponseEntity<ApiResponse<com.finvanta.cbs.modules.teller.dto.response.FicnAcknowledgementResponse>>
+            handleFicnDetected(FicnDetectedException ex) {
+        log.warn("CBS-API FICN detected: code={} register={} fir-required={} -- {}",
+                ex.getErrorCode(),
+                ex.getAcknowledgement().registerRef(),
+                ex.getAcknowledgement().firRequired(),
+                ex.getMessage());
+        exposeErrorCode(ex.getErrorCode());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ApiResponse.errorWithData(
+                        ex.getErrorCode(),
+                        ex.getMessage(),
+                        ex.getAcknowledgement()));
+    }
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException ex) {

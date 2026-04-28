@@ -28,6 +28,99 @@
     </div>
 </c:if>
 
+<%-- ============================================================
+     FICN Acknowledgement slip per RBI Master Direction on Counterfeit
+     Notes. Rendered when the previous POST detected counterfeit notes
+     and FicnRegisterService committed a CounterfeitNoteRegister row.
+     The slip is the customer's regulatory receipt and MUST be printed --
+     the .fv-ficn-print scope is wired to a print-stylesheet rule so a
+     print dialog produces a clean A4 receipt without the surrounding
+     chrome. See ficnAcknowledgement flash attribute set by
+     TellerWebController.submitCashDeposit (FICN catch block).
+
+     Mutually exclusive with the lastReceipt card above -- a single POST
+     either succeeds (lastReceipt) or fails with FICN (ficnAcknowledgement).
+     ============================================================ --%>
+<c:if test="${not empty ficnAcknowledgement}">
+    <div class="fv-card mb-3 border-danger fv-ficn-print">
+        <div class="card-header bg-danger text-white">
+            <i class="bi bi-shield-exclamation"></i> FICN Acknowledgement -- Counterfeit Notes Impounded
+            <c:if test="${ficnAcknowledgement.firRequired}">
+                <span class="badge bg-warning text-dark ms-2">FIR MANDATORY (RBI: count &ge; 5)</span>
+            </c:if>
+            <span class="float-end">
+                <button type="button" class="btn btn-sm btn-light"
+                        onclick="window.print();return false;">
+                    <i class="bi bi-printer"></i> Print Slip
+                </button>
+            </span>
+        </div>
+        <div class="card-body">
+            <p class="mb-2">
+                <strong>Register Ref:</strong>
+                <code><c:out value="${ficnAcknowledgement.registerRef}"/></code>
+                | Branch: <c:out value="${ficnAcknowledgement.branchCode}"/>
+                (<c:out value="${ficnAcknowledgement.branchName}"/>)
+                | Detected: <c:out value="${ficnAcknowledgement.detectionTimestamp}"/>
+                | Teller: <c:out value="${ficnAcknowledgement.detectedByTeller}"/>
+            </p>
+            <p class="mb-2">
+                <strong>Depositor:</strong> <c:out value="${ficnAcknowledgement.depositorName}"/>
+                <c:if test="${not empty ficnAcknowledgement.depositorIdType}">
+                    | <c:out value="${ficnAcknowledgement.depositorIdType}"/>:
+                    <c:out value="${ficnAcknowledgement.depositorIdNumber}"/>
+                </c:if>
+                <c:if test="${not empty ficnAcknowledgement.depositorMobile}">
+                    | Mobile: <c:out value="${ficnAcknowledgement.depositorMobile}"/>
+                </c:if>
+            </p>
+
+            <h6 class="mt-3">Impounded Denominations</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Denomination</th>
+                            <th class="text-end">Count</th>
+                            <th class="text-end">Face Value (INR)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <c:forEach var="line" items="${ficnAcknowledgement.impoundedDenominations}">
+                            <tr>
+                                <td><c:out value="${line.denomination}"/></td>
+                                <td class="text-end"><c:out value="${line.counterfeitCount}"/></td>
+                                <td class="text-end"><fmt:formatNumber value="${line.totalFaceValue}" type="currency" currencyCode="INR"/></td>
+                            </tr>
+                        </c:forEach>
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <th>Total Impounded</th>
+                            <th class="text-end">--</th>
+                            <th class="text-end"><fmt:formatNumber value="${ficnAcknowledgement.totalFaceValue}" type="currency" currencyCode="INR"/></th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <p class="text-muted small mb-1">
+                <strong>Chest Dispatch Status:</strong>
+                <c:out value="${ficnAcknowledgement.chestDispatchStatus}"/>
+                -- the impounded notes will be remitted to the nearest currency chest per RBI Master Direction.
+            </p>
+            <c:if test="${ficnAcknowledgement.firRequired}">
+                <p class="text-danger small mb-0">
+                    <strong>FIR Notice:</strong> per RBI Master Direction, this incident
+                    (counterfeit count &ge; 5 in a single transaction) requires the branch
+                    to file an FIR with the local police. The customer will be notified of
+                    the FIR reference once filed.
+                </p>
+            </c:if>
+        </div>
+    </div>
+</c:if>
+
 <%-- Last-deposit receipt summary (flash from a successful POST). --%>
 <c:if test="${not empty lastReceipt}">
     <div class="fv-card mb-3">

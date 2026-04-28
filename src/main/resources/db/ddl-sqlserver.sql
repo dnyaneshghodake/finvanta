@@ -1325,3 +1325,116 @@ BEGIN
 END;
 GO
 
+-- ============================================================
+-- TELLER MODULE: COUNTERFEIT NOTE REGISTER (RBI FICN Master Direction)
+-- One row per counterfeit-note batch detected at the teller counter.
+-- Per RBI: register reference is permanent, printed on the customer
+-- acknowledgement slip and the FIR copy. Rows are INSERT-ONLY -- a
+-- subsequent action (FIR filing, chest dispatch) would conventionally
+-- be a status update, but per RBI audit rules the bank must capture
+-- those state transitions as separate audit events rather than mutating
+-- the original register row. The triggers below enforce immutability
+-- at the storage layer, matching the discipline applied to audit_logs,
+-- ledger_entries, and cash_denominations.
+--
+-- IMPORTANT: chestDispatchStatus on the entity defaults to PENDING and
+-- is set once on insert. Future "mark dispatched" / "mark remitted"
+-- operations MUST insert a new register-event row in a separate table
+-- (planned: counterfeit_note_lifecycle) rather than UPDATEing this one.
+-- That separate table is out of scope for the current commit; the
+-- triggers below ensure the immutability invariant cannot be violated
+-- before that follow-up table exists.
+-- ============================================================
+CREATE TABLE counterfeit_note_register (
+    id                       BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id                VARCHAR(20)     NOT NULL,
+    register_ref             VARCHAR(60)     NOT NULL,   -- FICN/{branchCode}/{YYYYMMDD}/{seq}
+    originating_txn_ref      VARCHAR(40),                 -- request idempotencyKey (rejected deposit had no real txnRef)
+    branch_id                BIGINT          NOT NULL,
+    branch_code              VARCHAR(20)     NOT NULL,    -- denormalized for cheap reporting
+    till_id                  BIGINT          NOT NULL,    -- detecting till
+    detected_by_teller       VARCHAR(100)    NOT NULL,    -- teller username
+    detection_date           DATE            NOT NULL,    -- CBS business date
+    detection_timestamp      DATETIME2       NOT NULL,    -- wall-clock detection
+    -- Denomination + count of impounded notes. One row per (txn, denomination)
+    -- so the RBI quarterly FICN return is one row = one report line.
+    denomination             VARCHAR(20)     NOT NULL,    -- IndianCurrencyDenomination enum name
+    counterfeit_count        BIGINT          NOT NULL,    -- number of impounded notes
+    total_face_value         DECIMAL(18,2)   NOT NULL,    -- denomination.value() * count (pre-computed)
+    -- PMLA Rule 9 depositor identification (mandatory for FICN regardless of CTR threshold).
+    depositor_name           VARCHAR(200),
+    depositor_id_type        VARCHAR(30),                  -- PAN / FORM_60 / etc.
+    depositor_id_number      VARCHAR(100),
+    depositor_mobile         VARCHAR(20),
+    -- FIR fields (filled by supervisor post-detection; mandatory when count >= 5).
+    fir_reference            VARCHAR(100),
+    fir_filed_date           DATE,
+    fir_filed_by             VARCHAR(100),
+    -- Currency chest dispatch lifecycle. Defaults PENDING on insert.
+    -- The follow-up counterfeit_note_lifecycle table (out of current scope)
+    -- captures DISPATCH and REMITTED transitions as separate event rows.
+    chest_dispatch_status    VARCHAR(20)     NOT NULL DEFAULT 'PENDING',
+    chest_dispatch_ref       VARCHAR(60),
+    chest_dispatch_date      DATE,
+    remarks                  VARCHAR(1000),
+    version                  BIGINT          NOT NULL DEFAULT 0,
+    created_at               DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at               DATETIME2,
+    created_by               VARCHAR(100),
+    updated_by               VARCHAR(100),
+    -- Permanent reference is unique per tenant. The DB-level unique index is
+    -- the safety net beyond the application-level CbsReferenceService
+    -- sequence (which prevents collisions but cannot detect a misconfigured
+    -- sequence reset).
+    CONSTRAINT uq_ficn_register_ref UNIQUE (tenant_id, register_ref),
+    -- Enum whitelist matching IndianCurrencyDenomination. Kept in sync with
+    -- the same CHECK on cash_denominations -- both reference the same enum.
+    CONSTRAINT ck_ficn_denomination CHECK (denomination IN (
+        'NOTE_2000', 'NOTE_500', 'NOTE_200', 'NOTE_100',
+        'NOTE_50', 'NOTE_20', 'NOTE_10', 'NOTE_5', 'COIN_BUCKET')),
+    -- Coin bucket cannot be impounded as counterfeit per RBI Currency Mgmt
+    -- (the FICN regime applies to paper notes only). Mirrors the
+    -- ck_denom_coin_no_counterfeit invariant on cash_denominations.
+    CONSTRAINT ck_ficn_no_coin_counterfeit CHECK (denomination != 'COIN_BUCKET'),
+    -- Chest-dispatch status whitelist. Mirrors the entity's lifecycle
+    -- (PENDING / DISPATCHED / REMITTED).
+    CONSTRAINT ck_ficn_dispatch_status CHECK (chest_dispatch_status IN (
+        'PENDING', 'DISPATCHED', 'REMITTED')),
+    -- Counterfeit count must be positive -- a register row with zero count is
+    -- a programming error and the FICN gate in TellerServiceImpl skips
+    -- zero-count rows before insertion.
+    CONSTRAINT ck_ficn_positive_count CHECK (counterfeit_count > 0),
+    CONSTRAINT fk_ficn_branch FOREIGN KEY (branch_id) REFERENCES branches(id),
+    CONSTRAINT fk_ficn_till FOREIGN KEY (till_id) REFERENCES teller_tills(id)
+);
+CREATE INDEX idx_ficn_branch_date ON counterfeit_note_register (tenant_id, branch_id, detection_date);
+CREATE INDEX idx_ficn_chest_status ON counterfeit_note_register (tenant_id, chest_dispatch_status);
+CREATE INDEX idx_ficn_denom ON counterfeit_note_register (tenant_id, denomination, detection_date);
+GO
+
+-- ============================================================
+-- PROTECT FICN REGISTER FROM MODIFICATION (RBI audit grade)
+-- Same INSERT-ONLY pattern as audit_logs, ledger_entries, and
+-- cash_denominations. The register is the bank's permanent record of
+-- impounded counterfeit notes; mutating an existing row would break
+-- the chain of custody required by the FIR + currency-chest workflow.
+-- ============================================================
+GO
+CREATE TRIGGER trg_ficn_no_update ON counterfeit_note_register
+INSTEAD OF UPDATE
+AS
+BEGIN
+    RAISERROR ('Counterfeit-note register rows cannot be updated -- immutability enforced per RBI FICN Master Direction', 16, 1);
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+CREATE TRIGGER trg_ficn_no_delete ON counterfeit_note_register
+INSTEAD OF DELETE
+AS
+BEGIN
+    RAISERROR ('Counterfeit-note register rows cannot be deleted -- immutability enforced per RBI FICN Master Direction', 16, 1);
+    ROLLBACK TRANSACTION;
+END;
+GO
+

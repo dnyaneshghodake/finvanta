@@ -8,6 +8,7 @@ import com.finvanta.cbs.modules.teller.dto.request.DenominationEntry;
 import com.finvanta.cbs.modules.teller.dto.request.OpenTillRequest;
 import com.finvanta.cbs.modules.teller.dto.response.CashDepositResponse;
 import com.finvanta.cbs.modules.teller.dto.response.CashWithdrawalResponse;
+import com.finvanta.cbs.modules.teller.exception.FicnDetectedException;
 import com.finvanta.cbs.modules.teller.service.TellerService;
 import com.finvanta.util.BusinessException;
 
@@ -172,6 +173,31 @@ public class TellerWebController {
             }
             // Include the receipt so the JSP can show the printable slip.
             redirect.addFlashAttribute("lastReceipt", receipt);
+            return "redirect:/teller/cash-deposit";
+        } catch (FicnDetectedException fe) {
+            // CBS FICN per RBI Master Direction on Counterfeit Notes:
+            // the deposit was rejected and counterfeit notes were impounded.
+            // The register row + audit log are already committed (REQUIRES_NEW
+            // sub-tx in FicnRegisterService.recordDetection); we only need to
+            // surface the printable acknowledgement slip to the JSP via flash
+            // attributes. The slip MUST appear separately from the generic
+            // error banner because the customer leaves the counter holding a
+            // copy of it -- this is regulatory evidence, not a UI nicety.
+            //
+            // The catch block is intentionally placed BEFORE the generic
+            // BusinessException catch -- Java try/catch ordering matters here
+            // (unlike @ExceptionHandler ordering) because FicnDetectedException
+            // extends BusinessException; placing this second would render it
+            // unreachable.
+            log.warn("Teller cash deposit FICN-rejected: ref={} fir-required={}",
+                    fe.getAcknowledgement().registerRef(),
+                    fe.getAcknowledgement().firRequired());
+            redirect.addFlashAttribute("errorCode", fe.getErrorCode());
+            redirect.addFlashAttribute("error", fe.getMessage());
+            // The JSP renders ficnAcknowledgement separately from the
+            // standard `lastReceipt` -- the two are mutually exclusive on
+            // any given POST so there is no naming collision.
+            redirect.addFlashAttribute("ficnAcknowledgement", fe.getAcknowledgement());
             return "redirect:/teller/cash-deposit";
         } catch (BusinessException ex) {
             log.warn("Teller cash deposit failed: {} -- {}", ex.getErrorCode(), ex.getMessage());
