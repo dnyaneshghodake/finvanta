@@ -360,4 +360,285 @@ public class TellerServiceImpl implements TellerService {
                             + "per PMLA Rule 9 (threshold: INR " + CTR_PAN_THRESHOLD + ")");
         }
     }
+
+    /**
+     * Acquires PESSIMISTIC_WRITE on the customer account and validates it
+     * accepts credits. Per RBI Freeze Guidelines: CREDIT_FREEZE and TOTAL_FREEZE
+     * block credits, DEBIT_FREEZE permits them, DORMANT permits them (the
+     * deposit reactivates a dormant account elsewhere in this method).
+     */
+    private DepositAccount lockAccountForCredit(String tenantId, String accountNumber) {
+        DepositAccount acct = accountRepository
+                .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
+                .orElseThrow(() -> new BusinessException(CbsErrorCodes.ACCT_NOT_FOUND,
+                        "Account not found: " + accountNumber));
+        // Branch isolation: a teller may only credit accounts at their own
+        // branch. ADMIN/AUDITOR are exempt via BranchAccessValidator's
+        // role-aware logic.
+        branchAccessValidator.validateAccess(acct.getBranch());
+        if (acct.isClosed()) {
+            throw new BusinessException(CbsErrorCodes.ACCT_CLOSED,
+                    "Account is closed: " + accountNumber);
+        }
+        if (!acct.isCreditAllowed()) {
+            throw new BusinessException(CbsErrorCodes.ACCT_FROZEN,
+                    "Credit not allowed on " + accountNumber
+                            + " (status=" + acct.getAccountStatus()
+                            + ", freezeType=" + acct.getFreezeType() + ")");
+        }
+        return acct;
+    }
+
+    /**
+     * Acquires PESSIMISTIC_WRITE on the teller's till for the current
+     * business date and confirms it is in OPEN status. The repository
+     * query is keyed by tellerUserId, so the authenticated principal
+     * implicitly determines ownership -- a separate ownership check is
+     * not required.
+     */
+    private TellerTill lockOpenTill(String tenantId, String tellerUser, LocalDate businessDate) {
+        TellerTill till = tillRepository
+                .findAndLockByTellerAndDate(tenantId, tellerUser, businessDate)
+                .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_NOT_OPEN,
+                        "No till open for teller " + tellerUser + " on " + businessDate));
+        if (!till.isOpen()) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "Till is not OPEN for cash deposit (current status: " + till.getStatus() + ")");
+        }
+        return till;
+    }
+
+    /**
+     * Routes the GL posting through {@link TransactionEngine#execute}. The
+     * engine is the single enforcement point for idempotency, business-date
+     * validation, per-user transaction limits, and the maker-checker gate.
+     * The teller channel and the API channel use the SAME engine path so GL
+     * semantics are identical regardless of how the deposit was made.
+     *
+     * <p>Journal pair:
+     * <pre>
+     *   DR BANK_OPERATIONS (cash in hand)        amount
+     *       CR customer deposit GL (SB / CA / product-specific)  amount
+     * </pre>
+     */
+    private TransactionResult postCashDepositGl(
+            DepositAccount acct, TellerTill till,
+            CashDepositRequest req, LocalDate businessDate) {
+        String customerGl = customerDepositGl(acct);
+        return transactionEngine.execute(TransactionRequest.builder()
+                .sourceModule("TELLER")
+                .transactionType("CASH_DEPOSIT")
+                .accountReference(req.accountNumber())
+                .amount(req.amount())
+                .valueDate(businessDate)
+                .branchCode(acct.getBranch().getBranchCode())
+                .narration(resolveNarration(req))
+                .idempotencyKey(req.idempotencyKey())
+                .journalLines(List.of(
+                        new JournalLineRequest(GLConstants.BANK_OPERATIONS,
+                                DebitCredit.DEBIT, req.amount(),
+                                "Cash received at counter (till " + till.getId() + ")"),
+                        new JournalLineRequest(customerGl,
+                                DebitCredit.CREDIT, req.amount(),
+                                "Credit " + req.accountNumber())))
+                .build());
+    }
+
+    /**
+     * Mutates the customer account ledger, recomputes available balance, and
+     * reactivates the account if it was DORMANT (per RBI KYC §38: a customer-
+     * initiated credit reactivates a dormant account). Caller must hold
+     * PESSIMISTIC_WRITE on the account row.
+     */
+    private void applyDepositToAccount(DepositAccount acct, BigDecimal amount, LocalDate businessDate) {
+        acct.setLedgerBalance(acct.getLedgerBalance().add(amount));
+        // CBS BAL_DERIVE: available = ledger - hold - uncleared. Recompute
+        // (do not increment) so active liens / uncleared cheques remain honored.
+        acct.setAvailableBalance(
+                acct.getLedgerBalance()
+                        .subtract(acct.getHoldAmount())
+                        .subtract(acct.getUnclearedAmount()));
+        acct.setLastTransactionDate(businessDate);
+        if (acct.isDormant()) {
+            acct.setAccountStatus(com.finvanta.domain.enums.DepositAccountStatus.ACTIVE);
+            acct.setDormantDate(null);
+            // Inline because the caller holds the row lock; REQUIRES_NEW would
+            // deadlock per AuditService.logEvent Javadoc.
+            auditService.logEventInline(
+                    "DepositAccount", acct.getId(), "DORMANCY_REACTIVATED",
+                    "DORMANT", "ACTIVE", "ACCOUNT",
+                    "Account " + acct.getAccountNumber()
+                            + " reactivated via teller cash deposit of INR " + amount);
+        }
+        accountRepository.save(acct);
+    }
+
+    /**
+     * Mutates the till {@code currentBalance} by the deposit amount. Caller
+     * must hold PESSIMISTIC_WRITE on the till row.
+     *
+     * <p>Per RBI Internal Controls / CBS BAL_RECON: the till balance is the
+     * cash subledger for the branch's GL BANK_OPERATIONS. EOD reconciliation
+     * must satisfy:
+     * <pre>
+     *   sum(till.currentBalance @ branch X for business date D)
+     *     + vault.currentBalance @ branch X for business date D
+     *     == GL BANK_OPERATIONS branch balance @ branch X for business date D
+     * </pre>
+     */
+    private void applyDepositToTill(TellerTill till, BigDecimal amount, String tellerUser) {
+        till.setCurrentBalance(till.getCurrentBalance().add(amount));
+        till.setUpdatedBy(tellerUser);
+        tillRepository.save(till);
+    }
+
+    /**
+     * Builds the customer-facing {@link DepositTransaction} row with channel
+     * "TELLER". The {@code idempotencyKey} is persisted on this row so retries
+     * dedupe via {@code DepositTransactionRepository.findByTenantIdAndIdempotencyKey}.
+     */
+    private DepositTransaction persistTxn(
+            DepositAccount acct, TellerTill till, TransactionResult r, CashDepositRequest req,
+            BigDecimal balanceBefore, BigDecimal balanceAfter, String narration, String tenantId) {
+        DepositTransaction txn = new DepositTransaction();
+        txn.setDepositAccount(acct);
+        txn.setBranch(acct.getBranch());
+        txn.setBranchCode(acct.getBranch().getBranchCode());
+        txn.setTransactionRef(r.getTransactionRef());
+        txn.setTransactionType("CASH_DEPOSIT");
+        txn.setDebitCredit(DebitCredit.CREDIT.name());
+        txn.setAmount(req.amount());
+        txn.setBalanceBefore(balanceBefore);
+        txn.setBalanceAfter(balanceAfter);
+        txn.setValueDate(r.getValueDate());
+        txn.setPostingDate(LocalDateTime.now());
+        txn.setNarration(narration);
+        txn.setChannel("TELLER");
+        txn.setVoucherNumber(r.getVoucherNumber());
+        txn.setJournalEntryId(r.getJournalEntryId());
+        txn.setIdempotencyKey(req.idempotencyKey());
+        txn.setTenantId(tenantId);
+        return transactionRepository.save(txn);
+    }
+
+    /**
+     * Persists immutable {@link CashDenomination} rows -- one per non-zero
+     * denomination after coalescing duplicates. Counterfeit-flagged rows
+     * are NEVER reached here because the FICN guard in {@code cashDeposit}
+     * rejects the deposit before this point; every persisted row is genuine
+     * tender.
+     */
+    private void persistDenominations(
+            TellerTill till, CashDepositRequest req, String transactionRef,
+            LocalDate businessDate, String tenantId) {
+        Map<IndianCurrencyDenomination, DenominationValidator.MergedRow> merged =
+                denominationValidator.coalesce(req.denominations());
+        for (Map.Entry<IndianCurrencyDenomination, DenominationValidator.MergedRow> e
+                : merged.entrySet()) {
+            IndianCurrencyDenomination denom = e.getKey();
+            DenominationValidator.MergedRow row = e.getValue();
+            CashDenomination cd = new CashDenomination();
+            cd.setTenantId(tenantId);
+            cd.setTransactionRef(transactionRef);
+            cd.setTillId(till.getId());
+            cd.setValueDate(businessDate);
+            cd.setDenomination(denom);
+            cd.setUnitCount(row.unitCount());
+            cd.setTotalValue(denom.totalFor(row.unitCount()));
+            cd.setDirection("IN"); // cash deposit is always inflow at the till
+            // FICN-flagged deposits are rejected upstream; persisted rows are
+            // genuine tender. Defensive: ensure counterfeit fields are zero/false.
+            cd.setCounterfeitFlag(false);
+            cd.setCounterfeitCount(null);
+            denominationRepository.save(cd);
+        }
+    }
+
+    /**
+     * Default narration when the operator omits one. Per CBS audit standards
+     * a transaction narration is mandatory (TransactionRequest builder
+     * enforces non-blank narration), so we synthesize one from the
+     * mandatory {@code depositorName} field rather than failing.
+     */
+    private String resolveNarration(CashDepositRequest req) {
+        return (req.narration() != null && !req.narration().isBlank())
+                ? req.narration()
+                : "Cash deposit by " + req.depositorName();
+    }
+
+    /**
+     * Builds the response-side denomination echo from the request rows.
+     * The validator's {@code coalesce} merges duplicates so the receipt
+     * has exactly one line per denomination, ordered by enum declaration.
+     */
+    private List<CashDepositResponse.DenominationLine> buildResponseDenominationLines(
+            CashDepositRequest req) {
+        Map<IndianCurrencyDenomination, DenominationValidator.MergedRow> merged =
+                denominationValidator.coalesce(req.denominations());
+        List<CashDepositResponse.DenominationLine> lines = new ArrayList<>(merged.size());
+        for (Map.Entry<IndianCurrencyDenomination, DenominationValidator.MergedRow> e
+                : merged.entrySet()) {
+            IndianCurrencyDenomination denom = e.getKey();
+            DenominationValidator.MergedRow row = e.getValue();
+            lines.add(new CashDepositResponse.DenominationLine(
+                    denom,
+                    row.unitCount(),
+                    denom.totalFor(row.unitCount()),
+                    row.counterfeitCount()));
+        }
+        return lines;
+    }
+
+    /**
+     * Reads the persisted denomination breakdown for an idempotent retry.
+     * The first attempt's denominations are returned to the caller so retries
+     * are byte-for-byte identical from the BFF's perspective.
+     */
+    private List<CashDepositResponse.DenominationLine> lookupDenominationsForResponse(
+            String tenantId, String transactionRef) {
+        List<CashDepositResponse.DenominationLine> lines = new ArrayList<>();
+        for (CashDenomination cd : denominationRepository
+                .findByTenantIdAndTransactionRefOrderByDenominationAsc(tenantId, transactionRef)) {
+            lines.add(new CashDepositResponse.DenominationLine(
+                    cd.getDenomination(),
+                    cd.getUnitCount(),
+                    cd.getTotalValue(),
+                    cd.getCounterfeitCount() != null ? cd.getCounterfeitCount() : 0L));
+        }
+        return lines;
+    }
+
+    /**
+     * Maps a persisted {@link DepositTransaction} + post-state till to the
+     * response DTO. Used by both the success and pending-approval paths,
+     * and by the idempotent-retry early return. The till balance shown
+     * reflects state AT THE TIME OF MAPPING -- for pending-approval and
+     * dup-retry calls the till has not been re-mutated and the balance is
+     * the same as before this request.
+     */
+    private CashDepositResponse mapToResponse(
+            DepositTransaction txn, TellerTill till,
+            List<CashDepositResponse.DenominationLine> denominations,
+            boolean ctrTriggered, boolean ficnTriggered) {
+        boolean pending = txn.getNarration() != null
+                && txn.getNarration().contains("[PENDING APPROVAL]");
+        return new CashDepositResponse(
+                txn.getTransactionRef(),
+                txn.getVoucherNumber(),
+                txn.getDepositAccount().getAccountNumber(),
+                txn.getAmount(),
+                txn.getBalanceBefore(),
+                txn.getBalanceAfter(),
+                txn.getValueDate(),
+                txn.getPostingDate(),
+                txn.getNarration(),
+                txn.getChannel(),
+                pending,
+                till.getCurrentBalance(),
+                till.getId(),
+                till.getTellerUserId(),
+                denominations,
+                ctrTriggered,
+                ficnTriggered);
+    }
 }
