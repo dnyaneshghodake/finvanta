@@ -297,4 +297,155 @@ class CbsArchitectureTest {
                                 + "Importing jakarta.persistence.* in a controller is a layering leak.");
         rule.check(classes);
     }
+
+    // ============================================================
+    // Teller module Tier-1 invariants
+    // ============================================================
+
+    /**
+     * CBS Teller invariant: the v2 teller controllers must not depend on JPA
+     * entity classes. Per the refactored DDD architecture (the C3 finding from
+     * {@code CBS_TIER1_AUDIT_REPORT.md}), only DTOs cross the API boundary;
+     * entities are confined to service + repository layers and are translated
+     * via {@code TellerTillMapper}.
+     *
+     * <p>The check covers BOTH controllers in the teller module:
+     * {@code TellerApiController} (REST) and {@code TellerWebController} (JSP MVC).
+     */
+    @Test
+    void tellerControllers_doNotImportDomainEntities() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAPackage("com.finvanta.cbs.modules.teller.controller..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAPackage("com.finvanta.domain.entity..")
+                .because(
+                        "CBS Teller: controllers must consume DTOs only. Importing a JPA "
+                                + "entity from com.finvanta.cbs.modules.teller.controller bypasses "
+                                + "TellerTillMapper and re-introduces the C3 entity-exposure leak.");
+        rule.check(classes);
+    }
+
+    /**
+     * CBS Teller invariant: cash-deposit GL posting must route through
+     * {@link com.finvanta.transaction.TransactionEngine}. The teller service
+     * MUST NOT call {@code AccountingService.postJournalEntry} directly --
+     * doing so bypasses the maker-checker gate, idempotency registry, and
+     * per-user limit checks the engine performs as part of its 10-step chain.
+     *
+     * <p>Note: the {@link #postJournalEntry_onlyCalledByTransactionEngine} rule
+     * above already covers this for the WHOLE codebase, but this teller-specific
+     * rule documents the invariant on the teller service explicitly so a
+     * regression in {@code TellerServiceImpl} is caught with a teller-specific
+     * error message in CI.
+     */
+    @Test
+    void tellerService_postsViaTransactionEngineOnly() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAPackage("com.finvanta.cbs.modules.teller..")
+                .should(callMethodByName(
+                        "com.finvanta.accounting.AccountingService", "postJournalEntry"))
+                .because(
+                        "CBS Teller: cash-deposit GL posting must go through "
+                                + "TransactionEngine.execute(...). Calling AccountingService.postJournalEntry "
+                                + "directly bypasses the maker-checker gate and idempotency registry.");
+        rule.check(classes);
+    }
+
+    /**
+     * CBS Teller invariant: ENGINE_TOKEN helpers are internal plumbing of the
+     * transaction engine. The teller service must never generate or clear
+     * engine tokens. Mirrors the codebase-wide
+     * {@link #engineTokenHelpers_notUsedOutsideEngine} rule but with a
+     * teller-specific failure message so CI output points operators at the
+     * teller code that regressed.
+     */
+    @Test
+    void tellerService_doesNotTouchEngineToken() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAPackage("com.finvanta.cbs.modules.teller..")
+                .should(callMethodByName(
+                        "com.finvanta.accounting.AccountingService", "generateEngineToken"))
+                .orShould(callMethodByName(
+                        "com.finvanta.accounting.AccountingService", "clearEngineToken"))
+                .because(
+                        "CBS Teller: ENGINE_TOKEN ceremony is internal to TransactionEngine. "
+                                + "The teller module must call execute() and let the engine manage "
+                                + "the token. See DepositAccountModuleServiceImpl review thread for "
+                                + "the canonical pattern.");
+        rule.check(classes);
+    }
+
+    /**
+     * CBS Teller invariant: {@code @Transactional} belongs in the service
+     * layer, never on a controller. The auth/admin findings (H4 in
+     * {@code CBS_TIER1_AUDIT_REPORT.md}) called out
+     * {@code AuthController}'s {@code @Transactional}; the teller module
+     * starts clean and must stay that way.
+     *
+     * <p>This rule rejects ANY dependency on {@code @Transactional} from a
+     * teller controller class, which catches both class-level and method-level
+     * annotations because both are emitted as type references in the bytecode.
+     */
+    @Test
+    void tellerControllers_haveNoTransactionalAnnotation() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAPackage("com.finvanta.cbs.modules.teller.controller..")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("org.springframework.transaction.annotation.Transactional")
+                .because(
+                        "CBS Teller: the transaction boundary belongs on TellerService methods. "
+                                + "Annotating a teller controller with @Transactional creates two "
+                                + "TX boundaries (controller wraps service) and breaks the "
+                                + "lock-then-check invariant the service relies on.");
+        rule.check(classes);
+    }
+
+    /**
+     * CBS Teller invariant: {@code CashDenomination} rows are INSERT-ONLY per
+     * the audit-grade financial-data discipline (mirrored at the DB layer by
+     * the {@code trg_denom_no_update} / {@code trg_denom_no_delete} triggers
+     * in {@code ddl-sqlserver.sql}).
+     *
+     * <p>The mutability hazard at the application level is a service that
+     * fetches an existing {@code CashDenomination} and modifies it. We can't
+     * literally forbid {@code .save(...)} because that's also how INSERTs run
+     * via JPA. Instead we forbid any dependency from teller code on the
+     * {@code findById} / {@code findAll} family of methods on the
+     * {@link com.finvanta.cbs.modules.teller.repository.CashDenominationRepository}
+     * EXCEPT the read-only aggregation queries the repository declares
+     * explicitly. Mutator-prone {@code findById} would let a service caller
+     * load a row, set fields, and save it back -- the immutability violation
+     * we want to prevent.
+     *
+     * <p>Allowed callers of {@code CashDenominationRepository}:
+     * <ul>
+     *   <li>{@link com.finvanta.cbs.modules.teller.service.TellerServiceImpl}
+     *       -- the only writer, and only via {@code save()} of NEW entities.</li>
+     * </ul>
+     */
+    @Test
+    void cashDenominationRepository_onlyAccessedFromTellerService() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideOutsideOfPackages(
+                        "com.finvanta.cbs.modules.teller.service..",
+                        "com.finvanta.cbs.modules.teller.repository..")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName(
+                        "com.finvanta.cbs.modules.teller.repository.CashDenominationRepository")
+                .because(
+                        "CBS Teller: CashDenomination is INSERT-ONLY. Only TellerServiceImpl "
+                                + "may write denomination rows. Reading them from a controller, "
+                                + "mapper, or other service breaks the mapper boundary -- queries "
+                                + "must go through the service layer so PII / FICN data goes "
+                                + "through the same audit path as every other read.");
+        rule.check(classes);
+    }
 }
