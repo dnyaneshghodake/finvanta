@@ -2,8 +2,10 @@ package com.finvanta.cbs.modules.teller.service;
 
 import com.finvanta.cbs.modules.teller.domain.TellerTill;
 import com.finvanta.cbs.modules.teller.dto.request.CashDepositRequest;
+import com.finvanta.cbs.modules.teller.dto.request.CashWithdrawalRequest;
 import com.finvanta.cbs.modules.teller.dto.request.OpenTillRequest;
 import com.finvanta.cbs.modules.teller.dto.response.CashDepositResponse;
+import com.finvanta.cbs.modules.teller.dto.response.CashWithdrawalResponse;
 
 /**
  * CBS Teller Module Service Interface per CBS TELLER standard.
@@ -61,6 +63,37 @@ public interface TellerService {
      * atomically, or none do.
      */
     CashDepositResponse cashDeposit(CashDepositRequest request);
+
+    /**
+     * Pays out cash to a customer over the counter. Mirrors
+     * {@link #cashDeposit} but on the debit side:
+     * <ol>
+     *   <li>Locks the customer account (PESSIMISTIC_WRITE) FIRST, then the
+     *       till -- same canonical order as deposit so concurrent
+     *       deposit + withdrawal on the same account never deadlock.</li>
+     *   <li>Validates customer-side: not closed, debits allowed (honoring
+     *       partial freezes), sufficient available balance, minimum-balance
+     *       not breached, per-account daily withdrawal limit not exceeded.</li>
+     *   <li>Validates till-side: till has enough physical cash to pay out
+     *       ({@code currentBalance >= amount}) -- {@code CBS-TELLER-006}.</li>
+     *   <li>Routes through {@link com.finvanta.transaction.TransactionEngine}
+     *       for GL posting (DR customer GL / CR BANK_OPERATIONS), idempotency,
+     *       and per-user limit + maker-checker gating.</li>
+     *   <li>If engine returns PENDING_APPROVAL: balances UNCHANGED, no
+     *       denomination rows. The customer leaves with neither the cash
+     *       nor an updated balance; the supervisor approval flow completes
+     *       the transaction.</li>
+     *   <li>Otherwise: debits customer ledger, DECREMENTS till
+     *       {@code currentBalance}, persists immutable {@code direction='OUT'}
+     *       {@link com.finvanta.cbs.modules.teller.domain.CashDenomination}
+     *       rows representing the physical cash paid out.</li>
+     * </ol>
+     *
+     * <p>Note: there is no FICN gate on withdrawals -- the bank only pays
+     * out genuine notes from its till, so {@code counterfeitCount} on a
+     * withdrawal request is rejected by Bean Validation upstream.
+     */
+    CashWithdrawalResponse cashWithdrawal(CashWithdrawalRequest request);
 
     /**
      * Returns the till owned by the authenticated teller for the current

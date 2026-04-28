@@ -10,8 +10,10 @@ import com.finvanta.cbs.modules.teller.domain.IndianCurrencyDenomination;
 import com.finvanta.cbs.modules.teller.domain.TellerTill;
 import com.finvanta.cbs.modules.teller.domain.TellerTillStatus;
 import com.finvanta.cbs.modules.teller.dto.request.CashDepositRequest;
+import com.finvanta.cbs.modules.teller.dto.request.CashWithdrawalRequest;
 import com.finvanta.cbs.modules.teller.dto.request.OpenTillRequest;
 import com.finvanta.cbs.modules.teller.dto.response.CashDepositResponse;
+import com.finvanta.cbs.modules.teller.dto.response.CashWithdrawalResponse;
 import com.finvanta.cbs.modules.teller.repository.CashDenominationRepository;
 import com.finvanta.cbs.modules.teller.repository.TellerTillRepository;
 import com.finvanta.cbs.modules.teller.validator.DenominationValidator;
@@ -320,6 +322,120 @@ public class TellerServiceImpl implements TellerService {
 
         return mapToResponse(txn, till,
                 buildResponseDenominationLines(request), ctrTriggered, false);
+    }
+
+    // =====================================================================
+    // Cash Withdrawal
+    // =====================================================================
+
+    /**
+     * Pays out cash to a customer at the counter. Mirrors {@link #cashDeposit}
+     * with direction-aware differences:
+     * <ul>
+     *   <li>Account validation: {@code isDebitAllowed()} (CREDIT_FREEZE allows
+     *       debits; DEBIT_FREEZE / TOTAL_FREEZE / DORMANT / CLOSED block them).</li>
+     *   <li>Sufficient-balance + minimum-balance + per-account daily withdrawal
+     *       limit checks before any GL post.</li>
+     *   <li>Till-side: physical cash availability check
+     *       ({@code currentBalance >= amount}) -- {@code CBS-TELLER-006}.</li>
+     *   <li>GL pair flipped: DR customer GL / CR BANK_OPERATIONS.</li>
+     *   <li>Till mutation: DECREMENT {@code currentBalance} on POSTED.</li>
+     *   <li>Denomination rows persisted with {@code direction = 'OUT'}.</li>
+     * </ul>
+     *
+     * <p>Same lock order, same lock-then-check idempotency, same maker-checker
+     * gate as deposit. The pending-approval path leaves the till and customer
+     * ledger UNCHANGED -- the customer leaves the counter empty-handed AND
+     * un-debited until the supervisor approves.
+     */
+    @Override
+    @Transactional
+    public CashWithdrawalResponse cashWithdrawal(CashWithdrawalRequest request) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String tellerUser = SecurityUtil.getCurrentUsername();
+        LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+
+        // 1. Pre-lock validation: denomination math. Bean Validation already
+        // rejected non-zero counterfeit on a withdrawal request, so the
+        // hasCounterfeit() guard from the deposit path is unnecessary here.
+        denominationValidator.validateSum(request.denominations(), request.amount());
+
+        // 2. Lock customer account FIRST, then till -- canonical order.
+        DepositAccount acct = lockAccountForDebit(tenantId, request.accountNumber());
+        TellerTill till = lockOpenTill(tenantId, tellerUser, businessDate);
+
+        // 3. Customer-side balance + limit checks. These mirror the v2 deposit
+        // module's withdraw() so the teller channel and API channel reject the
+        // same scenarios with the same error codes.
+        accountValidatorEnforceSufficient(acct, request.amount());
+        accountValidatorEnforceMinBalance(acct, request.amount());
+        accountValidatorEnforceDailyLimit(acct, request.amount(), businessDate, tenantId);
+
+        // 4. Till-side cash availability. Per RBI Internal Controls: a till
+        // can never go negative; the teller must request a vault buy first.
+        if (till.getCurrentBalance().compareTo(request.amount()) < 0) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INSUFFICIENT_CASH,
+                    "Till has INR " + till.getCurrentBalance()
+                            + " on hand; cannot pay out INR " + request.amount()
+                            + ". Request a vault buy before continuing.");
+        }
+
+        // 5. Idempotency dedupe AFTER locks (TOCTOU-safe).
+        DepositTransaction dup = transactionRepository
+                .findByTenantIdAndIdempotencyKey(tenantId, request.idempotencyKey())
+                .orElse(null);
+        if (dup != null) {
+            return mapWithdrawalToResponse(dup, till,
+                    lookupWithdrawalDenominations(tenantId, dup.getTransactionRef()),
+                    request.amount().compareTo(CTR_PAN_THRESHOLD) >= 0,
+                    request.chequeNumber());
+        }
+
+        // 6. Engine post: DR customer GL / CR BANK_OPERATIONS.
+        TransactionResult r = postCashWithdrawalGl(acct, till, request, businessDate);
+        boolean ctrTriggered = request.amount().compareTo(CTR_PAN_THRESHOLD) >= 0;
+
+        // 7. Maker-checker pending: balances UNCHANGED, no denom rows.
+        if (r.isPendingApproval()) {
+            String pendingNarration = resolveWithdrawalNarration(request) + " [PENDING APPROVAL]";
+            DepositTransaction pendingTxn = persistWithdrawalTxn(
+                    acct, till, r, request,
+                    acct.getLedgerBalance(), acct.getLedgerBalance(),
+                    pendingNarration, tenantId);
+            auditService.logEventInline(
+                    "TellerCashWithdrawal", pendingTxn.getId(), "PENDING_APPROVAL",
+                    null, pendingTxn, "TELLER",
+                    "Cash withdrawal pending checker approval: INR " + request.amount()
+                            + " account=" + request.accountNumber()
+                            + " till=" + till.getId());
+            return mapWithdrawalToResponse(pendingTxn, till, java.util.List.of(),
+                    ctrTriggered, request.chequeNumber());
+        }
+
+        // 8. Posted: debit ledger, decrement till, persist denominations OUT.
+        BigDecimal balanceBefore = acct.getLedgerBalance();
+        applyWithdrawalToAccount(acct, request.amount(), businessDate);
+        applyWithdrawalToTill(till, request.amount(), tellerUser);
+
+        DepositTransaction txn = persistWithdrawalTxn(
+                acct, till, r, request, balanceBefore, acct.getLedgerBalance(),
+                resolveWithdrawalNarration(request), tenantId);
+        persistWithdrawalDenominations(till, request, txn.getTransactionRef(), businessDate, tenantId);
+
+        auditService.logEventInline(
+                "TellerCashWithdrawal", txn.getId(), "POSTED",
+                null, txn, "TELLER",
+                "Cash withdrawal POSTED: INR " + request.amount()
+                        + " account=" + request.accountNumber()
+                        + " till=" + till.getId()
+                        + " ctr=" + ctrTriggered);
+
+        log.info("CBS Teller withdrawal POSTED txnRef={} account={} amount={} till={} ctr={}",
+                txn.getTransactionRef(), request.accountNumber(), request.amount(),
+                till.getId(), ctrTriggered);
+
+        return mapWithdrawalToResponse(txn, till,
+                buildWithdrawalResponseLines(request), ctrTriggered, request.chequeNumber());
     }
 
     // =====================================================================
@@ -640,5 +756,294 @@ public class TellerServiceImpl implements TellerService {
                 denominations,
                 ctrTriggered,
                 ficnTriggered);
+    }
+
+    // =====================================================================
+    // Withdrawal-specific helpers (mirror the deposit helpers above)
+    // =====================================================================
+
+    /**
+     * Acquires PESSIMISTIC_WRITE on the customer account and validates it
+     * accepts debits. Per RBI Freeze Guidelines: DEBIT_FREEZE / TOTAL_FREEZE
+     * block debits, CREDIT_FREEZE permits them, DORMANT blocks them
+     * (re-activation requires a credit, not a debit), CLOSED blocks them.
+     *
+     * <p>Mirrors {@link #lockAccountForCredit} but with the freeze semantics
+     * inverted via {@link DepositAccount#isDebitAllowed()}.
+     */
+    private DepositAccount lockAccountForDebit(String tenantId, String accountNumber) {
+        DepositAccount acct = accountRepository
+                .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
+                .orElseThrow(() -> new BusinessException(CbsErrorCodes.ACCT_NOT_FOUND,
+                        "Account not found: " + accountNumber));
+        branchAccessValidator.validateAccess(acct.getBranch());
+        if (acct.isClosed()) {
+            throw new BusinessException(CbsErrorCodes.ACCT_CLOSED,
+                    "Account is closed: " + accountNumber);
+        }
+        if (!acct.isDebitAllowed()) {
+            throw new BusinessException(CbsErrorCodes.ACCT_FROZEN,
+                    "Debit not allowed on " + accountNumber
+                            + " (status=" + acct.getAccountStatus()
+                            + ", freezeType=" + acct.getFreezeType() + ")");
+        }
+        return acct;
+    }
+
+    /**
+     * Sufficient-balance enforcement using the account's
+     * {@code effectiveAvailable} (ledger - hold - uncleared + odLimit).
+     * Mirrors the same check the v2 deposit module performs in withdraw().
+     */
+    private void accountValidatorEnforceSufficient(DepositAccount acct, BigDecimal amount) {
+        BigDecimal effectiveAvailable = acct.getEffectiveAvailable();
+        if (effectiveAvailable.compareTo(amount) < 0) {
+            throw new BusinessException(CbsErrorCodes.ACCT_INSUFFICIENT_BALANCE,
+                    "Insufficient balance. Available: INR " + effectiveAvailable
+                            + ", requested: INR " + amount);
+        }
+    }
+
+    /**
+     * Minimum-balance enforcement per RBI CASA norms. Skipped for accounts
+     * with zero/null minimum balance (PMJDY, current accounts) so the
+     * teller channel matches v2 deposit-module semantics.
+     */
+    private void accountValidatorEnforceMinBalance(DepositAccount acct, BigDecimal amount) {
+        BigDecimal minBalance = acct.getMinimumBalance();
+        if (minBalance == null || minBalance.signum() <= 0) {
+            return;
+        }
+        BigDecimal postBalance = acct.getLedgerBalance().subtract(amount);
+        if (postBalance.compareTo(minBalance) < 0) {
+            throw new BusinessException(CbsErrorCodes.ACCT_MINIMUM_BALANCE_BREACH,
+                    "Withdrawal of INR " + amount
+                            + " would breach minimum balance of INR " + minBalance
+                            + " on account " + acct.getAccountNumber()
+                            + ". Post-debit balance: INR " + postBalance);
+        }
+    }
+
+    /**
+     * Per-account daily withdrawal limit per RBI Operational Risk Guidelines.
+     * Independent of the user/role-level limit enforced inside the engine --
+     * BOTH gates apply. Skipped when the account has no configured cap.
+     */
+    private void accountValidatorEnforceDailyLimit(
+            DepositAccount acct, BigDecimal amount, LocalDate businessDate, String tenantId) {
+        BigDecimal limit = acct.getDailyWithdrawalLimit();
+        if (limit == null || limit.signum() <= 0) {
+            return;
+        }
+        BigDecimal already = transactionRepository
+                .sumDailyDebits(tenantId, acct.getId(), businessDate);
+        if (already == null) already = BigDecimal.ZERO;
+        if (already.add(amount).compareTo(limit) > 0) {
+            throw new BusinessException(CbsErrorCodes.ACCT_DAILY_LIMIT_EXCEEDED,
+                    "Daily withdrawal limit INR " + limit
+                            + " exceeded on " + acct.getAccountNumber()
+                            + ". Today's debits: INR " + already
+                            + ", requested: INR " + amount);
+        }
+    }
+
+    /**
+     * Routes the withdrawal GL posting through the engine. Journal pair is
+     * the inverse of {@link #postCashDepositGl}: cash leaves the till and
+     * the customer-deposit liability shrinks.
+     *
+     * <pre>
+     *   DR customer deposit GL (SB / CA / product-specific)  amount
+     *       CR BANK_OPERATIONS (cash in hand)                amount
+     * </pre>
+     */
+    private TransactionResult postCashWithdrawalGl(
+            DepositAccount acct, TellerTill till,
+            CashWithdrawalRequest req, LocalDate businessDate) {
+        String customerGl = customerDepositGl(acct);
+        return transactionEngine.execute(TransactionRequest.builder()
+                .sourceModule("TELLER")
+                .transactionType("CASH_WITHDRAWAL")
+                .accountReference(req.accountNumber())
+                .amount(req.amount())
+                .valueDate(businessDate)
+                .branchCode(acct.getBranch().getBranchCode())
+                .narration(resolveWithdrawalNarration(req))
+                .idempotencyKey(req.idempotencyKey())
+                .journalLines(List.of(
+                        new JournalLineRequest(customerGl,
+                                DebitCredit.DEBIT, req.amount(),
+                                "Debit " + req.accountNumber()),
+                        new JournalLineRequest(GLConstants.BANK_OPERATIONS,
+                                DebitCredit.CREDIT, req.amount(),
+                                "Cash paid out at counter (till " + till.getId() + ")")))
+                .build());
+    }
+
+    /**
+     * Decrements the customer ledger and recomputes available balance.
+     * Caller must hold PESSIMISTIC_WRITE on the account row. Symmetric to
+     * {@link #applyDepositToAccount} but on the debit side -- and crucially,
+     * does NOT include a dormancy reactivation step (DORMANT accounts are
+     * already rejected by {@link #lockAccountForDebit} per RBI KYC §38).
+     */
+    private void applyWithdrawalToAccount(DepositAccount acct, BigDecimal amount, LocalDate businessDate) {
+        acct.setLedgerBalance(acct.getLedgerBalance().subtract(amount));
+        acct.setAvailableBalance(
+                acct.getLedgerBalance()
+                        .subtract(acct.getHoldAmount())
+                        .subtract(acct.getUnclearedAmount()));
+        acct.setLastTransactionDate(businessDate);
+        accountRepository.save(acct);
+    }
+
+    /** Decrements till {@code currentBalance}. Caller holds the lock. */
+    private void applyWithdrawalToTill(TellerTill till, BigDecimal amount, String tellerUser) {
+        till.setCurrentBalance(till.getCurrentBalance().subtract(amount));
+        till.setUpdatedBy(tellerUser);
+        tillRepository.save(till);
+    }
+
+    /**
+     * Builds the customer-facing {@code DepositTransaction} row for a
+     * withdrawal. Channel = TELLER, debitCredit = DEBIT, transactionType =
+     * CASH_WITHDRAWAL. {@code chequeNumber} surfaced when present so the
+     * cheque-clearing reconciliation in the clearing module can match by
+     * (account, cheque number, amount).
+     */
+    private DepositTransaction persistWithdrawalTxn(
+            DepositAccount acct, TellerTill till, TransactionResult r, CashWithdrawalRequest req,
+            BigDecimal balanceBefore, BigDecimal balanceAfter, String narration, String tenantId) {
+        DepositTransaction txn = new DepositTransaction();
+        txn.setDepositAccount(acct);
+        txn.setBranch(acct.getBranch());
+        txn.setBranchCode(acct.getBranch().getBranchCode());
+        txn.setTransactionRef(r.getTransactionRef());
+        txn.setTransactionType("CASH_WITHDRAWAL");
+        txn.setDebitCredit(DebitCredit.DEBIT.name());
+        txn.setAmount(req.amount());
+        txn.setBalanceBefore(balanceBefore);
+        txn.setBalanceAfter(balanceAfter);
+        txn.setValueDate(r.getValueDate());
+        txn.setPostingDate(LocalDateTime.now());
+        txn.setNarration(narration);
+        txn.setChannel("TELLER");
+        txn.setVoucherNumber(r.getVoucherNumber());
+        txn.setJournalEntryId(r.getJournalEntryId());
+        txn.setIdempotencyKey(req.idempotencyKey());
+        txn.setChequeNumber(req.chequeNumber());
+        txn.setTenantId(tenantId);
+        return transactionRepository.save(txn);
+    }
+
+    /**
+     * Persists immutable {@code direction='OUT'} denomination rows for the
+     * cash paid out. Counterfeit fields are always zero/false because the
+     * Bean Validation guard on {@link CashWithdrawalRequest} rejected any
+     * non-zero counterfeit count at the boundary.
+     */
+    private void persistWithdrawalDenominations(
+            TellerTill till, CashWithdrawalRequest req, String transactionRef,
+            LocalDate businessDate, String tenantId) {
+        java.util.Map<IndianCurrencyDenomination, DenominationValidator.MergedRow> merged =
+                denominationValidator.coalesce(req.denominations());
+        for (java.util.Map.Entry<IndianCurrencyDenomination, DenominationValidator.MergedRow> e
+                : merged.entrySet()) {
+            IndianCurrencyDenomination denom = e.getKey();
+            DenominationValidator.MergedRow row = e.getValue();
+            CashDenomination cd = new CashDenomination();
+            cd.setTenantId(tenantId);
+            cd.setTransactionRef(transactionRef);
+            cd.setTillId(till.getId());
+            cd.setValueDate(businessDate);
+            cd.setDenomination(denom);
+            cd.setUnitCount(row.unitCount());
+            cd.setTotalValue(denom.totalFor(row.unitCount()));
+            cd.setDirection("OUT"); // cash withdrawal = outflow at the till
+            cd.setCounterfeitFlag(false);
+            cd.setCounterfeitCount(null);
+            denominationRepository.save(cd);
+        }
+    }
+
+    /** Default narration for withdrawals. Mirrors {@link #resolveNarration}. */
+    private String resolveWithdrawalNarration(CashWithdrawalRequest req) {
+        return (req.narration() != null && !req.narration().isBlank())
+                ? req.narration()
+                : "Cash withdrawal by " + req.beneficiaryName();
+    }
+
+    /**
+     * Builds the response-side denomination echo for a withdrawal. Same
+     * coalesce + sort discipline as the deposit echo so the receipt slip
+     * is direction-agnostic from the BFF's perspective.
+     */
+    private List<CashWithdrawalResponse.DenominationLine> buildWithdrawalResponseLines(
+            CashWithdrawalRequest req) {
+        java.util.Map<IndianCurrencyDenomination, DenominationValidator.MergedRow> merged =
+                denominationValidator.coalesce(req.denominations());
+        List<CashWithdrawalResponse.DenominationLine> lines = new ArrayList<>(merged.size());
+        for (java.util.Map.Entry<IndianCurrencyDenomination, DenominationValidator.MergedRow> e
+                : merged.entrySet()) {
+            IndianCurrencyDenomination denom = e.getKey();
+            DenominationValidator.MergedRow row = e.getValue();
+            lines.add(new CashWithdrawalResponse.DenominationLine(
+                    denom,
+                    row.unitCount(),
+                    denom.totalFor(row.unitCount()),
+                    /* counterfeit always 0 on a withdrawal */ 0L));
+        }
+        return lines;
+    }
+
+    /**
+     * Reads persisted denomination breakdown for an idempotent withdrawal
+     * retry. Symmetric to {@link #lookupDenominationsForResponse}.
+     */
+    private List<CashWithdrawalResponse.DenominationLine> lookupWithdrawalDenominations(
+            String tenantId, String transactionRef) {
+        List<CashWithdrawalResponse.DenominationLine> lines = new ArrayList<>();
+        for (CashDenomination cd : denominationRepository
+                .findByTenantIdAndTransactionRefOrderByDenominationAsc(tenantId, transactionRef)) {
+            lines.add(new CashWithdrawalResponse.DenominationLine(
+                    cd.getDenomination(),
+                    cd.getUnitCount(),
+                    cd.getTotalValue(),
+                    cd.getCounterfeitCount() != null ? cd.getCounterfeitCount() : 0L));
+        }
+        return lines;
+    }
+
+    /**
+     * Maps a persisted withdrawal {@code DepositTransaction} + post-state
+     * till to {@link CashWithdrawalResponse}. Symmetric to
+     * {@link #mapToResponse} for deposits. {@code chequeNumber} is sourced
+     * from the original request so the receipt slip can render it without
+     * an extra DB hit.
+     */
+    private CashWithdrawalResponse mapWithdrawalToResponse(
+            DepositTransaction txn, TellerTill till,
+            List<CashWithdrawalResponse.DenominationLine> denominations,
+            boolean ctrTriggered, String chequeNumber) {
+        boolean pending = txn.getNarration() != null
+                && txn.getNarration().contains("[PENDING APPROVAL]");
+        return new CashWithdrawalResponse(
+                txn.getTransactionRef(),
+                txn.getVoucherNumber(),
+                txn.getDepositAccount().getAccountNumber(),
+                txn.getAmount(),
+                txn.getBalanceBefore(),
+                txn.getBalanceAfter(),
+                txn.getValueDate(),
+                txn.getPostingDate(),
+                txn.getNarration(),
+                txn.getChannel(),
+                pending,
+                till.getCurrentBalance(),
+                till.getId(),
+                till.getTellerUserId(),
+                denominations,
+                ctrTriggered,
+                chequeNumber);
     }
 }

@@ -3,9 +3,11 @@ package com.finvanta.cbs.modules.teller.controller;
 import com.finvanta.cbs.modules.teller.domain.IndianCurrencyDenomination;
 import com.finvanta.cbs.modules.teller.domain.TellerTill;
 import com.finvanta.cbs.modules.teller.dto.request.CashDepositRequest;
+import com.finvanta.cbs.modules.teller.dto.request.CashWithdrawalRequest;
 import com.finvanta.cbs.modules.teller.dto.request.DenominationEntry;
 import com.finvanta.cbs.modules.teller.dto.request.OpenTillRequest;
 import com.finvanta.cbs.modules.teller.dto.response.CashDepositResponse;
+import com.finvanta.cbs.modules.teller.dto.response.CashWithdrawalResponse;
 import com.finvanta.cbs.modules.teller.service.TellerService;
 import com.finvanta.util.BusinessException;
 

@@ -2,8 +2,10 @@ package com.finvanta.cbs.modules.teller.controller;
 
 import com.finvanta.api.ApiResponse;
 import com.finvanta.cbs.modules.teller.dto.request.CashDepositRequest;
+import com.finvanta.cbs.modules.teller.dto.request.CashWithdrawalRequest;
 import com.finvanta.cbs.modules.teller.dto.request.OpenTillRequest;
 import com.finvanta.cbs.modules.teller.dto.response.CashDepositResponse;
+import com.finvanta.cbs.modules.teller.dto.response.CashWithdrawalResponse;
 import com.finvanta.cbs.modules.teller.dto.response.TellerTillResponse;
 import com.finvanta.cbs.modules.teller.mapper.TellerTillMapper;
 import com.finvanta.cbs.modules.teller.service.TellerService;
@@ -134,6 +136,34 @@ public class TellerApiController {
         String message = receipt.pendingApproval()
                 ? "Cash deposit submitted for checker approval"
                 : "Cash deposit posted";
+        return ResponseEntity.ok(ApiResponse.success(receipt, message));
+    }
+
+    /**
+     * Pays out cash to a customer at the counter. Mirrors {@code /cash-deposit}
+     * but on the debit side; see {@link com.finvanta.cbs.modules.teller.service.TellerService#cashWithdrawal}
+     * for the full contract.
+     *
+     * <p>HTTP semantics:
+     * <ul>
+     *   <li>200 OK with {@code pendingApproval=false} -- withdrawal posted;
+     *       customer ledger debited, till decremented, denominations recorded.</li>
+     *   <li>200 OK with {@code pendingApproval=true} -- withdrawal routed to
+     *       maker-checker; balances unchanged, customer leaves WITHOUT cash.</li>
+     *   <li>422 -- balance / minimum-balance / freeze / dormancy / daily-limit
+     *       breach OR till has insufficient cash (CBS-TELLER-006).</li>
+     *   <li>409 -- till not open / dup transaction.</li>
+     *   <li>400 -- denomination sum mismatch / counterfeit on withdrawal request.</li>
+     * </ul>
+     */
+    @PostMapping("/cash-withdrawal")
+    @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<CashWithdrawalResponse>> cashWithdrawal(
+            @Valid @RequestBody CashWithdrawalRequest request) {
+        var receipt = tellerService.cashWithdrawal(request);
+        String message = receipt.pendingApproval()
+                ? "Cash withdrawal submitted for checker approval"
+                : "Cash withdrawal posted";
         return ResponseEntity.ok(ApiResponse.success(receipt, message));
     }
 }
