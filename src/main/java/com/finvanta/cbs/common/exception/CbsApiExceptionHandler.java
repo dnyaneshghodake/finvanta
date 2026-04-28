@@ -215,6 +215,15 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.WF_ALREADY_PROCESSED,
                     CbsErrorCodes.TXN_ALREADY_REVERSED,
                     CbsErrorCodes.TXN_TRANSFER_REVERSAL_REQUIRED,
+                    // Teller state conflicts: till is not in the expected
+                    // lifecycle state for the requested operation. 409 lets
+                    // the BFF distinguish from input-validation 400s and
+                    // from financial-blocker 422s, since the resolution
+                    // (open till / wait for supervisor / use a different
+                    // till) is qualitatively different from a balance issue.
+                    CbsErrorCodes.TELLER_TILL_NOT_OPEN,
+                    CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    CbsErrorCodes.TELLER_TILL_DUPLICATE,
                     "WORKFLOW_VERSION_MISMATCH" -> HttpStatus.CONFLICT;
             case CbsErrorCodes.ACCT_INSUFFICIENT_BALANCE,
                     CbsErrorCodes.ACCT_FROZEN,
@@ -233,7 +242,18 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.TXN_LIMIT_EXCEEDED,
                     CbsErrorCodes.TXN_DAY_NOT_OPEN,
                     CbsErrorCodes.GL_POSTING_INTEGRITY_FAIL,
-                    CbsErrorCodes.COMP_AML_FLAG -> HttpStatus.UNPROCESSABLE_ENTITY;
+                    CbsErrorCodes.COMP_AML_FLAG,
+                    // Teller financial blockers: till has insufficient cash
+                    // for an outflow, or counterfeit notes were detected
+                    // (FICN per RBI Master Direction). Both are unprocessable
+                    // because the request is well-formed but the financial
+                    // state of the till / tendered cash blocks completion.
+                    // CTR threshold breach (PMLA Rule 9: PAN/Form60 missing)
+                    // also lands here -- it is a regulatory blocker, not a
+                    // syntax error.
+                    CbsErrorCodes.TELLER_TILL_INSUFFICIENT_CASH,
+                    CbsErrorCodes.TELLER_COUNTERFEIT_DETECTED,
+                    CbsErrorCodes.COMP_CTR_THRESHOLD -> HttpStatus.UNPROCESSABLE_ENTITY;
             // 403 FORBIDDEN per RFC 9110 §15.5.4: authenticated user lacks
             // required privilege / branch access / maker-checker separation;
             // or the account itself is locked/inactive (caller must contact
@@ -241,7 +261,13 @@ public class CbsApiExceptionHandler {
             case CbsErrorCodes.CUST_BRANCH_ACCESS_DENIED,
                     CbsErrorCodes.WF_SELF_APPROVAL,
                     CbsErrorCodes.AUTH_ACCOUNT_LOCKED,
-                    CbsErrorCodes.AUTH_ACCOUNT_INACTIVE -> HttpStatus.FORBIDDEN;
+                    CbsErrorCodes.AUTH_ACCOUNT_INACTIVE,
+                    // Teller ownership: the authenticated user is not the
+                    // owner of the targeted till. Per RBI Internal Controls
+                    // (segregation of duties) only the assigned teller may
+                    // post to their own till; another teller's request is
+                    // forbidden, not a state conflict, so 403 not 409.
+                    CbsErrorCodes.TELLER_TILL_OWNERSHIP -> HttpStatus.FORBIDDEN;
             // 401 UNAUTHORIZED per RFC 9110 §15.5.2: authentication failed
             // (wrong credentials, not a privilege-elevation issue). 403 here
             // would prevent BFF clients from re-prompting for credentials and
@@ -272,7 +298,14 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.WF_SELF_APPROVAL,
                     CbsErrorCodes.LOAN_NPA_CLASSIFIED,
                     CbsErrorCodes.COMP_AML_FLAG,
-                    CbsErrorCodes.GL_POSTING_INTEGRITY_FAIL -> CbsErrorCodes.SEVERITY_HIGH;
+                    CbsErrorCodes.GL_POSTING_INTEGRITY_FAIL,
+                    // Teller financial-safety blockers: counterfeit notes
+                    // (FICN), till cash exhausted, segregation-of-duties
+                    // breach. All warrant a HIGH severity in the BFF UI so
+                    // the supervisor gets a blocking modal, not a toast.
+                    CbsErrorCodes.TELLER_COUNTERFEIT_DETECTED,
+                    CbsErrorCodes.TELLER_TILL_INSUFFICIENT_CASH,
+                    CbsErrorCodes.TELLER_TILL_OWNERSHIP -> CbsErrorCodes.SEVERITY_HIGH;
             case CbsErrorCodes.ACCT_DUPLICATE_NUMBER,
                     CbsErrorCodes.TXN_IDEMPOTENCY_DUPLICATE,
                     CbsErrorCodes.TXN_PENDING_APPROVAL,
@@ -282,7 +315,15 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.WF_ALREADY_PROCESSED,
                     CbsErrorCodes.ACCT_DORMANT,
                     CbsErrorCodes.CUST_KYC_EXPIRED,
-                    CbsErrorCodes.CUST_KYC_NOT_VERIFIED -> CbsErrorCodes.SEVERITY_MEDIUM;
+                    CbsErrorCodes.CUST_KYC_NOT_VERIFIED,
+                    // Teller state / regulatory conflicts -- recoverable by
+                    // the operator (open till, supply PAN/Form60, wait for
+                    // supervisor) so MEDIUM severity is correct.
+                    CbsErrorCodes.TELLER_TILL_NOT_OPEN,
+                    CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    CbsErrorCodes.TELLER_TILL_DUPLICATE,
+                    CbsErrorCodes.TELLER_TILL_LIMIT_EXCEEDED,
+                    CbsErrorCodes.COMP_CTR_THRESHOLD -> CbsErrorCodes.SEVERITY_MEDIUM;
             default -> CbsErrorCodes.SEVERITY_LOW;
         };
     }
@@ -350,6 +391,32 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.AUTH_ACCOUNT_LOCKED,
                     CbsErrorCodes.AUTH_ACCOUNT_INACTIVE ->
                     "Authentication failed. Contact your administrator";
+            // Teller channel remediation per RBI Fair Practices Code §7.1.
+            // Each action describes the exact next step the teller / supervisor
+            // must take so the BFF error modal does not leave the operator
+            // guessing.
+            case CbsErrorCodes.TELLER_TILL_NOT_OPEN ->
+                    "Open your till for the day before posting cash transactions";
+            case CbsErrorCodes.TELLER_TILL_INVALID_STATE ->
+                    "Till is not in OPEN status. Wait for supervisor approval or open a new till";
+            case CbsErrorCodes.TELLER_TILL_OWNERSHIP ->
+                    "You can only operate your own till. Contact branch manager if reassignment is needed";
+            case CbsErrorCodes.TELLER_DENOM_SUM_MISMATCH ->
+                    "Denomination breakdown does not match the amount. Recount the cash and resubmit";
+            case CbsErrorCodes.TELLER_DENOM_INVALID ->
+                    "One or more denominations are not recognized. Use only the listed RBI legal-tender values";
+            case CbsErrorCodes.TELLER_TILL_INSUFFICIENT_CASH ->
+                    "Till has insufficient cash. Request a vault buy before paying out";
+            case CbsErrorCodes.TELLER_TILL_LIMIT_EXCEEDED ->
+                    "Till cash limit reached. Sell cash to vault before accepting more deposits";
+            case CbsErrorCodes.TELLER_COUNTERFEIT_DETECTED ->
+                    "Counterfeit notes detected. Issue FICN acknowledgement to customer and route to FICN review";
+            case CbsErrorCodes.TELLER_TILL_DATE_INVALID ->
+                    "Till business date is invalid. Verify branch business date and retry";
+            case CbsErrorCodes.TELLER_TILL_DUPLICATE ->
+                    "A till already exists for you on this business date";
+            case CbsErrorCodes.COMP_CTR_THRESHOLD ->
+                    "Cash deposit at or above CTR threshold requires PAN or Form 60/61 per PMLA Rule 9";
             default -> null;
         };
     }
