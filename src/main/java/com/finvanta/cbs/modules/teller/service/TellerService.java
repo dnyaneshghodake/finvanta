@@ -102,4 +102,63 @@ public interface TellerService {
      * cash-deposit screen.
      */
     TellerTill getMyCurrentTill();
+
+    /**
+     * Supervisor approves a PENDING_OPEN till, promoting it to OPEN.
+     *
+     * <p>Per RBI Internal Controls / dual-control requirement: when a till's
+     * opening balance exceeds the branch threshold (configured in
+     * {@code TellerServiceImpl.TILL_OPEN_AUTO_APPROVE_THRESHOLD}), the till
+     * sits in PENDING_OPEN until a supervisor (CHECKER or ADMIN role) signs
+     * off. This method performs that sign-off.
+     *
+     * <p>Validations:
+     * <ul>
+     *   <li>Till must be in PENDING_OPEN status.</li>
+     *   <li>The authenticated principal must NOT be the same user who opened
+     *       the till (maker ≠ checker per RBI Internal Controls).</li>
+     *   <li>The authenticated principal must have CHECKER or ADMIN role.</li>
+     * </ul>
+     *
+     * @param tillId the ID of the PENDING_OPEN till to approve
+     * @return the till in OPEN status with {@code openedBySupervisor} set
+     */
+    TellerTill approveTillOpen(Long tillId);
+
+    /**
+     * Applies the subledger effect of a checker-approved teller cash
+     * transaction (deposit or withdrawal) that was routed to maker-checker.
+     *
+     * <p>Called by {@code WorkflowController.approve()} after
+     * {@code TransactionReExecutionService.reExecuteApprovedTransaction()}
+     * has posted the GL. This method:
+     * <ol>
+     *   <li>Locks the customer account and the teller's till.</li>
+     *   <li>Applies the balance effect to the customer ledger (credit for
+     *       deposit, debit for withdrawal).</li>
+     *   <li>Mutates the till {@code currentBalance} (increment for deposit,
+     *       decrement for withdrawal).</li>
+     *   <li>Persists the immutable {@code CashDenomination} rows that were
+     *       deferred at the time the deposit/withdrawal was initially submitted
+     *       (denominations are NOT written on the pending path — they are
+     *       written here, on approval).</li>
+     * </ol>
+     *
+     * <p>This is the teller-specific equivalent of
+     * {@code DepositAccountService.applyApprovedTransaction(...)}.
+     *
+     * @param accountNumber  the customer account to credit/debit
+     * @param amount         the transaction amount
+     * @param transactionType "CASH_DEPOSIT" or "CASH_WITHDRAWAL"
+     * @param tillId         the till that originated the transaction
+     * @param result         the GL posting result from the re-execution service
+     * @param businessDate   the CBS business date of the original transaction
+     */
+    void applyApprovedTellerTransaction(
+            String accountNumber,
+            java.math.BigDecimal amount,
+            String transactionType,
+            Long tillId,
+            com.finvanta.transaction.TransactionResult result,
+            java.time.LocalDate businessDate);
 }

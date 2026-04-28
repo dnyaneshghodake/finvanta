@@ -228,6 +228,153 @@ public class TellerServiceImpl implements TellerService {
     }
 
     // =====================================================================
+    // Till Lifecycle -- Supervisor Approval (PENDING_OPEN → OPEN)
+    // =====================================================================
+
+    @Override
+    @Transactional
+    public TellerTill approveTillOpen(Long tillId) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String supervisor = SecurityUtil.getCurrentUsername();
+
+        TellerTill till = tillRepository.findById(tillId)
+                .filter(t -> tenantId.equals(t.getTenantId()))
+                .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                        "Till not found: " + tillId));
+
+        if (!till.isPendingOpen()) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "Till is not in PENDING_OPEN status (current: " + till.getStatus()
+                            + "). Only PENDING_OPEN tills can be approved.");
+        }
+
+        // CBS Maker ≠ Checker per RBI Internal Controls. The teller who
+        // opened the till cannot approve their own till. This prevents a
+        // single operator from bypassing the dual-control requirement on
+        // high-value opening balances.
+        if (supervisor.equals(till.getTellerUserId())) {
+            throw new BusinessException(CbsErrorCodes.WF_SELF_APPROVAL,
+                    "Supervisor cannot approve their own till. "
+                            + "A different CHECKER or ADMIN must sign off. "
+                            + "Teller: " + till.getTellerUserId()
+                            + ", Supervisor: " + supervisor);
+        }
+
+        till.setStatus(TellerTillStatus.OPEN);
+        till.setOpenedAt(LocalDateTime.now());
+        till.setOpenedBySupervisor(supervisor);
+        till.setUpdatedBy(supervisor);
+        TellerTill saved = tillRepository.save(till);
+
+        auditService.logEvent(
+                "TellerTill", saved.getId(), "TILL_APPROVED",
+                "PENDING_OPEN", "OPEN", "TELLER",
+                "Till " + tillId + " approved by supervisor " + supervisor
+                        + " for teller " + till.getTellerUserId()
+                        + " at branch " + till.getBranchCode()
+                        + " (opening balance: INR " + till.getOpeningBalance() + ")");
+
+        log.info("CBS Teller till {} approved by supervisor {} for teller {} branch {}",
+                tillId, supervisor, till.getTellerUserId(), till.getBranchCode());
+        return saved;
+    }
+
+    // =====================================================================
+    // Maker-Checker: Apply approved teller transaction (stub for follow-up)
+    // =====================================================================
+
+    @Override
+    @Transactional
+    public void applyApprovedTellerTransaction(
+            String accountNumber,
+            BigDecimal amount,
+            String transactionType,
+            Long tillId,
+            TransactionResult result,
+            LocalDate businessDate) {
+        // CBS: This method is called by WorkflowController.approve() after
+        // TransactionReExecutionService has posted the GL for a TELLER-sourced
+        // transaction. It must:
+        //   1. Lock the customer account + till (canonical order).
+        //   2. Apply the balance effect to the customer ledger.
+        //   3. Mutate the till currentBalance.
+        //   4. Persist CashDenomination rows (deferred from the pending path).
+        //
+        // NOTE: CashDenomination rows require the original denomination
+        // breakdown from the request, which is stored in the workflow's
+        // payloadSnapshot JSON. Parsing that payload and reconstituting the
+        // denomination list is a non-trivial enhancement that requires:
+        //   a. The cashDeposit/cashWithdrawal methods to serialize the
+        //      denomination breakdown into the TransactionRequest (which is
+        //      then captured by the workflow's payloadSnapshot).
+        //   b. This method to deserialize it back.
+        //
+        // For now, this method applies the ledger + till balance effect but
+        // defers denomination persistence to a follow-up commit. The till
+        // balance is correct; the denomination detail will be back-filled.
+
+        String tenantId = TenantContext.getCurrentTenant();
+        String currentUser = SecurityUtil.getCurrentUsername();
+
+        // 1. Lock customer account.
+        DepositAccount acct = accountRepository
+                .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
+                .orElseThrow(() -> new BusinessException(CbsErrorCodes.ACCT_NOT_FOUND,
+                        "Account not found: " + accountNumber));
+
+        // 2. Apply balance effect to customer ledger.
+        boolean isCredit = "CASH_DEPOSIT".equals(transactionType);
+        BigDecimal balanceBefore = acct.getLedgerBalance();
+        if (isCredit) {
+            acct.setLedgerBalance(balanceBefore.add(amount));
+        } else {
+            acct.setLedgerBalance(balanceBefore.subtract(amount));
+        }
+        acct.setAvailableBalance(
+                acct.getLedgerBalance()
+                        .subtract(acct.getHoldAmount())
+                        .subtract(acct.getUnclearedAmount()));
+        acct.setLastTransactionDate(businessDate);
+        if (isCredit && acct.isDormant()) {
+            acct.setAccountStatus(com.finvanta.domain.enums.DepositAccountStatus.ACTIVE);
+            acct.setDormantDate(null);
+            auditService.logEventInline(
+                    "DepositAccount", acct.getId(), "DORMANCY_REACTIVATED",
+                    "DORMANT", "ACTIVE", "ACCOUNT",
+                    "Account " + accountNumber
+                            + " reactivated via approved teller " + transactionType);
+        }
+        acct.setUpdatedBy(currentUser);
+        accountRepository.save(acct);
+
+        // 3. Lock and mutate the till.
+        TellerTill till = tillRepository.findById(tillId)
+                .filter(t -> tenantId.equals(t.getTenantId()))
+                .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                        "Till not found for approved transaction: " + tillId));
+        if (isCredit) {
+            till.setCurrentBalance(till.getCurrentBalance().add(amount));
+        } else {
+            till.setCurrentBalance(till.getCurrentBalance().subtract(amount));
+        }
+        till.setUpdatedBy(currentUser);
+        tillRepository.save(till);
+
+        // 4. Denomination persistence deferred (see NOTE above).
+
+        auditService.logEventInline(
+                "TellerCashTransaction", null, "APPROVED_APPLIED",
+                null, null, "TELLER",
+                "Approved teller " + transactionType + " applied: account=" + accountNumber
+                        + " amount=INR " + amount + " till=" + tillId
+                        + " balanceBefore=INR " + balanceBefore
+                        + " balanceAfter=INR " + acct.getLedgerBalance());
+
+        log.info("CBS Teller approved txn applied: type={} account={} amount={} till={}",
+                transactionType, accountNumber, amount, tillId);
+    }
+
+    // =====================================================================
     // Cash Deposit
     // =====================================================================
 

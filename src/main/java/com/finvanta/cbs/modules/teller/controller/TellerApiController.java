@@ -156,6 +156,31 @@ public class TellerApiController {
      *   <li>400 -- denomination sum mismatch / counterfeit on withdrawal request.</li>
      * </ul>
      */
+    // === Supervisor Approval ===
+
+    /**
+     * Supervisor approves a PENDING_OPEN till, promoting it to OPEN.
+     *
+     * <p>Per RBI Internal Controls / dual-control: the authenticated
+     * principal must be a CHECKER or ADMIN, and must NOT be the same user
+     * who opened the till (maker ≠ checker).
+     *
+     * <p>HTTP semantics: 200 OK with the updated till in OPEN status.
+     * 409 if the till is not in PENDING_OPEN. 403 if the supervisor
+     * is the same user who opened the till (CBS-WF-001).
+     */
+    @PostMapping("/till/{tillId}/approve")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<TellerTillResponse>> approveTillOpen(
+            @PathVariable Long tillId) {
+        var till = tellerService.approveTillOpen(tillId);
+        return ResponseEntity.ok(ApiResponse.success(
+                tillMapper.toResponse(till),
+                "Till approved and OPEN for teller " + till.getTellerUserId()));
+    }
+
+    // === Cash Withdrawal ===
+
     @PostMapping("/cash-withdrawal")
     @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<CashWithdrawalResponse>> cashWithdrawal(
