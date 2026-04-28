@@ -448,4 +448,41 @@ class CbsArchitectureTest {
                                 + "through the same audit path as every other read.");
         rule.check(classes);
     }
+
+    /**
+     * CBS Teller invariant: {@code CounterfeitNoteRegisterRepository} rows are
+     * INSERT-ONLY per RBI FICN Master Direction. The only writer is
+     * {@link com.finvanta.cbs.modules.teller.service.FicnRegisterService} which
+     * runs in a {@code REQUIRES_NEW} sub-transaction so the register row
+     * survives the parent rollback triggered by {@code FicnDetectedException}.
+     *
+     * <p>Mirrored at the DB layer by {@code trg_ficn_no_update} /
+     * {@code trg_ficn_no_delete} triggers in {@code ddl-sqlserver.sql}.
+     *
+     * <p>This rule prevents any class outside the teller service package from
+     * depending on the repository. A controller or mapper that directly
+     * accesses the repository could load a row, set fields, and save it
+     * back -- which the DB trigger would reject in production but which would
+     * silently succeed in H2 (no trigger support). The ArchUnit rule catches
+     * this at compile time so the invariant holds in ALL environments.
+     */
+    @Test
+    void counterfeitNoteRegisterRepository_onlyAccessedFromTellerService() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideOutsideOfPackages(
+                        "com.finvanta.cbs.modules.teller.service..",
+                        "com.finvanta.cbs.modules.teller.repository..")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName(
+                        "com.finvanta.cbs.modules.teller.repository.CounterfeitNoteRegisterRepository")
+                .because(
+                        "CBS Teller FICN: CounterfeitNoteRegister is INSERT-ONLY per RBI "
+                                + "FICN Master Direction. Only FicnRegisterService may write "
+                                + "register rows. Accessing the repository from a controller, "
+                                + "mapper, or other module breaks the REQUIRES_NEW sub-TX "
+                                + "boundary and risks mutating immutable FICN records.");
+        rule.check(classes);
+    }
 }
