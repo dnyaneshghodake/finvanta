@@ -564,10 +564,17 @@ public class TellerServiceImpl implements TellerService {
                 .findByTenantIdAndIdempotencyKey(tenantId, request.idempotencyKey())
                 .orElse(null);
         if (dup != null) {
+            // CBS dup-retry: the prior commit's pending state is the source
+            // of truth. Use journalEntryId nullability as the discriminator --
+            // the engine populates it only on POSTED, leaves it null on
+            // PENDING_APPROVAL. Parsing the narration string is unsafe because
+            // the operator supplies it verbatim via req.narration().
+            boolean priorPending = dup.getJournalEntryId() == null;
             return mapToResponse(dup, till,
                     lookupDenominationsForResponse(tenantId, dup.getTransactionRef()),
                     request.amount().compareTo(CTR_PAN_THRESHOLD) >= 0,
-                    /* ficnTriggered */ false);
+                    /* ficnTriggered */ false,
+                    priorPending);
         }
 
         // 4. Engine owns idempotency-registry insert, business-date validation,
@@ -593,7 +600,8 @@ public class TellerServiceImpl implements TellerService {
                     "Cash deposit pending checker approval: INR " + request.amount()
                             + " account=" + request.accountNumber()
                             + " till=" + till.getId());
-            return mapToResponse(pendingTxn, till, List.of(), ctrTriggered, false);
+            return mapToResponse(pendingTxn, till, List.of(), ctrTriggered, false,
+                    /* pendingApproval */ true);
         }
 
         // 6. Posted: mutate customer ledger + till + persist denominations.
@@ -623,7 +631,8 @@ public class TellerServiceImpl implements TellerService {
                 till.getId(), ctrTriggered);
 
         return mapToResponse(txn, till,
-                buildResponseDenominationLines(request), ctrTriggered, false);
+                buildResponseDenominationLines(request), ctrTriggered, false,
+                /* pendingApproval */ false);
     }
 
     // =====================================================================
@@ -687,10 +696,14 @@ public class TellerServiceImpl implements TellerService {
                 .findByTenantIdAndIdempotencyKey(tenantId, request.idempotencyKey())
                 .orElse(null);
         if (dup != null) {
+            // CBS dup-retry: see deposit-side comment. journalEntryId is the
+            // authoritative pending discriminator; narration parsing is unsafe.
+            boolean priorPending = dup.getJournalEntryId() == null;
             return mapWithdrawalToResponse(dup, till,
                     lookupWithdrawalDenominations(tenantId, dup.getTransactionRef()),
                     request.amount().compareTo(CTR_PAN_THRESHOLD) >= 0,
-                    request.chequeNumber());
+                    request.chequeNumber(),
+                    priorPending);
         }
 
         // 6. Engine post: DR customer GL / CR BANK_OPERATIONS.
@@ -711,7 +724,8 @@ public class TellerServiceImpl implements TellerService {
                             + " account=" + request.accountNumber()
                             + " till=" + till.getId());
             return mapWithdrawalToResponse(pendingTxn, till, java.util.List.of(),
-                    ctrTriggered, request.chequeNumber());
+                    ctrTriggered, request.chequeNumber(),
+                    /* pendingApproval */ true);
         }
 
         // 8. Posted: debit ledger, decrement till, persist denominations OUT.
@@ -737,7 +751,8 @@ public class TellerServiceImpl implements TellerService {
                 till.getId(), ctrTriggered);
 
         return mapWithdrawalToResponse(txn, till,
-                buildWithdrawalResponseLines(request), ctrTriggered, request.chequeNumber());
+                buildWithdrawalResponseLines(request), ctrTriggered, request.chequeNumber(),
+                /* pendingApproval */ false);
     }
 
     // =====================================================================
@@ -1038,9 +1053,17 @@ public class TellerServiceImpl implements TellerService {
     private CashDepositResponse mapToResponse(
             DepositTransaction txn, TellerTill till,
             List<CashDepositResponse.DenominationLine> denominations,
-            boolean ctrTriggered, boolean ficnTriggered) {
-        boolean pending = txn.getNarration() != null
-                && txn.getNarration().contains("[PENDING APPROVAL]");
+            boolean ctrTriggered, boolean ficnTriggered,
+            boolean pendingApproval) {
+        // CBS: pendingApproval is supplied authoritatively by the caller --
+        // either from the engine's r.isPendingApproval() on the live path,
+        // or from journalEntryId nullability on the dup-retry path. We MUST
+        // NOT parse it from the narration string because the narration
+        // includes operator-supplied req.narration() verbatim, which would
+        // let a teller typing "[PENDING APPROVAL]" into their narration
+        // cause a successfully-POSTED deposit to be reported as pending --
+        // triggering an operator-initiated retry that double-credits the
+        // customer (with a fresh idempotency key per JSP page render).
         return new CashDepositResponse(
                 txn.getTransactionRef(),
                 txn.getVoucherNumber(),
@@ -1052,7 +1075,7 @@ public class TellerServiceImpl implements TellerService {
                 txn.getPostingDate(),
                 txn.getNarration(),
                 txn.getChannel(),
-                pending,
+                pendingApproval,
                 till.getCurrentBalance(),
                 till.getId(),
                 till.getTellerUserId(),
@@ -1361,9 +1384,12 @@ public class TellerServiceImpl implements TellerService {
     private CashWithdrawalResponse mapWithdrawalToResponse(
             DepositTransaction txn, TellerTill till,
             List<CashWithdrawalResponse.DenominationLine> denominations,
-            boolean ctrTriggered, String chequeNumber) {
-        boolean pending = txn.getNarration() != null
-                && txn.getNarration().contains("[PENDING APPROVAL]");
+            boolean ctrTriggered, String chequeNumber,
+            boolean pendingApproval) {
+        // CBS: pendingApproval supplied authoritatively by the caller. See the
+        // mirroring comment in mapToResponse() for the rationale -- narration
+        // parsing is unsafe because operator-supplied req.narration() flows
+        // through verbatim.
         return new CashWithdrawalResponse(
                 txn.getTransactionRef(),
                 txn.getVoucherNumber(),
@@ -1375,7 +1401,7 @@ public class TellerServiceImpl implements TellerService {
                 txn.getPostingDate(),
                 txn.getNarration(),
                 txn.getChannel(),
-                pending,
+                pendingApproval,
                 till.getCurrentBalance(),
                 till.getId(),
                 till.getTellerUserId(),
