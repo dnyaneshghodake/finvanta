@@ -530,6 +530,13 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         // balance, a withdrawal that would drop the ledger below the product's
         // minimum balance is rejected. Skipped on PMJDY accounts (minBal=0).
         accountValidator.validateMinimumBalance(acct, request.amount());
+        // CBS ACCTLIMIT per RBI Operational Risk Guidelines: per-account daily
+        // withdrawal cap. This is INDEPENDENT of the user/role-level limit
+        // enforced inside TransactionEngine.execute() step 6 -- both gates apply.
+        // Mirrors legacy DepositAccountServiceImpl.withdraw lines 878-887.
+        BigDecimal todayDebits = transactionRepository.sumDailyDebits(
+                tenantId, acct.getId(), businessDate);
+        accountValidator.validateDailyWithdrawalLimit(acct, request.amount(), todayDebits);
 
         String gl = glForAccount(acct);
 
@@ -613,6 +620,14 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         // Same semantics as withdraw(): the destination account does NOT need a
         // minimum-balance check because credits cannot breach a minimum.
         accountValidator.validateMinimumBalance(src, request.amount());
+        // CBS ACCTLIMIT per RBI Operational Risk Guidelines: per-account daily
+        // transfer cap on the SOURCE account. Independent of the user/role-level
+        // limit enforced by TransactionEngine and independent of the daily
+        // withdrawal cap (transfers and cash withdrawals have separate caps per
+        // RBI). Mirrors legacy DepositAccountServiceImpl.transfer lines 988-1001.
+        BigDecimal todayTransfers = transactionRepository.sumDailyTransferDebits(
+                tenantId, src.getId(), businessDate);
+        accountValidator.validateDailyTransferLimit(src, request.amount(), todayTransfers);
 
         String srcGl = glForAccount(src);
         String dstGl = glForAccount(dst);

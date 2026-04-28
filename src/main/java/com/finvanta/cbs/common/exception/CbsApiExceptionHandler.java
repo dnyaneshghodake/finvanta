@@ -222,6 +222,7 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.ACCT_MINIMUM_BALANCE_BREACH,
                     CbsErrorCodes.ACCT_OD_LIMIT_EXCEEDED,
                     CbsErrorCodes.ACCT_HOLD_AMOUNT_EXCEEDED,
+                    CbsErrorCodes.ACCT_DAILY_LIMIT_EXCEEDED,
                     CbsErrorCodes.ACCT_INACTIVE,
                     CbsErrorCodes.CUST_KYC_EXPIRED,
                     CbsErrorCodes.CUST_KYC_NOT_VERIFIED,
@@ -266,6 +267,7 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.ACCT_CLOSED,
                     CbsErrorCodes.ACCT_HOLD_AMOUNT_EXCEEDED,
                     CbsErrorCodes.ACCT_MINIMUM_BALANCE_BREACH,
+                    CbsErrorCodes.ACCT_DAILY_LIMIT_EXCEEDED,
                     CbsErrorCodes.CUST_BRANCH_ACCESS_DENIED,
                     CbsErrorCodes.WF_SELF_APPROVAL,
                     CbsErrorCodes.LOAN_NPA_CLASSIFIED,
@@ -306,6 +308,8 @@ public class CbsApiExceptionHandler {
                     "Maintain the required minimum balance and retry";
             case CbsErrorCodes.ACCT_HOLD_AMOUNT_EXCEEDED ->
                     "An active hold/lien blocks this operation. Contact branch";
+            case CbsErrorCodes.ACCT_DAILY_LIMIT_EXCEEDED ->
+                    "Daily limit on this account is exhausted. Retry tomorrow or request a limit increase at the branch";
             case CbsErrorCodes.ACCT_DUPLICATE_NUMBER ->
                     "Customer already has this account type at this branch";
             case CbsErrorCodes.ACCT_INVALID_TYPE ->

@@ -229,6 +229,86 @@ public class AccountValidator {
     }
 
     /**
+     * Validates that a withdrawal will not breach the account's configured daily
+     * withdrawal cap per CBS ACCTLIMIT / RBI Operational Risk Guidelines.
+     *
+     * <p>Mirrors the legacy guard at
+     * {@code src/main/java/com/finvanta/service/impl/DepositAccountServiceImpl.java:878-887}.
+     * Distinct from the user/role-level limit enforced by
+     * {@code TransactionLimitService} inside {@code TransactionEngine.execute()}
+     * step 6: that cap is per-USER across all modules, while this cap is
+     * per-ACCOUNT for cash withdrawals on the business date. BOTH gates apply.
+     *
+     * <p>Skipped when {@code dailyWithdrawalLimit} is null or zero so accounts
+     * without a configured daily cap (e.g. internal GL-linked / pool accounts)
+     * pass through unchanged.
+     *
+     * <p>The {@code todayDebitsBeforeThis} argument is the sum of non-reversed
+     * DEBIT amounts on the account for the current business date, computed by
+     * the caller via {@code DepositTransactionRepository.sumDailyDebits(...)}.
+     * Passing it in (rather than injecting the repository here) keeps this
+     * validator dependency-free and consistent with the rest of the class.
+     *
+     * @throws BusinessException CBS-ACCT-014 if the new total would exceed the
+     *                           account's configured daily withdrawal limit
+     */
+    public void validateDailyWithdrawalLimit(
+            DepositAccount account, BigDecimal amount, BigDecimal todayDebitsBeforeThis) {
+        if (account == null) {
+            throw new BusinessException("CBS-ACCT-001", "Account not found");
+        }
+        BigDecimal limit = account.getDailyWithdrawalLimit();
+        if (limit == null || limit.signum() <= 0) {
+            return;
+        }
+        BigDecimal already = todayDebitsBeforeThis != null ? todayDebitsBeforeThis : BigDecimal.ZERO;
+        if (already.add(amount).compareTo(limit) > 0) {
+            throw new BusinessException("CBS-ACCT-014",
+                    "Daily withdrawal limit INR " + limit
+                            + " exceeded on account " + account.getAccountNumber()
+                            + ". Today's debits: INR " + already
+                            + ", requested: INR " + amount);
+        }
+    }
+
+    /**
+     * Validates that a transfer will not breach the source account's configured
+     * daily transfer cap per CBS ACCTLIMIT / RBI Operational Risk Guidelines.
+     *
+     * <p>Mirrors the legacy guard at
+     * {@code src/main/java/com/finvanta/service/impl/DepositAccountServiceImpl.java:988-1001}.
+     * Per RBI: transfer limits are independent of withdrawal limits -- a
+     * customer may have INR 2L daily withdrawal cap but INR 5L daily transfer
+     * cap. Only TRANSFER_DEBIT amounts (not cash withdrawals or charges) count
+     * toward this aggregate; reversed transfers are excluded by the repository
+     * query so reversal cycles cannot inflate the daily total.
+     *
+     * <p>The {@code todayTransfersBeforeThis} argument is computed by the
+     * caller via {@code DepositTransactionRepository.sumDailyTransferDebits(...)}.
+     *
+     * @throws BusinessException CBS-ACCT-014 if the new total would exceed the
+     *                           source account's configured daily transfer limit
+     */
+    public void validateDailyTransferLimit(
+            DepositAccount source, BigDecimal amount, BigDecimal todayTransfersBeforeThis) {
+        if (source == null) {
+            throw new BusinessException("CBS-ACCT-001", "Account not found");
+        }
+        BigDecimal limit = source.getDailyTransferLimit();
+        if (limit == null || limit.signum() <= 0) {
+            return;
+        }
+        BigDecimal already = todayTransfersBeforeThis != null ? todayTransfersBeforeThis : BigDecimal.ZERO;
+        if (already.add(amount).compareTo(limit) > 0) {
+            throw new BusinessException("CBS-ACCT-014",
+                    "Daily transfer limit INR " + limit
+                            + " exceeded on account " + source.getAccountNumber()
+                            + ". Today's transfers: INR " + already
+                            + ", requested: INR " + amount);
+        }
+    }
+
+    /**
      * Validates transfer-specific rules.
      * Per CBS ACCTXFER: same-account transfers are rejected.
      */

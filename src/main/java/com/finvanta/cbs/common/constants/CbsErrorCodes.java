@@ -52,6 +52,16 @@ public final class CbsErrorCodes {
     public static final String ACCT_SAME_ACCOUNT_TRANSFER = "CBS-ACCT-011";
     public static final String ACCT_INVALID_FREEZE_TYPE = "CBS-ACCT-012";
     public static final String ACCT_INVALID_TYPE = "CBS-ACCT-013";
+    /**
+     * Account-level daily withdrawal or transfer limit breached. Distinct from
+     * {@link #TXN_LIMIT_EXCEEDED} (CBS-TXN-006) which is the user/role-level cap
+     * enforced by {@code TransactionLimitService}: this code is the per-ACCOUNT
+     * daily cap configured on {@code DepositAccount.dailyWithdrawalLimit} /
+     * {@code dailyTransferLimit} per CBS ACCTLIMIT / RBI Operational Risk
+     * Guidelines. Both gates apply -- a transaction must satisfy BOTH the
+     * user-role limit and the account-level limit to be permitted.
+     */
+    public static final String ACCT_DAILY_LIMIT_EXCEEDED = "CBS-ACCT-014";
 
     // =====================================================================
     // TRANSACTION MODULE (CBS-TXN-xxx)
