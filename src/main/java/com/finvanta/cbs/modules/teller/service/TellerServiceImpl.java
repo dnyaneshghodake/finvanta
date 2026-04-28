@@ -12,9 +12,13 @@ import com.finvanta.cbs.modules.teller.domain.TellerTillStatus;
 import com.finvanta.cbs.modules.teller.dto.request.CashDepositRequest;
 import com.finvanta.cbs.modules.teller.dto.request.CashWithdrawalRequest;
 import com.finvanta.cbs.modules.teller.dto.request.OpenTillRequest;
+import com.finvanta.cbs.modules.teller.domain.CounterfeitNoteRegister;
 import com.finvanta.cbs.modules.teller.dto.response.CashDepositResponse;
 import com.finvanta.cbs.modules.teller.dto.response.CashWithdrawalResponse;
+import com.finvanta.cbs.modules.teller.dto.response.FicnAcknowledgementResponse;
+import com.finvanta.cbs.modules.teller.exception.FicnDetectedException;
 import com.finvanta.cbs.modules.teller.repository.CashDenominationRepository;
+import com.finvanta.cbs.modules.teller.repository.CounterfeitNoteRegisterRepository;
 import com.finvanta.cbs.modules.teller.repository.TellerTillRepository;
 import com.finvanta.cbs.modules.teller.validator.DenominationValidator;
 import com.finvanta.domain.entity.Branch;
@@ -26,6 +30,7 @@ import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.service.BusinessDateService;
+import com.finvanta.service.CbsReferenceService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
@@ -101,12 +106,14 @@ public class TellerServiceImpl implements TellerService {
 
     private final TellerTillRepository tillRepository;
     private final CashDenominationRepository denominationRepository;
+    private final CounterfeitNoteRegisterRepository ficnRegisterRepository;
     private final DepositAccountRepository accountRepository;
     private final DepositTransactionRepository transactionRepository;
     private final BranchRepository branchRepository;
     private final ProductGLResolver glResolver;
     private final TransactionEngine transactionEngine;
     private final BusinessDateService businessDateService;
+    private final CbsReferenceService cbsReferenceService;
     private final AuditService auditService;
     private final DenominationValidator denominationValidator;
     private final BranchAccessValidator branchAccessValidator;
@@ -114,23 +121,27 @@ public class TellerServiceImpl implements TellerService {
     public TellerServiceImpl(
             TellerTillRepository tillRepository,
             CashDenominationRepository denominationRepository,
+            CounterfeitNoteRegisterRepository ficnRegisterRepository,
             DepositAccountRepository accountRepository,
             DepositTransactionRepository transactionRepository,
             BranchRepository branchRepository,
             ProductGLResolver glResolver,
             TransactionEngine transactionEngine,
             BusinessDateService businessDateService,
+            CbsReferenceService cbsReferenceService,
             AuditService auditService,
             DenominationValidator denominationValidator,
             BranchAccessValidator branchAccessValidator) {
         this.tillRepository = tillRepository;
         this.denominationRepository = denominationRepository;
+        this.ficnRegisterRepository = ficnRegisterRepository;
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.branchRepository = branchRepository;
         this.glResolver = glResolver;
         this.transactionEngine = transactionEngine;
         this.businessDateService = businessDateService;
+        this.cbsReferenceService = cbsReferenceService;
         this.auditService = auditService;
         this.denominationValidator = denominationValidator;
         this.branchAccessValidator = branchAccessValidator;
@@ -237,18 +248,15 @@ public class TellerServiceImpl implements TellerService {
         String tellerUser = SecurityUtil.getCurrentUsername();
         LocalDate businessDate = businessDateService.getCurrentBusinessDate();
 
-        // 1. Pre-lock validation: denomination math + FICN + CTR.
+        // 1. Pre-lock validation: denomination math + CTR.
         // Run BEFORE any DB lock so a bad request never holds a write lock.
+        // The FICN check is deliberately DEFERRED until after locks are
+        // acquired so the register row can be written with a definitive
+        // till_id / branch_id (resolved from the locked entities, not from
+        // the unauthenticated principal). See recordFicnDetection() for the
+        // rationale -- an FICN row is a regulatory artefact per RBI Master
+        // Direction and must carry the actual till that impounded the notes.
         denominationValidator.validateSum(request.denominations(), request.amount());
-        if (denominationValidator.hasCounterfeit(request.denominations())) {
-            // Per RBI FICN: deposit containing counterfeit notes is NOT
-            // credited; the genuine portion is held until a separate FICN
-            // acknowledgement workflow runs. Dedicated error code so the BFF
-            // can surface the FICN handover screen, not a generic toast.
-            throw new BusinessException(CbsErrorCodes.TELLER_COUNTERFEIT_DETECTED,
-                    "Counterfeit notes detected. Deposit rejected pending FICN review "
-                            + "per RBI Master Direction on Counterfeit Notes.");
-        }
         validateCtrCompliance(request);
 
         // 2. Lock customer account FIRST, then till. Lock order matches the
@@ -256,6 +264,34 @@ public class TellerServiceImpl implements TellerService {
         // -- the cash side never holds its row lock waiting on a customer lock.
         DepositAccount acct = lockAccountForCredit(tenantId, request.accountNumber());
         TellerTill till = lockOpenTill(tenantId, tellerUser, businessDate);
+
+        // 2.5. FICN gate (post-lock). If the denomination breakdown contains
+        // any counterfeit-flagged notes, impound them per RBI Master Direction
+        // on Counterfeit Notes: the deposit is REJECTED (customer is not
+        // credited for any portion, per Option B -- the genuine notes must
+        // be re-tendered in a fresh transaction), and a permanent
+        // CounterfeitNoteRegister row is committed so the customer receives
+        // a printable acknowledgement slip with a traceable register ref.
+        //
+        // The throw happens AFTER the register write so the exception payload
+        // carries the permanent register reference. The @Transactional on
+        // cashDeposit means the register row is committed ONLY if the
+        // exception propagates cleanly -- if the FICN write itself fails,
+        // Spring rolls back the TX and the customer sees a generic error
+        // (they can retry, the bank has no record). This is deliberate:
+        // rather than risk a misleading "impounded" slip without a register
+        // row, we fail-safe to "no impoundment, retry with supervisor".
+        //
+        // Spring rolls back on RuntimeException by default, which applies to
+        // both BusinessException and FicnDetectedException. But we WANT the
+        // register row to SURVIVE the rollback triggered by
+        // FicnDetectedException -- that's the whole point. So we pre-commit
+        // the row via a REQUIRES_NEW sub-transaction in recordFicnDetection.
+        if (denominationValidator.hasCounterfeit(request.denominations())) {
+            FicnAcknowledgementResponse ack = recordFicnDetection(
+                    request, acct, till, businessDate, tellerUser, tenantId);
+            throw new FicnDetectedException(ack);
+        }
 
         // 3. Idempotency dedupe AFTER locks are held (TOCTOU-safe ordering).
         DepositTransaction dup = transactionRepository
