@@ -1438,3 +1438,79 @@ BEGIN
 END;
 GO
 
+-- ============================================================
+-- TELLER MODULE: VAULT POSITIONS (CBS VAULT_POS per RBI Internal Controls)
+-- Per-branch, per-business-date vault cash position. Complements
+-- teller_tills for the EOD reconciliation invariant:
+--   SUM(tills) + vault == GL BANK_OPERATIONS @ branch
+-- ============================================================
+CREATE TABLE vault_positions (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id           VARCHAR(20)     NOT NULL,
+    branch_id           BIGINT          NOT NULL,
+    branch_code         VARCHAR(20)     NOT NULL,
+    business_date       DATE            NOT NULL,
+    status              VARCHAR(20)     NOT NULL DEFAULT 'OPEN',
+    opening_balance     DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
+    current_balance     DECIMAL(18,2)   NOT NULL DEFAULT 0.00,
+    counted_balance     DECIMAL(18,2),
+    variance_amount     DECIMAL(18,2),
+    opened_by           VARCHAR(100),
+    closed_by           VARCHAR(100),
+    remarks             VARCHAR(500),
+    version             BIGINT          NOT NULL DEFAULT 0,
+    created_at          DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at          DATETIME2,
+    created_by          VARCHAR(100),
+    updated_by          VARCHAR(100),
+    CONSTRAINT uq_vault_branch_date UNIQUE (tenant_id, branch_id, business_date),
+    CONSTRAINT ck_vault_status CHECK (status IN ('OPEN', 'CLOSED')),
+    CONSTRAINT fk_vault_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX idx_vault_branch_date ON vault_positions (tenant_id, branch_id, business_date);
+CREATE INDEX idx_vault_status ON vault_positions (tenant_id, status);
+GO
+
+-- ============================================================
+-- TELLER MODULE: TELLER CASH MOVEMENTS (CBS CASH_MOVE per RBI Internal Controls)
+-- Records every cash transfer between a teller till and the branch vault.
+-- Vault access requires dual control (maker = teller, checker = custodian).
+-- No GL impact -- vault↔till movements redistribute cash within the
+-- branch's GL BANK_OPERATIONS balance; the GL total is unchanged.
+-- ============================================================
+CREATE TABLE teller_cash_movements (
+    id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+    tenant_id           VARCHAR(20)     NOT NULL,
+    movement_ref        VARCHAR(60)     NOT NULL,
+    movement_type       VARCHAR(10)     NOT NULL,   -- BUY (vault→till) or SELL (till→vault)
+    branch_id           BIGINT          NOT NULL,
+    branch_code         VARCHAR(20)     NOT NULL,
+    till_id             BIGINT          NOT NULL,
+    vault_id            BIGINT          NOT NULL,
+    business_date       DATE            NOT NULL,
+    amount              DECIMAL(18,2)   NOT NULL,
+    status              VARCHAR(20)     NOT NULL DEFAULT 'PENDING',
+    requested_by        VARCHAR(100)    NOT NULL,
+    requested_at        DATETIME2       NOT NULL,
+    approved_by         VARCHAR(100),
+    approved_at         DATETIME2,
+    rejection_reason    VARCHAR(500),
+    remarks             VARCHAR(500),
+    version             BIGINT          NOT NULL DEFAULT 0,
+    created_at          DATETIME2       NOT NULL DEFAULT GETDATE(),
+    updated_at          DATETIME2,
+    created_by          VARCHAR(100),
+    updated_by          VARCHAR(100),
+    CONSTRAINT uq_cashmov_ref UNIQUE (tenant_id, movement_ref),
+    CONSTRAINT ck_cashmov_type CHECK (movement_type IN ('BUY', 'SELL')),
+    CONSTRAINT ck_cashmov_status CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+    CONSTRAINT ck_cashmov_positive CHECK (amount > 0),
+    CONSTRAINT fk_cashmov_branch FOREIGN KEY (branch_id) REFERENCES branches(id),
+    CONSTRAINT fk_cashmov_till FOREIGN KEY (till_id) REFERENCES teller_tills(id),
+    CONSTRAINT fk_cashmov_vault FOREIGN KEY (vault_id) REFERENCES vault_positions(id)
+);
+CREATE INDEX idx_cashmov_till_date ON teller_cash_movements (tenant_id, till_id, business_date);
+CREATE INDEX idx_cashmov_vault_date ON teller_cash_movements (tenant_id, vault_id, business_date);
+CREATE INDEX idx_cashmov_status ON teller_cash_movements (tenant_id, status);
+GO
+
