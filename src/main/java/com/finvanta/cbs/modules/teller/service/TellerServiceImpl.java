@@ -18,7 +18,6 @@ import com.finvanta.cbs.modules.teller.dto.response.CashWithdrawalResponse;
 import com.finvanta.cbs.modules.teller.dto.response.FicnAcknowledgementResponse;
 import com.finvanta.cbs.modules.teller.exception.FicnDetectedException;
 import com.finvanta.cbs.modules.teller.repository.CashDenominationRepository;
-import com.finvanta.cbs.modules.teller.repository.CounterfeitNoteRegisterRepository;
 import com.finvanta.cbs.modules.teller.repository.TellerTillRepository;
 import com.finvanta.cbs.modules.teller.validator.DenominationValidator;
 import com.finvanta.domain.entity.Branch;
@@ -30,7 +29,6 @@ import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.DepositTransactionRepository;
 import com.finvanta.service.BusinessDateService;
-import com.finvanta.service.CbsReferenceService;
 import com.finvanta.transaction.TransactionEngine;
 import com.finvanta.transaction.TransactionRequest;
 import com.finvanta.transaction.TransactionResult;
@@ -106,14 +104,13 @@ public class TellerServiceImpl implements TellerService {
 
     private final TellerTillRepository tillRepository;
     private final CashDenominationRepository denominationRepository;
-    private final CounterfeitNoteRegisterRepository ficnRegisterRepository;
+    private final FicnRegisterService ficnRegisterService;
     private final DepositAccountRepository accountRepository;
     private final DepositTransactionRepository transactionRepository;
     private final BranchRepository branchRepository;
     private final ProductGLResolver glResolver;
     private final TransactionEngine transactionEngine;
     private final BusinessDateService businessDateService;
-    private final CbsReferenceService cbsReferenceService;
     private final AuditService auditService;
     private final DenominationValidator denominationValidator;
     private final BranchAccessValidator branchAccessValidator;
@@ -121,27 +118,25 @@ public class TellerServiceImpl implements TellerService {
     public TellerServiceImpl(
             TellerTillRepository tillRepository,
             CashDenominationRepository denominationRepository,
-            CounterfeitNoteRegisterRepository ficnRegisterRepository,
+            FicnRegisterService ficnRegisterService,
             DepositAccountRepository accountRepository,
             DepositTransactionRepository transactionRepository,
             BranchRepository branchRepository,
             ProductGLResolver glResolver,
             TransactionEngine transactionEngine,
             BusinessDateService businessDateService,
-            CbsReferenceService cbsReferenceService,
             AuditService auditService,
             DenominationValidator denominationValidator,
             BranchAccessValidator branchAccessValidator) {
         this.tillRepository = tillRepository;
         this.denominationRepository = denominationRepository;
-        this.ficnRegisterRepository = ficnRegisterRepository;
+        this.ficnRegisterService = ficnRegisterService;
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.branchRepository = branchRepository;
         this.glResolver = glResolver;
         this.transactionEngine = transactionEngine;
         this.businessDateService = businessDateService;
-        this.cbsReferenceService = cbsReferenceService;
         this.auditService = auditService;
         this.denominationValidator = denominationValidator;
         this.branchAccessValidator = branchAccessValidator;
@@ -288,8 +283,22 @@ public class TellerServiceImpl implements TellerService {
         // FicnDetectedException -- that's the whole point. So we pre-commit
         // the row via a REQUIRES_NEW sub-transaction in recordFicnDetection.
         if (denominationValidator.hasCounterfeit(request.denominations())) {
-            FicnAcknowledgementResponse ack = recordFicnDetection(
-                    request, acct, till, businessDate, tellerUser, tenantId);
+            // Delegate to the dedicated FicnRegisterService whose
+            // recordDetection() runs in a REQUIRES_NEW sub-transaction. The
+            // register row commits BEFORE this method's @Transactional
+            // boundary closes, so when we throw FicnDetectedException below
+            // the parent TX rolls back (unrolling whatever locks we hold) but
+            // the register row + its inline-audit log remain durably
+            // committed. That is what guarantees the customer's printed
+            // acknowledgement slip is always backed by a real DB row.
+            FicnAcknowledgementResponse ack = ficnRegisterService.recordDetection(
+                    request,
+                    acct.getBranch(),
+                    acct.getBranch().getBranchCode(),
+                    till.getId(),
+                    tellerUser,
+                    businessDate,
+                    tenantId);
             throw new FicnDetectedException(ack);
         }
 
