@@ -181,6 +181,66 @@ public class TellerWebController {
         }
     }
 
+    // =====================================================================
+    // Cash Withdrawal
+    // =====================================================================
+
+    @GetMapping("/cash-withdrawal")
+    @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
+    public String showCashWithdrawal(Model model) {
+        // Same pre-render contract as cash-deposit: surface the current till
+        // so the JSP can render the cash-in-hand badge and disable the form
+        // when no till is open. Reuses the same model attribute names so
+        // the layout/header chrome stays identical across both screens.
+        try {
+            model.addAttribute("currentTill", tellerService.getMyCurrentTill());
+        } catch (BusinessException ex) {
+            model.addAttribute("errorCode", ex.getErrorCode());
+            model.addAttribute("error", ex.getMessage());
+        }
+        model.addAttribute("denominationOrder", GRID_ORDER);
+        model.addAttribute("ctrPanThreshold", CTR_PAN_THRESHOLD);
+        return "teller/cash-withdrawal";
+    }
+
+    @PostMapping("/cash-withdrawal")
+    @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
+    public String submitCashWithdrawal(
+            @RequestParam String accountNumber,
+            @RequestParam BigDecimal amount,
+            @RequestParam(required = false) String narration,
+            @RequestParam String idempotencyKey,
+            @RequestParam String beneficiaryName,
+            @RequestParam(required = false) String beneficiaryMobile,
+            @RequestParam(required = false) String chequeNumber,
+            HttpServletRequest httpRequest,
+            RedirectAttributes redirect) {
+        try {
+            List<DenominationEntry> denoms = parseDenominationsFromForm(httpRequest);
+            CashWithdrawalRequest req = new CashWithdrawalRequest(
+                    accountNumber, amount, denoms, idempotencyKey,
+                    beneficiaryName, beneficiaryMobile, chequeNumber, narration);
+            CashWithdrawalResponse receipt = tellerService.cashWithdrawal(req);
+
+            if (receipt.pendingApproval()) {
+                redirect.addFlashAttribute("success",
+                        "Cash withdrawal submitted for checker approval. Ref: "
+                                + receipt.transactionRef());
+            } else {
+                redirect.addFlashAttribute("success",
+                        "Cash withdrawal POSTED. Ref: " + receipt.transactionRef()
+                                + " | Voucher: " + receipt.voucherNumber());
+            }
+            redirect.addFlashAttribute("lastReceipt", receipt);
+            return "redirect:/teller/cash-withdrawal";
+        } catch (BusinessException ex) {
+            log.warn("Teller cash withdrawal failed: {} -- {}", ex.getErrorCode(), ex.getMessage());
+            redirect.addFlashAttribute("errorCode", ex.getErrorCode());
+            redirect.addFlashAttribute("error", ex.getMessage());
+            return "redirect:/teller/cash-withdrawal";
+        }
+    }
+
     /**
      * Reassembles the flat {@code denom_NOTE_500=12} parameters submitted by
      * the JSP grid into typed {@link DenominationEntry} rows. Also reads the
