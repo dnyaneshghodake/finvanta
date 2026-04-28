@@ -147,18 +147,21 @@ public interface TellerService {
      * <p>This is the teller-specific equivalent of
      * {@code DepositAccountService.applyApprovedTransaction(...)}.
      *
-     * @param accountNumber  the customer account to credit/debit
-     * @param amount         the transaction amount
+     * @param accountNumber   the customer account to credit/debit
+     * @param amount          the transaction amount
      * @param transactionType "CASH_DEPOSIT" or "CASH_WITHDRAWAL"
-     * @param tillId         the till that originated the transaction
-     * @param result         the GL posting result from the re-execution service
-     * @param businessDate   the CBS business date of the original transaction
+     * @param makerUserId     the original teller's username (from
+     *                        {@code workflow.getMakerUserId()}); used to resolve the
+     *                        teller's till via the unique index on
+     *                        {@code (tenantId, tellerUserId, businessDate)}
+     * @param result          the GL posting result from the re-execution service
+     * @param businessDate    the CBS business date of the original transaction
      */
     void applyApprovedTellerTransaction(
             String accountNumber,
             java.math.BigDecimal amount,
             String transactionType,
-            Long tillId,
+            String makerUserId,
             com.finvanta.transaction.TransactionResult result,
             java.time.LocalDate businessDate);
 

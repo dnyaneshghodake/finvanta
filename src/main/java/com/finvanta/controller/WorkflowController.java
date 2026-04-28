@@ -116,15 +116,13 @@ public class WorkflowController {
                                 java.math.BigDecimal amount = new java.math.BigDecimal(root.get("amount").asText());
                                 String txnType = root.get("transactionType").asText();
                                 java.time.LocalDate valueDate = java.time.LocalDate.parse(root.get("valueDate").asText());
-                                // tillId is not currently serialized in the TransactionRequest
-                                // payload. As a fallback, resolve the teller's till for the
-                                // value date. This is safe because a teller has at most one
-                                // till per business date (unique index enforced).
-                                // TODO: serialize tillId into TransactionRequest payload so
-                                // this fallback is unnecessary.
+                                // Resolve the original teller's till via their username
+                                // (from workflow.makerUserId) + the value date. A teller
+                                // has at most one till per business date (unique index
+                                // uq_till_tenant_teller_date), so this is deterministic.
                                 tellerService.applyApprovedTellerTransaction(
                                         accountRef, amount, txnType,
-                                        /* tillId placeholder */ null,
+                                        workflow.getMakerUserId(),
                                         result, valueDate);
                                 log.info("Subledger applied for TELLER approval: account={}, type={}, amount={}",
                                         accountRef, txnType, amount);

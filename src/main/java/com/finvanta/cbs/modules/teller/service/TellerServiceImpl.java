@@ -384,16 +384,22 @@ public class TellerServiceImpl implements TellerService {
             String accountNumber,
             BigDecimal amount,
             String transactionType,
-            Long tillId,
+            String makerUserId,
             TransactionResult result,
             LocalDate businessDate) {
         // CBS: This method is called by WorkflowController.approve() after
         // TransactionReExecutionService has posted the GL for a TELLER-sourced
         // transaction. It must:
-        //   1. Lock the customer account + till (canonical order).
+        //   1. Lock the customer account FIRST, then resolve + lock the till.
         //   2. Apply the balance effect to the customer ledger.
         //   3. Mutate the till currentBalance.
-        //   4. Persist CashDenomination rows (deferred from the pending path).
+        //   4. Persist CashDenomination rows (deferred — see NOTE below).
+        //
+        // The till is resolved from (makerUserId, businessDate) because a
+        // teller has at most one till per business date (unique index
+        // uq_till_tenant_teller_date). The makerUserId comes from
+        // workflow.getMakerUserId() — the original teller who submitted the
+        // deposit/withdrawal before it was routed to maker-checker.
         //
         // NOTE: CashDenomination rows require the original denomination
         // breakdown from the request, which is stored in the workflow's
@@ -411,13 +417,25 @@ public class TellerServiceImpl implements TellerService {
         String tenantId = TenantContext.getCurrentTenant();
         String currentUser = SecurityUtil.getCurrentUsername();
 
-        // 1. Lock customer account.
+        // 1. Lock customer account FIRST (canonical lock order).
         DepositAccount acct = accountRepository
                 .findAndLockByTenantIdAndAccountNumber(tenantId, accountNumber)
                 .orElseThrow(() -> new BusinessException(CbsErrorCodes.ACCT_NOT_FOUND,
                         "Account not found: " + accountNumber));
 
-        // 2. Apply balance effect to customer ledger.
+        // 2. Resolve + lock the original teller's till. The till is found by
+        // (tenantId, makerUserId, businessDate) — the unique index guarantees
+        // at most one row. The lock serializes with any concurrent cash
+        // deposit/withdrawal the teller may be posting on the same till.
+        TellerTill till = tillRepository
+                .findAndLockByTellerAndDate(tenantId, makerUserId, businessDate)
+                .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_NOT_OPEN,
+                        "Till not found for teller " + makerUserId
+                                + " on " + businessDate
+                                + ". The teller's till may have been closed before "
+                                + "the checker approved the transaction."));
+
+        // 3. Apply balance effect to customer ledger.
         boolean isCredit = "CASH_DEPOSIT".equals(transactionType);
         BigDecimal balanceBefore = acct.getLedgerBalance();
         if (isCredit) {
@@ -442,11 +460,7 @@ public class TellerServiceImpl implements TellerService {
         acct.setUpdatedBy(currentUser);
         accountRepository.save(acct);
 
-        // 3. Lock and mutate the till.
-        TellerTill till = tillRepository.findById(tillId)
-                .filter(t -> tenantId.equals(t.getTenantId()))
-                .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
-                        "Till not found for approved transaction: " + tillId));
+        // 4. Mutate the till balance.
         if (isCredit) {
             till.setCurrentBalance(till.getCurrentBalance().add(amount));
         } else {
@@ -455,18 +469,19 @@ public class TellerServiceImpl implements TellerService {
         till.setUpdatedBy(currentUser);
         tillRepository.save(till);
 
-        // 4. Denomination persistence deferred (see NOTE above).
+        // 5. Denomination persistence deferred (see NOTE above).
 
         auditService.logEventInline(
                 "TellerCashTransaction", null, "APPROVED_APPLIED",
                 null, null, "TELLER",
                 "Approved teller " + transactionType + " applied: account=" + accountNumber
-                        + " amount=INR " + amount + " till=" + tillId
+                        + " amount=INR " + amount + " till=" + till.getId()
+                        + " teller=" + makerUserId
                         + " balanceBefore=INR " + balanceBefore
                         + " balanceAfter=INR " + acct.getLedgerBalance());
 
-        log.info("CBS Teller approved txn applied: type={} account={} amount={} till={}",
-                transactionType, accountNumber, amount, tillId);
+        log.info("CBS Teller approved txn applied: type={} account={} amount={} till={} teller={}",
+                transactionType, accountNumber, amount, till.getId(), makerUserId);
     }
 
     // =====================================================================
