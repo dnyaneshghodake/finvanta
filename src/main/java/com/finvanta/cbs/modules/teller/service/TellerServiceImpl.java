@@ -280,7 +280,102 @@ public class TellerServiceImpl implements TellerService {
     }
 
     // =====================================================================
-    // Maker-Checker: Apply approved teller transaction (stub for follow-up)
+    // Till Lifecycle -- Close (OPEN → PENDING_CLOSE → CLOSED)
+    // =====================================================================
+
+    @Override
+    @Transactional
+    public TellerTill requestCloseTill(BigDecimal countedBalance, String remarks) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String tellerUser = SecurityUtil.getCurrentUsername();
+        LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+
+        TellerTill till = tillRepository
+                .findAndLockByTellerAndDate(tenantId, tellerUser, businessDate)
+                .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_NOT_OPEN,
+                        "No till found for teller " + tellerUser + " on " + businessDate));
+
+        if (!till.isOpen()) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "Till must be OPEN to request close (current: " + till.getStatus() + ")");
+        }
+
+        // Compute variance: counted (physical) - current (system).
+        // Positive = overage (teller has more cash than system thinks).
+        // Negative = shortage (teller has less cash than system thinks).
+        BigDecimal variance = countedBalance.subtract(till.getCurrentBalance());
+
+        till.setCountedBalance(countedBalance);
+        till.setVarianceAmount(variance);
+        till.setStatus(TellerTillStatus.PENDING_CLOSE);
+        till.setRemarks(remarks);
+        till.setUpdatedBy(tellerUser);
+        TellerTill saved = tillRepository.save(till);
+
+        String varianceNote = variance.signum() == 0
+                ? "zero variance"
+                : (variance.signum() > 0 ? "OVERAGE INR " + variance : "SHORTAGE INR " + variance.abs());
+
+        auditService.logEventInline(
+                "TellerTill", saved.getId(), "CLOSE_REQUESTED",
+                "OPEN", "PENDING_CLOSE", "TELLER",
+                "Till close requested by " + tellerUser
+                        + " | system=" + till.getCurrentBalance()
+                        + " | counted=" + countedBalance
+                        + " | " + varianceNote);
+
+        log.info("CBS Teller till {} close requested by {} (variance: {})",
+                saved.getId(), tellerUser, varianceNote);
+        return saved;
+    }
+
+    @Override
+    @Transactional
+    public TellerTill approveTillClose(Long tillId) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String supervisor = SecurityUtil.getCurrentUsername();
+
+        TellerTill till = tillRepository.findById(tillId)
+                .filter(t -> tenantId.equals(t.getTenantId()))
+                .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                        "Till not found: " + tillId));
+
+        if (!till.isPendingClose()) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "Till must be PENDING_CLOSE to approve close (current: " + till.getStatus() + ")");
+        }
+
+        // Maker ≠ checker: the teller who counted cannot approve their own close.
+        if (supervisor.equals(till.getTellerUserId())) {
+            throw new BusinessException(CbsErrorCodes.WF_SELF_APPROVAL,
+                    "Supervisor cannot approve their own till close. "
+                            + "Teller: " + till.getTellerUserId());
+        }
+
+        till.setStatus(TellerTillStatus.CLOSED);
+        till.setClosedAt(LocalDateTime.now());
+        till.setClosedBySupervisor(supervisor);
+        till.setUpdatedBy(supervisor);
+        TellerTill saved = tillRepository.save(till);
+
+        String varianceNote = saved.getVarianceAmount() != null && saved.getVarianceAmount().signum() != 0
+                ? "variance=" + saved.getVarianceAmount()
+                : "zero variance";
+
+        auditService.logEvent(
+                "TellerTill", saved.getId(), "TILL_CLOSED",
+                "PENDING_CLOSE", "CLOSED", "TELLER",
+                "Till " + tillId + " closed by supervisor " + supervisor
+                        + " for teller " + till.getTellerUserId()
+                        + " | " + varianceNote);
+
+        log.info("CBS Teller till {} CLOSED by supervisor {} ({})",
+                tillId, supervisor, varianceNote);
+        return saved;
+    }
+
+    // =====================================================================
+    // Maker-Checker: Apply approved teller transaction
     // =====================================================================
 
     @Override

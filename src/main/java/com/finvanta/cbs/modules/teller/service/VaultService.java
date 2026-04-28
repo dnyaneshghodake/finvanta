@@ -99,4 +99,19 @@ public interface VaultService {
      * the current business date. Used by the vault custodian dashboard.
      */
     List<TellerCashMovement> getPendingMovements();
+
+    /**
+     * Closes the vault for the current business date after all tills at the
+     * branch are CLOSED. The custodian enters a physical count; the system
+     * computes the variance and transitions the vault to CLOSED.
+     *
+     * <p>Per RBI Internal Controls: the vault cannot close while any till
+     * at the branch is still OPEN or PENDING_CLOSE. This enforces the
+     * ordering: all tellers close first, then the vault custodian reconciles.
+     *
+     * @param countedBalance the custodian's physical cash count (INR)
+     * @param remarks optional narration
+     * @return the vault in CLOSED status with variance computed
+     */
+    VaultPosition closeVault(BigDecimal countedBalance, String remarks);
 }

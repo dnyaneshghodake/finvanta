@@ -161,4 +161,35 @@ public interface TellerService {
             Long tillId,
             com.finvanta.transaction.TransactionResult result,
             java.time.LocalDate businessDate);
+
+    /**
+     * Teller submits a till-close request with a physical cash count.
+     * The system computes the variance (counted - system balance) and
+     * transitions the till to PENDING_CLOSE. A supervisor must sign off
+     * (via {@link #approveTillClose}) before the till reaches CLOSED.
+     *
+     * <p>Per RBI Internal Controls: the teller must sell any excess cash
+     * back to the vault BEFORE closing. The till's current balance after
+     * all vault movements is the system-side reference; the counted balance
+     * is the physical-side reference. Any non-zero variance is flagged.
+     *
+     * @param countedBalance the teller's physical cash count (INR)
+     * @param remarks optional narration
+     * @return the till in PENDING_CLOSE status with variance computed
+     */
+    TellerTill requestCloseTill(java.math.BigDecimal countedBalance, String remarks);
+
+    /**
+     * Supervisor approves a PENDING_CLOSE till, transitioning it to CLOSED.
+     * The supervisor has reviewed the variance (if any) and signed off.
+     *
+     * <p>Per RBI Internal Controls: maker (teller who counted) ≠ checker
+     * (supervisor who signs off). A zero-variance close is routine; a
+     * non-zero variance is flagged in the audit trail and may trigger a
+     * cash-variance adjustment workflow (out of scope for this commit).
+     *
+     * @param tillId the ID of the PENDING_CLOSE till to approve
+     * @return the till in CLOSED status
+     */
+    TellerTill approveTillClose(Long tillId);
 }

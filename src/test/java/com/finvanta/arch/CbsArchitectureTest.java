@@ -168,10 +168,13 @@ class CbsArchitectureTest {
                 .and()
                 .areInterfaces()
                 .should()
-                .resideInAPackage("com.finvanta.repository..")
+                .resideInAnyPackage(
+                        "com.finvanta.repository..",
+                        "com.finvanta.cbs.modules..repository..")
                 .because(
                         "CBS: repository discovery + tenant-filter registration assumes "
-                                + "every Spring Data repository is under com.finvanta.repository.");
+                                + "every Spring Data repository is under com.finvanta.repository "
+                                + "or the DDD-modular com.finvanta.cbs.modules.*.repository.");
         rule.check(classes);
     }
 
