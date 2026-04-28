@@ -979,9 +979,10 @@ public class TellerServiceImpl implements TellerService {
      * mandatory {@code depositorName} field rather than failing.
      */
     private String resolveNarration(CashDepositRequest req) {
-        return (req.narration() != null && !req.narration().isBlank())
+        String base = (req.narration() != null && !req.narration().isBlank())
                 ? req.narration()
                 : "Cash deposit by " + req.depositorName();
+        return base + encodeDenominationSuffix(req.denominations());
     }
 
     /**
@@ -1270,9 +1271,43 @@ public class TellerServiceImpl implements TellerService {
 
     /** Default narration for withdrawals. Mirrors {@link #resolveNarration}. */
     private String resolveWithdrawalNarration(CashWithdrawalRequest req) {
-        return (req.narration() != null && !req.narration().isBlank())
+        String base = (req.narration() != null && !req.narration().isBlank())
                 ? req.narration()
                 : "Cash withdrawal by " + req.beneficiaryName();
+        return base + encodeDenominationSuffix(req.denominations());
+    }
+
+    /**
+     * Encodes the denomination breakdown as a compact JSON suffix appended to
+     * the transaction narration. The suffix survives the round-trip through
+     * the {@code TransactionEngine} → {@code payloadSnapshot} → workflow
+     * approval → {@code applyApprovedTellerTransaction} path, where it is
+     * parsed back by {@link #decodeDenominationSuffix} to persist the
+     * deferred {@code CashDenomination} rows.
+     *
+     * <p>Format: {@code ##DENOMS:[{"d":"NOTE_500","c":5},{"d":"NOTE_100","c":3}]}
+     *
+     * <p>The {@code ##DENOMS:} marker is a teller-module convention that the
+     * engine passes through transparently as part of the narration string.
+     * The compact format (single-letter keys, no whitespace) minimizes the
+     * payload size within the VARCHAR(500) narration column.
+     */
+    private String encodeDenominationSuffix(
+            java.util.List<com.finvanta.cbs.modules.teller.dto.request.DenominationEntry> denominations) {
+        if (denominations == null || denominations.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(" ##DENOMS:[");
+        boolean first = true;
+        for (var entry : denominations) {
+            if (entry == null || (entry.unitCount() == 0 && entry.counterfeitCount() == 0)) continue;
+            if (!first) sb.append(',');
+            sb.append("{\"d\":\"").append(entry.denomination().name())
+              .append("\",\"c\":").append(entry.unitCount()).append('}');
+            first = false;
+        }
+        sb.append(']');
+        return sb.toString();
     }
 
     /**
