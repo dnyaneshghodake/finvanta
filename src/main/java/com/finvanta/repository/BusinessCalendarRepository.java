@@ -183,26 +183,7 @@ public interface BusinessCalendarRepository extends JpaRepository<BusinessCalend
     Optional<BusinessCalendar> findByTenantIdAndBusinessDate(
             @Param("tenantId") String tenantId, @Param("date") LocalDate businessDate);
 
-    /**
-     * @deprecated Use {@link #findAndLockByTenantIdAndBranchIdAndDate} instead.
-     * CBS: LIMIT 1 prevents NonUniqueResultException with multi-branch calendars.
-     * 30s lock timeout per Finacle DAYCTRL standard.
-     */
-    @Deprecated(forRemoval = true)
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
-    @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId "
-            + "AND bc.businessDate = :date ORDER BY bc.branch.id ASC LIMIT 1")
-    Optional<BusinessCalendar> findAndLockByTenantIdAndDate(
-            @Param("tenantId") String tenantId, @Param("date") LocalDate date);
 
-    /**
-     * @deprecated Use {@link #findLastCompletedEodDateByBranch} instead.
-     */
-    @Deprecated(forRemoval = true)
-    @Query("SELECT MAX(bc.businessDate) FROM BusinessCalendar bc "
-            + "WHERE bc.tenantId = :tenantId AND bc.eodComplete = true")
-    Optional<LocalDate> findLastCompletedEodDate(@Param("tenantId") String tenantId);
 
     /**
      * @deprecated Use {@link #findCurrentBusinessDateByBranch} instead.
@@ -214,20 +195,7 @@ public interface BusinessCalendarRepository extends JpaRepository<BusinessCalend
             + "AND bc2.eodComplete = false AND bc2.holiday = false) ORDER BY bc.branch.id ASC LIMIT 1")
     Optional<BusinessCalendar> findCurrentBusinessDate(@Param("tenantId") String tenantId);
 
-    /**
-     * @deprecated Use {@link #findByTenantIdAndBranchIdOrderByBusinessDateDesc} instead.
-     */
-    @Deprecated(forRemoval = true)
-    List<BusinessCalendar> findByTenantIdOrderByBusinessDateDesc(String tenantId);
 
-    /**
-     * @deprecated Use {@link #findOpenDayByBranch} instead.
-     * CBS: LIMIT 1 prevents NonUniqueResultException when multiple branches are DAY_OPEN.
-     */
-    @Deprecated(forRemoval = true)
-    @Query("SELECT bc FROM BusinessCalendar bc WHERE bc.tenantId = :tenantId "
-            + "AND bc.dayStatus = 'DAY_OPEN' ORDER BY bc.branch.id ASC LIMIT 1")
-    Optional<BusinessCalendar> findOpenDay(@Param("tenantId") String tenantId);
 
     /**
      * @deprecated Use {@link #findNextBusinessDayOnOrAfterByBranch} instead.

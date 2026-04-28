@@ -3,7 +3,9 @@ package com.finvanta.arch;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.domain.JavaField;
 import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -11,6 +13,9 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+
+import java.util.Optional;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -167,6 +172,109 @@ class CbsArchitectureTest {
                 .because(
                         "CBS: repository discovery + tenant-filter registration assumes "
                                 + "every Spring Data repository is under com.finvanta.repository.");
+        rule.check(classes);
+    }
+
+    /**
+     * CBS invariant: {@code setAccountNumber(...)} on a persistence entity may
+     * only be called from the service layer (and the CBS reference/bootstrap
+     * helpers that seed test data). Controllers, mappers, DTOs, and batch jobs
+     * must never mint an account number directly -- doing so bypasses
+     * {@code CbsReferenceService.generateDepositAccountNumber(...)} and the
+     * branch SOL + check-digit logic it encodes.
+     *
+     * <p>The legitimate callers on the {@code integration_prior_to_master_branch}
+     * commit are:
+     * <ul>
+     *   <li>{@code com.finvanta.service.impl..} (legacy CASA/loan services)</li>
+     *   <li>{@code com.finvanta.cbs.modules..service..} (refactored services)</li>
+     *   <li>{@code com.finvanta.charge..} (charge kernel propagating parent account)</li>
+     *   <li>{@code com.finvanta.batch..} (EOD snapshot copies from live entity)</li>
+     * </ul>
+     */
+    @Test
+    void setAccountNumber_onlyCalledFromServiceLayer() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideOutsideOfPackages(
+                        "com.finvanta.service.impl..",
+                        "com.finvanta.cbs.modules..",
+                        "com.finvanta.charge..",
+                        "com.finvanta.batch..",
+                        "com.finvanta.legacy..")
+                .should(callMethodByName(
+                        "com.finvanta.domain.entity.DepositAccount", "setAccountNumber"))
+                .orShould(callMethodByName(
+                        "com.finvanta.domain.entity.LoanAccount", "setAccountNumber"))
+                .because(
+                        "CBS: account numbers must be minted by CbsReferenceService and set "
+                                + "only inside the service layer. Writing accountNumber from a "
+                                + "controller, mapper, or DTO bypasses SOL/check-digit rules.");
+        rule.check(classes);
+    }
+
+    /**
+     * CBS invariant: no string constant inside {@code com.finvanta.cbs..} may
+     * look like a production account number. Hardcoded account numbers are a
+     * common source of cross-environment data leaks and audit violations.
+     *
+     * <p>Rejects:
+     * <ul>
+     *   <li>10-20 consecutive digits (Indian CBS account numbers are 11-16 digits)</li>
+     *   <li>2 leading letters followed by 8-18 digits (IBAN-like pattern)</li>
+     * </ul>
+     *
+     * <p>Legitimate numeric constants (GL codes like {@code "1100"}, PIN code
+     * lengths, phone lengths) are shorter than 10 digits and fall outside this
+     * pattern. Tenant IDs / test UUIDs use hyphens and are also exempt.
+     */
+    @Test
+    void cbsPackage_hasNoHardcodedAccountNumbers() {
+        Pattern accountNumberLike = Pattern.compile("^([A-Z]{2}[0-9]{8,18}|[0-9]{10,20})$");
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAPackage("com.finvanta.cbs..")
+                .should(new ArchCondition<JavaClass>(
+                        "contain a string constant matching an account-number pattern") {
+                    @Override
+                    public void check(JavaClass item, ConditionEvents events) {
+                        for (JavaField field : item.getFields()) {
+                            if (!field.getModifiers().contains(
+                                    com.tngtech.archunit.core.domain.JavaModifier.STATIC)) {
+                                continue;
+                            }
+                            if (!field.getRawType().getName().equals("java.lang.String")) {
+                                continue;
+                            }
+                            Optional<Object> value = valueOf(field);
+                            if (value.isEmpty()) continue;
+                            String s = value.get().toString();
+                            if (accountNumberLike.matcher(s).matches()) {
+                                events.add(SimpleConditionEvent.violated(
+                                        field,
+                                        "Field " + field.getFullName()
+                                                + " = \"" + s + "\" looks like a hardcoded "
+                                                + "account number. Mint via CbsReferenceService."));
+                            }
+                        }
+                    }
+
+                    private Optional<Object> valueOf(JavaField field) {
+                        try {
+                            java.lang.reflect.Field reflected = Class
+                                    .forName(field.getOwner().getName())
+                                    .getDeclaredField(field.getName());
+                            reflected.setAccessible(true);
+                            return Optional.ofNullable(reflected.get(null));
+                        } catch (ReflectiveOperationException | LinkageError e) {
+                            return Optional.empty();
+                        }
+                    }
+                })
+                .because(
+                        "CBS: production account numbers must never be hardcoded. Any 10-20 "
+                                + "digit literal in com.finvanta.cbs is either a real account "
+                                + "number (data leak) or a fixture (belongs in src/test).");
         rule.check(classes);
     }
 

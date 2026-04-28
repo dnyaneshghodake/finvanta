@@ -8,11 +8,9 @@ import com.finvanta.repository.CustomerRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.util.BusinessException;
-import com.finvanta.util.ReferenceGenerator;
 import com.finvanta.util.SecurityUtil;
 import com.finvanta.util.TenantContext;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;

@@ -40,7 +40,13 @@ import lombok.Setter;
             @Index(name = "idx_deptxn_value_date", columnList = "tenant_id, value_date"),
             @Index(name = "idx_deptxn_type", columnList = "tenant_id, transaction_type"),
             @Index(name = "idx_deptxn_voucher", columnList = "tenant_id, voucher_number"),
-            @Index(name = "idx_deptxn_branch_date", columnList = "tenant_id, branch_id, value_date")
+            @Index(name = "idx_deptxn_branch_date", columnList = "tenant_id, branch_id, value_date"),
+            // CBS Idempotency: mirrors the filtered unique index in ddl-sqlserver.sql:1148.
+            // Production uses a filtered unique index (WHERE idempotency_key IS NOT NULL)
+            // which H2 cannot represent. Uniqueness on non-null keys is enforced by the
+            // application-level idempotency check in DepositAccountServiceImpl (and the
+            // CBS module service) BEFORE insert. The prod DDL index is the safety net.
+            @Index(name = "idx_deptxn_idempotency", columnList = "tenant_id, idempotency_key")
         })
 @Getter
 @Setter

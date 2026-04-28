@@ -474,17 +474,22 @@ public class DepositController {
             @PathVariable String accountNumber,
             @RequestParam BigDecimal amount,
             @RequestParam(required = false) String narration,
+            @RequestParam(required = false) String idempotencyKey,
             RedirectAttributes ra) {
         try {
-            log.debug("Deposit request received: account={}, amount={}, narration={}", accountNumber, amount, narration);
+            log.debug("Deposit request received: account={}, amount={}, narration={}, idempotencyKey={}",
+                    accountNumber, amount, narration, idempotencyKey);
             // CBS: Server-side validation — defense-in-depth per OWASP / RBI IT Governance
             if (amount == null || amount.signum() <= 0) {
                 throw new BusinessException("INVALID_AMOUNT", "Deposit amount must be positive");
             }
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();
             log.debug("Deposit: calling service. account={}, amount={}, businessDate={}", accountNumber, amount, businessDate);
+            // CBS Idempotency: pass the JSP-minted UUID through to the service so browser
+            // retries (form refresh, back-button resubmit) deduplicate via
+            // findByTenantIdAndIdempotencyKey instead of double-posting to GL.
             DepositTransaction txn =
-                    depositService.deposit(accountNumber, amount, businessDate, narration, null, "BRANCH");
+                    depositService.deposit(accountNumber, amount, businessDate, narration, idempotencyKey, "BRANCH");
             log.debug("Deposit completed: account={}, voucher={}, txnRef={}", accountNumber, txn.getVoucherNumber(), txn.getTransactionRef());
             ra.addFlashAttribute("success", "Deposit of INR " + amount + " posted. Voucher: " + txn.getVoucherNumber());
         } catch (Exception e) {
@@ -507,6 +512,7 @@ public class DepositController {
             @PathVariable String accountNumber,
             @RequestParam BigDecimal amount,
             @RequestParam(required = false) String narration,
+            @RequestParam(required = false) String idempotencyKey,
             RedirectAttributes ra) {
         try {
             // CBS: Server-side validation — defense-in-depth per OWASP / RBI IT Governance
@@ -514,8 +520,11 @@ public class DepositController {
                 throw new BusinessException("INVALID_AMOUNT", "Withdrawal amount must be positive");
             }
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+            // CBS Idempotency: pass the JSP-minted UUID through so browser retries
+            // (form refresh, back-button resubmit) dedupe via the service layer instead
+            // of double-debiting the account.
             DepositTransaction txn =
-                    depositService.withdraw(accountNumber, amount, businessDate, narration, null, "BRANCH");
+                    depositService.withdraw(accountNumber, amount, businessDate, narration, idempotencyKey, "BRANCH");
             ra.addFlashAttribute(
                     "success", "Withdrawal of INR " + amount + " posted. Voucher: " + txn.getVoucherNumber());
         } catch (Exception e) {
@@ -553,6 +562,7 @@ public class DepositController {
             @RequestParam String toAccount,
             @RequestParam BigDecimal amount,
             @RequestParam(required = false) String narration,
+            @RequestParam(required = false) String idempotencyKey,
             RedirectAttributes ra) {
         try {
             // CBS: Server-side validation — defense-in-depth per OWASP / RBI IT Governance
@@ -563,8 +573,11 @@ public class DepositController {
                 throw new BusinessException("MISSING_ACCOUNT", "Both source and target accounts are required");
             }
             LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+            // CBS Idempotency: pass the JSP-minted UUID through so browser retries dedupe
+            // via the service layer. Critical for transfers because a duplicate replay
+            // corrupts BOTH source and destination balances atomically.
             DepositTransaction txn =
-                    depositService.transfer(fromAccount, toAccount, amount, businessDate, narration, null);
+                    depositService.transfer(fromAccount, toAccount, amount, businessDate, narration, idempotencyKey);
             ra.addFlashAttribute(
                     "success", "Transfer of INR " + amount + " posted. Voucher: " + txn.getVoucherNumber());
             return "redirect:/deposit/view/" + fromAccount;

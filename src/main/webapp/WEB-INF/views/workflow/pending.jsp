@@ -50,6 +50,14 @@
                                      exactly what they are about to authorize. --%>
                                 <form method="post" action="${pageContext.request.contextPath}/workflow/approve/${item.id}" class="d-inline">
                                     <input type="hidden" name="remarks" value="Approved" />
+                                    <%-- CBS Optimistic Lock per RBI Operational Risk Guidelines:
+                                         echo the entity version we read on this page render. The
+                                         service layer rejects the action with WORKFLOW_VERSION_MISMATCH
+                                         if another CHECKER has already actioned this row since we
+                                         loaded the queue. Closes the TOCTOU race that would otherwise
+                                         allow two checkers to both pass the PENDING_APPROVAL guard
+                                         and double-fire GL re-execution. --%>
+                                    <input type="hidden" name="version" value="${item.version}" />
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                     <button type="submit" class="btn btn-sm btn-fv-success"
                                             data-confirm="Approve ${fn:escapeXml(item.entityType)} ${fn:escapeXml(item.entityId)} (${fn:escapeXml(item.actionType)})? This will execute the posting and cannot be undone.">
@@ -62,6 +70,8 @@
                                      is captured in the workflow record. --%>
                                 <form method="post" action="${pageContext.request.contextPath}/workflow/reject/${item.id}" class="d-inline">
                                     <input type="hidden" name="remarks" value="" class="fv-reason-field" />
+                                    <%-- CBS Optimistic Lock -- see approve form above for rationale. --%>
+                                    <input type="hidden" name="version" value="${item.version}" />
                                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}" />
                                     <button type="button" class="btn btn-sm btn-fv-danger"
                                             data-fv-reason-prompt="Rejection reason for ${fn:escapeXml(item.entityType)} ${fn:escapeXml(item.entityId)} (mandatory):"
