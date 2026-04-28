@@ -327,4 +327,236 @@ class TellerServiceImplTest {
                 eq("TellerCashDeposit"), any(), eq("PENDING_APPROVAL"),
                 isNull(), any(DepositTransaction.class), eq("TELLER"), anyString());
     }
+
+    // =====================================================================
+    // Scenarios -- batch 2a: idempotent retry, till-not-open, CTR rules
+    // =====================================================================
+
+    @Test
+    @DisplayName("idempotent retry: returns prior receipt without re-mutating till or ledger")
+    void cashDeposit_idempotentRetry_returnsPriorReceipt() {
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("52800.00"));
+        TellerTill till = buildOpenTill(new BigDecimal("100000.00"), new BigDecimal("102800.00"));
+        BigDecimal ledgerBefore = acct.getLedgerBalance();
+        BigDecimal tillBefore = till.getCurrentBalance();
+
+        // Prior committed transaction surfaced by the lock-then-check dedupe.
+        DepositTransaction prior = new DepositTransaction();
+        prior.setId(99L);
+        prior.setTenantId(TENANT);
+        prior.setTransactionRef("TXN-PRIOR-001");
+        prior.setVoucherNumber("VCH/HQ001/20260401/000001");
+        prior.setAmount(new BigDecimal("2800"));
+        prior.setBalanceBefore(new BigDecimal("50000.00"));
+        prior.setBalanceAfter(new BigDecimal("52800.00"));
+        prior.setValueDate(BUSINESS_DATE);
+        prior.setPostingDate(LocalDateTime.now());
+        prior.setNarration("Salary deposit");
+        prior.setChannel("TELLER");
+        prior.setIdempotencyKey("idem-retry");
+        prior.setDepositAccount(acct);
+
+        when(businessDateService.getCurrentBusinessDate()).thenReturn(BUSINESS_DATE);
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber(TENANT, "DEP001"))
+                .thenReturn(Optional.of(acct));
+        when(tillRepository.findAndLockByTellerAndDate(TENANT, TELLER_USER, BUSINESS_DATE))
+                .thenReturn(Optional.of(till));
+        when(transactionRepository.findByTenantIdAndIdempotencyKey(TENANT, "idem-retry"))
+                .thenReturn(Optional.of(prior));
+
+        CashDepositResponse r = service.cashDeposit(standardRequest("DEP001", "idem-retry"));
+
+        assertEquals("TXN-PRIOR-001", r.transactionRef(),
+                "retry must surface the prior receipt's txn ref");
+        // Engine NEVER called on retry -- the prior commit already posted GL
+        verify(transactionEngine, never()).execute(any());
+        // Till and ledger MUST NOT change on retry
+        assertEquals(0, ledgerBefore.compareTo(acct.getLedgerBalance()));
+        assertEquals(0, tillBefore.compareTo(till.getCurrentBalance()));
+        // No new denomination rows
+        verify(denominationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("till not open: cash deposit rejected with CBS-TELLER-001 (no GL post)")
+    void cashDeposit_tillNotOpen_rejectedAfterAccountLock() {
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("50000.00"));
+
+        when(businessDateService.getCurrentBusinessDate()).thenReturn(BUSINESS_DATE);
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber(TENANT, "DEP001"))
+                .thenReturn(Optional.of(acct));
+        // No till for this teller today.
+        when(tillRepository.findAndLockByTellerAndDate(TENANT, TELLER_USER, BUSINESS_DATE))
+                .thenReturn(Optional.empty());
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.cashDeposit(standardRequest("DEP001", "idem-no-till")));
+        assertEquals("CBS-TELLER-001", ex.getErrorCode());
+
+        verify(transactionEngine, never()).execute(any());
+        verify(denominationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("CTR threshold: deposit at INR 50000 without PAN/Form60 rejected with CBS-COMP-002")
+    void cashDeposit_ctrThreshold_requiresPanOrForm60() {
+        // 100 x 500 = 50,000 -- exactly at the CTR threshold per PMLA Rule 9.
+        // No PAN, no Form 60 reference -- must be rejected.
+        CashDepositRequest req = new CashDepositRequest(
+                "DEP001",
+                new BigDecimal("50000"),
+                List.of(new DenominationEntry(IndianCurrencyDenomination.NOTE_500, 100, 0)),
+                "idem-ctr", "High-Value Depositor",
+                null, null, "Threshold deposit", null);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.cashDeposit(req));
+        assertEquals("CBS-COMP-002", ex.getErrorCode());
+
+        // CTR check runs BEFORE locks per the validateCtrCompliance contract,
+        // so no DB activity should have happened.
+        verify(accountRepository, never()).findAndLockByTenantIdAndAccountNumber(any(), any());
+        verify(transactionEngine, never()).execute(any());
+    }
+
+    @Test
+    @DisplayName("CTR threshold: PAN supplied -> deposit proceeds and ctrTriggered=true")
+    void cashDeposit_ctrThreshold_panSupplied_proceeds() {
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("100000.00"));
+        TellerTill till = buildOpenTill(new BigDecimal("200000.00"), new BigDecimal("200000.00"));
+
+        CashDepositRequest req = new CashDepositRequest(
+                "DEP001",
+                new BigDecimal("50000"),
+                List.of(new DenominationEntry(IndianCurrencyDenomination.NOTE_500, 100, 0)),
+                "idem-ctr-ok", "High-Value Depositor",
+                "9876543210", "ABCDE1234F", "Threshold deposit", null);
+
+        when(businessDateService.getCurrentBusinessDate()).thenReturn(BUSINESS_DATE);
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber(TENANT, "DEP001"))
+                .thenReturn(Optional.of(acct));
+        when(tillRepository.findAndLockByTellerAndDate(TENANT, TELLER_USER, BUSINESS_DATE))
+                .thenReturn(Optional.of(till));
+        when(transactionRepository.findByTenantIdAndIdempotencyKey(eq(TENANT), anyString()))
+                .thenReturn(Optional.empty());
+        when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(tillRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(denominationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        CashDepositResponse r = service.cashDeposit(req);
+
+        assertNotNull(r);
+        assertTrue(r.ctrTriggered(), "CTR flag must surface to BFF for the receipt slip");
+        assertFalse(r.pendingApproval());
+        assertEquals(0, new BigDecimal("150000.00").compareTo(acct.getLedgerBalance()));
+    }
+
+    // =====================================================================
+    // Scenarios -- batch 2b: dormancy reactivation + openTill lifecycle
+    // =====================================================================
+
+    @Test
+    @DisplayName("dormancy reactivation: deposit on DORMANT account transitions to ACTIVE")
+    void cashDeposit_dormantAccount_reactivatesPerKycRule() {
+        // Per RBI KYC §38: a customer-initiated credit on a dormant account
+        // reactivates it to ACTIVE.
+        DepositAccount acct = buildSavingsAccount("DEP001", new BigDecimal("100.00"));
+        acct.setAccountStatus(DepositAccountStatus.DORMANT);
+        acct.setDormantDate(LocalDate.of(2024, 1, 1));
+        TellerTill till = buildOpenTill(new BigDecimal("100000.00"), new BigDecimal("100000.00"));
+
+        when(businessDateService.getCurrentBusinessDate()).thenReturn(BUSINESS_DATE);
+        when(accountRepository.findAndLockByTenantIdAndAccountNumber(TENANT, "DEP001"))
+                .thenReturn(Optional.of(acct));
+        when(tillRepository.findAndLockByTellerAndDate(TENANT, TELLER_USER, BUSINESS_DATE))
+                .thenReturn(Optional.of(till));
+        when(transactionRepository.findByTenantIdAndIdempotencyKey(eq(TENANT), anyString()))
+                .thenReturn(Optional.empty());
+        when(transactionEngine.execute(any())).thenReturn(mockPostedResult());
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(tillRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(denominationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.cashDeposit(standardRequest("DEP001", "idem-dormant"));
+
+        assertEquals(DepositAccountStatus.ACTIVE, acct.getAccountStatus(),
+                "dormant account must reactivate per RBI KYC §38");
+        assertNull(acct.getDormantDate(), "dormantDate must be cleared on reactivation");
+        // Inline-audit reactivation event must be recorded
+        verify(auditService).logEventInline(
+                eq("DepositAccount"), eq(1L), eq("DORMANCY_REACTIVATED"),
+                eq("DORMANT"), eq("ACTIVE"), eq("ACCOUNT"), anyString());
+    }
+
+    @Test
+    @DisplayName("openTill: opening balance below threshold auto-approves to OPEN")
+    void openTill_belowThreshold_autoApprovesToOpen() {
+        // INR 50,000 is well below the INR 200,000 auto-approve threshold.
+        when(businessDateService.getCurrentBusinessDate()).thenReturn(BUSINESS_DATE);
+        when(branchRepository.findById(BRANCH_ID)).thenReturn(Optional.of(buildBranch()));
+        when(tillRepository.findByTellerAndDate(TENANT, TELLER_USER, BUSINESS_DATE))
+                .thenReturn(Optional.empty());
+        when(tillRepository.save(any())).thenAnswer(inv -> {
+            TellerTill saved = inv.getArgument(0);
+            saved.setId(101L);
+            return saved;
+        });
+
+        TellerTill till = service.openTill(
+                new OpenTillRequest(new BigDecimal("50000"), null, "Morning shift"));
+
+        assertEquals(TellerTillStatus.OPEN, till.getStatus());
+        assertNotNull(till.getOpenedAt(), "OPEN status must carry an openedAt timestamp");
+        assertEquals(0, new BigDecimal("50000").compareTo(till.getOpeningBalance()));
+        assertEquals(0, new BigDecimal("50000").compareTo(till.getCurrentBalance()),
+                "currentBalance must equal opening balance at till-open time");
+        // Audit uses logEvent (REQUIRES_NEW) since no row locks held
+        verify(auditService).logEvent(
+                eq("TellerTill"), any(), eq("OPEN_REQUEST"),
+                isNull(), any(TellerTill.class), eq("TELLER"), anyString());
+    }
+
+    @Test
+    @DisplayName("openTill: opening balance above threshold creates PENDING_OPEN for supervisor")
+    void openTill_aboveThreshold_routesToPendingOpen() {
+        // INR 500,000 is above the INR 200,000 soft threshold.
+        when(businessDateService.getCurrentBusinessDate()).thenReturn(BUSINESS_DATE);
+        when(branchRepository.findById(BRANCH_ID)).thenReturn(Optional.of(buildBranch()));
+        when(tillRepository.findByTellerAndDate(TENANT, TELLER_USER, BUSINESS_DATE))
+                .thenReturn(Optional.empty());
+        when(tillRepository.save(any())).thenAnswer(inv -> {
+            TellerTill saved = inv.getArgument(0);
+            saved.setId(102L);
+            return saved;
+        });
+
+        TellerTill till = service.openTill(
+                new OpenTillRequest(new BigDecimal("500000"), null, "High-cash shift"));
+
+        assertEquals(TellerTillStatus.PENDING_OPEN, till.getStatus(),
+                "above-threshold opening balance must route to supervisor");
+        assertNull(till.getOpenedAt(),
+                "openedAt is set only after supervisor approval, not on PENDING_OPEN");
+    }
+
+    @Test
+    @DisplayName("openTill: duplicate till for the same business date is rejected")
+    void openTill_duplicate_rejectedWithCbsTeller010() {
+        // Existing till already present for this teller today.
+        TellerTill existing = buildOpenTill(new BigDecimal("100000"), new BigDecimal("100000"));
+        when(businessDateService.getCurrentBusinessDate()).thenReturn(BUSINESS_DATE);
+        when(branchRepository.findById(BRANCH_ID)).thenReturn(Optional.of(buildBranch()));
+        when(tillRepository.findByTellerAndDate(TENANT, TELLER_USER, BUSINESS_DATE))
+                .thenReturn(Optional.of(existing));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.openTill(
+                        new OpenTillRequest(new BigDecimal("50000"), null, null)));
+        assertEquals("CBS-TELLER-010", ex.getErrorCode());
+
+        verify(tillRepository, never()).save(any());
+    }
 }
