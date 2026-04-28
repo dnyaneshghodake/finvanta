@@ -155,6 +155,76 @@ public final class CbsErrorCodes {
     public static final String COMP_PSL_VIOLATION = "CBS-COMP-003";
 
     // =====================================================================
+    // TELLER MODULE (CBS-TELLER-xxx)
+    // =====================================================================
+    /**
+     * No till is OPEN for the authenticated teller on the current business date.
+     * Cash transactions cannot be posted without an open till. Resolution:
+     * teller must open a till (which may require supervisor approval) before
+     * accepting cash. Mapped to HTTP 409 CONFLICT.
+     */
+    public static final String TELLER_TILL_NOT_OPEN = "CBS-TELLER-001";
+    /**
+     * Till is in PENDING_OPEN, PENDING_CLOSE, CLOSED, or SUSPENDED -- not OPEN.
+     * Mapped to HTTP 409 CONFLICT with the current status surfaced to the BFF
+     * so the operator gets a state-specific remediation hint.
+     */
+    public static final String TELLER_TILL_INVALID_STATE = "CBS-TELLER-002";
+    /**
+     * The authenticated user is not the owner of the target till. Per RBI
+     * Internal Controls, only the assigned teller may post cash transactions
+     * to their own till. Mapped to HTTP 403 FORBIDDEN.
+     */
+    public static final String TELLER_TILL_OWNERSHIP = "CBS-TELLER-003";
+    /**
+     * Sum of denomination breakdown does not equal the transaction amount.
+     * Reject before any GL or till mutation occurs. Mapped to HTTP 400.
+     */
+    public static final String TELLER_DENOM_SUM_MISMATCH = "CBS-TELLER-004";
+    /**
+     * Operator submitted an unrecognized or non-circulating denomination value.
+     * The {@link com.finvanta.cbs.modules.teller.domain.IndianCurrencyDenomination}
+     * enum is the canonical list. Mapped to HTTP 400.
+     */
+    public static final String TELLER_DENOM_INVALID = "CBS-TELLER-005";
+    /**
+     * Withdrawal would drive till {@code currentBalance} below zero. Indicates
+     * either a configuration/limit issue or a fraud attempt. Per RBI: a till
+     * can never go negative; the teller must request a vault buy first.
+     * Mapped to HTTP 422 UNPROCESSABLE_ENTITY.
+     */
+    public static final String TELLER_TILL_INSUFFICIENT_CASH = "CBS-TELLER-006";
+    /**
+     * Cash transaction exceeds the per-till soft limit, requiring supervisor
+     * (maker-checker) authorization even though it may be below the user's
+     * per-transaction limit. Surfaced for UX, not a hard rejection -- the
+     * transaction routes to the workflow queue as PENDING_APPROVAL.
+     */
+    public static final String TELLER_TILL_LIMIT_EXCEEDED = "CBS-TELLER-007";
+    /**
+     * Counterfeit notes were declared in the deposit. Per FICN guidelines, the
+     * deposit is rejected (not partially credited) and a separate FICN report
+     * must be filed. The customer is given an FICN acknowledgement receipt.
+     * Mapped to HTTP 422 UNPROCESSABLE_ENTITY.
+     */
+    public static final String TELLER_COUNTERFEIT_DETECTED = "CBS-TELLER-008";
+    /**
+     * Till open requested for a business date that is not the current open
+     * business date for the teller's branch. Mapped to HTTP 400.
+     */
+    public static final String TELLER_TILL_DATE_INVALID = "CBS-TELLER-009";
+    /**
+     * Till already exists for the teller on the requested business date. A
+     * teller may have at most one till per business date. Mapped to HTTP 409.
+     */
+    public static final String TELLER_TILL_DUPLICATE = "CBS-TELLER-010";
+    /**
+     * Cash withdrawal counterfeit-flagged inflow contradiction (defensive code,
+     * should never occur in production). Mapped to HTTP 500.
+     */
+    public static final String TELLER_INTERNAL = "CBS-TELLER-099";
+
+    // =====================================================================
     // SEVERITY CONSTANTS
     // =====================================================================
     public static final String SEVERITY_LOW = "LOW";
