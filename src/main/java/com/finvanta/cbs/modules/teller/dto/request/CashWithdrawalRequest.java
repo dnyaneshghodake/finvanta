@@ -93,7 +93,7 @@ public record CashWithdrawalRequest(
      * than as a hand-thrown {@code BusinessException} from the service.
      */
     @AssertTrue(message = "Counterfeit notes cannot be paid out on a withdrawal")
-    public boolean counterfeitCountIsZeroOnWithdrawal() {
+    public boolean isCounterfeitCountZeroOnWithdrawal() {
         if (denominations == null) return true;
         for (DenominationEntry e : denominations) {
             if (e != null && e.counterfeitCount() > 0) {
