@@ -712,7 +712,7 @@ public class DepositAccountModuleServiceImpl implements DepositAccountModuleServ
         // and be rejected -- preventing double reversal and GL/subledger corruption.
         DepositTransaction original = transactionRepository
                 .findAndLockByTenantIdAndTransactionRef(tenantId, transactionRef)
-                .orElseThrow(() -> new BusinessException("CBS-TXN-002",
+                .orElseThrow(() -> new BusinessException(CbsErrorCodes.TXN_NOT_FOUND,
                         "Transaction not found: " + transactionRef));
 
         if (original.isReversed()) {

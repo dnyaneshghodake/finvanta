@@ -85,6 +85,18 @@ public final class CbsErrorCodes {
      * the prior result, while this one is a hard rejection per CBS audit rules.
      */
     public static final String TXN_ALREADY_REVERSED = "CBS-TXN-013";
+    /**
+     * The target transaction reference does not exist for the current tenant.
+     * Thrown by {@code DepositAccountModuleServiceImpl.reverseTransaction} when
+     * {@code findAndLockByTenantIdAndTransactionRef} returns empty.
+     *
+     * <p>Distinct from {@link #ACCT_NOT_FOUND} (missing account) and
+     * {@link #TXN_BUSINESS_DATE_INVALID} (CBS-TXN-002, business-date validation):
+     * this code maps to HTTP 404 and surfaces a transaction-specific
+     * "not found" message, while CBS-TXN-002 maps to 400 with date-validation
+     * remediation text.
+     */
+    public static final String TXN_NOT_FOUND = "CBS-TXN-014";
 
     // =====================================================================
     // LOAN MODULE (CBS-LOAN-xxx)

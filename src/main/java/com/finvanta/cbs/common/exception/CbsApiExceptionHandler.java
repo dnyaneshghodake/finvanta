@@ -202,6 +202,7 @@ public class CbsApiExceptionHandler {
             case CbsErrorCodes.CUST_NOT_FOUND,
                     CbsErrorCodes.ACCT_NOT_FOUND,
                     CbsErrorCodes.TXN_BRANCH_INVALID,
+                    CbsErrorCodes.TXN_NOT_FOUND,
                     CbsErrorCodes.LOAN_NOT_FOUND,
                     CbsErrorCodes.LOAN_APPLICATION_NOT_FOUND,
                     CbsErrorCodes.GL_ACCOUNT_NOT_FOUND,
