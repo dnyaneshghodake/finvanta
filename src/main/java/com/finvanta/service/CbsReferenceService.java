@@ -175,4 +175,40 @@ public class CbsReferenceService {
         String serial = sequenceGenerator.nextFormattedValue("COL_SEQ", 6);
         return "COL-" + serial;
     }
+
+    /**
+     * FICN Register Reference per RBI Master Direction on Counterfeit Notes.
+     *
+     * <p>Format: {@code FICN/{branchCode}/{YYYYMMDD}/{seq}} -- e.g.
+     * {@code FICN/BR001/20260401/000003}. The date segment is included
+     * (unlike CASA / LOAN refs) because the FICN register is queried by
+     * (branch, date) on the supervisor view, the chest-dispatch dashboard,
+     * and the RBI quarterly FICN return; embedding the date in the
+     * reference makes those queries cheap to filter and the printed
+     * receipt instantly self-describing.
+     *
+     * <p>Sequence is per-branch (not per-branch-per-day) so the count
+     * monotonically increases across business dates -- this matches the
+     * RBI requirement that the register reference be permanent and
+     * never rolled-over.
+     *
+     * <p>Per RBI: FICN register references appear on the customer
+     * acknowledgement receipt, the FIR copy filed with police, and the
+     * currency-chest dispatch envelope. Once minted, the reference is
+     * immutable -- the underlying entity is INSERT-ONLY (DB triggers
+     * {@code trg_ficn_no_update} / {@code trg_ficn_no_delete} enforce
+     * this at the storage layer).
+     *
+     * @param branchCode    detecting branch's code (e.g. "BR001")
+     * @param businessDate  CBS business date of detection (formatted YYYYMMDD)
+     * @return FICN reference like "FICN/BR001/20260401/000003"
+     */
+    public String generateFicnRegisterRef(String branchCode, java.time.LocalDate businessDate) {
+        String dateStr = businessDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+        String serial = sequenceGenerator.nextFormattedValue("FICN_SEQ_" + branchCode, 6);
+        String ref = "FICN/" + branchCode + "/" + dateStr + "/" + serial;
+        log.debug("FICN register ref generated: {} (branch={}, date={}, seq={})",
+                ref, branchCode, dateStr, serial);
+        return ref;
+    }
 }
