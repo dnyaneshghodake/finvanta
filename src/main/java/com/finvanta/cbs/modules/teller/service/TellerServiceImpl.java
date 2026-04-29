@@ -675,9 +675,24 @@ public class TellerServiceImpl implements TellerService {
         String tellerUser = SecurityUtil.getCurrentUsername();
         LocalDate businessDate = businessDateService.getCurrentBusinessDate();
 
-        // 1. Pre-lock validation: denomination math. Bean Validation already
-        // rejected non-zero counterfeit on a withdrawal request, so the
-        // hasCounterfeit() guard from the deposit path is unnecessary here.
+        // 1. Pre-lock validation: denomination math + counterfeit guard.
+        // Defense-in-depth: the @AssertTrue on CashWithdrawalRequest catches
+        // non-zero counterfeit on the REST path (TellerApiController uses
+        // @Valid @RequestBody), but the JSP TellerWebController constructs
+        // the request programmatically and DOES NOT invoke Jakarta Bean
+        // Validation. Without this service-layer guard, a crafted JSP form
+        // could submit a withdrawal with counterfeit notes; the bank would
+        // not pay them out (denomination rows are persisted with direction
+        // 'OUT' and counterfeitFlag=false at line 1327 below) but the
+        // amount + denomination sum would mismatch in subtle ways. Per the
+        // RBI Currency Management directive: the bank only dispenses genuine
+        // notes; reject the request at the service boundary regardless of
+        // caller channel.
+        if (denominationValidator.hasCounterfeit(request.denominations())) {
+            throw new BusinessException(CbsErrorCodes.TELLER_INTERNAL,
+                    "Counterfeit counts are not permitted on withdrawal requests "
+                            + "(the bank only dispenses genuine notes per RBI Currency Management)");
+        }
         denominationValidator.validateSum(request.denominations(), request.amount());
 
         // 2. Lock customer account FIRST, then till -- canonical order.
