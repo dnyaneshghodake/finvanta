@@ -163,11 +163,11 @@ public interface TellerService {
      */
     void applyApprovedTellerTransaction(
             String accountNumber,
-            java.math.BigDecimal amount,
+            BigDecimal amount,
             String transactionType,
             String makerUserId,
-            com.finvanta.transaction.TransactionResult result,
-            java.time.LocalDate businessDate);
+            TransactionResult result,
+            LocalDate businessDate);
 
     /**
      * Teller submits a till-close request with a physical cash count.
@@ -184,7 +184,7 @@ public interface TellerService {
      * @param remarks optional narration
      * @return the till in PENDING_CLOSE status with variance computed
      */
-    TellerTill requestCloseTill(java.math.BigDecimal countedBalance, String remarks);
+    TellerTill requestCloseTill(BigDecimal countedBalance, String remarks);
 
     /**
      * Supervisor approves a PENDING_CLOSE till, transitioning it to CLOSED.

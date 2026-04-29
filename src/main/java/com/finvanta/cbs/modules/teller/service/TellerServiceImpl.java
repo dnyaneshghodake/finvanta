@@ -25,6 +25,7 @@ import com.finvanta.domain.entity.DepositAccount;
 import com.finvanta.domain.entity.DepositTransaction;
 import com.finvanta.domain.entity.ProductMaster;
 import com.finvanta.domain.enums.DebitCredit;
+import com.finvanta.domain.enums.DepositAccountStatus;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.DepositTransactionRepository;
@@ -453,7 +454,7 @@ public class TellerServiceImpl implements TellerService {
                         .subtract(acct.getUnclearedAmount()));
         acct.setLastTransactionDate(businessDate);
         if (isCredit && acct.isDormant()) {
-            acct.setAccountStatus(com.finvanta.domain.enums.DepositAccountStatus.ACTIVE);
+            acct.setAccountStatus(DepositAccountStatus.ACTIVE);
             acct.setDormantDate(null);
             auditService.logEventInline(
                     "DepositAccount", acct.getId(), "DORMANCY_REACTIVATED",
@@ -734,7 +735,7 @@ public class TellerServiceImpl implements TellerService {
                     "Cash withdrawal pending checker approval: INR " + request.amount()
                             + " account=" + request.accountNumber()
                             + " till=" + till.getId());
-            return mapWithdrawalToResponse(pendingTxn, till, java.util.List.of(),
+            return mapWithdrawalToResponse(pendingTxn, till, List.of(),
                     ctrTriggered, request.chequeNumber(),
                     /* pendingApproval */ true);
         }
@@ -904,7 +905,7 @@ public class TellerServiceImpl implements TellerService {
                         .subtract(acct.getUnclearedAmount()));
         acct.setLastTransactionDate(businessDate);
         if (acct.isDormant()) {
-            acct.setAccountStatus(com.finvanta.domain.enums.DepositAccountStatus.ACTIVE);
+            acct.setAccountStatus(DepositAccountStatus.ACTIVE);
             acct.setDormantDate(null);
             // Inline because the caller holds the row lock; REQUIRES_NEW would
             // deadlock per AuditService.logEvent Javadoc.
@@ -1308,9 +1309,9 @@ public class TellerServiceImpl implements TellerService {
     private void persistWithdrawalDenominations(
             TellerTill till, CashWithdrawalRequest req, String transactionRef,
             LocalDate businessDate, String tenantId) {
-        java.util.Map<IndianCurrencyDenomination, DenominationValidator.MergedRow> merged =
+        Map<IndianCurrencyDenomination, DenominationValidator.MergedRow> merged =
                 denominationValidator.coalesce(req.denominations());
-        for (java.util.Map.Entry<IndianCurrencyDenomination, DenominationValidator.MergedRow> e
+        for (Map.Entry<IndianCurrencyDenomination, DenominationValidator.MergedRow> e
                 : merged.entrySet()) {
             IndianCurrencyDenomination denom = e.getKey();
             DenominationValidator.MergedRow row = e.getValue();
@@ -1348,10 +1349,10 @@ public class TellerServiceImpl implements TellerService {
      */
     private List<CashWithdrawalResponse.DenominationLine> buildWithdrawalResponseLines(
             CashWithdrawalRequest req) {
-        java.util.Map<IndianCurrencyDenomination, DenominationValidator.MergedRow> merged =
+        Map<IndianCurrencyDenomination, DenominationValidator.MergedRow> merged =
                 denominationValidator.coalesce(req.denominations());
         List<CashWithdrawalResponse.DenominationLine> lines = new ArrayList<>(merged.size());
-        for (java.util.Map.Entry<IndianCurrencyDenomination, DenominationValidator.MergedRow> e
+        for (Map.Entry<IndianCurrencyDenomination, DenominationValidator.MergedRow> e
                 : merged.entrySet()) {
             IndianCurrencyDenomination denom = e.getKey();
             DenominationValidator.MergedRow row = e.getValue();

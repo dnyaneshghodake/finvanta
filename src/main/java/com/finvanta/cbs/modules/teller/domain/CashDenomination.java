@@ -5,6 +5,7 @@ import com.finvanta.domain.entity.BaseEntity;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -66,7 +67,7 @@ public class CashDenomination extends BaseEntity {
 
     /** Business date of the parent transaction. Denormalized for reporting. */
     @Column(name = "value_date", nullable = false)
-    private java.time.LocalDate valueDate;
+    private LocalDate valueDate;
 
     /** Denomination kind/face value. See {@link IndianCurrencyDenomination}. */
     @Enumerated(EnumType.STRING)
