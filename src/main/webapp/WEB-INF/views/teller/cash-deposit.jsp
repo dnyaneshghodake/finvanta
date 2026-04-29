@@ -331,11 +331,26 @@
                 </div>
             </div>
 
+            <div class="mt-3">
+                <button type="submit" class="btn btn-fv-primary" id="postDepositBtn"
+                        data-confirm="Confirm cash deposit? This will credit the customer account and increment your till.">
+                    <i class="bi bi-check-circle"></i> Post Deposit <span class="fv-kbd">F2</span>
+                </button>
+                <a href="${pageContext.request.contextPath}/dashboard" class="btn btn-outline-secondary ms-2">
+                    <i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+</div>
+
 <%-- ============================================================
-     Live-sum + CTR-panel JS. The script element is intentionally placed
-     INSIDE the form scope so the IDs it references resolve. Inline JS
-     (not a separate file) so the page is self-contained and the threshold
-     value can be EL-interpolated without an extra REST round-trip.
+     Live-sum + CTR-panel JS. Placed AFTER the submit button so
+     document.getElementById("postDepositBtn") returns the element rather
+     than null when the IIFE runs at parse time. Inline JS (not a separate
+     file) so the page is self-contained and the threshold value can be
+     EL-interpolated without an extra REST round-trip.
 
      IMPORTANT: this guard is UX only. The authoritative validation is
      server-side in DenominationValidator.validateSum and
@@ -379,10 +394,10 @@
             if (subEl) subEl.textContent = fmt(subtotal);
             grand += subtotal;
         });
-        grandTotalEl.textContent = fmt(grand);
+        if (grandTotalEl) grandTotalEl.textContent = fmt(grand);
 
         var amount = parseFloat(amountInput.value) || 0;
-        amountEchoEl.textContent = fmt(amount);
+        if (amountEchoEl) amountEchoEl.textContent = fmt(amount);
 
         // Match indicator. Use a small epsilon for FP comparison so 0.30 vs
         // 0.30000000000000004 doesn't fail. Rupee amounts are 2dp so 0.005
@@ -396,18 +411,16 @@
             matchSpan = '<span class="badge bg-danger">diff '
                 + fmt(grand - amount) + '</span>';
         }
-        matchBadge.innerHTML = matchSpan;
+        if (matchBadge) matchBadge.innerHTML = matchSpan;
 
         // CTR panel toggles when amount >= threshold.
-        if (amount >= ctrThreshold) {
-            ctrPanel.style.display = "";
-        } else {
-            ctrPanel.style.display = "none";
+        if (ctrPanel) {
+            ctrPanel.style.display = (amount >= ctrThreshold) ? "" : "none";
         }
 
         // Submit gate: till must be OPEN AND denom sum must match.
         var canSubmit = tillIsOpen && amount > 0 && Math.abs(grand - amount) < 0.005;
-        postBtn.disabled = !canSubmit;
+        if (postBtn) postBtn.disabled = !canSubmit;
     }
 
     // Wire change/input listeners on every grid input + the amount field.
@@ -419,19 +432,5 @@
     recompute();
 })();
 </script>
-
-            <div class="mt-3">
-                <button type="submit" class="btn btn-fv-primary" id="postDepositBtn"
-                        data-confirm="Confirm cash deposit? This will credit the customer account and increment your till.">
-                    <i class="bi bi-check-circle"></i> Post Deposit <span class="fv-kbd">F2</span>
-                </button>
-                <a href="${pageContext.request.contextPath}/dashboard" class="btn btn-outline-secondary ms-2">
-                    <i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span>
-                </a>
-            </div>
-        </form>
-    </div>
-</div>
-</div>
 
 <%@ include file="../layout/footer.jsp" %>

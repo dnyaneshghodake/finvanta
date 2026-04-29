@@ -317,6 +317,10 @@ public class CbsApiExceptionHandler {
             // would prevent BFF clients from re-prompting for credentials and
             // instead show an "access denied" message.
             case CbsErrorCodes.AUTH_INVALID_CREDENTIALS -> HttpStatus.UNAUTHORIZED;
+            // Defensive teller-internal error per CBS-TELLER-099. The Javadoc
+            // on the constant documents HTTP 500; map explicitly so monitoring
+            // alerts that key on 5xx don't miss the incident.
+            case CbsErrorCodes.TELLER_INTERNAL -> HttpStatus.INTERNAL_SERVER_ERROR;
             default -> HttpStatus.BAD_REQUEST;
         };
     }
@@ -349,7 +353,11 @@ public class CbsApiExceptionHandler {
                     // the supervisor gets a blocking modal, not a toast.
                     CbsErrorCodes.TELLER_COUNTERFEIT_DETECTED,
                     CbsErrorCodes.TELLER_TILL_INSUFFICIENT_CASH,
-                    CbsErrorCodes.TELLER_TILL_OWNERSHIP -> CbsErrorCodes.SEVERITY_HIGH;
+                    CbsErrorCodes.TELLER_TILL_OWNERSHIP,
+                    // Internal teller error -- defensive code path. HIGH so the
+                    // BFF surfaces a blocking modal and the incident is not
+                    // silently lost to a LOW-severity bucket.
+                    CbsErrorCodes.TELLER_INTERNAL -> CbsErrorCodes.SEVERITY_HIGH;
             case CbsErrorCodes.ACCT_DUPLICATE_NUMBER,
                     CbsErrorCodes.TXN_IDEMPOTENCY_DUPLICATE,
                     CbsErrorCodes.TXN_PENDING_APPROVAL,
@@ -461,6 +469,8 @@ public class CbsApiExceptionHandler {
                     "A till already exists for you on this business date";
             case CbsErrorCodes.COMP_CTR_THRESHOLD ->
                     "Cash deposit at or above CTR threshold requires PAN or Form 60/61 per PMLA Rule 9";
+            case CbsErrorCodes.TELLER_INTERNAL ->
+                    "Internal teller error. Note the correlation ID and contact support";
             default -> null;
         };
     }

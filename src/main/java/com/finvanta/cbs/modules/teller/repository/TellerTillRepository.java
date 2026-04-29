@@ -61,6 +61,23 @@ public interface TellerTillRepository extends JpaRepository<TellerTill, Long> {
             @Param("businessDate") LocalDate businessDate);
 
     /**
+     * Loads a till by primary key with the {@code branch} relation eagerly
+     * fetched. MUST be used by service methods that read a till by ID and
+     * subsequently flow the entity to a mapper which dereferences
+     * {@code till.getBranch().getBranchName()} (e.g. supervisor approval
+     * endpoints). The default {@link JpaRepository#findById} returns a
+     * lazy-proxy on {@code branch}, which throws
+     * {@link org.hibernate.LazyInitializationException} once the
+     * {@code @Transactional} boundary closes -- OSIV is disabled in v2 per
+     * the Tier-1 architecture refactor.
+     */
+    @Query("SELECT t FROM TellerTill t JOIN FETCH t.branch "
+            + "WHERE t.tenantId = :tenantId AND t.id = :id")
+    Optional<TellerTill> findByIdWithBranch(
+            @Param("tenantId") String tenantId,
+            @Param("id") Long id);
+
+    /**
      * Lists all tills at a branch in a given lifecycle status. Used by the
      * supervisor pipeline (PENDING_OPEN approval, PENDING_CLOSE sign-off) and
      * by the EOD orchestrator to detect tills that did not close before BOD.

@@ -237,8 +237,10 @@ public class TellerServiceImpl implements TellerService {
         String tenantId = TenantContext.getCurrentTenant();
         String supervisor = SecurityUtil.getCurrentUsername();
 
-        TellerTill till = tillRepository.findById(tillId)
-                .filter(t -> tenantId.equals(t.getTenantId()))
+        // Use findByIdWithBranch (JOIN FETCH branch) so the mapper can read
+        // entity.getBranch().getBranchName() AFTER this @Transactional boundary
+        // closes without LazyInitializationException -- OSIV is disabled in v2.
+        TellerTill till = tillRepository.findByIdWithBranch(tenantId, tillId)
                 .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
                         "Till not found: " + tillId));
 
@@ -335,8 +337,10 @@ public class TellerServiceImpl implements TellerService {
         String tenantId = TenantContext.getCurrentTenant();
         String supervisor = SecurityUtil.getCurrentUsername();
 
-        TellerTill till = tillRepository.findById(tillId)
-                .filter(t -> tenantId.equals(t.getTenantId()))
+        // Use findByIdWithBranch (JOIN FETCH branch) so the mapper can read
+        // entity.getBranch().getBranchName() AFTER this @Transactional boundary
+        // closes without LazyInitializationException -- OSIV is disabled in v2.
+        TellerTill till = tillRepository.findByIdWithBranch(tenantId, tillId)
                 .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
                         "Till not found: " + tillId));
 

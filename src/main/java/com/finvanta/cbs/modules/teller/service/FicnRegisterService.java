@@ -161,19 +161,24 @@ public class FicnRegisterService {
             totalImpoundedCount += entry.counterfeitCount();
 
             // Inline audit per row -- joins THIS sub-transaction so the audit
-            // log commits with the register row.
+            // log commits with the register row. Per-row message describes
+            // ONLY this batch; the transaction-level FIR determination is
+            // logged once after the loop completes (see below). Mixing the
+            // two would mislead investigators because a single batch may be
+            // below the per-row threshold while the transaction total is
+            // above it (e.g. 3 x NOTE_500 + 3 x NOTE_100 = 6 notes total,
+            // FIR mandatory, but each row is only 3 notes).
             auditService.logEventInline(
                     "CounterfeitNoteRegister", saved.getId(), "DETECTED",
                     null, saved, "TELLER",
                     "FICN detected: " + entry.counterfeitCount() + " x "
                             + entry.denomination() + " (INR " + totalFaceValue + ") "
                             + "ref=" + registerRef + " teller=" + tellerUser
-                            + " depositor=" + request.depositorName()
-                            + (saved.requiresFir() ? " | FIR mandatory (>=5 notes)" : ""));
+                            + " depositor=" + request.depositorName());
 
-            log.warn("CBS FICN detected: ref={} branch={} denom={} count={} value={} fir-required={}",
+            log.warn("CBS FICN detected: ref={} branch={} denom={} count={} value={}",
                     registerRef, branchCode, entry.denomination(),
-                    entry.counterfeitCount(), totalFaceValue, saved.requiresFir());
+                    entry.counterfeitCount(), totalFaceValue);
         }
 
         // Build the customer slip from the FIRST register row's metadata.
@@ -183,6 +188,23 @@ public class FicnRegisterService {
         // slip covering every impounded denomination.
         CounterfeitNoteRegister primary = persisted.get(0);
         boolean firRequired = totalImpoundedCount >= CounterfeitNoteRegister.FIR_MANDATORY_THRESHOLD;
+
+        // Transaction-level summary audit/log: FIR determination is on the
+        // SUM of counterfeit counts across all denominations in this
+        // transaction (per RBI Master Direction), not on any individual row.
+        // The customer slip uses this same total via firRequired above.
+        auditService.logEventInline(
+                "CounterfeitNoteRegister", primary.getId(), "DETECTED_SUMMARY",
+                null, null, "TELLER",
+                "FICN transaction summary: " + totalImpoundedCount + " notes impounded, "
+                        + "INR " + totalImpoundedValue + " total face value, "
+                        + persisted.size() + " denomination batch(es), primary ref="
+                        + primary.getRegisterRef()
+                        + (firRequired ? " | FIR MANDATORY (total >= "
+                                + CounterfeitNoteRegister.FIR_MANDATORY_THRESHOLD + " notes)"
+                                : " | FIR not mandatory"));
+        log.warn("CBS FICN transaction summary: primary-ref={} total-count={} total-value={} fir-required={}",
+                primary.getRegisterRef(), totalImpoundedCount, totalImpoundedValue, firRequired);
 
         return new FicnAcknowledgementResponse(
                 primary.getRegisterRef(),

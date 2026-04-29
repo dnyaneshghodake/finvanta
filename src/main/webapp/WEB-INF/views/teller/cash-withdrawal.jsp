@@ -205,11 +205,27 @@
                 </div>
             </div>
 
+            <div class="mt-3">
+                <button type="submit" class="btn btn-fv-primary" id="postWithdrawalBtn"
+                        data-confirm="Confirm cash payout? This will debit the customer account and decrement your till.">
+                    <i class="bi bi-check-circle"></i> Pay Out Cash <span class="fv-kbd">F2</span>
+                </button>
+                <a href="${pageContext.request.contextPath}/dashboard" class="btn btn-outline-secondary ms-2">
+                    <i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+</div>
+
 <%-- ============================================================
-     Live-sum + till-cash JS. Identical to the deposit screen except for
-     the additional "till has enough cash" gate -- the submit button
-     stays disabled when amount > till.currentBalance. Authoritative
-     enforcement is server-side (CBS-TELLER-006); this is UX only.
+     Live-sum + till-cash JS. Placed AFTER the submit button so
+     document.getElementById("postWithdrawalBtn") returns the element
+     rather than null when the IIFE runs at parse time. Identical to the
+     deposit screen except for the additional "till has enough cash" gate
+     -- the submit button stays disabled when amount > till.currentBalance.
+     Authoritative enforcement is server-side (CBS-TELLER-006); this is UX only.
      ============================================================ --%>
 <script>
 (function () {
@@ -241,10 +257,10 @@
             if (subEl) subEl.textContent = fmt(subtotal);
             grand += subtotal;
         });
-        grandTotalEl.textContent = fmt(grand);
+        if (grandTotalEl) grandTotalEl.textContent = fmt(grand);
 
         var amount = parseFloat(amountInput.value) || 0;
-        amountEchoEl.textContent = fmt(amount);
+        if (amountEchoEl) amountEchoEl.textContent = fmt(amount);
 
         // Match indicator (epsilon-based).
         var matchSpan;
@@ -256,7 +272,7 @@
             matchSpan = '<span class="badge bg-danger">diff '
                 + fmt(grand - amount) + '</span>';
         }
-        matchBadge.innerHTML = matchSpan;
+        if (matchBadge) matchBadge.innerHTML = matchSpan;
 
         // Till-cash availability indicator.
         var tillSpan;
@@ -270,14 +286,14 @@
                 + fmt(tillCash) + ' &lt; ' + fmt(amount)
                 + ' (request vault buy)</span>';
         }
-        tillCashBadge.innerHTML = tillSpan;
+        if (tillCashBadge) tillCashBadge.innerHTML = tillSpan;
 
         // Submit gate: till OPEN, denom sum matches, AND till has enough cash.
         var canSubmit = tillIsOpen
                 && amount > 0
                 && Math.abs(grand - amount) < 0.005
                 && tillCash >= amount;
-        postBtn.disabled = !canSubmit;
+        if (postBtn) postBtn.disabled = !canSubmit;
     }
 
     document.querySelectorAll("#denominationGridBody input")
@@ -287,19 +303,5 @@
     recompute();
 })();
 </script>
-
-            <div class="mt-3">
-                <button type="submit" class="btn btn-fv-primary" id="postWithdrawalBtn"
-                        data-confirm="Confirm cash payout? This will debit the customer account and decrement your till.">
-                    <i class="bi bi-check-circle"></i> Pay Out Cash <span class="fv-kbd">F2</span>
-                </button>
-                <a href="${pageContext.request.contextPath}/dashboard" class="btn btn-outline-secondary ms-2">
-                    <i class="bi bi-x-circle"></i> Cancel <span class="fv-kbd">F3</span>
-                </a>
-            </div>
-        </form>
-    </div>
-</div>
-</div>
 
 <%@ include file="../layout/footer.jsp" %>
