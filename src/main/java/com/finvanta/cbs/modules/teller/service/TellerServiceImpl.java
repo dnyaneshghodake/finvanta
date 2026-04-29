@@ -554,8 +554,8 @@ public class TellerServiceImpl implements TellerService {
             // acknowledgement slip is always backed by a real DB row.
             FicnAcknowledgementResponse ack = ficnRegisterService.recordDetection(
                     request,
-                    acct.getBranch(),
-                    acct.getBranch().getBranchCode(),
+                    till.getBranch(),
+                    till.getBranchCode(),
                     till.getId(),
                     tellerUser,
                     businessDate,
