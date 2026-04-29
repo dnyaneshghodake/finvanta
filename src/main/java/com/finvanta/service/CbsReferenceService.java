@@ -214,20 +214,20 @@ public class CbsReferenceService {
      * @param businessDate CBS business date of the movement
      * @return movement reference like "VMOV/BR001/20260401/000007"
      */
-    public String generateVaultMovementRef(String branchCode, java.time.LocalDate businessDate) {
-        String dateStr = businessDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
-        String serial = sequenceGenerator.nextFormattedValue("VMOV_SEQ_" + branchCode, 6);
-        String ref = "VMOV/" + branchCode + "/" + dateStr + "/" + serial;
-        log.debug("Vault movement ref generated: {} (branch={}, date={}, seq={})",
-                ref, branchCode, dateStr, serial);
-        return ref;
-    }
-
     public String generateFicnRegisterRef(String branchCode, java.time.LocalDate businessDate) {
         String dateStr = businessDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
         String serial = sequenceGenerator.nextFormattedValue("FICN_SEQ_" + branchCode, 6);
         String ref = "FICN/" + branchCode + "/" + dateStr + "/" + serial;
         log.debug("FICN register ref generated: {} (branch={}, date={}, seq={})",
+                ref, branchCode, dateStr, serial);
+        return ref;
+    }
+
+    public String generateVaultMovementRef(String branchCode, java.time.LocalDate businessDate) {
+        String dateStr = businessDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+        String serial = sequenceGenerator.nextFormattedValue("VMOV_SEQ_" + branchCode, 6);
+        String ref = "VMOV/" + branchCode + "/" + dateStr + "/" + serial;
+        log.debug("Vault movement ref generated: {} (branch={}, date={}, seq={})",
                 ref, branchCode, dateStr, serial);
         return ref;
     }
