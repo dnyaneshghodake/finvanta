@@ -144,6 +144,8 @@ public class TellerApiController {
         return ResponseEntity.ok(ApiResponse.success(receipt, message));
     }
 
+    // === Cash Withdrawal ===
+
     /**
      * Pays out cash to a customer at the counter. Mirrors {@code /cash-deposit}
      * but on the debit side; see {@link com.finvanta.cbs.modules.teller.service.TellerService#cashWithdrawal}
@@ -161,8 +163,29 @@ public class TellerApiController {
      *   <li>400 -- denomination sum mismatch / counterfeit on withdrawal request.</li>
      * </ul>
      */
+    @PostMapping("/cash-withdrawal")
+    @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<CashWithdrawalResponse>> cashWithdrawal(
+            @Valid @RequestBody CashWithdrawalRequest request) {
+        var receipt = tellerService.cashWithdrawal(request);
+        String message = receipt.pendingApproval()
+                ? "Cash withdrawal submitted for checker approval"
+                : "Cash withdrawal posted";
+        return ResponseEntity.ok(ApiResponse.success(receipt, message));
+    }
+
     // === Till Close ===
 
+    /**
+     * Teller submits a till-close request with a physical cash count. The
+     * system computes the variance ({@code counted - current}) and transitions
+     * the till to PENDING_CLOSE; a supervisor must sign off via
+     * {@link #approveTillClose} before the till reaches CLOSED.
+     *
+     * <p>Per RBI Internal Controls: the teller must sell any excess cash back
+     * to the vault BEFORE closing. Any non-zero variance is flagged in the
+     * audit trail and may trigger a cash-variance adjustment workflow.
+     */
     @PostMapping("/till/close")
     @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<TellerTillResponse>> requestCloseTill(
@@ -177,6 +200,11 @@ public class TellerApiController {
                 "Till close requested" + varianceMsg + ". Awaiting supervisor sign-off."));
     }
 
+    /**
+     * Supervisor approves a PENDING_CLOSE till, transitioning it to CLOSED.
+     * Per RBI Internal Controls / dual-control: maker (teller who counted)
+     * must not equal checker (supervisor signing off).
+     */
     @PostMapping("/till/{tillId}/approve-close")
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<TellerTillResponse>> approveTillClose(
@@ -208,19 +236,6 @@ public class TellerApiController {
         return ResponseEntity.ok(ApiResponse.success(
                 tillMapper.toResponse(till),
                 "Till approved and OPEN for teller " + till.getTellerUserId()));
-    }
-
-    // === Cash Withdrawal ===
-
-    @PostMapping("/cash-withdrawal")
-    @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<CashWithdrawalResponse>> cashWithdrawal(
-            @Valid @RequestBody CashWithdrawalRequest request) {
-        var receipt = tellerService.cashWithdrawal(request);
-        String message = receipt.pendingApproval()
-                ? "Cash withdrawal submitted for checker approval"
-                : "Cash withdrawal posted";
-        return ResponseEntity.ok(ApiResponse.success(receipt, message));
     }
 
     // === Vault Operations ===
