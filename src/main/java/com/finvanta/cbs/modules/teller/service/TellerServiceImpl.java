@@ -593,7 +593,11 @@ public class TellerServiceImpl implements TellerService {
         // The workflow re-execution path mutates state when the checker
         // approves. Mirrors the pattern in DepositAccountModuleServiceImpl.
         if (r.isPendingApproval()) {
-            String pendingNarration = resolveNarration(request) + " [PENDING APPROVAL]";
+            // Cap the combined narration at the column limit (500 chars). The
+            // user narration is already @Size(max=500); appending " [PENDING
+            // APPROVAL]" without truncation would overflow the column.
+            String pendingNarration = capNarration(
+                    resolveNarration(request) + " [PENDING APPROVAL]");
             DepositTransaction pendingTxn = persistTxn(
                     acct, till, r, request,
                     acct.getLedgerBalance(), acct.getLedgerBalance(),
@@ -716,7 +720,10 @@ public class TellerServiceImpl implements TellerService {
 
         // 7. Maker-checker pending: balances UNCHANGED, no denom rows.
         if (r.isPendingApproval()) {
-            String pendingNarration = resolveWithdrawalNarration(request) + " [PENDING APPROVAL]";
+            // Cap the combined narration at the column limit (500 chars). See
+            // mirroring comment on the deposit path for the rationale.
+            String pendingNarration = capNarration(
+                    resolveWithdrawalNarration(request) + " [PENDING APPROVAL]");
             DepositTransaction pendingTxn = persistWithdrawalTxn(
                     acct, till, r, request,
                     acct.getLedgerBalance(), acct.getLedgerBalance(),
@@ -996,12 +1003,38 @@ public class TellerServiceImpl implements TellerService {
      * a transaction narration is mandatory (TransactionRequest builder
      * enforces non-blank narration), so we synthesize one from the
      * mandatory {@code depositorName} field rather than failing.
+     *
+     * <p>The denomination breakdown is NOT appended to the narration -- it
+     * is already persisted in immutable {@link CashDenomination} rows linked
+     * by {@code transactionRef}. Encoding it into the narration risked
+     * overflowing the {@code deposit_transactions.narration VARCHAR(500)}
+     * column when combined with the user's own narration (up to 500 chars
+     * by Bean Validation) plus the {@code [PENDING APPROVAL]} marker on the
+     * maker-checker path.
      */
     private String resolveNarration(CashDepositRequest req) {
-        String base = (req.narration() != null && !req.narration().isBlank())
+        return (req.narration() != null && !req.narration().isBlank())
                 ? req.narration()
                 : "Cash deposit by " + req.depositorName();
-        return base + encodeDenominationSuffix(req.denominations());
+    }
+
+    /**
+     * Maximum length of the {@code deposit_transactions.narration} column.
+     * Mirrors the DDL: {@code narration VARCHAR(500)}.
+     */
+    private static final int NARRATION_COLUMN_LIMIT = 500;
+
+    /**
+     * Caps a narration string to the {@link #NARRATION_COLUMN_LIMIT} so that
+     * appending markers like {@code " [PENDING APPROVAL]"} to a user narration
+     * already at the {@code @Size(max=500)} limit cannot overflow the DB
+     * column. Returns the input unchanged when within the limit.
+     */
+    private static String capNarration(String narration) {
+        if (narration == null || narration.length() <= NARRATION_COLUMN_LIMIT) {
+            return narration;
+        }
+        return narration.substring(0, NARRATION_COLUMN_LIMIT);
     }
 
     /**
@@ -1296,45 +1329,16 @@ public class TellerServiceImpl implements TellerService {
         }
     }
 
-    /** Default narration for withdrawals. Mirrors {@link #resolveNarration}. */
+    /**
+     * Default narration for withdrawals. Mirrors {@link #resolveNarration}.
+     * Denomination breakdown is persisted separately in {@link CashDenomination}
+     * rows; it is NOT appended here to keep the combined narration within the
+     * {@code deposit_transactions.narration VARCHAR(500)} column limit.
+     */
     private String resolveWithdrawalNarration(CashWithdrawalRequest req) {
-        String base = (req.narration() != null && !req.narration().isBlank())
+        return (req.narration() != null && !req.narration().isBlank())
                 ? req.narration()
                 : "Cash withdrawal by " + req.beneficiaryName();
-        return base + encodeDenominationSuffix(req.denominations());
-    }
-
-    /**
-     * Encodes the denomination breakdown as a compact JSON suffix appended to
-     * the transaction narration. The suffix survives the round-trip through
-     * the {@code TransactionEngine} → {@code payloadSnapshot} → workflow
-     * approval → {@code applyApprovedTellerTransaction} path, where it is
-     * parsed back by {@link #decodeDenominationSuffix} to persist the
-     * deferred {@code CashDenomination} rows.
-     *
-     * <p>Format: {@code ##DENOMS:[{"d":"NOTE_500","c":5},{"d":"NOTE_100","c":3}]}
-     *
-     * <p>The {@code ##DENOMS:} marker is a teller-module convention that the
-     * engine passes through transparently as part of the narration string.
-     * The compact format (single-letter keys, no whitespace) minimizes the
-     * payload size within the VARCHAR(500) narration column.
-     */
-    private String encodeDenominationSuffix(
-            java.util.List<com.finvanta.cbs.modules.teller.dto.request.DenominationEntry> denominations) {
-        if (denominations == null || denominations.isEmpty()) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder(" ##DENOMS:[");
-        boolean first = true;
-        for (var entry : denominations) {
-            if (entry == null || (entry.unitCount() == 0 && entry.counterfeitCount() == 0)) continue;
-            if (!first) sb.append(',');
-            sb.append("{\"d\":\"").append(entry.denomination().name())
-              .append("\",\"c\":").append(entry.unitCount()).append('}');
-            first = false;
-        }
-        sb.append(']');
-        return sb.toString();
     }
 
     /**
