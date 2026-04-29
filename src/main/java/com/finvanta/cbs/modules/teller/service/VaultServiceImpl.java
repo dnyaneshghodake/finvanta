@@ -146,8 +146,18 @@ public class VaultServiceImpl implements VaultService {
         String tenantId = TenantContext.getCurrentTenant();
         String custodian = SecurityUtil.getCurrentUsername();
 
-        TellerCashMovement mov = movementRepository.findById(movementId)
-                .filter(m -> tenantId.equals(m.getTenantId()))
+        // CBS lock-then-check per CBS TRAN_LOCK / mirroring the idempotency
+        // dedupe pattern in TellerServiceImpl.cashDeposit (lines 562-578):
+        // acquire PESSIMISTIC_WRITE on the movement row FIRST, then verify
+        // status. This serializes two concurrent custodian-approval clicks
+        // on the SAME movement -- the first thread holds the row lock until
+        // commit; the second thread blocks, then re-reads the (now APPROVED)
+        // row and falls through the isPending() guard with a clean
+        // TELLER_TILL_INVALID_STATE error. Without this lock, both threads
+        // would pass isPending(), proceed to the vault/till lock acquisition,
+        // and only fail at @Version save time with an opaque 409
+        // VERSION_CONFLICT -- a poor operator UX for a known race.
+        TellerCashMovement mov = movementRepository.findAndLockById(tenantId, movementId)
                 .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
                         "Movement not found: " + movementId));
 
@@ -223,8 +233,11 @@ public class VaultServiceImpl implements VaultService {
         String tenantId = TenantContext.getCurrentTenant();
         String custodian = SecurityUtil.getCurrentUsername();
 
-        TellerCashMovement mov = movementRepository.findById(movementId)
-                .filter(m -> tenantId.equals(m.getTenantId()))
+        // CBS lock-then-check: same rationale as approveMovement -- prevents
+        // two concurrent custodians from both passing isPending() and racing
+        // to terminal states. PESSIMISTIC_WRITE on the movement row serializes
+        // approval/rejection attempts on the same movement.
+        TellerCashMovement mov = movementRepository.findAndLockById(tenantId, movementId)
                 .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
                         "Movement not found: " + movementId));
         if (!mov.isPending()) {

@@ -2,12 +2,17 @@ package com.finvanta.cbs.modules.teller.repository;
 
 import com.finvanta.cbs.modules.teller.domain.TellerCashMovement;
 
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
+
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -27,6 +32,27 @@ public interface TellerCashMovementRepository extends JpaRepository<TellerCashMo
     Optional<TellerCashMovement> findByMovementRef(
             @Param("tenantId") String tenantId,
             @Param("movementRef") String movementRef);
+
+    /**
+     * Acquires PESSIMISTIC_WRITE on the movement row before reading. MUST be
+     * used by {@code approveMovement} / {@code rejectMovement} so two
+     * concurrent custodians cannot both pass the {@code isPending()} check
+     * and double-apply balance changes. The first thread holds the row lock
+     * until commit; the second blocks, then re-reads the (now APPROVED)
+     * status and surfaces a clean {@code TELLER_TILL_INVALID_STATE} domain
+     * error rather than an opaque {@code OptimisticLockingFailureException}.
+     *
+     * <p>30s lock timeout per CBS TRAN_LOCK standard. JOIN FETCH branch
+     * matches the other read queries so subsequent {@code mov.getBranch()}
+     * dereferences work after the {@code @Transactional} boundary closes.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
+    @Query("SELECT m FROM TellerCashMovement m JOIN FETCH m.branch "
+            + "WHERE m.tenantId = :tenantId AND m.id = :id")
+    Optional<TellerCashMovement> findAndLockById(
+            @Param("tenantId") String tenantId,
+            @Param("id") Long id);
 
     /**
      * Pending movements at a branch awaiting vault custodian approval.
