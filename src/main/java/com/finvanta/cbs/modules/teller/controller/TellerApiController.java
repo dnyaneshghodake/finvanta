@@ -13,6 +13,8 @@ import com.finvanta.cbs.modules.teller.service.VaultService;
 
 import jakarta.validation.Valid;
 
+import java.math.BigDecimal;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -189,7 +191,7 @@ public class TellerApiController {
     @PostMapping("/till/close")
     @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<TellerTillResponse>> requestCloseTill(
-            @RequestParam java.math.BigDecimal countedBalance,
+            @RequestParam BigDecimal countedBalance,
             @RequestParam(required = false) String remarks) {
         var till = tellerService.requestCloseTill(countedBalance, remarks);
         String varianceMsg = till.getVarianceAmount() != null && till.getVarianceAmount().signum() != 0
@@ -243,7 +245,7 @@ public class TellerApiController {
     @PostMapping("/vault/open")
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Object>> openVault(
-            @RequestParam java.math.BigDecimal openingBalance) {
+            @RequestParam BigDecimal openingBalance) {
         var vault = vaultService.openVault(openingBalance);
         return ResponseEntity.ok(ApiResponse.success(vault, "Vault opened"));
     }
@@ -258,7 +260,7 @@ public class TellerApiController {
     @PostMapping("/vault/buy")
     @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Object>> requestBuyCash(
-            @RequestParam java.math.BigDecimal amount,
+            @RequestParam BigDecimal amount,
             @RequestParam(required = false) String remarks) {
         var mov = vaultService.requestBuyCash(amount, remarks);
         return ResponseEntity.ok(ApiResponse.success(mov, "Buy cash request submitted (PENDING custodian approval)"));
@@ -267,7 +269,7 @@ public class TellerApiController {
     @PostMapping("/vault/sell")
     @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Object>> requestSellCash(
-            @RequestParam java.math.BigDecimal amount,
+            @RequestParam BigDecimal amount,
             @RequestParam(required = false) String remarks) {
         var mov = vaultService.requestSellCash(amount, remarks);
         return ResponseEntity.ok(ApiResponse.success(mov, "Sell cash request submitted (PENDING custodian approval)"));
@@ -299,7 +301,7 @@ public class TellerApiController {
     @PostMapping("/vault/close")
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Object>> closeVault(
-            @RequestParam java.math.BigDecimal countedBalance,
+            @RequestParam BigDecimal countedBalance,
             @RequestParam(required = false) String remarks) {
         var vault = vaultService.closeVault(countedBalance, remarks);
         return ResponseEntity.ok(ApiResponse.success(vault, "Vault CLOSED"));
