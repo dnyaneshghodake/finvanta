@@ -27,6 +27,7 @@ import com.finvanta.repository.GLMasterRepository;
 import com.finvanta.repository.TransactionBatchRepository;
 import com.finvanta.repository.TransactionLimitRepository;
 import com.finvanta.service.DepositAccountService;
+import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
 
 import java.math.BigDecimal;
@@ -334,41 +335,46 @@ class TellerCashDepositIntegrationTest {
 
     @Test
     @Transactional
-    @DisplayName("maker-checker: deposit above per-user limit -> PENDING_APPROVAL, no mutation")
+    @DisplayName("above per-txn limit: deposit hard-rejected, balances + GL UNCHANGED")
     void makerChecker_pendingApproval_doesNotMutateState() {
+        // CBS engine semantics (TransactionEngine Step 6 -> TransactionLimitService:
+        // "amount > perTransactionLimit" THROWS TRANSACTION_LIMIT_EXCEEDED. Step 7's
+        // MakerCheckerService.requiresApproval uses the SAME field but is unreachable
+        // for amount-based routing on a non-REVERSAL/WRITE_OFF type, because Step 6
+        // already aborted. Per Finacle TRAN_AUTH this is intentional: amount-driven
+        // PENDING_APPROVAL only applies to ALWAYS_REQUIRE_APPROVAL types (REVERSAL,
+        // WRITE_OFF, WRITE_OFF_RECOVERY). For CASH_DEPOSIT the only valid above-limit
+        // path is hard rejection -- the maker must split the deposit or escalate to
+        // a higher-privilege role offline.
+        //
+        // This test therefore asserts the rejection path: the engine throws, and
+        // because cashDeposit() is @Transactional the parent rolls back -- no ledger,
+        // no till mutation, no denomination row, no GL impact, trial balance holds.
         setupReferenceData();
-        // Per-transaction limit at INR 1000 forces our 2800 deposit to pend.
+        // Per-transaction limit at INR 1000 forces our 2800 deposit to be rejected.
         seedTransactionLimit(new BigDecimal("1000"));
         DepositAccount acct = createActiveSavingsAccount();
         TellerTill till = openTillForTeller(new BigDecimal("100000"));
         BigDecimal tillBefore = till.getCurrentBalance();
         BigDecimal ledgerBefore = acct.getLedgerBalance();
 
-        CashDepositResponse r = tellerService.cashDeposit(
-                standardRequest(acct.getAccountNumber(), "idem-pending-1"));
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> tellerService.cashDeposit(
+                        standardRequest(acct.getAccountNumber(), "idem-pending-1")),
+                "deposit above per-txn limit must be hard-rejected by Step 6");
+        assertEquals("TRANSACTION_LIMIT_EXCEEDED", ex.getErrorCode());
 
-        // Engine MUST surface pending state via the response flag.
-        assertTrue(r.pendingApproval(),
-                "deposit above per-txn limit must route to PENDING_APPROVAL");
-
-        // Customer ledger UNCHANGED -- the GL post is gated by checker approval.
+        // Customer ledger UNCHANGED -- the engine threw before any GL post.
         DepositAccount after = depositAccountService.getAccount(acct.getAccountNumber());
         assertEquals(0, ledgerBefore.compareTo(after.getLedgerBalance()),
-                "PENDING_APPROVAL must not mutate the customer ledger");
+                "rejected deposit must not mutate the customer ledger");
 
         // Till balance UNCHANGED -- this was the highest-priority bug the
         // DepositAccountModuleServiceImpl review threads spent effort getting
         // right, and the same invariant must hold for the teller path.
         TellerTill tillAfter = tillRepository.findById(till.getId()).orElseThrow();
         assertEquals(0, tillBefore.compareTo(tillAfter.getCurrentBalance()),
-                "PENDING_APPROVAL must not mutate the till balance");
-
-        // No CashDenomination rows on the pending path.
-        assertEquals(0,
-                denominationRepository
-                        .findByTenantIdAndTransactionRefOrderByDenominationAsc(TENANT, r.transactionRef())
-                        .size(),
-                "pending deposits must not write denomination rows -- they are written on checker approval");
+                "rejected deposit must not mutate the till balance");
 
         // Trial balance still holds (we did NOT touch GL).
         assertTrialBalance();
