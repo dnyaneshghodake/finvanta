@@ -486,7 +486,123 @@ All paths are guarded by `hasRole("ADMIN")` on the JSP chain
 (`SecurityConfig.uiSecurityFilterChain`). REST API `@PreAuthorize`
 annotations on individual controller methods are the second-level gate.
 
-### 4.4 TELLER-Specific Capabilities
+### 4.4 MAKER-Specific Capabilities
+
+MAKER is the data-entry / transaction-initiation role. Cannot approve
+or verify their own work (segregation of duties enforced by the
+maker-checker service layer).
+
+**MAKER capability matrix** (verified against
+`SecurityConfig.uiSecurityFilterChain` lines 257-429):
+
+| Capability | Path | Roles allowed |
+|---|---|---|
+| Customer add / edit | `/customer/add`, `/customer/edit/**` | MAKER, ADMIN |
+| Document upload | `/customer/document/upload/**` | MAKER, ADMIN |
+| Document download | `/customer/document/download/**` | MAKER, CHECKER, ADMIN |
+| Loan apply | `/loan/apply` | MAKER, ADMIN |
+| Loan repayment / prepayment | `/loan/repayment/**`, `/loan/prepayment/**` | MAKER, ADMIN |
+| Loan fee | `/loan/fee/**` | MAKER, ADMIN |
+| Standing instruction register | `/loan/si/register` | MAKER, ADMIN |
+| Deposit accounts list | `/deposit/accounts` | MAKER, CHECKER, ADMIN |
+| Deposit view / statement | `/deposit/view/**`, `/deposit/statement/**` | MAKER, CHECKER, ADMIN |
+| Deposit / withdraw / transfer | `/deposit/deposit/**`, `/deposit/withdraw/**`, `/deposit/transfer` | MAKER, ADMIN |
+| Teller cash operations | `/teller/**` (catch-all) | TELLER, MAKER, ADMIN |
+| Teller vault dashboard / BUY / SELL | `/teller/vault/**` | TELLER, MAKER, CHECKER, ADMIN |
+
+**MAKER CANNOT access:**
+- Any `/admin/**` path (branch switch, user mgmt, product config, limits, charges)
+- `/batch/**` (EOD, transaction batches)
+- `/calendar/**` (day control)
+- `/workflow/**`, `/reconciliation/**`, `/reports/**` (CHECKER/ADMIN only)
+- `/deposit/open`, `/deposit/pipeline`, `/deposit/activate/**`, `/deposit/close/**`, `/deposit/reversal/**` (CHECKER/ADMIN only)
+- `/deposit/freeze/**`, `/deposit/unfreeze/**` (ADMIN only)
+- `/customer/deactivate/**` (ADMIN only)
+- `/customer/verify-kyc/**` (CHECKER/ADMIN only)
+- Any loan verify / approve / reject / disburse / write-off / collateral / document path (CHECKER/ADMIN only)
+- `/audit/**` (AUDITOR/ADMIN only)
+- Teller supervisor paths (`/teller/till/pending`, `/teller/till/*/approve`, `/teller/vault/open`, `/teller/vault/close`, etc.) — CHECKER/ADMIN only
+
+---
+
+### 4.5 CHECKER-Specific Capabilities
+
+CHECKER is the verification / approval role. Cannot create new records
+(segregation of duties). Acts as vault custodian and till supervisor in
+the teller module.
+
+**CHECKER capability matrix:**
+
+| Capability | Path | Roles allowed |
+|---|---|---|
+| KYC verify | `/customer/verify-kyc/**` | CHECKER, ADMIN |
+| Document verify / download | `/customer/document/verify/**`, `/customer/document/download/**` | CHECKER, ADMIN |
+| Loan verify / approve / reject | `/loan/verify/**`, `/loan/approve/**`, `/loan/reject/**` | CHECKER, ADMIN |
+| Loan create-account / disburse | `/loan/create-account/**`, `/loan/disburse/**` | CHECKER, ADMIN |
+| Loan reversal / collateral / document | `/loan/reversal/**`, `/loan/collateral/**`, `/loan/document/**` | CHECKER, ADMIN |
+| Loan disburse-tranche | `/loan/disburse-tranche/**` | CHECKER, ADMIN |
+| Loan SI approve / reject / pause / resume / cancel / amend / dashboard | `/loan/si/approve/**`, `/si/reject/**`, `/si/pause/**`, `/si/resume/**`, `/si/cancel/**`, `/si/amend/**`, `/si/dashboard` | CHECKER, ADMIN |
+| Workflow approvals | `/workflow/**` | CHECKER, ADMIN |
+| Reconciliation / reports | `/reconciliation/**`, `/reports/**` | CHECKER, ADMIN |
+| Deposit pipeline / open / activate / close / reversal | `/deposit/pipeline`, `/deposit/open`, `/deposit/activate/**`, `/deposit/close/**`, `/deposit/reversal/**` | CHECKER, ADMIN |
+| Deposit accounts / view / statement | `/deposit/accounts`, `/deposit/view/**`, `/deposit/statement/**` | MAKER, CHECKER, ADMIN |
+| Teller till supervisor (pending, approve, reject) | `/teller/till/pending`, `/teller/till/*/approve`, `/approve-close`, `/reject*` | CHECKER, ADMIN |
+| Teller vault custodian (open, close, movement approve/reject) | `/teller/vault/open`, `/vault/close`, `/vault/pending`, `/vault/movement/*/approve`, `/vault/movement/*/reject` | CHECKER, ADMIN |
+| Teller vault dashboard / BUY / SELL | `/teller/vault/**` | TELLER, MAKER, CHECKER, ADMIN |
+
+**CHECKER CANNOT access:**
+- Any `/admin/**` path
+- `/batch/**` (EOD, transaction batches) — ADMIN only
+- `/calendar/**` — ADMIN only
+- `/customer/add`, `/customer/edit/**` — MAKER/ADMIN only
+- `/customer/deactivate/**` — ADMIN only
+- `/deposit/deposit/**`, `/deposit/withdraw/**`, `/deposit/transfer` — MAKER/ADMIN only (CHECKER excluded per segregation of duties)
+- `/deposit/freeze/**`, `/deposit/unfreeze/**` — ADMIN only
+- `/loan/apply`, `/loan/repayment/**`, `/loan/prepayment/**`, `/loan/fee/**` — MAKER/ADMIN only
+- `/loan/write-off/**`, `/loan/restructure/**`, `/loan/moratorium/**` — ADMIN only
+- `/teller/cash-deposit`, `/teller/cash-withdrawal`, `/teller/till/open`, `/teller/till/close` — TELLER/MAKER/ADMIN only (CHECKER excluded from initiating cash transactions per segregation of duties)
+- `/audit/**` — AUDITOR/ADMIN only
+
+---
+
+### 4.6 AUDITOR-Specific Capabilities
+
+AUDITOR is a read-only role for internal audit and compliance
+inspection. NOT a transactional role — excluded from
+`SecurityUtil.getCurrentUserRole()` so it cannot bypass transaction
+limits. Uses `SecurityUtil.hasRole("AUDITOR")` for access-control
+decisions (`SecurityUtil.java:201-210`).
+
+**AUDITOR capability matrix:**
+
+| Capability | Path | Roles allowed |
+|---|---|---|
+| Audit trail access | `/audit/**` | AUDITOR, ADMIN |
+| Teller till inquiry (REST only) | `/api/v2/teller/till/me` | TELLER, MAKER, CHECKER, ADMIN, AUDITOR |
+
+**AUDITOR branch isolation:** exempt from branch filtering
+(`BranchAccessValidator.java:82` — same exemption as ADMIN). AUDITOR
+can read data across all branches for compliance inspection.
+
+**AUDITOR CANNOT access:**
+- Any mutation endpoint (deposit, withdraw, transfer, loan apply, customer create/edit, till open/close, cash deposit/withdrawal)
+- Any approval endpoint (workflow, till approve, vault approve)
+- Any admin endpoint (`/admin/**`, `/batch/**`, `/calendar/**`)
+- Any reporting endpoint (`/reports/**`, `/reconciliation/**`) — CHECKER/ADMIN only
+
+**AUDITOR login note:** `SecurityUtil.getCurrentUserRole()` returns
+`null` for AUDITOR-only users (`SecurityUtil.java:77` excludes AUDITOR
+from the `leastPrivilegeFirst` list). This is intentional — it prevents
+an AUDITOR from accidentally passing `TransactionLimitService`
+validation (which would silently uncap all limits via the "no limit
+configured" fallback). If the BFF needs to check AUDITOR access, use
+the `role` field from the `/auth/token` response or the `role.role`
+field from `/context/bootstrap` — both carry `"AUDITOR"` directly from
+`user.getRole().name()` (`AuthController.java:437`).
+
+---
+
+### 4.7 TELLER-Specific Capabilities
 
 TELLER login is functionally identical to MAKER/CHECKER/ADMIN —
 `POST /api/v1/auth/token` with the teller's username/password returns
