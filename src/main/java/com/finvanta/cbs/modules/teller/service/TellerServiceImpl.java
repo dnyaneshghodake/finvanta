@@ -201,12 +201,60 @@ public class TellerServiceImpl implements TellerService {
         // The unique index idx_till_teller_date is the DB safety net; this
         // application-level check produces a friendly error before the
         // constraint violation fires.
+        //
+        // CBS Tier-1 exception per RBI Internal Controls: a till that was
+        // REJECTED at open (supervisor rejected the PENDING_OPEN request via
+        // rejectTillOpen -- openedAt is null, status is CLOSED) can be
+        // replaced by a new till-open attempt on the same business date.
+        // Rationale:
+        //   1. The rejected till never transitioned to OPEN, never posted any
+        //      GL entry, never moved any cash -- there is zero financial or
+        //      subledger impact to replacing it.
+        //   2. The audit trail is preserved: rejectTillOpen already logged
+        //      TILL_OPEN_REJECTED to audit_logs with the supervisor identity
+        //      and rejection reason. Deleting the teller_tills row does NOT
+        //      erase that log.
+        //   3. Without this path, a teller whose morning till-open was rejected
+        //      would be locked out for the entire business date -- unacceptable
+        //      per RBI Fair Practices Code (the bank must allow the teller to
+        //      correct the issue and re-submit, e.g. with a lower opening
+        //      balance the supervisor will approve).
+        //
+        // Any CLOSED till with openedAt != null (i.e., the teller actually
+        // worked a shift and signed off) still blocks duplicate opens -- the
+        // unique index and this guard agree on that case. isRejectedAtOpen()
+        // is the single discriminator; see TellerTill.isRejectedAtOpen Javadoc
+        // for why openedAt is the authoritative signal.
         tillRepository.findByTellerAndDate(tenantId, tellerUser, businessDate)
                 .ifPresent(t -> {
-                    throw new BusinessException(CbsErrorCodes.TELLER_TILL_DUPLICATE,
-                            "Till already exists for teller " + tellerUser
-                                    + " on " + businessDate
-                                    + " (status: " + t.getStatus() + ")");
+                    if (t.isRejectedAtOpen()) {
+                        // Delete the rejected till row so the new create can
+                        // succeed under the unique index. The audit_logs row
+                        // from rejectTillOpen survives (audit_logs is a
+                        // separate table with its own INSERT-ONLY discipline).
+                        log.info("CBS Teller: deleting rejected-at-open till {} for teller {} "
+                                + "on {} to permit retry (rejected by {} at {})",
+                                t.getId(), tellerUser, businessDate,
+                                t.getClosedBySupervisor(), t.getClosedAt());
+                        auditService.logEventInline(
+                                "TellerTill", t.getId(), "REJECTED_TILL_PURGED",
+                                "CLOSED", null, "TELLER",
+                                "Rejected till " + t.getId() + " for teller " + tellerUser
+                                        + " on " + businessDate + " purged to permit retry. "
+                                        + "Original rejection by: " + t.getClosedBySupervisor()
+                                        + " at " + t.getClosedAt());
+                        tillRepository.delete(t);
+                        // Flush so the subsequent save() does not race the delete
+                        // against the unique index -- Hibernate would otherwise
+                        // batch both statements and the INSERT could hit the DB
+                        // before the DELETE commits on SQL Server.
+                        tillRepository.flush();
+                    } else {
+                        throw new BusinessException(CbsErrorCodes.TELLER_TILL_DUPLICATE,
+                                "Till already exists for teller " + tellerUser
+                                        + " on " + businessDate
+                                        + " (status: " + t.getStatus() + ")");
+                    }
                 });
 
         TellerTill till = new TellerTill();

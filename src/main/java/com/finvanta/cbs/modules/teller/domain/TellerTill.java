@@ -158,4 +158,30 @@ public class TellerTill extends BaseEntity {
     public boolean isSuspended() {
         return status == TellerTillStatus.SUSPENDED;
     }
+
+    /**
+     * CBS Tier-1 rejection detector per RBI Internal Controls: a till is
+     * "rejected at open" when it reached terminal CLOSED status WITHOUT ever
+     * transitioning through OPEN -- i.e., a PENDING_OPEN that the supervisor
+     * rejected via {@code rejectTillOpen}. Such a till:
+     * <ul>
+     *   <li>Has {@code openedAt == null} (never transitioned to OPEN).</li>
+     *   <li>Has {@code closedAt != null} and {@code closedBySupervisor != null}
+     *       (the reject handler stamps both -- see
+     *       {@code TellerServiceImpl.rejectTillOpen}).</li>
+     *   <li>Never posted any GL entry or moved any cash (no financial impact).</li>
+     * </ul>
+     *
+     * <p>This predicate is the safe discriminator used by
+     * {@code TellerServiceImpl.openTill} to allow a teller to retry after a
+     * rejection: the rejected row is deleted (audit trail is preserved in
+     * {@code audit_logs}) and a fresh till is created. A till that went
+     * OPEN then was properly CLOSED at end-of-shift has {@code openedAt != null}
+     * and therefore returns false from this predicate -- the duplicate-till
+     * guard still blocks reopening within the same business date, which is
+     * the correct RBI Internal Controls behavior.
+     */
+    public boolean isRejectedAtOpen() {
+        return status == TellerTillStatus.CLOSED && openedAt == null;
+    }
 }
