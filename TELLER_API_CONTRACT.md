@@ -193,6 +193,25 @@ Posts a customer cash deposit with denomination breakdown.
   forward compatibility; BFF clients should treat a `true` value as "pending
   checker approval; ledger and till UNCHANGED" if/when it appears.
 
+**Response field behaviour when `pendingApproval` is `true`
+(forward-compatibility contract):**
+
+| Field | Value on pending | Txn360 lookup behaviour |
+|---|---|---|
+| `transactionRef` | server-generated (starts with `TXN-`) | resolves to a row in `deposit_transactions` with `journal_entry_id IS NULL` — treated as a PENDING placeholder, not a 404 |
+| `voucherNumber` | `null` — the engine allocates voucher numbers only on POSTED journal entries (Step 8 of `TransactionEngine`) | `/txn360/voucher/{null}` is not a valid lookup; BFF MUST NOT query Txn360 by voucher until `pendingApproval` flips to `false` on approval |
+| `balanceBefore` / `balanceAfter` | both equal to the account's CURRENT ledger balance (not mutated) — pending deposits/withdrawals do not touch the ledger | same — Txn360 shows the unchanged balance on the pending row |
+| `tillBalanceAfter` | current till balance (not mutated) | reflects the teller's live cash-in-hand |
+| `denominations[]` | empty `[]` — denomination rows are persisted only on POSTED deposits (the pending path skips `persistDenominations`) | Txn360 denomination drill-down returns empty until approval |
+| `ctrTriggered` | derived from the stored request amount | stable across retries |
+
+The PENDING row is committed so that retry dedup works (same
+idempotency key returns the pending receipt). When the checker later
+approves, `TransactionReExecutionService` posts the GL, allocates the
+voucher, and updates the same `transactionRef` row — at that point
+`voucherNumber` becomes non-null and `/txn360/voucher/{voucherNumber}`
+becomes queryable.
+
 **Errors:**
 - `CBS-TELLER-001` (409) — till not open for today
 - `CBS-TELLER-004` (400) — denomination sum ≠ amount
@@ -344,8 +363,16 @@ Rejects a PENDING_CLOSE till (recoverable: returns to OPEN, clears variance).
 
 ## Vault Operations
 
-All vault endpoints return DTOs (`VaultPositionResponse` / `TellerCashMovementResponse`)
-via `VaultMapper`. Raw JPA entity exposure has been eliminated.
+All vault endpoints return DTOs (`VaultPositionResponse` /
+`TellerCashMovementResponse`) via `VaultMapper`. Raw JPA entity exposure
+has been eliminated. The endpoint signatures below always name the DTO
+(`VaultPositionResponse`, `TellerCashMovementResponse`) and never the JPA
+entity (`VaultPosition`, `TellerCashMovement`) — if an older version of
+this doc showed entity names in signatures, that was a documentation bug,
+not a wire-format change; the wire format has always been the DTO.
+ArchUnit rule `cashDenominationRepository_onlyAccessedFromTellerService`
+and the entity-import rule on `TellerApiController` enforce this at
+build time.
 
 ### VaultPositionResponse shape
 
@@ -457,7 +484,57 @@ Closes the vault after all tills are CLOSED. Custodian enters physical count.
 ## Idempotency Contract
 
 Both `/cash-deposit` and `/cash-withdrawal` require a non-blank
-`idempotencyKey` (UUID recommended). The engine + service layer guarantee:
+`idempotencyKey` (UUID v4 recommended). Per RBI Master Direction on
+Digital Payment Security Controls §6.2: cash-posting idempotency is
+stricter than account transfers — a double-post against physical cash
+creates an EOD till variance and an RBI IT Governance Direction 2023
+§8.3 audit finding, so every client MUST generate a fresh UUID per
+logical request and reuse it verbatim on every retry of that request.
+
+### Transport
+
+- **Body field.** The key is carried on the request body (`idempotencyKey`
+  on `CashDepositRequest` / `CashWithdrawalRequest` records), NOT as an
+  `X-Idempotency-Key` header. The v2 teller endpoints do not read the
+  header. `@NotBlank` validation rejects missing / empty keys at the
+  controller boundary with HTTP 400.
+- **Character set / length.** The field accepts up to 100 chars
+  (`@Size(max=100)`); UUID v4 is 36 chars. No format regex is enforced,
+  but BFF SHOULD mint UUIDs to avoid collisions.
+- **Per-render minting (JSP channel).** The JSP teller screens mint a
+  fresh UUID on the server for every page render and embed it as a
+  hidden form field; this is the same contract the BFF/React channel
+  must implement client-side per logical action.
+
+### Scope of uniqueness
+
+- **Per `(tenant_id, idempotency_key)`** — global across all modules
+  (teller, CASA, loan, FD, clearing). Enforced at TWO tiers:
+  - Engine tier: `idempotency_registry` unique index on
+    `(tenant_id, idempotency_key)`.
+  - Module tier: `deposit_transactions` has
+    `UNIQUE (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL`.
+- A key collision across modules (e.g. a BFF accidentally reused a
+  loan-disbursement key on a teller deposit) returns the prior result
+  verbatim — callers should treat UUID v4 randomness as the isolation
+  mechanism.
+
+### TTL / retention
+
+- **Keys are retained indefinitely.** No TTL on
+  `idempotency_registry`, no cleanup job. Per RBI Audit retention
+  (10 years minimum for financial transactions), keys must survive for
+  the full audit retention window; the registry table is append-only
+  beyond that.
+- Storage growth is bounded (one row per financial transaction) and is
+  covered by the same archival policy as `deposit_transactions` — no
+  separate retention policy applies to the idempotency layer.
+- BFF retry semantics: retry for up to 24 hours on network / 5xx
+  failures with the same key; beyond that mint a new key (the key on
+  the rejected transaction stays on `idempotency_registry` with a
+  terminal-state result).
+
+### Retry semantics (reachable outcomes)
 
 1. **Lock-then-check ordering.** The service acquires PESSIMISTIC_WRITE on
    the account and till rows BEFORE checking the idempotency registry. This
@@ -482,6 +559,12 @@ Both `/cash-deposit` and `/cash-withdrawal` require a non-blank
    as `REJECTED_TILL_PURGED`) and creates a fresh PENDING_OPEN. The
    `CBS-TELLER-010` duplicate guard still blocks retry on any CLOSED
    till with `openedAt != null` (a till that actually worked a shift).
+5. **Maker-checker re-execution appends `_APPROVED`.** Structurally
+   unreachable for teller cash today (see "Maker-checker model"
+   section), but if/when a checker-approved teller transaction flows
+   through `TransactionReExecutionService`, the engine appends
+   `_APPROVED` to the original key so the re-execution doesn't collide
+   with the pending registry row.
 
 ---
 
@@ -518,6 +601,26 @@ type IndianCurrencyDenomination =
   | 'NOTE_50'   | 'NOTE_20'  | 'NOTE_10'  | 'NOTE_5'
   | 'COIN_BUCKET';
 ```
+
+### Denomination row shape — request vs response (deliberate asymmetry)
+
+The `denominations[]` array has a DIFFERENT shape on request and
+response. This is intentional and BFF consumers MUST NOT deduplicate
+into a single schema:
+
+| Field | Request row | Response row | Why |
+|---|---|---|---|
+| `denomination` | ✅ required | ✅ echoed | enum key |
+| `unitCount` | ✅ required (long ≥ 0) | ✅ echoed | # of pieces tendered / paid out |
+| `counterfeitCount` | ✅ required (long ≥ 0) | ✅ echoed on deposit, always 0 on withdrawal | FICN flag; rejected at boundary for withdrawals |
+| `totalValue` | ❌ NOT on request | ✅ server-computed INR amount | `denomination.value() * unitCount`, pre-computed so BFF / receipt slip can render without reimplementing the enum math |
+
+Rationale for the extra field: the request cannot trust the client to
+compute `totalValue` — the server MUST compute it from the enum
+`value()` so that a tampered request cannot overstate the rupee
+amount. The response carries the server-computed value so the BFF
+receipt slip renders the same figure the GL posted. Two schemas,
+`DenominationEntry` (request) and `DenominationLine` (response).
 
 ## Error Code Reference
 
