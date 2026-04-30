@@ -82,6 +82,37 @@ import org.springframework.transaction.annotation.Transactional;
  *       INR require either {@code panNumber} or {@code form60Reference}.
  *       Rejected at the boundary so the AML reporting path is never bypassed.</li>
  * </ul>
+ *
+ * <p><b>Maker-checker routing for cash transactions — deliberate design.</b>
+ * Above-limit {@code CASH_DEPOSIT} and {@code CASH_WITHDRAWAL} requests are
+ * HARD-REJECTED with {@code TRANSACTION_LIMIT_EXCEEDED} at {@code TransactionEngine}
+ * Step 6; they are NOT routed to maker-checker via the PENDING_APPROVAL workflow.
+ * Rationale per RBI Internal Controls and Finacle TRAN_AUTH:
+ * <ul>
+ *   <li>The customer is physically at the counter; a "pending approval" queue
+ *       is not appropriate — the teller must either post within their limit or
+ *       escalate to a higher-role operator who posts directly.</li>
+ *   <li>{@code MakerCheckerService.ALWAYS_REQUIRE_APPROVAL} is limited to
+ *       {@code REVERSAL}, {@code WRITE_OFF}, and {@code WRITE_OFF_RECOVERY} —
+ *       type-based routing for high-risk operations that undo committed state.
+ *       The teller module never posts any of these types, so the engine's
+ *       maker-checker gate (Step 7) is structurally unreachable for this module.</li>
+ *   <li>{@code TransactionEngine} Step 6 and Step 7 both compare against the
+ *       same {@code TransactionLimit.perTransactionLimit} column. Step 6 fires
+ *       first and throws, so Step 7 is never evaluated for cash types.</li>
+ * </ul>
+ * The {@code if (r.isPendingApproval())} branches in {@link #cashDeposit} and
+ * {@link #cashWithdrawal} are therefore defensive scaffolding — they are
+ * correct if the configuration ever changes (e.g. {@code CASH_DEPOSIT} added
+ * to {@code ALWAYS_REQUIRE_APPROVAL}) but currently not reached. Similarly
+ * {@link #applyApprovedTellerTransaction} is wired into {@code WorkflowController}
+ * for completeness but will only exercise under the same configuration change.
+ *
+ * <p>Supervisor maker-checker (till open/close, vault movement approve/reject,
+ * vault open ≠ close) is a SEPARATE mechanism enforced inline in this service
+ * and in {@code VaultServiceImpl} via explicit {@code WF_SELF_APPROVAL} checks.
+ * That mechanism is fully active and independent of the engine's PENDING_APPROVAL
+ * workflow.
  */
 @Service
 public class TellerServiceImpl implements TellerService {
@@ -530,6 +561,17 @@ public class TellerServiceImpl implements TellerService {
             String makerUserId,
             TransactionResult result,
             LocalDate businessDate) {
+        // CBS NOTE (reachability): this method is invoked by
+        // WorkflowController.approve() only when a TELLER-sourced workflow
+        // reaches ApprovalStatus.APPROVED. With the current engine
+        // configuration no CASH_DEPOSIT or CASH_WITHDRAWAL ever creates such
+        // a workflow — see class Javadoc. The method is wired end-to-end so
+        // the path is correct the moment the bank adds a teller-sourced type
+        // to MakerCheckerService.ALWAYS_REQUIRE_APPROVAL (e.g., a future
+        // CASH_REVERSAL). The maker-checker guard itself is enforced upstream
+        // in ApprovalWorkflowService.approve() line 113 ("WORKFLOW_SELF_APPROVAL")
+        // before this method is called — not here.
+        //
         // CBS: This method is called by WorkflowController.approve() after
         // TransactionReExecutionService has posted the GL for a TELLER-sourced
         // transaction. It must:
@@ -747,6 +789,15 @@ public class TellerServiceImpl implements TellerService {
         // balances UNCHANGED. Till NOT mutated, NO CashDenomination rows.
         // The workflow re-execution path mutates state when the checker
         // approves. Mirrors the pattern in DepositAccountModuleServiceImpl.
+        //
+        // CBS NOTE: with the current engine configuration this branch is
+        // structurally unreachable for CASH_DEPOSIT — Step 6 hard-rejects
+        // above-limit amounts with TRANSACTION_LIMIT_EXCEEDED before Step 7
+        // can route to PENDING_APPROVAL (both use the same perTransactionLimit
+        // field, and CASH_DEPOSIT is not in MakerCheckerService.ALWAYS_REQUIRE_APPROVAL).
+        // See class Javadoc for the full rationale. Kept as defensive
+        // scaffolding so the teller service is correct if the engine's
+        // routing rules change in the future without requiring a module rewrite.
         if (r.isPendingApproval()) {
             // Cap the combined narration at the column limit (500 chars). The
             // user narration is already @Size(max=500); appending " [PENDING
@@ -894,6 +945,10 @@ public class TellerServiceImpl implements TellerService {
         boolean ctrTriggered = request.amount().compareTo(CTR_PAN_THRESHOLD) >= 0;
 
         // 7. Maker-checker pending: balances UNCHANGED, no denom rows.
+        // CBS NOTE: see the mirroring comment on cashDeposit — this branch is
+        // structurally unreachable for CASH_WITHDRAWAL under current engine
+        // configuration (Step 6 hard-reject fires before Step 7 can route to
+        // PENDING_APPROVAL). Kept as defensive scaffolding.
         if (r.isPendingApproval()) {
             // Cap the combined narration at the column limit (500 chars). See
             // mirroring comment on the deposit path for the rationale.

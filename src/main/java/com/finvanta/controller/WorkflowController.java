@@ -112,6 +112,18 @@ public class WorkflowController {
                                 // "tillId" that identifies the originating till. The till
                                 // balance must be incremented (deposit) or decremented
                                 // (withdrawal) alongside the customer ledger.
+                                //
+                                // CBS NOTE (reachability): under the current engine
+                                // configuration this branch is not exercised — teller cash
+                                // transactions are either posted directly or hard-rejected
+                                // at TransactionEngine Step 6 with TRANSACTION_LIMIT_EXCEEDED;
+                                // none flow into a PENDING_APPROVAL workflow. See
+                                // TellerServiceImpl class Javadoc for the deliberate design
+                                // rationale. Kept wired so the path remains correct the
+                                // moment the bank adds a teller-sourced type (e.g. CASH_REVERSAL)
+                                // to MakerCheckerService.ALWAYS_REQUIRE_APPROVAL.
+                                // The maker ≠ checker guard fires upstream in
+                                // ApprovalWorkflowService.approve() — no additional check here.
                                 String accountRef = root.get("accountReference").asText();
                                 java.math.BigDecimal amount = new java.math.BigDecimal(root.get("amount").asText());
                                 String txnType = root.get("transactionType").asText();
