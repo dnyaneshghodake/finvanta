@@ -64,7 +64,6 @@ public class LoanController {
     private final StandingInstructionRepository siRepository;
     private final StandingInstructionServiceImpl siService;
     private final CollateralRepository collateralRepository;
-    private final LoanDocumentRepository documentRepository;
 
     public LoanController(
             LoanApplicationService applicationService,
@@ -76,6 +75,7 @@ public class LoanController {
             BusinessDateService businessDateService,
             CustomerRepository customerRepository,
             BranchRepository branchRepository,
+            CollateralRepository collateralRepository,
             LoanDocumentRepository documentRepository,
             LoanTransactionRepository transactionRepository,
             LoanAccountRepository accountRepository,
@@ -94,6 +94,7 @@ public class LoanController {
         this.businessDateService = businessDateService;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
+        this.collateralRepository = collateralRepository;
         this.documentRepository = documentRepository;
         this.transactionRepository = transactionRepository;
         this.accountRepository = accountRepository;
