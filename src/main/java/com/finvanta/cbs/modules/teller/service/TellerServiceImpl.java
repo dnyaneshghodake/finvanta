@@ -1089,6 +1089,11 @@ public class TellerServiceImpl implements TellerService {
                     "Account " + acct.getAccountNumber()
                             + " reactivated via teller cash deposit of INR " + amount);
         }
+        // CBS audit trail: stamp the actor who mutated the account. Mirrors
+        // applyApprovedTellerTransaction (line 619). Without this the account
+        // row's updatedBy would remain whoever last touched the account, hiding
+        // the teller who posted the cash deposit.
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
     }
 
@@ -1137,6 +1142,10 @@ public class TellerServiceImpl implements TellerService {
         txn.setJournalEntryId(r.getJournalEntryId());
         txn.setIdempotencyKey(req.idempotencyKey());
         txn.setTenantId(tenantId);
+        // CBS audit trail: every BaseEntity carries the originating actor.
+        // For teller cash deposits the actor is the teller who owns the till.
+        txn.setCreatedBy(till.getTellerUserId());
+        txn.setUpdatedBy(till.getTellerUserId());
         return transactionRepository.save(txn);
     }
 
@@ -1150,6 +1159,7 @@ public class TellerServiceImpl implements TellerService {
     private void persistDenominations(
             TellerTill till, CashDepositRequest req, String transactionRef,
             LocalDate businessDate, String tenantId) {
+        String tellerUser = till.getTellerUserId();
         Map<IndianCurrencyDenomination, DenominationValidator.MergedRow> merged =
                 denominationValidator.coalesce(req.denominations());
         for (Map.Entry<IndianCurrencyDenomination, DenominationValidator.MergedRow> e
@@ -1169,6 +1179,11 @@ public class TellerServiceImpl implements TellerService {
             // genuine tender. Defensive: ensure counterfeit fields are zero/false.
             cd.setCounterfeitFlag(false);
             cd.setCounterfeitCount(null);
+            // CBS audit trail: every BaseEntity row carries the actor who
+            // inserted it. CashDenomination is INSERT-ONLY, so createdBy and
+            // updatedBy are both the originating teller.
+            cd.setCreatedBy(tellerUser);
+            cd.setUpdatedBy(tellerUser);
             denominationRepository.save(cd);
         }
     }
@@ -1432,6 +1447,8 @@ public class TellerServiceImpl implements TellerService {
                         .subtract(acct.getHoldAmount())
                         .subtract(acct.getUnclearedAmount()));
         acct.setLastTransactionDate(businessDate);
+        // CBS audit trail: stamp the actor. Mirrors applyDepositToAccount.
+        acct.setUpdatedBy(SecurityUtil.getCurrentUsername());
         accountRepository.save(acct);
     }
 
@@ -1471,6 +1488,10 @@ public class TellerServiceImpl implements TellerService {
         txn.setIdempotencyKey(req.idempotencyKey());
         txn.setChequeNumber(req.chequeNumber());
         txn.setTenantId(tenantId);
+        // CBS audit trail: mirror persistTxn (deposit). Originating actor is
+        // the teller who owns the till.
+        txn.setCreatedBy(till.getTellerUserId());
+        txn.setUpdatedBy(till.getTellerUserId());
         return transactionRepository.save(txn);
     }
 
@@ -1483,6 +1504,7 @@ public class TellerServiceImpl implements TellerService {
     private void persistWithdrawalDenominations(
             TellerTill till, CashWithdrawalRequest req, String transactionRef,
             LocalDate businessDate, String tenantId) {
+        String tellerUser = till.getTellerUserId();
         Map<IndianCurrencyDenomination, DenominationValidator.MergedRow> merged =
                 denominationValidator.coalesce(req.denominations());
         for (Map.Entry<IndianCurrencyDenomination, DenominationValidator.MergedRow> e
@@ -1500,6 +1522,9 @@ public class TellerServiceImpl implements TellerService {
             cd.setDirection("OUT"); // cash withdrawal = outflow at the till
             cd.setCounterfeitFlag(false);
             cd.setCounterfeitCount(null);
+            // CBS audit trail: mirror the deposit-side persistDenominations.
+            cd.setCreatedBy(tellerUser);
+            cd.setUpdatedBy(tellerUser);
             denominationRepository.save(cd);
         }
     }

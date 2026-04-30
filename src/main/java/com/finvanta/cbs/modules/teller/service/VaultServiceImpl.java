@@ -122,6 +122,14 @@ public class VaultServiceImpl implements VaultService {
     public VaultPosition getMyBranchVault() {
         String tenantId = TenantContext.getCurrentTenant();
         Long branchId = SecurityUtil.getCurrentUserBranchId();
+        // Mirrors openVault() at line 83-85: a principal with no branch
+        // assignment cannot have a vault context. Fail fast with a clear
+        // domain error instead of letting the JPQL clause `branch.id = NULL`
+        // silently produce a misleading "no vault open" result.
+        if (branchId == null) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "User has no branch assignment; cannot resolve branch vault");
+        }
         LocalDate businessDate = businessDateService.getCurrentBusinessDate();
         return vaultRepository.findByBranchAndDate(tenantId, branchId, businessDate)
                 .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
@@ -184,6 +192,25 @@ public class VaultServiceImpl implements VaultService {
                 .findAndLockByTellerAndDate(tenantId, mov.getRequestedBy(), businessDate)
                 .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_NOT_OPEN,
                         "Till not found for teller " + mov.getRequestedBy()));
+
+        // CBS Tier-1 invariant per RBI Internal Controls: a CLOSED till or
+        // CLOSED vault cannot accept further mutations. If the teller closed
+        // their till (with a counted-balance + variance) between movement
+        // request and custodian approval, mutating currentBalance now would
+        // invalidate the variance the supervisor signed off on. Same for the
+        // vault — a CLOSED vault has been reconciled. Mirrors the guard in
+        // TellerServiceImpl.applyApprovedTellerTransaction at line 589-595.
+        if (!till.isOpen()) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "Till for teller " + mov.getRequestedBy() + " is " + till.getStatus()
+                            + ". Cannot apply vault movement to a non-OPEN till. "
+                            + "Reject this movement; the teller must reopen a till.");
+        }
+        if (!vault.isOpen()) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "Vault is " + vault.getStatus()
+                            + ". Cannot apply movement to a non-OPEN vault.");
+        }
 
         if (mov.isBuy()) {
             // Vault → till: vault decrements, till increments.
@@ -268,6 +295,14 @@ public class VaultServiceImpl implements VaultService {
     public List<TellerCashMovement> getPendingMovements() {
         String tenantId = TenantContext.getCurrentTenant();
         Long branchId = SecurityUtil.getCurrentUserBranchId();
+        // Mirrors listPendingSupervisorTills() in TellerServiceImpl (line 341-345):
+        // a principal with no branch context returns an empty queue rather than
+        // letting the JPQL clause `branch.id = NULL` silently match nothing and
+        // mask the real "no branch assignment" issue. Returning an empty list
+        // here matches the TellerService twin for UI consistency.
+        if (branchId == null) {
+            return List.of();
+        }
         LocalDate businessDate = businessDateService.getCurrentBusinessDate();
         return movementRepository.findPendingByBranchAndDate(tenantId, branchId, businessDate);
     }
@@ -278,6 +313,10 @@ public class VaultServiceImpl implements VaultService {
         String tenantId = TenantContext.getCurrentTenant();
         String custodian = SecurityUtil.getCurrentUsername();
         Long branchId = SecurityUtil.getCurrentUserBranchId();
+        if (branchId == null) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "Custodian has no branch assignment; cannot close vault");
+        }
         LocalDate businessDate = businessDateService.getCurrentBusinessDate();
 
         VaultPosition vault = vaultRepository
@@ -298,6 +337,22 @@ public class VaultServiceImpl implements VaultService {
             throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
                     activeTills + " till(s) at this branch are still OPEN/PENDING. "
                             + "All tellers must close their tills before the vault can close.");
+        }
+
+        // CBS Tier-1: also block close while PENDING vault movements remain.
+        // A CLOSED vault has been reconciled to its counted balance; a later
+        // approval of a leftover PENDING movement would mutate the CLOSED
+        // vault and invalidate the custodian's sign-off (the OPEN-status
+        // guard in approveMovement now rejects that path, but trapping the
+        // PENDING movements in PENDING forever is also unacceptable). The
+        // custodian must approve or reject every PENDING movement before
+        // closing.
+        long pendingMovements = movementRepository
+                .countPendingByBranchAndDate(tenantId, branchId, businessDate);
+        if (pendingMovements > 0) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    pendingMovements + " vault movement(s) are still PENDING at this branch. "
+                            + "Approve or reject every pending movement before the vault can close.");
         }
 
         BigDecimal variance = countedBalance.subtract(vault.getCurrentBalance());

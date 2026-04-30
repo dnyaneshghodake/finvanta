@@ -70,6 +70,25 @@ public interface TellerCashMovementRepository extends JpaRepository<TellerCashMo
             @Param("businessDate") LocalDate businessDate);
 
     /**
+     * Counts PENDING vault movements at a branch on a business date. Used
+     * by {@code VaultServiceImpl.closeVault} to block vault-close while any
+     * vault buy / sell request is still awaiting custodian sign-off — per
+     * RBI Internal Controls a CLOSED vault has been reconciled and cannot
+     * accept further mutations, so leaving PENDING movements would either
+     * strand them in PENDING forever or violate the CLOSED invariant on
+     * approval.
+     */
+    @Query("SELECT COUNT(m) FROM TellerCashMovement m "
+            + "WHERE m.tenantId = :tenantId "
+            + "AND m.branch.id = :branchId "
+            + "AND m.businessDate = :businessDate "
+            + "AND m.status = 'PENDING'")
+    long countPendingByBranchAndDate(
+            @Param("tenantId") String tenantId,
+            @Param("branchId") Long branchId,
+            @Param("businessDate") LocalDate businessDate);
+
+    /**
      * All movements for a specific till on a business date (approved +
      * pending + rejected). Used by the till's movement history panel and
      * by the till-close reconciliation step.
