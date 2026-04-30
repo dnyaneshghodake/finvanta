@@ -2,6 +2,7 @@ package com.finvanta.cbs.common.exception;
 
 import com.finvanta.api.ApiResponse;
 import com.finvanta.cbs.common.constants.CbsErrorCodes;
+import com.finvanta.cbs.modules.teller.exception.FicnDetectedException;
 import com.finvanta.util.BusinessException;
 import com.finvanta.util.MfaRequiredException;
 
@@ -49,6 +50,49 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 public class CbsApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(CbsApiExceptionHandler.class);
+
+    /**
+     * CBS FICN handler per RBI Master Direction on Counterfeit Notes.
+     *
+     * <p>Returns HTTP 422 (UNPROCESSABLE_ENTITY) with the printable
+     * {@link com.finvanta.cbs.modules.teller.dto.response.FicnAcknowledgementResponse
+     * acknowledgement slip} as the response body so the BFF / JSP can print
+     * the customer-facing receipt directly from the API error response.
+     *
+     * <p>This handler MUST be registered in addition to the generic
+     * {@link #handleBusiness} -- although {@link FicnDetectedException}
+     * extends {@link BusinessException}, only this handler exposes the slip
+     * payload via {@link ApiResponse#errorWithData}. The generic handler
+     * would surface the same status / error code but without the impounded
+     * denomination details, which would defeat the purpose of the receipt.
+     *
+     * <p>Severity is hard-coded HIGH (not delegated to the severity-mapping
+     * switch) because every FICN incident is high-priority by RBI mandate --
+     * the customer must be handed the slip and informed about FIR / chest
+     * dispatch implications regardless of count.
+     *
+     * <p>Per the same status/severity/action mapping as the generic handler,
+     * {@code TELLER_COUNTERFEIT_DETECTED} maps to 422 + HIGH + "Counterfeit
+     * notes detected. Issue FICN acknowledgement to customer and route to
+     * FICN review" -- those are the right defaults for a row of the BFF
+     * error log, but the response body adds the impounded-denomination
+     * detail the operator screen needs.
+     */
+    @ExceptionHandler(FicnDetectedException.class)
+    public ResponseEntity<ApiResponse<com.finvanta.cbs.modules.teller.dto.response.FicnAcknowledgementResponse>>
+            handleFicnDetected(FicnDetectedException ex) {
+        log.warn("CBS-API FICN detected: code={} register={} fir-required={} -- {}",
+                ex.getErrorCode(),
+                ex.getAcknowledgement().registerRef(),
+                ex.getAcknowledgement().firRequired(),
+                ex.getMessage());
+        exposeErrorCode(ex.getErrorCode());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ApiResponse.errorWithData(
+                        ex.getErrorCode(),
+                        ex.getMessage(),
+                        ex.getAcknowledgement()));
+    }
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException ex) {
@@ -215,6 +259,24 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.WF_ALREADY_PROCESSED,
                     CbsErrorCodes.TXN_ALREADY_REVERSED,
                     CbsErrorCodes.TXN_TRANSFER_REVERSAL_REQUIRED,
+                    // Teller state conflicts: till is not in the expected
+                    // lifecycle state for the requested operation. 409 lets
+                    // the BFF distinguish from input-validation 400s and
+                    // from financial-blocker 422s, since the resolution
+                    // (open till / wait for supervisor / use a different
+                    // till) is qualitatively different from a balance issue.
+                    CbsErrorCodes.TELLER_TILL_NOT_OPEN,
+                    CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    CbsErrorCodes.TELLER_TILL_DUPLICATE,
+                    // CBS Tier-1 EOD pre-flight blockers per RBI Master Circular
+                    // on Cash Management at Branches §4.3. 409 CONFLICT mirrors
+                    // BATCHES_STILL_OPEN semantics: the operation itself is valid
+                    // but the system state (open tills / open vaults) conflicts
+                    // with the requested transition (start EOD). The BFF can
+                    // hyperlink the error directly to the Teller / Vault pending
+                    // queues so the admin clears the blockers in one hop.
+                    CbsErrorCodes.TELLER_TILLS_STILL_OPEN,
+                    CbsErrorCodes.TELLER_VAULTS_NOT_CLOSED,
                     "WORKFLOW_VERSION_MISMATCH" -> HttpStatus.CONFLICT;
             case CbsErrorCodes.ACCT_INSUFFICIENT_BALANCE,
                     CbsErrorCodes.ACCT_FROZEN,
@@ -233,7 +295,18 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.TXN_LIMIT_EXCEEDED,
                     CbsErrorCodes.TXN_DAY_NOT_OPEN,
                     CbsErrorCodes.GL_POSTING_INTEGRITY_FAIL,
-                    CbsErrorCodes.COMP_AML_FLAG -> HttpStatus.UNPROCESSABLE_ENTITY;
+                    CbsErrorCodes.COMP_AML_FLAG,
+                    // Teller financial blockers: till has insufficient cash
+                    // for an outflow, or counterfeit notes were detected
+                    // (FICN per RBI Master Direction). Both are unprocessable
+                    // because the request is well-formed but the financial
+                    // state of the till / tendered cash blocks completion.
+                    // CTR threshold breach (PMLA Rule 9: PAN/Form60 missing)
+                    // also lands here -- it is a regulatory blocker, not a
+                    // syntax error.
+                    CbsErrorCodes.TELLER_TILL_INSUFFICIENT_CASH,
+                    CbsErrorCodes.TELLER_COUNTERFEIT_DETECTED,
+                    CbsErrorCodes.COMP_CTR_THRESHOLD -> HttpStatus.UNPROCESSABLE_ENTITY;
             // 403 FORBIDDEN per RFC 9110 §15.5.4: authenticated user lacks
             // required privilege / branch access / maker-checker separation;
             // or the account itself is locked/inactive (caller must contact
@@ -241,12 +314,22 @@ public class CbsApiExceptionHandler {
             case CbsErrorCodes.CUST_BRANCH_ACCESS_DENIED,
                     CbsErrorCodes.WF_SELF_APPROVAL,
                     CbsErrorCodes.AUTH_ACCOUNT_LOCKED,
-                    CbsErrorCodes.AUTH_ACCOUNT_INACTIVE -> HttpStatus.FORBIDDEN;
+                    CbsErrorCodes.AUTH_ACCOUNT_INACTIVE,
+                    // Teller ownership: the authenticated user is not the
+                    // owner of the targeted till. Per RBI Internal Controls
+                    // (segregation of duties) only the assigned teller may
+                    // post to their own till; another teller's request is
+                    // forbidden, not a state conflict, so 403 not 409.
+                    CbsErrorCodes.TELLER_TILL_OWNERSHIP -> HttpStatus.FORBIDDEN;
             // 401 UNAUTHORIZED per RFC 9110 §15.5.2: authentication failed
             // (wrong credentials, not a privilege-elevation issue). 403 here
             // would prevent BFF clients from re-prompting for credentials and
             // instead show an "access denied" message.
             case CbsErrorCodes.AUTH_INVALID_CREDENTIALS -> HttpStatus.UNAUTHORIZED;
+            // Defensive teller-internal error per CBS-TELLER-099. The Javadoc
+            // on the constant documents HTTP 500; map explicitly so monitoring
+            // alerts that key on 5xx don't miss the incident.
+            case CbsErrorCodes.TELLER_INTERNAL -> HttpStatus.INTERNAL_SERVER_ERROR;
             default -> HttpStatus.BAD_REQUEST;
         };
     }
@@ -272,7 +355,18 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.WF_SELF_APPROVAL,
                     CbsErrorCodes.LOAN_NPA_CLASSIFIED,
                     CbsErrorCodes.COMP_AML_FLAG,
-                    CbsErrorCodes.GL_POSTING_INTEGRITY_FAIL -> CbsErrorCodes.SEVERITY_HIGH;
+                    CbsErrorCodes.GL_POSTING_INTEGRITY_FAIL,
+                    // Teller financial-safety blockers: counterfeit notes
+                    // (FICN), till cash exhausted, segregation-of-duties
+                    // breach. All warrant a HIGH severity in the BFF UI so
+                    // the supervisor gets a blocking modal, not a toast.
+                    CbsErrorCodes.TELLER_COUNTERFEIT_DETECTED,
+                    CbsErrorCodes.TELLER_TILL_INSUFFICIENT_CASH,
+                    CbsErrorCodes.TELLER_TILL_OWNERSHIP,
+                    // Internal teller error -- defensive code path. HIGH so the
+                    // BFF surfaces a blocking modal and the incident is not
+                    // silently lost to a LOW-severity bucket.
+                    CbsErrorCodes.TELLER_INTERNAL -> CbsErrorCodes.SEVERITY_HIGH;
             case CbsErrorCodes.ACCT_DUPLICATE_NUMBER,
                     CbsErrorCodes.TXN_IDEMPOTENCY_DUPLICATE,
                     CbsErrorCodes.TXN_PENDING_APPROVAL,
@@ -282,7 +376,21 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.WF_ALREADY_PROCESSED,
                     CbsErrorCodes.ACCT_DORMANT,
                     CbsErrorCodes.CUST_KYC_EXPIRED,
-                    CbsErrorCodes.CUST_KYC_NOT_VERIFIED -> CbsErrorCodes.SEVERITY_MEDIUM;
+                    CbsErrorCodes.CUST_KYC_NOT_VERIFIED,
+                    // Teller state / regulatory conflicts -- recoverable by
+                    // the operator (open till, supply PAN/Form60, wait for
+                    // supervisor) so MEDIUM severity is correct.
+                    CbsErrorCodes.TELLER_TILL_NOT_OPEN,
+                    CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    CbsErrorCodes.TELLER_TILL_DUPLICATE,
+                    CbsErrorCodes.TELLER_TILL_LIMIT_EXCEEDED,
+                    // EOD pre-flight blockers are operationally recoverable by
+                    // the branch staff (close tills, close vault) so MEDIUM
+                    // severity -- not HIGH. The BFF marks them red on the EOD
+                    // trial page but does not fire the fraud-grade alert modal.
+                    CbsErrorCodes.TELLER_TILLS_STILL_OPEN,
+                    CbsErrorCodes.TELLER_VAULTS_NOT_CLOSED,
+                    CbsErrorCodes.COMP_CTR_THRESHOLD -> CbsErrorCodes.SEVERITY_MEDIUM;
             default -> CbsErrorCodes.SEVERITY_LOW;
         };
     }
@@ -350,6 +458,44 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.AUTH_ACCOUNT_LOCKED,
                     CbsErrorCodes.AUTH_ACCOUNT_INACTIVE ->
                     "Authentication failed. Contact your administrator";
+            // Teller channel remediation per RBI Fair Practices Code §7.1.
+            // Each action describes the exact next step the teller / supervisor
+            // must take so the BFF error modal does not leave the operator
+            // guessing.
+            case CbsErrorCodes.TELLER_TILL_NOT_OPEN ->
+                    "Open your till for the day before posting cash transactions";
+            case CbsErrorCodes.TELLER_TILL_INVALID_STATE ->
+                    "Till is not in OPEN status. Wait for supervisor approval or open a new till";
+            case CbsErrorCodes.TELLER_TILL_OWNERSHIP ->
+                    "You can only operate your own till. Contact branch manager if reassignment is needed";
+            case CbsErrorCodes.TELLER_DENOM_SUM_MISMATCH ->
+                    "Denomination breakdown does not match the amount. Recount the cash and resubmit";
+            case CbsErrorCodes.TELLER_DENOM_INVALID ->
+                    "One or more denominations are not recognized. Use only the listed RBI legal-tender values";
+            case CbsErrorCodes.TELLER_TILL_INSUFFICIENT_CASH ->
+                    "Till has insufficient cash. Request a vault buy before paying out";
+            case CbsErrorCodes.TELLER_TILL_LIMIT_EXCEEDED ->
+                    "Till cash limit reached. Sell cash to vault before accepting more deposits";
+            case CbsErrorCodes.TELLER_COUNTERFEIT_DETECTED ->
+                    "Counterfeit notes detected. Issue FICN acknowledgement to customer and route to FICN review";
+            case CbsErrorCodes.TELLER_TILL_DATE_INVALID ->
+                    "Till business date is invalid. Verify branch business date and retry";
+            case CbsErrorCodes.TELLER_TILL_DUPLICATE ->
+                    "A till already exists for you on this business date";
+            case CbsErrorCodes.COMP_CTR_THRESHOLD ->
+                    "Cash deposit at or above CTR threshold requires PAN or Form 60/61 per PMLA Rule 9";
+            case CbsErrorCodes.TELLER_INTERNAL ->
+                    "Internal teller error. Note the correlation ID and contact support";
+            // CBS Tier-1 EOD pre-flight remediation: the BFF surfaces these on
+            // the EOD apply / trial screen. Messages direct the admin to the
+            // exact remediation queue rather than leaving them to hunt for the
+            // offending till or branch.
+            case CbsErrorCodes.TELLER_TILLS_STILL_OPEN ->
+                    "Close every OPEN / PENDING till (with supervisor sign-off) before running EOD. "
+                            + "Review the Teller > Pending Till Approvals queue";
+            case CbsErrorCodes.TELLER_VAULTS_NOT_CLOSED ->
+                    "Close every branch vault (after all tills are CLOSED) before running EOD. "
+                            + "Review the Teller > Branch Vault screen per branch";
             default -> null;
         };
     }

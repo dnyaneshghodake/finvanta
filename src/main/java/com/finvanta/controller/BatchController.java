@@ -3,6 +3,7 @@ package com.finvanta.controller;
 import com.finvanta.batch.EodOrchestrator;
 import com.finvanta.batch.EodTrialService;
 import com.finvanta.batch.EodTrialService.EodCheckResult;
+import com.finvanta.cbs.modules.teller.service.TellerEodValidationService;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.TransactionBatchService;
 
@@ -36,16 +37,19 @@ public class BatchController {
     private final EodOrchestrator eodOrchestrator;
     private final EodTrialService eodTrialService;
     private final TransactionBatchService transactionBatchService;
+    private final TellerEodValidationService tellerEodValidationService;
     private final BusinessDateService businessDateService;
 
     public BatchController(
             EodOrchestrator eodOrchestrator,
             EodTrialService eodTrialService,
             TransactionBatchService transactionBatchService,
+            TellerEodValidationService tellerEodValidationService,
             BusinessDateService businessDateService) {
         this.eodOrchestrator = eodOrchestrator;
         this.eodTrialService = eodTrialService;
         this.transactionBatchService = transactionBatchService;
+        this.tellerEodValidationService = tellerEodValidationService;
         this.businessDateService = businessDateService;
     }
 
@@ -102,6 +106,17 @@ public class BatchController {
             // CBS: Pre-EOD validation — all intra-day batches must be closed.
             // Per Finacle/Temenos: EOD MUST NOT start if any batch is still OPEN.
             transactionBatchService.validateAllBatchesClosed(date);
+
+            // CBS Tier-1: Pre-EOD validation -- teller cash custody chain must be
+            // closed. Per RBI Master Circular on Cash Management at Branches §4.3:
+            // every till must be CLOSED (with supervisor sign-off) and every branch
+            // vault must be CLOSED before EOD generates balance snapshots and runs
+            // subledger reconciliation. Otherwise the day's snapshots assert against
+            // a live mid-shift cash subledger, hiding variances and breaking the
+            // invariant SUM(till) + vault == GL BANK_OPERATIONS @ branch. The
+            // validation runs in the canonical order (tills before vault) so the
+            // operator gets the most upstream-actionable error message.
+            tellerEodValidationService.validateTellerEodReadiness(date);
 
             eodOrchestrator.executeEod(date);
             redirectAttributes.addFlashAttribute("success", "EOD batch completed for " + businessDate);

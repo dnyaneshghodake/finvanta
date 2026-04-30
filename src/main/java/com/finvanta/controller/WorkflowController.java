@@ -1,5 +1,6 @@
 package com.finvanta.controller;
 
+import com.finvanta.cbs.modules.teller.service.TellerService;
 import com.finvanta.domain.entity.ApprovalWorkflow;
 import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.DepositAccountService;
@@ -39,6 +40,7 @@ public class WorkflowController {
     private final ApprovalWorkflowService workflowService;
     private final TransactionReExecutionService reExecutionService;
     private final DepositAccountService depositService;
+    private final TellerService tellerService;
     private final BusinessDateService businessDateService;
     private final ObjectMapper objectMapper;
 
@@ -46,11 +48,13 @@ public class WorkflowController {
             ApprovalWorkflowService workflowService,
             TransactionReExecutionService reExecutionService,
             DepositAccountService depositService,
+            TellerService tellerService,
             BusinessDateService businessDateService,
             ObjectMapper objectMapper) {
         this.workflowService = workflowService;
         this.reExecutionService = reExecutionService;
         this.depositService = depositService;
+        this.tellerService = tellerService;
         this.businessDateService = businessDateService;
         this.objectMapper = objectMapper;
     }
@@ -97,6 +101,42 @@ public class WorkflowController {
                                 java.time.LocalDate valueDate = java.time.LocalDate.parse(root.get("valueDate").asText());
                                 depositService.applyApprovedTransaction(accountRef, amount, txnType, result, valueDate);
                                 log.info("Subledger applied for DEPOSIT approval: account={}, type={}, amount={}",
+                                        accountRef, txnType, amount);
+                            } else if ("TELLER".equals(sourceModule)) {
+                                // CBS Teller module: apply the subledger effect (customer
+                                // ledger + till balance) for a checker-approved teller cash
+                                // deposit or withdrawal. The GL was already posted by
+                                // reExecutionService above; this step mutates the subledger.
+                                //
+                                // The payload carries the same fields as DEPOSIT plus a
+                                // "tillId" that identifies the originating till. The till
+                                // balance must be incremented (deposit) or decremented
+                                // (withdrawal) alongside the customer ledger.
+                                //
+                                // CBS NOTE (reachability): under the current engine
+                                // configuration this branch is not exercised — teller cash
+                                // transactions are either posted directly or hard-rejected
+                                // at TransactionEngine Step 6 with TRANSACTION_LIMIT_EXCEEDED;
+                                // none flow into a PENDING_APPROVAL workflow. See
+                                // TellerServiceImpl class Javadoc for the deliberate design
+                                // rationale. Kept wired so the path remains correct the
+                                // moment the bank adds a teller-sourced type (e.g. CASH_REVERSAL)
+                                // to MakerCheckerService.ALWAYS_REQUIRE_APPROVAL.
+                                // The maker ≠ checker guard fires upstream in
+                                // ApprovalWorkflowService.approve() — no additional check here.
+                                String accountRef = root.get("accountReference").asText();
+                                java.math.BigDecimal amount = new java.math.BigDecimal(root.get("amount").asText());
+                                String txnType = root.get("transactionType").asText();
+                                java.time.LocalDate valueDate = java.time.LocalDate.parse(root.get("valueDate").asText());
+                                // Resolve the original teller's till via their username
+                                // (from workflow.makerUserId) + the value date. A teller
+                                // has at most one till per business date (unique index
+                                // uq_till_tenant_teller_date), so this is deterministic.
+                                tellerService.applyApprovedTellerTransaction(
+                                        accountRef, amount, txnType,
+                                        workflow.getMakerUserId(),
+                                        result, valueDate);
+                                log.info("Subledger applied for TELLER approval: account={}, type={}, amount={}",
                                         accountRef, txnType, amount);
                             }
                             // Future: add LOAN, CLEARING module handlers here

@@ -43,7 +43,14 @@ public final class SecurityUtil {
      * Extracts from Spring Security GrantedAuthority, stripping the "ROLE_" prefix.
      *
      * Per CBS transactional role hierarchy (most restrictive first):
-     *   MAKER < CHECKER < ADMIN
+     *   TELLER < MAKER < CHECKER < ADMIN
+     *
+     * TELLER is the most restrictive transactional role — it is a specialization
+     * of MAKER confined to the over-the-counter cash channel (see the
+     * {@code com.finvanta.cbs.modules.teller} package). Per RBI Internal Controls,
+     * the teller's per-transaction and daily aggregate limits are deliberately
+     * tighter than MAKER because cash tellerage carries higher operational risk
+     * (physical cash handling, counterfeit exposure, FICN workflow).
      *
      * AUDITOR is excluded — it is a read-only audit role that should never initiate
      * financial transactions. Including AUDITOR would cause the limit lookup to find
@@ -52,12 +59,10 @@ public final class SecurityUtil {
      * in TransactionLimitService.
      *
      * RBI Segregation of Duties Compliance:
-     * When a user has multiple transactional roles (e.g., ROLE_MAKER + ROLE_ADMIN),
+     * When a user has multiple transactional roles (e.g., ROLE_TELLER + ROLE_MAKER),
      * the LOWEST-privilege transactional role is returned. This ensures transaction
      * limits are checked against the most restrictive role, enforcing the principle
-     * of least privilege per:
-     *   - RBI Master Direction on IT Governance (2023) Section 8.3
-     *   - Finacle TRAN_AUTH: "dual-role users are subject to the lower limit"
+     * of least privilege per RBI Master Direction on IT Governance (2023) §8.3.
      *
      * @return Lowest-privilege transactional role without "ROLE_" prefix, or null if no role found
      */
@@ -66,10 +71,10 @@ public final class SecurityUtil {
         if (auth == null || !auth.isAuthenticated() || auth.getAuthorities() == null) {
             return null;
         }
-        // CBS transactional role hierarchy: MAKER is most restrictive, ADMIN is least.
+        // CBS transactional role hierarchy: TELLER is most restrictive, ADMIN is least.
         // AUDITOR is excluded — it is read-only and has no transaction limits configured.
         // Returning AUDITOR would cause limit lookup to find nothing → bypass all limits.
-        List<String> leastPrivilegeFirst = List.of("MAKER", "CHECKER", "ADMIN");
+        List<String> leastPrivilegeFirst = List.of("TELLER", "MAKER", "CHECKER", "ADMIN");
         Set<String> userRoles = auth.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .filter(a -> a.startsWith("ROLE_"))
