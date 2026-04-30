@@ -466,18 +466,19 @@ return leastPrivilegeFirst.stream()
 | Capability | Path | URL matcher source |
 |---|---|---|
 | Branch isolation exemption (sees all branches) | (no path — runtime check) | `BranchAccessValidator.java:82` |
-| Switch operational branch context | `/admin/switch-branch` | `SecurityConfig.java:191` |
-| Run EOD batch | `/batch/**` | `SecurityConfig.java:195` |
-| Branch master add | `/branch/add` | `SecurityConfig.java:197` |
-| Customer deactivate | `/customer/deactivate/**` | `SecurityConfig.java:203` |
-| Branch master edit | `/branch/edit/**` | `SecurityConfig.java:217` |
-| Calendar / day-control | `/calendar/**` | `SecurityConfig.java:219` |
-| Loan write-off | `/loan/write-off/**` | `SecurityConfig.java:231` |
-| Loan restructure / moratorium | `/loan/restructure/**`, `/loan/moratorium/**` | `SecurityConfig.java:259-262` |
-| Transaction batch admin | `/batch/txn/**` | `SecurityConfig.java:263` |
-| Product / limit / charge config | `/admin/products/**`, `/admin/limits/**`, `/admin/charges/**` | `SecurityConfig.java:265-269` |
-| Deposit freeze / unfreeze | `/deposit/freeze/**`, `/deposit/unfreeze/**` | `SecurityConfig.java:291-294` |
-| MFA enrollment / reset for other users | `/admin/mfa/**` | `SecurityConfig.java:356` |
+| Switch operational branch context | `/admin/switch-branch` | `SecurityConfig.java:257` |
+| Catch-all `/admin/**` | `/admin/**` | `SecurityConfig.java:259` |
+| Run EOD / batch jobs | `/batch/**` | `SecurityConfig.java:261` |
+| Branch master add | `/branch/add` | `SecurityConfig.java:263` |
+| Customer deactivate | `/customer/deactivate/**` | `SecurityConfig.java:269` |
+| Branch master edit | `/branch/edit/**` | `SecurityConfig.java:283` |
+| Calendar / day-control | `/calendar/**` | `SecurityConfig.java:285` |
+| Loan write-off | `/loan/write-off/**` | `SecurityConfig.java:297` |
+| Loan restructure / moratorium | `/loan/restructure/**`, `/loan/moratorium/**` | `SecurityConfig.java:325-328` |
+| Transaction batch admin | `/batch/txn/**` | `SecurityConfig.java:329` |
+| Product / limit / charge config | `/admin/products/**`, `/admin/limits/**`, `/admin/charges/**` | `SecurityConfig.java:331-336` |
+| Deposit freeze / unfreeze | `/deposit/freeze/**`, `/deposit/unfreeze/**` | `SecurityConfig.java:357-360` |
+| MFA enrollment / reset for other users | `/admin/mfa/**` | `SecurityConfig.java:422` |
 
 All paths are guarded by `hasRole("ADMIN")` on the JSP chain
 (`SecurityConfig.uiSecurityFilterChain`). REST API `@PreAuthorize`
