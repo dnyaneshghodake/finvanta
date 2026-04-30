@@ -1001,11 +1001,14 @@ public class TransactionEngine {
             log.debug("Idempotency registered: key={}, txnRef={}, status={}",
                     request.getIdempotencyKey(), result.getTransactionRef(), result.getStatus());
         } catch (Exception e) {
-            // CBS Safety: If registry INSERT fails (e.g., unique constraint on concurrent retry),
-            // log but do NOT fail the posting — the GL posting is already committed/pending.
-            // Module-level idempotency provides the second layer of defense.
-            log.warn("Idempotency registry INSERT failed (non-fatal): key={}, error={}",
-                    request.getIdempotencyKey(), e.getMessage());
+            // CBS CRITICAL: Idempotency failure is NOT silently swallowed.
+            // This is a DATA INTEGRITY issue — duplicate transactions can occur.
+            // Must alert ops and fail the transaction if idempotency is required.
+            log.error("FATAL: Idempotency registry INSERT failed for key={}, txnRef={}, error={}. "
+                    + "Duplicate transaction risk!",
+                    request.getIdempotencyKey(), result.getTransactionRef(), e.getMessage(), e);
+            // Re-throw to fail the transaction — idempotency is required for financial safety
+            throw new RuntimeException("Idempotency registration failed for key: " + request.getIdempotencyKey(), e);
         }
     }
 
@@ -1059,11 +1062,13 @@ public class TransactionEngine {
             log.debug("Outbox event published: txnRef={}, type={}, rbiFlags={}",
                     result.getTransactionRef(), request.getTransactionType(), rbiFlags);
         } catch (Exception e) {
-            // CBS Safety: Outbox INSERT failure must NOT fail the GL posting.
-            // The GL posting is the primary operation; outbox is supplementary.
-            // Missing outbox events are caught by EOD reconciliation.
-            log.warn("Outbox event INSERT failed (non-fatal): txnRef={}, error={}",
-                    result.getTransactionRef(), e.getMessage());
+            // CBS CRITICAL: Outbox failure is logged and escalated.
+            // CTR events MUST be published for RBI compliance (FIU-IND reporting).
+            // Log as ERROR (not WARN) because CTR is a regulatory requirement.
+            log.error("FATAL: Outbox event INSERT failed for txnRef={}, type={}, rbiFlags={}, error={}. "
+                    + "CTR reporting may be impacted!",
+                    result.getTransactionRef(), request.getTransactionType(), rbiFlags, e.getMessage(), e);
+            // Do not re-throw — GL posting is already committed. CTR failure is caught by EOD reconciliation.
         }
     }
 
