@@ -276,6 +276,20 @@ public class VaultServiceImpl implements VaultService {
                     "Rejection reason is mandatory per RBI audit norms");
         }
 
+        // CBS Maker ≠ Checker per RBI Internal Controls / dual control.
+        // Mirrors approveMovement at line 177: a custodian who also holds
+        // an ADMIN role and requested a BUY/SELL movement must NOT be
+        // permitted to reject their own request. Rejection is a checker
+        // action — not privileged higher than approval — so the same
+        // segregation-of-duties rule applies. Without this check, the
+        // @PreAuthorize(CHECKER, ADMIN) gate lets an ADMIN-requester
+        // discard their own movement without any dual-control trail.
+        if (custodian.equals(mov.getRequestedBy())) {
+            throw new BusinessException(CbsErrorCodes.WF_SELF_APPROVAL,
+                    "Vault custodian cannot reject their own movement request. "
+                            + "Requester: " + mov.getRequestedBy());
+        }
+
         mov.setStatus("REJECTED");
         mov.setApprovedBy(custodian);
         mov.setApprovedAt(LocalDateTime.now());
@@ -327,6 +341,24 @@ public class VaultServiceImpl implements VaultService {
         if (vault.isClosed()) {
             throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
                     "Vault is already CLOSED");
+        }
+
+        // CBS Joint-Custody per RBI Internal Controls (Master Circular on
+        // Cash Management at Branches §4.3): the custodian who OPENED the
+        // vault at start-of-day must NOT be the same user who CLOSES it
+        // at end-of-day. This enforces the "two pairs of eyes" principle
+        // on the day's physical-count reconciliation -- the closing
+        // custodian independently verifies what the opening custodian
+        // accepted as the opening balance.
+        //
+        // Mirrors the maker ≠ checker pattern on till open/close and vault
+        // movement approvals. The opener stamp is set on openVault (line
+        // 106) and is immutable for the day; the check here reads vault.openedBy.
+        if (vault.getOpenedBy() != null && vault.getOpenedBy().equals(custodian)) {
+            throw new BusinessException(CbsErrorCodes.WF_SELF_APPROVAL,
+                    "Vault custodian who opened the vault cannot close it. "
+                            + "Per RBI joint-custody rules a different CHECKER or ADMIN "
+                            + "must sign off on close. Opener: " + vault.getOpenedBy());
         }
 
         // Per RBI Internal Controls: all tills must be CLOSED before the
