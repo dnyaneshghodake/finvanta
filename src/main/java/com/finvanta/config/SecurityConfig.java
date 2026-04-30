@@ -324,6 +324,25 @@ public class SecurityConfig {
                             .hasAnyRole("CHECKER", "ADMIN")
                             .requestMatchers("/teller/till/*/reject-close")
                             .hasAnyRole("CHECKER", "ADMIN")
+                            // CBS Vault custodian endpoints (CHECKER/ADMIN only) per RBI
+                            // dual-control. Must precede the /teller/vault/** wildcard
+                            // below so the supervisor-only paths aren't widened by it.
+                            .requestMatchers("/teller/vault/open")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/teller/vault/close")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/teller/vault/pending")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/teller/vault/movement/*/approve")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/teller/vault/movement/*/reject")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            // /teller/vault, /teller/vault/buy, /teller/vault/sell --
+                            // dashboard + BUY/SELL request endpoints reachable by all
+                            // teller-channel users (CHECKER included so they can view
+                            // the vault state alongside the pending queue).
+                            .requestMatchers("/teller/vault/**")
+                            .hasAnyRole("TELLER", "MAKER", "CHECKER", "ADMIN")
                             // /teller/till/open, /teller/till/close, /teller/cash-deposit,
                             // /teller/cash-withdrawal — confined to TELLER/MAKER/ADMIN.
                             // CHECKER is excluded from posting cash transactions per RBI

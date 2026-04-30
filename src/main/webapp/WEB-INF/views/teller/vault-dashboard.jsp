@@ -1,7 +1,11 @@
 <%@ taglib prefix="c" uri="jakarta.tags.core" %>
 <%@ taglib prefix="fmt" uri="jakarta.tags.fmt" %>
-<%@ taglib prefix="sec" uri="org.springframework.security.tags" %>
 <c:set var="pageTitle" value="Branch Vault" />
+<%-- Project convention: role checks use pageContext.request.isUserInRole(...)
+     rather than the Spring Security taglib (spring-security-taglibs is not on
+     the classpath). Mirrors deposit/view.jsp, dashboard/index.jsp, etc. --%>
+<c:set var="isCustodian" value="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}" />
+<c:set var="isTellerOrMaker" value="${pageContext.request.isUserInRole('ROLE_TELLER') || pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}" />
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>
 
@@ -29,7 +33,7 @@
 <c:choose>
     <c:when test="${empty vault}">
         <%-- No vault open today: CHECKER/ADMIN see open form; others see notice. --%>
-        <sec:authorize access="hasAnyRole('CHECKER','ADMIN')">
+        <c:if test="${isCustodian}">
             <div class="fv-card">
                 <div class="card-header"><i class="bi bi-bank"></i> Open Branch Vault</div>
                 <div class="card-body">
@@ -53,13 +57,13 @@
                     </form>
                 </div>
             </div>
-        </sec:authorize>
-        <sec:authorize access="!hasAnyRole('CHECKER','ADMIN')">
+        </c:if>
+        <c:if test="${not isCustodian}">
             <div class="fv-alert alert alert-warning">
                 <strong>Branch vault is not open for today.</strong>
                 Ask a CHECKER / ADMIN custodian to open the vault before requesting cash movements.
             </div>
-        </sec:authorize>
+        </c:if>
     </c:when>
     <c:otherwise>
         <%-- Vault exists: show position card + role-conditional action panels. --%>
@@ -100,8 +104,7 @@
             </div>
         </div>
 
-        <sec:authorize access="hasAnyRole('TELLER','MAKER','ADMIN')">
-            <c:if test="${vault.status == 'OPEN'}">
+        <c:if test="${isTellerOrMaker and vault.status == 'OPEN'}">
                 <div class="row">
                     <div class="col-md-6">
                         <div class="fv-card mb-3">
@@ -158,11 +161,9 @@
                         </div>
                     </div>
                 </div>
-            </c:if>
-        </sec:authorize>
+        </c:if>
 
-        <sec:authorize access="hasAnyRole('CHECKER','ADMIN')">
-            <c:if test="${vault.status == 'OPEN'}">
+        <c:if test="${isCustodian and vault.status == 'OPEN'}">
                 <div class="fv-card">
                     <div class="card-header"><i class="bi bi-x-circle"></i> Close Branch Vault</div>
                     <div class="card-body">
@@ -191,8 +192,7 @@
                         </form>
                     </div>
                 </div>
-            </c:if>
-        </sec:authorize>
+        </c:if>
     </c:otherwise>
 </c:choose>
 </div>

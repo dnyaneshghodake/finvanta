@@ -293,13 +293,74 @@ error code `CBS-TELLER-008`. The response body carries the printable
 
 ---
 
+## Supervisor Queue (REST parity)
+
+### GET /till/pending
+Returns tills at the supervisor's branch awaiting sign-off (PENDING_OPEN or PENDING_CLOSE).
+**Role:** CHECKER, ADMIN
+**Response (200):** `ApiResponse<List<TellerTillResponse>>`
+
+### POST /till/{tillId}/reject-open?reason={reason}
+Rejects a PENDING_OPEN till (terminal: transitions to CLOSED).
+**Role:** CHECKER, ADMIN
+**Response (200):** `ApiResponse<TellerTillResponse>` (status=CLOSED)
+**Error (403):** `CBS-WF-001` — maker = checker
+**Error (409):** `CBS-TELLER-002` — till not PENDING_OPEN
+
+### POST /till/{tillId}/reject-close?reason={reason}
+Rejects a PENDING_CLOSE till (recoverable: returns to OPEN, clears variance).
+**Role:** CHECKER, ADMIN
+**Response (200):** `ApiResponse<TellerTillResponse>` (status=OPEN)
+**Error (403):** `CBS-WF-001` — maker = checker
+**Error (409):** `CBS-TELLER-002` — till not PENDING_CLOSE
+
+---
+
 ## Vault Operations
 
-> **Known Tier-1 gap:** vault endpoints currently serialize raw JPA entities
-> (`VaultPosition`, `TellerCashMovement`) rather than dedicated response DTOs.
-> The response shapes below describe the current entity fields but are subject
-> to change once response DTOs are introduced in a follow-up commit. BFF
-> clients should treat unknown fields as non-breaking additions.
+All vault endpoints return DTOs (`VaultPositionResponse` / `TellerCashMovementResponse`)
+via `VaultMapper`. Raw JPA entity exposure has been eliminated.
+
+### VaultPositionResponse shape
+
+```json
+{
+  "id": 11,
+  "branchCode": "BR001",
+  "branchName": "New Delhi Main",
+  "businessDate": "2026-04-01",
+  "status": "OPEN",
+  "openingBalance": 1000000.00,
+  "currentBalance": 950000.00,
+  "countedBalance": null,
+  "varianceAmount": null,
+  "openedBy": "checker1",
+  "closedBy": null,
+  "remarks": null
+}
+```
+
+### TellerCashMovementResponse shape
+
+```json
+{
+  "id": 42,
+  "movementRef": "VMOV/BR001/20260401/000007",
+  "movementType": "BUY",
+  "branchCode": "BR001",
+  "tillId": 100,
+  "vaultId": 11,
+  "businessDate": "2026-04-01",
+  "amount": 50000.00,
+  "status": "PENDING",
+  "requestedBy": "teller1",
+  "requestedAt": "2026-04-01T10:30:00",
+  "approvedBy": null,
+  "approvedAt": null,
+  "rejectionReason": null,
+  "remarks": null
+}
+```
 
 ### POST /vault/open
 Opens the branch vault for the day.

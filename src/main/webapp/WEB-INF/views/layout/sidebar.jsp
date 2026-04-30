@@ -52,13 +52,19 @@
         <li><a href="${pageContext.request.contextPath}/teller/cash-deposit" class="nav-link"><i class="bi bi-plus-circle"></i><span class="nav-text">Cash Deposit</span></a></li>
         <li><a href="${pageContext.request.contextPath}/teller/cash-withdrawal" class="nav-link"><i class="bi bi-dash-circle"></i><span class="nav-text">Cash Withdrawal</span></a></li>
         </c:if>
+        <%-- Vault dashboard: TELLER/MAKER request BUY/SELL; CHECKER/ADMIN
+             open/close vault and approve movements per RBI custodian dual control. --%>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_TELLER') || pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li><a href="${pageContext.request.contextPath}/teller/vault" class="nav-link"><i class="bi bi-bank"></i><span class="nav-text">Branch Vault</span></a></li>
+        </c:if>
         <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
-        <%-- Supervisor queue: PENDING_OPEN and PENDING_CLOSE tills awaiting
+        <%-- Supervisor queues: PENDING tills + PENDING vault movements awaiting
              sign-off. Per RBI Internal Controls / dual-control: the checker
              who signs off MUST be different from the teller who opened the
-             till — the service layer enforces this, the UI merely surfaces
-             the queue. --%>
+             till / requested the movement — the service layer enforces this,
+             the UI merely surfaces the queues. --%>
         <li><a href="${pageContext.request.contextPath}/teller/till/pending" class="nav-link"><i class="bi bi-check2-square"></i><span class="nav-text">Pending Till Approvals</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/teller/vault/pending" class="nav-link"><i class="bi bi-arrow-left-right"></i><span class="nav-text">Pending Vault Movements</span></a></li>
         </c:if>
 
         <li class="nav-section">Transaction Inquiry</li>
