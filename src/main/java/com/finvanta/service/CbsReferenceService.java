@@ -1,5 +1,8 @@
 package com.finvanta.service;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -203,6 +206,15 @@ public class CbsReferenceService {
      * @param businessDate  CBS business date of detection (formatted YYYYMMDD)
      * @return FICN reference like "FICN/BR001/20260401/000003"
      */
+    public String generateFicnRegisterRef(String branchCode, LocalDate businessDate) {
+        String dateStr = businessDate.format(DateTimeFormatter.BASIC_ISO_DATE);
+        String serial = sequenceGenerator.nextFormattedValue("FICN_SEQ_" + branchCode, 6);
+        String ref = "FICN/" + branchCode + "/" + dateStr + "/" + serial;
+        log.debug("FICN register ref generated: {} (branch={}, date={}, seq={})",
+                ref, branchCode, dateStr, serial);
+        return ref;
+    }
+
     /**
      * Vault Cash Movement Reference per CBS CASH_MOVE standard.
      *
@@ -214,17 +226,8 @@ public class CbsReferenceService {
      * @param businessDate CBS business date of the movement
      * @return movement reference like "VMOV/BR001/20260401/000007"
      */
-    public String generateFicnRegisterRef(String branchCode, java.time.LocalDate businessDate) {
-        String dateStr = businessDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
-        String serial = sequenceGenerator.nextFormattedValue("FICN_SEQ_" + branchCode, 6);
-        String ref = "FICN/" + branchCode + "/" + dateStr + "/" + serial;
-        log.debug("FICN register ref generated: {} (branch={}, date={}, seq={})",
-                ref, branchCode, dateStr, serial);
-        return ref;
-    }
-
-    public String generateVaultMovementRef(String branchCode, java.time.LocalDate businessDate) {
-        String dateStr = businessDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+    public String generateVaultMovementRef(String branchCode, LocalDate businessDate) {
+        String dateStr = businessDate.format(DateTimeFormatter.BASIC_ISO_DATE);
         String serial = sequenceGenerator.nextFormattedValue("VMOV_SEQ_" + branchCode, 6);
         String ref = "VMOV/" + branchCode + "/" + dateStr + "/" + serial;
         log.debug("Vault movement ref generated: {} (branch={}, date={}, seq={})",

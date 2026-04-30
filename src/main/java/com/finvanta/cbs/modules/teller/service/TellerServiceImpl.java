@@ -440,6 +440,22 @@ public class TellerServiceImpl implements TellerService {
                                 + ". The teller's till may have been closed before "
                                 + "the checker approved the transaction."));
 
+        // CBS Tier-1 invariant per RBI Internal Controls: a CLOSED or PENDING_CLOSE
+        // till cannot accept further mutations. If the teller closed their till
+        // (with a counted-balance + variance) between submission and checker
+        // approval, mutating currentBalance now would invalidate the variance the
+        // supervisor signed off on. The correct remediation is operator-driven:
+        // reverse the GL post via the standard reversal workflow, then re-apply
+        // on a fresh till. Per CBS Tier-1: prefer a clear domain error over a
+        // silent subledger corruption.
+        if (!till.isOpen()) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "Till for teller " + makerUserId + " on " + businessDate
+                            + " is " + till.getStatus()
+                            + ". The till was closed before the checker approved the transaction. "
+                            + "The GL was posted; reverse via the standard reversal workflow.");
+        }
+
         // 3. Apply balance effect to customer ledger.
         boolean isCredit = "CASH_DEPOSIT".equals(transactionType);
         BigDecimal balanceBefore = acct.getLedgerBalance();
@@ -722,11 +738,16 @@ public class TellerServiceImpl implements TellerService {
         if (dup != null) {
             // CBS dup-retry: see deposit-side comment. journalEntryId is the
             // authoritative pending discriminator; narration parsing is unsafe.
+            // Use the STORED chequeNumber (from dup) rather than the current
+            // request's -- the idempotency contract is to return the prior
+            // result byte-for-byte; sourcing chequeNumber from the live
+            // request would surface a different value if the retry carried
+            // a tampered or differently-rendered form payload.
             boolean priorPending = dup.getJournalEntryId() == null;
             return mapWithdrawalToResponse(dup, till,
                     lookupWithdrawalDenominations(tenantId, dup.getTransactionRef()),
                     request.amount().compareTo(CTR_PAN_THRESHOLD) >= 0,
-                    request.chequeNumber(),
+                    dup.getChequeNumber(),
                     priorPending);
         }
 
