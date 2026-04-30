@@ -81,7 +81,9 @@ X-Tenant-Id: DEFAULT
 }
 ```
 
-`expiresAt` is Unix epoch **seconds** (`AuthController.java:665-668`).
+`expiresAt` is Unix epoch **seconds** — computed for `/token` and
+`/mfa/verify` at `AuthController.java:452-455` (inside `issueTokens`)
+and for `/refresh` at `AuthController.java:665-668`.
 
 **MFA Required — HTTP 428** — when `app_users.mfa_enabled = 1`, the controller throws `MfaRequiredException` (`AuthController.java:246`):
 ```json
@@ -431,7 +433,7 @@ The `JwtAuthenticationFilter` (line 93) explicitly REJECTS non-ACCESS tokens on 
 | **TELLER** | Over-the-counter cash (deposit, withdrawal, till mgmt). Cannot WRITE_OFF / REVERSAL / DISBURSEMENT (zero-limit rows in `transaction_limits`). | INR 2L | INR 10L |
 | **MAKER** | Loan applications, customer creation, transaction initiation | INR 10L | INR 50L |
 | **CHECKER** | Verification, approval, rejection, KYC verify, disbursement, account activation, vault custodian | INR 50L | INR 2Cr |
-| **ADMIN** | Branch management, EOD batch, system config, user mgmt, branch-switch (`/admin/switch-branch`); ADMIN-only matchers in `SecurityConfig.java:191-194`; **exempt from branch isolation** (`BranchAccessValidator.java:82`) | INR 5Cr | INR 20Cr |
+| **ADMIN** | Branch management, EOD batch, system config, user mgmt, branch-switch (`/admin/switch-branch`); full ADMIN matcher list in §4.3; **exempt from branch isolation** (`BranchAccessValidator.java:82`) | INR 5Cr | INR 20Cr |
 | **AUDITOR** | Read-only audit trail. NOT a transactional role; excluded from `getCurrentUserRole()` so it cannot bypass transaction limits. | (none) | (none) |
 
 ### 4.2 Role Hierarchy Resolution (`SecurityUtil.java:69-88`)
@@ -483,6 +485,74 @@ return leastPrivilegeFirst.stream()
 All paths are guarded by `hasRole("ADMIN")` on the JSP chain
 (`SecurityConfig.uiSecurityFilterChain`). REST API `@PreAuthorize`
 annotations on individual controller methods are the second-level gate.
+
+### 4.4 TELLER-Specific Capabilities
+
+TELLER login is functionally identical to MAKER/CHECKER/ADMIN —
+`POST /api/v1/auth/token` with the teller's username/password returns
+the same `AuthResponse` shape, the JWT carries `role: "TELLER"`, and
+`/api/v1/context/bootstrap` returns the operational envelope with
+TELLER-specific limits and permissions. There is NO separate
+`/auth/teller-token` or `/auth/teller-login` endpoint.
+
+**TELLER capability matrix** (verified against
+`SecurityConfig.uiSecurityFilterChain` and `apiSecurityFilterChain`):
+
+| Capability | Path | URL matcher source | Roles allowed |
+|---|---|---|---|
+| Open till | `/teller/till/open` | `SecurityConfig.java:418` | TELLER, MAKER, ADMIN |
+| Close till (request) | `/teller/till/close` | `SecurityConfig.java:418` | TELLER, MAKER, ADMIN |
+| View own till | `/teller/till/me` (or JSP equivalent) | `SecurityConfig.java:418` | TELLER, MAKER, ADMIN (REST: also AUDITOR per `:149-150`) |
+| Cash deposit | `/teller/cash-deposit` | `SecurityConfig.java:418` | TELLER, MAKER, ADMIN |
+| Cash withdrawal | `/teller/cash-withdrawal` | `SecurityConfig.java:418` | TELLER, MAKER, ADMIN |
+| Vault dashboard / BUY / SELL | `/teller/vault/**` | `SecurityConfig.java:410` | TELLER, MAKER, CHECKER, ADMIN |
+| Pending till approvals (read) | `/teller/till/pending` | `SecurityConfig.java:381` | CHECKER, ADMIN — **NOT TELLER** |
+| Approve / reject till open/close | `/teller/till/*/approve`, `/approve-close`, `/reject-open`, `/reject-close` | `SecurityConfig.java:383-391` | CHECKER, ADMIN — **NOT TELLER** |
+| Vault open / close | `/teller/vault/open`, `/teller/vault/close` | `SecurityConfig.java:396-399` | CHECKER, ADMIN — **NOT TELLER** |
+| Vault movement approve / reject | `/teller/vault/movement/*/approve`, `/reject` | `SecurityConfig.java:402-405` | CHECKER, ADMIN — **NOT TELLER** |
+
+**Identical matrix on the v2 REST API**
+(`SecurityConfig.apiSecurityFilterChain`):
+
+| Path | Source | Roles |
+|---|---|---|
+| `/api/v2/teller/till/me` | `:149-150` | TELLER, MAKER, CHECKER, ADMIN, AUDITOR |
+| `/api/v2/teller/vault/**` | `:146-147` | TELLER, MAKER, CHECKER, ADMIN |
+| `/api/v2/teller/**` (catch-all: cash-deposit, cash-withdrawal, till/open, till/close) | `:156-157` | TELLER, MAKER, ADMIN |
+| `/api/v2/teller/till/pending`, `/till/*/approve`, `/till/*/approve-close`, `/till/*/reject-open`, `/till/*/reject-close` | `:122-131` | CHECKER, ADMIN |
+| `/api/v2/teller/vault/open`, `/vault/close`, `/vault/movements/pending`, `/vault/movement/*/approve`, `/vault/movement/*/reject` | `:132-141` | CHECKER, ADMIN |
+
+**TELLER explicit exclusions** (zero-limit rows in `transaction_limits`
+seed at `data.sql`):
+
+| Transaction type | Per-txn limit | Daily limit |
+|---|---|---|
+| `WRITE_OFF` | 0 | 0 |
+| `REVERSAL` | 0 | 0 |
+| `DISBURSEMENT` | 0 | 0 |
+| `ALL` (default) | INR 2L | INR 10L |
+
+The zero-limit rows mean a TELLER cannot post these transaction types
+even if a future code change accidentally widens role-based access —
+`TransactionEngine` Step 6 enforces the limit and any non-zero amount
+against a zero-limit row throws `TRANSACTION_LIMIT_EXCEEDED`.
+
+**TELLER cannot perform supervisor actions** — every till/vault
+approve/reject path requires CHECKER or ADMIN. The maker ≠ checker
+guard inside the service layer further enforces that even an ADMIN
+user cannot approve a till they themselves opened.
+
+**TELLER login symptom check:** if TELLER login is reported as failing,
+verify in this order:
+1. Does the seed data include a TELLER user? (`teller1` per
+   `src/main/resources/data.sql`.)
+2. Is `transaction_limits` row for role `TELLER` / type `ALL` present?
+   If absent, `TransactionLimitService.validateTransactionLimit` throws
+   `NO_TRANSACTIONAL_ROLE` for the TELLER user on every cash post.
+3. Does the JWT carry `role: "TELLER"`? (decode at jwt.io.) If it
+   carries a different role, the user has multiple `app_user_roles`
+   rows and `SecurityUtil.getCurrentUserRole` resolved to a different
+   least-privilege role. Check `data.sql` user seeding.
 
 ---
 
