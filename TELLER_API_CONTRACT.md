@@ -45,8 +45,9 @@ active, and neither overlaps the other:
 1. **Supervisor inline checks (fully active):** `maker ≠ checker` is
    enforced in-service on every supervisor action — till open approve /
    reject, till close approve / reject, vault movement approve / reject,
-   and vault close (opener ≠ closer per RBI §4.3 joint-custody). Fires
-   `CBS-WF-001` (HTTP 403).
+   and vault close (opener ≠ closer per RBI joint-custody requirement
+   for vault operations [citation pending]). Fires `CBS-WF-001`
+   (HTTP 403).
 2. **Engine PENDING_APPROVAL workflow (not exercised for teller cash):**
    `TransactionEngine.execute` Step 7 can route transactions to
    PENDING_APPROVAL, which later re-executes through
@@ -476,7 +477,9 @@ Closes the vault after all tills are CLOSED. Custodian enters physical count.
 **Role:** CHECKER, ADMIN
 **Params:** `countedBalance` (BigDecimal), `remarks` (optional)
 **Response (200):** `ApiResponse<VaultPositionResponse>` (status=CLOSED, variance computed)
-**Error (403):** `CBS-WF-001` — opener ≠ closer (RBI Master Circular on Cash Management §4.3 joint-custody: the custodian who opened the vault at BOD cannot close it at EOD)
+**Error (403):** `CBS-WF-001` — opener ≠ closer (RBI joint-custody rule on
+branch vault operations: the custodian who opened the vault at BOD cannot
+close it at EOD; specific RBI master-circular reference [citation pending])
 **Error (409):** `CBS-TELLER-002` — vault already CLOSED / one or more tills still OPEN or PENDING at this branch / one or more vault movements still PENDING at this branch
 
 ---
@@ -484,12 +487,15 @@ Closes the vault after all tills are CLOSED. Custodian enters physical count.
 ## Idempotency Contract
 
 Both `/cash-deposit` and `/cash-withdrawal` require a non-blank
-`idempotencyKey` (UUID v4 recommended). Per RBI Master Direction on
-Digital Payment Security Controls §6.2: cash-posting idempotency is
-stricter than account transfers — a double-post against physical cash
-creates an EOD till variance and an RBI IT Governance Direction 2023
-§8.3 audit finding, so every client MUST generate a fresh UUID per
-logical request and reuse it verbatim on every retry of that request.
+`idempotencyKey` (UUID v4 recommended). Cash-posting idempotency is
+operationally stricter than account-only transfers — a double-post
+against physical cash directly creates an EOD till variance which has
+to be investigated and reconciled by the branch supervisor. Every
+client MUST therefore generate a fresh UUID per logical request and
+reuse it verbatim on every retry of that request. Specific RBI
+references (master direction / IT governance audit clause) [citation
+pending — to be filled in by the compliance team before production
+go-live].
 
 ### Transport
 
@@ -521,17 +527,22 @@ logical request and reuse it verbatim on every retry of that request.
 
 ### TTL / retention
 
-- **Keys are retained indefinitely.** No TTL on
-  `idempotency_registry`, no cleanup job. Per RBI Audit retention
-  (10 years minimum for financial transactions), keys must survive for
-  the full audit retention window; the registry table is append-only
-  beyond that.
-- Storage growth is bounded (one row per financial transaction) and is
-  covered by the same archival policy as `deposit_transactions` — no
-  separate retention policy applies to the idempotency layer.
-- BFF retry semantics: retry for up to 24 hours on network / 5xx
-  failures with the same key; beyond that mint a new key (the key on
-  the rejected transaction stays on `idempotency_registry` with a
+- **Keys are retained indefinitely (verified in code).** The
+  `idempotency_registry` table has no TTL column and no scheduled
+  cleanup job exists in the codebase as of this PR. Rows are append-only
+  for the operational lifetime of the row's parent transaction.
+- Storage growth is bounded — one row per financial transaction — and
+  the registry's archival lifecycle SHOULD follow the same policy as
+  `deposit_transactions`. The exact retention window is governed by
+  the bank's regulatory data-retention policy [citation pending — to
+  be filled in by the compliance team alongside the deposit-transaction
+  retention rule].
+- **BFF retry guidance (operational, not a contract guarantee):** the
+  server will accept a retry with the same key for as long as the key
+  is in the registry (i.e., indefinitely). BFF clients SHOULD pick a
+  reasonable bounded retry window per their own resilience policy and
+  fall back to minting a new key if retries beyond that window are
+  required (the original key stays on the registry with its
   terminal-state result).
 
 ### Retry semantics (reachable outcomes)
@@ -571,8 +582,11 @@ logical request and reuse it verbatim on every retry of that request.
 ## EOD Pre-Flight Gates
 
 EOD apply (`POST /batch/eod/apply`) is blocked by the teller module
-until the cash custody chain is fully closed. Per RBI Master Circular on
-Cash Management at Branches §4.3:
+until the cash custody chain is fully closed. The gates implement a
+standard CBS Tier-1 pattern (close all till + vault subledgers BEFORE
+running EOD reconciliation and balance snapshots, so that snapshots
+assert against verified counted balances rather than live mid-shift
+figures); specific RBI master-circular reference [citation pending]:
 
 1. Every teller till at every operational branch must be in CLOSED
    status — or the apply fails with `CBS-TELLER-100` (HTTP 409). The
