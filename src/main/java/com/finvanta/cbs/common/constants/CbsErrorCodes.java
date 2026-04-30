@@ -223,6 +223,27 @@ public final class CbsErrorCodes {
      * should never occur in production). Mapped to HTTP 500.
      */
     public static final String TELLER_INTERNAL = "CBS-TELLER-099";
+    /**
+     * EOD pre-flight gate per RBI Master Circular on Cash Management at Branches §4.3:
+     * one or more teller tills are still OPEN / PENDING_OPEN / PENDING_CLOSE on the
+     * EOD business date. EOD must not run while cash custody chain is unreconciled —
+     * the till's {@code currentBalance} is a live mid-shift figure, not a counted /
+     * sign-off balance, so EOD snapshots and subledger reconciliation would assert
+     * against an unreconciled cash subledger. Resolution: every teller must close
+     * their till and a supervisor must sign off before retrying EOD.
+     * Mapped to HTTP 409 CONFLICT (mirrors {@code BATCHES_STILL_OPEN}).
+     */
+    public static final String TELLER_TILLS_STILL_OPEN = "CBS-TELLER-100";
+    /**
+     * EOD pre-flight gate per RBI Master Circular on Cash Management at Branches §4.3:
+     * one or more branch vaults are still OPEN on the EOD business date. The vault
+     * is the branch-level cash safe; an OPEN vault means the day's physical-count
+     * reconciliation has not happened. EOD must not generate balance snapshots or
+     * close the day while vault state is unverified. Resolution: every vault custodian
+     * must close their vault (after all tills are CLOSED) before retrying EOD.
+     * Mapped to HTTP 409 CONFLICT.
+     */
+    public static final String TELLER_VAULTS_NOT_CLOSED = "CBS-TELLER-101";
 
     // =====================================================================
     // SEVERITY CONSTANTS

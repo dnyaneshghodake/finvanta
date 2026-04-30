@@ -1,5 +1,6 @@
 package com.finvanta.batch;
 
+import com.finvanta.cbs.modules.teller.service.TellerEodValidationService;
 import com.finvanta.repository.BatchJobRepository;
 import com.finvanta.repository.BranchRepository;
 import com.finvanta.repository.BusinessCalendarRepository;
@@ -7,6 +8,7 @@ import com.finvanta.repository.DepositAccountRepository;
 import com.finvanta.repository.InterBranchSettlementRepository;
 import com.finvanta.repository.LoanAccountRepository;
 import com.finvanta.service.TransactionBatchService;
+import com.finvanta.util.BusinessException;
 import com.finvanta.util.TenantContext;
 
 import java.time.LocalDate;
@@ -44,6 +46,7 @@ public class EodTrialService {
     private final InterBranchSettlementRepository settlementRepository;
     private final ReconciliationService reconciliationService;
     private final SubledgerReconciliationService subledgerReconciliationService;
+    private final TellerEodValidationService tellerEodValidationService;
 
     public EodTrialService(
             BusinessCalendarRepository calendarRepository,
@@ -54,7 +57,8 @@ public class EodTrialService {
             TransactionBatchService transactionBatchService,
             InterBranchSettlementRepository settlementRepository,
             ReconciliationService reconciliationService,
-            SubledgerReconciliationService subledgerReconciliationService) {
+            SubledgerReconciliationService subledgerReconciliationService,
+            TellerEodValidationService tellerEodValidationService) {
         this.calendarRepository = calendarRepository;
         this.branchRepository = branchRepository;
         this.batchJobRepository = batchJobRepository;
@@ -64,6 +68,7 @@ public class EodTrialService {
         this.settlementRepository = settlementRepository;
         this.reconciliationService = reconciliationService;
         this.subledgerReconciliationService = subledgerReconciliationService;
+        this.tellerEodValidationService = tellerEodValidationService;
     }
 
     /** Severity levels per Finacle EOD_TRIAL. */
