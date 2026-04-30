@@ -952,40 +952,68 @@ public class TellerServiceImpl implements TellerService {
         DepositAccount acct = lockAccountForDebit(tenantId, request.accountNumber());
         TellerTill till = lockOpenTill(tenantId, tellerUser, businessDate);
 
-        // 3. Customer-side balance + limit checks. These mirror the v2 deposit
-        // module's withdraw() so the teller channel and API channel reject the
-        // same scenarios with the same error codes.
-        accountValidatorEnforceSufficient(acct, request.amount());
-        accountValidatorEnforceMinBalance(acct, request.amount());
-        accountValidatorEnforceDailyLimit(acct, request.amount(), businessDate, tenantId);
-
-        // 4. Till-side cash availability. Per RBI Internal Controls: a till
-        // can never go negative; the teller must request a vault buy first.
-        if (till.getCurrentBalance().compareTo(request.amount()) < 0) {
-            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INSUFFICIENT_CASH,
-                    "Till has INR " + till.getCurrentBalance()
-                            + " on hand; cannot pay out INR " + request.amount()
-                            + ". Request a vault buy before continuing.");
-        }
-
-        // 5. Idempotency dedupe AFTER locks (TOCTOU-safe).
+        // 3. Idempotency dedupe AFTER locks (TOCTOU-safe), BEFORE any state-
+        // dependent validation. Mirrors the deposit-path ordering at line 811.
+        //
+        // CBS Tier-1 idempotency contract: a retry with the same idempotency
+        // key MUST return the prior receipt byte-for-byte regardless of
+        // subsequent account state. If we ran the balance / minimum-balance /
+        // daily-limit / till-cash checks BEFORE the dup-check, a successful
+        // first attempt that debited the account to zero would cause the
+        // retry to throw ACCT_INSUFFICIENT_BALANCE -- the operator would see
+        // a balance error for a withdrawal that already succeeded, and the
+        // BFF could mistakenly re-submit with a fresh idempotency key,
+        // double-debiting the customer.
+        //
+        // The state-dependent checks (Sufficient / MinBalance / DailyLimit /
+        // till-cash) are correctly placed BELOW this gate so they only apply
+        // to first-time requests. The lock-acquisition checks above
+        // (lockAccountForDebit's closed/frozen guard, lockOpenTill's OPEN
+        // guard) are kept where they are because:
+        //   - They are required to obtain the locks safely (a closed
+        //     account cannot be locked productively, and a non-OPEN till
+        //     means the principal is impersonating a closed-out shift).
+        //   - In practice closed/frozen state does not flip during the
+        //     millisecond retry window the way a debited balance does.
+        // Use the STORED chequeNumber (from dup) rather than the current
+        // request's -- the idempotency contract is to return the prior
+        // result byte-for-byte; sourcing chequeNumber from the live
+        // request would surface a different value if the retry carried
+        // a tampered or differently-rendered form payload.
         DepositTransaction dup = transactionRepository
                 .findByTenantIdAndIdempotencyKey(tenantId, request.idempotencyKey())
                 .orElse(null);
         if (dup != null) {
-            // CBS dup-retry: see deposit-side comment. journalEntryId is the
-            // authoritative pending discriminator; narration parsing is unsafe.
-            // Use the STORED chequeNumber (from dup) rather than the current
-            // request's -- the idempotency contract is to return the prior
-            // result byte-for-byte; sourcing chequeNumber from the live
-            // request would surface a different value if the retry carried
-            // a tampered or differently-rendered form payload.
+            // CBS dup-retry: journalEntryId is the authoritative pending
+            // discriminator; narration parsing is unsafe (see mapToResponse
+            // Javadoc on the deposit path).
             boolean priorPending = dup.getJournalEntryId() == null;
             return mapWithdrawalToResponse(dup, till,
                     lookupWithdrawalDenominations(tenantId, dup.getTransactionRef()),
                     request.amount().compareTo(CTR_PAN_THRESHOLD) >= 0,
                     dup.getChequeNumber(),
                     priorPending);
+        }
+
+        // 4. Customer-side balance + limit checks for FIRST-TIME requests.
+        // These mirror the v2 deposit module's withdraw() so the teller
+        // channel and API channel reject the same scenarios with the same
+        // error codes. They are state-dependent so MUST be below the dup
+        // gate (see rationale above).
+        accountValidatorEnforceSufficient(acct, request.amount());
+        accountValidatorEnforceMinBalance(acct, request.amount());
+        accountValidatorEnforceDailyLimit(acct, request.amount(), businessDate, tenantId);
+
+        // 5. Till-side cash availability for FIRST-TIME requests. Per RBI
+        // Internal Controls: a till can never go negative; the teller must
+        // request a vault buy first. Also state-dependent (the till may have
+        // emptied between the original post and a hypothetical retry), so
+        // placed below the dup gate.
+        if (till.getCurrentBalance().compareTo(request.amount()) < 0) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INSUFFICIENT_CASH,
+                    "Till has INR " + till.getCurrentBalance()
+                            + " on hand; cannot pay out INR " + request.amount()
+                            + ". Request a vault buy before continuing.");
         }
 
         // 6. Engine post: DR customer GL / CR BANK_OPERATIONS.
