@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * CBS Teller EOD Pre-Flight Validation Service per RBI Master Circular on
- * Cash Management at Branches §4.3 / Finacle EOD_TRIAL.
+ * Cash Management at Branches §4.3 and CBS Tier-1 EOD trial-run standard.
  *
  * <p>Tier-1 invariant: EOD must not run while the cash custody chain is
  * unreconciled. The teller module produces two cash subledgers:
