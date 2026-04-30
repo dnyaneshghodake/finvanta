@@ -76,14 +76,27 @@ public class SecurityConfig {
      * no session, no CSRF, no form login.
      *
      * MUST be ordered BEFORE the UI chain (@Order(1)) so that
-     * /api/v1/** requests are matched by this chain first.
+     * /api/v1/** and /api/v2/** requests are matched by this chain first.
      *
      * Auth flow: Authorization: Bearer {jwt} → JwtAuthenticationFilter
      *            → validates HMAC-SHA256 → sets SecurityContext
      *            → @PreAuthorize on controller method
      *
      * /api/v1/auth/** is permitAll (token issuance endpoints).
-     * All other /api/v1/** require valid JWT ACCESS token.
+     * All other /api/v1/** and /api/v2/** require valid JWT ACCESS token.
+     *
+     * <p>CBS v2 (Tier-1 modular): the v2 endpoints (e.g. {@code /api/v2/teller/**})
+     * share the same JWT semantics as v1 -- same token, same {@code Authorization}
+     * header, same stateless session policy. Both versions are matched here so a
+     * single JWT works across both. URL-level role matchers below mirror the
+     * defense-in-depth pattern used for the JSP {@code /teller/**} chain in
+     * {@link #uiSecurityFilterChain}; {@code @PreAuthorize} on each controller
+     * method is the second-level gate.
+     *
+     * <p>Coordinated with {@link JwtAuthenticationFilter#shouldNotFilter} (must
+     * match this securityMatcher) and {@link TenantFilter} (must require
+     * {@code X-Tenant-Id} for both v1 and v2). All three are tied to the same
+     * path-prefix list -- changes here must be applied in lockstep.
      */
     @Bean
     @Order(1)
@@ -92,12 +105,56 @@ public class SecurityConfig {
             JwtAuthenticationFilter jwtFilter,
             AuthRateLimitFilter authRateLimitFilter)
             throws Exception {
-        http.securityMatcher("/api/v1/**")
+        http.securityMatcher("/api/v1/**", "/api/v2/**")
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/api/v1/auth/**")
                         .permitAll()
+                        // CBS Teller v2 REST defense-in-depth (mirrors the JSP
+                        // /teller/** matchers in uiSecurityFilterChain). Each
+                        // endpoint is also guarded by @PreAuthorize on its
+                        // controller method; the URL matchers ensure that even
+                        // if @PreAuthorize is ever removed in a future refactor,
+                        // the chain still rejects unauthorized roles.
+                        // Specific paths MUST precede the /api/v2/teller/**
+                        // catch-all so they aren't widened by it.
+                        .requestMatchers("/api/v2/teller/till/pending")
+                        .hasAnyRole("CHECKER", "ADMIN")
+                        .requestMatchers("/api/v2/teller/till/*/approve")
+                        .hasAnyRole("CHECKER", "ADMIN")
+                        .requestMatchers("/api/v2/teller/till/*/approve-close")
+                        .hasAnyRole("CHECKER", "ADMIN")
+                        .requestMatchers("/api/v2/teller/till/*/reject-open")
+                        .hasAnyRole("CHECKER", "ADMIN")
+                        .requestMatchers("/api/v2/teller/till/*/reject-close")
+                        .hasAnyRole("CHECKER", "ADMIN")
+                        .requestMatchers("/api/v2/teller/vault/open")
+                        .hasAnyRole("CHECKER", "ADMIN")
+                        .requestMatchers("/api/v2/teller/vault/close")
+                        .hasAnyRole("CHECKER", "ADMIN")
+                        .requestMatchers("/api/v2/teller/vault/movements/pending")
+                        .hasAnyRole("CHECKER", "ADMIN")
+                        .requestMatchers("/api/v2/teller/vault/movement/*/approve")
+                        .hasAnyRole("CHECKER", "ADMIN")
+                        .requestMatchers("/api/v2/teller/vault/movement/*/reject")
+                        .hasAnyRole("CHECKER", "ADMIN")
+                        // /api/v2/teller/vault/** -- dashboard + BUY/SELL
+                        // request endpoints reachable by all teller-channel
+                        // users (CHECKER included so they can view the vault
+                        // state alongside the pending queue).
+                        .requestMatchers("/api/v2/teller/vault/**")
+                        .hasAnyRole("TELLER", "MAKER", "CHECKER", "ADMIN")
+                        // /api/v2/teller/till/me readable by AUDITOR too.
+                        .requestMatchers("/api/v2/teller/till/me")
+                        .hasAnyRole("TELLER", "MAKER", "CHECKER", "ADMIN", "AUDITOR")
+                        // Cash-posting + till open/close confined to TELLER /
+                        // MAKER / ADMIN. CHECKER excluded per RBI segregation
+                        // of duties (the checker who later approves a pending
+                        // teller transaction must not be the same operator
+                        // who initiated it).
+                        .requestMatchers("/api/v2/teller/**")
+                        .hasAnyRole("TELLER", "MAKER", "ADMIN")
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(
@@ -136,7 +193,16 @@ public class SecurityConfig {
                                     error.put("action", "Login to obtain an access token");
                                     body.put("error", error);
                                     java.util.Map<String, Object> meta = new java.util.LinkedHashMap<>();
-                                    meta.put("apiVersion", "v1");
+                                    // CBS: derive API version from the request path so v2
+                                    // callers see {"apiVersion":"v2"} in their error envelope.
+                                    // Defaults to "v1" if the path doesn't carry a version
+                                    // segment (defensive; the chain only matches /api/v1/**
+                                    // and /api/v2/**, so one of these will always hold).
+                                    String reqPath = req.getServletPath();
+                                    String apiVersion = (reqPath != null
+                                                && reqPath.startsWith("/api/v2/"))
+                                            ? "v2" : "v1";
+                                    meta.put("apiVersion", apiVersion);
                                     meta.put("correlationId", correlationId);
                                     meta.put("timestamp", timestamp);
                                     body.put("meta", meta);

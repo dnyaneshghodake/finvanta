@@ -114,9 +114,15 @@ public class TenantFilter implements Filter {
             HttpServletResponse httpResponse = (HttpServletResponse) response;
             String path = httpRequest.getRequestURI();
             String contextPath = httpRequest.getContextPath();
+            // CBS API tenant enforcement covers both /api/v1/** and /api/v2/**
+            // (Tier-1 DDD modular controllers under /api/v2/teller/**, etc.).
+            // Must stay in lockstep with SecurityConfig.apiSecurityFilterChain
+            // securityMatcher and JwtAuthenticationFilter.shouldNotFilter so all
+            // three filters agree on which paths are API.
             boolean isApiRequest = contextPath != null
                     && path != null
-                    && path.startsWith(contextPath + "/api/v1/");
+                    && (path.startsWith(contextPath + "/api/v1/")
+                            || path.startsWith(contextPath + "/api/v2/"));
 
             // === Resolve Tenant ID ===
             // Priority: X-Tenant-Id header → session → DEFAULT fallback (UI chain only).
