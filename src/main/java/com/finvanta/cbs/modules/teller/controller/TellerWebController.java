@@ -84,6 +84,111 @@ public class TellerWebController {
     }
 
     // =====================================================================
+    // Supervisor queue -- PENDING_OPEN / PENDING_CLOSE tills
+    // =====================================================================
+
+    /**
+     * Supervisor queue page: lists all tills at the authenticated supervisor's
+     * branch awaiting approval (PENDING_OPEN or PENDING_CLOSE). Reachable
+     * from the sidebar by CHECKER/ADMIN users.
+     *
+     * <p>Per RBI Internal Controls: CHECKER/ADMIN acts on this queue to
+     * sign off (approve) or reject tills opened / close-requested by tellers.
+     * Approvals transition PENDING_OPEN → OPEN and PENDING_CLOSE → CLOSED;
+     * rejections transition PENDING_OPEN → CLOSED (terminal) and
+     * PENDING_CLOSE → OPEN (recoverable).
+     */
+    @GetMapping("/till/pending")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public String showPendingQueue(Model model) {
+        model.addAttribute("pendingTills", tellerService.listPendingSupervisorTills());
+        return "teller/pending-tills";
+    }
+
+    /**
+     * Supervisor approves a PENDING_OPEN till (JSP path). Routes through the
+     * same service method as the REST endpoint so the maker-checker rule and
+     * state guard apply uniformly.
+     */
+    @PostMapping("/till/{tillId}/approve")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public String approveTillOpenWeb(
+            @org.springframework.web.bind.annotation.PathVariable Long tillId,
+            RedirectAttributes redirect) {
+        try {
+            TellerTill till = tellerService.approveTillOpen(tillId);
+            redirect.addFlashAttribute("success",
+                    "Till " + tillId + " APPROVED (OPEN) for teller " + till.getTellerUserId());
+        } catch (BusinessException ex) {
+            log.warn("Till open approve failed: {} -- {}", ex.getErrorCode(), ex.getMessage());
+            redirect.addFlashAttribute("errorCode", ex.getErrorCode());
+            redirect.addFlashAttribute("error", ex.getMessage());
+        }
+        return "redirect:/teller/till/pending";
+    }
+
+    /**
+     * Supervisor approves a PENDING_CLOSE till (JSP path).
+     */
+    @PostMapping("/till/{tillId}/approve-close")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public String approveTillCloseWeb(
+            @org.springframework.web.bind.annotation.PathVariable Long tillId,
+            RedirectAttributes redirect) {
+        try {
+            TellerTill till = tellerService.approveTillClose(tillId);
+            redirect.addFlashAttribute("success",
+                    "Till " + tillId + " CLOSED for teller " + till.getTellerUserId());
+        } catch (BusinessException ex) {
+            log.warn("Till close approve failed: {} -- {}", ex.getErrorCode(), ex.getMessage());
+            redirect.addFlashAttribute("errorCode", ex.getErrorCode());
+            redirect.addFlashAttribute("error", ex.getMessage());
+        }
+        return "redirect:/teller/till/pending";
+    }
+
+    /**
+     * Supervisor rejects a PENDING till (open or close; the service method
+     * selected by {@code action}). A mandatory reason is captured for audit.
+     *
+     * <p>{@code action = REJECT_OPEN} → till transitions to CLOSED (terminal).
+     * {@code action = REJECT_CLOSE} → till transitions back to OPEN so the
+     * teller can recount.
+     */
+    @PostMapping("/till/{tillId}/reject")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public String rejectTillWeb(
+            @org.springframework.web.bind.annotation.PathVariable Long tillId,
+            @RequestParam String action,
+            @RequestParam String reason,
+            RedirectAttributes redirect) {
+        try {
+            TellerTill till;
+            if ("REJECT_OPEN".equals(action)) {
+                till = tellerService.rejectTillOpen(tillId, reason);
+                redirect.addFlashAttribute("success",
+                        "Till " + tillId + " OPEN-REJECTED (now CLOSED) for teller "
+                                + till.getTellerUserId());
+            } else if ("REJECT_CLOSE".equals(action)) {
+                till = tellerService.rejectTillClose(tillId, reason);
+                redirect.addFlashAttribute("success",
+                        "Till " + tillId + " CLOSE-REJECTED (returned to OPEN) for teller "
+                                + till.getTellerUserId());
+            } else {
+                redirect.addFlashAttribute("error",
+                        "Invalid reject action: " + action
+                                + " (expected REJECT_OPEN or REJECT_CLOSE)");
+            }
+        } catch (BusinessException ex) {
+            log.warn("Till reject failed: action={} id={} code={} msg={}",
+                    action, tillId, ex.getErrorCode(), ex.getMessage());
+            redirect.addFlashAttribute("errorCode", ex.getErrorCode());
+            redirect.addFlashAttribute("error", ex.getMessage());
+        }
+        return "redirect:/teller/till/pending";
+    }
+
+    // =====================================================================
     // Open Till
     // =====================================================================
 

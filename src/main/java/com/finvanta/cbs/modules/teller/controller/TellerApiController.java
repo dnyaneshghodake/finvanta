@@ -14,6 +14,7 @@ import com.finvanta.cbs.modules.teller.service.VaultService;
 import jakarta.validation.Valid;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -218,6 +219,49 @@ public class TellerApiController {
     }
 
     // === Supervisor Approval ===
+
+    /**
+     * Supervisor queue: returns the list of tills at the authenticated
+     * supervisor's branch awaiting approval (PENDING_OPEN or PENDING_CLOSE).
+     * Mirrors {@code GET /teller/till/pending} on the JSP channel so the
+     * BFF / external integrations have REST parity.
+     */
+    @GetMapping("/till/pending")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<List<TellerTillResponse>>> listPendingTills() {
+        List<TellerTillResponse> tills = tellerService.listPendingSupervisorTills().stream()
+                .map(tillMapper::toResponse)
+                .toList();
+        return ResponseEntity.ok(ApiResponse.success(tills));
+    }
+
+    /**
+     * Supervisor rejects a PENDING_OPEN till (terminal transition to CLOSED).
+     */
+    @PostMapping("/till/{tillId}/reject-open")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<TellerTillResponse>> rejectTillOpen(
+            @PathVariable Long tillId,
+            @RequestParam String reason) {
+        var till = tellerService.rejectTillOpen(tillId, reason);
+        return ResponseEntity.ok(ApiResponse.success(
+                tillMapper.toResponse(till),
+                "Till OPEN-REJECTED for teller " + till.getTellerUserId()));
+    }
+
+    /**
+     * Supervisor rejects a PENDING_CLOSE till (recoverable: till returns to OPEN).
+     */
+    @PostMapping("/till/{tillId}/reject-close")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<TellerTillResponse>> rejectTillClose(
+            @PathVariable Long tillId,
+            @RequestParam String reason) {
+        var till = tellerService.rejectTillClose(tillId, reason);
+        return ResponseEntity.ok(ApiResponse.success(
+                tillMapper.toResponse(till),
+                "Till CLOSE-REJECTED (returned to OPEN) for teller " + till.getTellerUserId()));
+    }
 
     /**
      * Supervisor approves a PENDING_OPEN till, promoting it to OPEN.

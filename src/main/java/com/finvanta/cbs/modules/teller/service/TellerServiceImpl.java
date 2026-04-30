@@ -333,6 +333,140 @@ public class TellerServiceImpl implements TellerService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<TellerTill> listPendingSupervisorTills() {
+        String tenantId = TenantContext.getCurrentTenant();
+        Long branchId = SecurityUtil.getCurrentUserBranchId();
+        if (branchId == null) {
+            // Supervisors always operate in a branch context. A principal with
+            // no branch assignment cannot see any pending queue.
+            return List.of();
+        }
+        LocalDate businessDate = businessDateService.getCurrentBusinessDate();
+        // Two separate queries + concat rather than a single IN query because
+        // the existing findByBranchDateAndStatus repo method is single-status.
+        // Avoids introducing a second query method just for this UI view.
+        List<TellerTill> pendingOpen = tillRepository.findByBranchDateAndStatus(
+                tenantId, branchId, businessDate, TellerTillStatus.PENDING_OPEN);
+        List<TellerTill> pendingClose = tillRepository.findByBranchDateAndStatus(
+                tenantId, branchId, businessDate, TellerTillStatus.PENDING_CLOSE);
+        List<TellerTill> combined = new ArrayList<>(pendingOpen.size() + pendingClose.size());
+        combined.addAll(pendingOpen);
+        combined.addAll(pendingClose);
+        return combined;
+    }
+
+    @Override
+    @Transactional
+    public TellerTill rejectTillOpen(Long tillId, String reason) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String supervisor = SecurityUtil.getCurrentUsername();
+
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "Rejection reason is mandatory per CBS audit rules");
+        }
+
+        // JOIN FETCH branch so the mapper can read branch metadata after TX close.
+        TellerTill till = tillRepository.findByIdWithBranch(tenantId, tillId)
+                .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                        "Till not found: " + tillId));
+
+        if (!till.isPendingOpen()) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "Till is not in PENDING_OPEN status (current: " + till.getStatus()
+                            + "). Only PENDING_OPEN tills can be rejected via this path.");
+        }
+
+        // CBS Maker ≠ Checker per RBI Internal Controls.
+        if (supervisor.equals(till.getTellerUserId())) {
+            throw new BusinessException(CbsErrorCodes.WF_SELF_APPROVAL,
+                    "Supervisor cannot reject their own till. "
+                            + "Teller: " + till.getTellerUserId()
+                            + ", Supervisor: " + supervisor);
+        }
+
+        // CBS terminal transition: a rejected-open till moves to CLOSED. The
+        // opening balance was never recognized by the system (no GL post at
+        // open-time), so no contra journal is required. The teller must open
+        // a fresh till to resume work.
+        till.setStatus(TellerTillStatus.CLOSED);
+        till.setClosedAt(LocalDateTime.now());
+        till.setClosedBySupervisor(supervisor);
+        till.setRemarks((till.getRemarks() == null ? "" : till.getRemarks() + " | ")
+                + "REJECTED_OPEN: " + reason);
+        till.setUpdatedBy(supervisor);
+        TellerTill saved = tillRepository.save(till);
+
+        auditService.logEvent(
+                "TellerTill", saved.getId(), "TILL_OPEN_REJECTED",
+                "PENDING_OPEN", "CLOSED", "TELLER",
+                "Till " + tillId + " open-request REJECTED by supervisor " + supervisor
+                        + " for teller " + till.getTellerUserId()
+                        + " at branch " + till.getBranchCode()
+                        + " | reason: " + reason);
+
+        log.info("CBS Teller till {} OPEN-REJECTED by supervisor {} for teller {} reason={}",
+                tillId, supervisor, till.getTellerUserId(), reason);
+        return saved;
+    }
+
+    @Override
+    @Transactional
+    public TellerTill rejectTillClose(Long tillId, String reason) {
+        String tenantId = TenantContext.getCurrentTenant();
+        String supervisor = SecurityUtil.getCurrentUsername();
+
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "Rejection reason is mandatory per CBS audit rules");
+        }
+
+        TellerTill till = tillRepository.findByIdWithBranch(tenantId, tillId)
+                .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                        "Till not found: " + tillId));
+
+        if (!till.isPendingClose()) {
+            throw new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
+                    "Till is not in PENDING_CLOSE status (current: " + till.getStatus()
+                            + "). Only PENDING_CLOSE tills can be rejected via this path.");
+        }
+
+        // Maker ≠ checker.
+        if (supervisor.equals(till.getTellerUserId())) {
+            throw new BusinessException(CbsErrorCodes.WF_SELF_APPROVAL,
+                    "Supervisor cannot reject their own till close. "
+                            + "Teller: " + till.getTellerUserId());
+        }
+
+        // CBS recoverable rejection: the till returns to OPEN so the teller
+        // can recount and resubmit. countedBalance and varianceAmount are
+        // cleared so the next close request starts from a clean slate (per
+        // RBI Internal Controls: the variance figure on the audit log must
+        // always match the counted figure that produced it, never a stale
+        // prior attempt).
+        till.setStatus(TellerTillStatus.OPEN);
+        till.setCountedBalance(null);
+        till.setVarianceAmount(null);
+        till.setRemarks((till.getRemarks() == null ? "" : till.getRemarks() + " | ")
+                + "REJECTED_CLOSE: " + reason);
+        till.setUpdatedBy(supervisor);
+        TellerTill saved = tillRepository.save(till);
+
+        auditService.logEvent(
+                "TellerTill", saved.getId(), "TILL_CLOSE_REJECTED",
+                "PENDING_CLOSE", "OPEN", "TELLER",
+                "Till " + tillId + " close-request REJECTED by supervisor " + supervisor
+                        + " for teller " + till.getTellerUserId()
+                        + " at branch " + till.getBranchCode()
+                        + " | reason: " + reason);
+
+        log.info("CBS Teller till {} CLOSE-REJECTED by supervisor {} for teller {} reason={}",
+                tillId, supervisor, till.getTellerUserId(), reason);
+        return saved;
+    }
+
+    @Override
     @Transactional
     public TellerTill approveTillClose(Long tillId) {
         String tenantId = TenantContext.getCurrentTenant();

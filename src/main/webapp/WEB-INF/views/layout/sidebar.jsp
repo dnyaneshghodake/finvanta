@@ -52,6 +52,14 @@
         <li><a href="${pageContext.request.contextPath}/teller/cash-deposit" class="nav-link"><i class="bi bi-plus-circle"></i><span class="nav-text">Cash Deposit</span></a></li>
         <li><a href="${pageContext.request.contextPath}/teller/cash-withdrawal" class="nav-link"><i class="bi bi-dash-circle"></i><span class="nav-text">Cash Withdrawal</span></a></li>
         </c:if>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <%-- Supervisor queue: PENDING_OPEN and PENDING_CLOSE tills awaiting
+             sign-off. Per RBI Internal Controls / dual-control: the checker
+             who signs off MUST be different from the teller who opened the
+             till — the service layer enforces this, the UI merely surfaces
+             the queue. --%>
+        <li><a href="${pageContext.request.contextPath}/teller/till/pending" class="nav-link"><i class="bi bi-check2-square"></i><span class="nav-text">Pending Till Approvals</span></a></li>
+        </c:if>
 
         <li class="nav-section">Transaction Inquiry</li>
         <li><a href="${pageContext.request.contextPath}/txn360/search?q=" class="nav-link"><i class="bi bi-diagram-3"></i><span class="nav-text">Transaction 360</span></a></li>

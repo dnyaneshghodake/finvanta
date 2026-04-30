@@ -10,6 +10,7 @@ import com.finvanta.transaction.TransactionResult;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * CBS Teller Module Service Interface per CBS TELLER standard.
@@ -199,4 +200,52 @@ public interface TellerService {
      * @return the till in CLOSED status
      */
     TellerTill approveTillClose(Long tillId);
+
+    /**
+     * Returns the list of tills at the authenticated supervisor's branch for
+     * the current business date that are in {@code PENDING_OPEN} or
+     * {@code PENDING_CLOSE} status -- i.e. awaiting supervisor sign-off.
+     *
+     * <p>Used by the supervisor queue UI (JSP + REST) so CHECKERs and ADMINs
+     * can see all tills awaiting their action in one place. ADMIN sees their
+     * current branch's queue (branch-switch respected via
+     * {@code SecurityUtil.getCurrentUserBranchId()}); CHECKER always sees
+     * their home branch.
+     *
+     * @return the list of tills in PENDING_OPEN or PENDING_CLOSE (ordered by
+     *         opened/requested time ascending). Empty list if none pending.
+     */
+    List<TellerTill> listPendingSupervisorTills();
+
+    /**
+     * Supervisor rejects a PENDING_OPEN till. The till transitions to CLOSED
+     * (terminal; a fresh till must be opened for the teller to resume work).
+     *
+     * <p>Per RBI Internal Controls: a rejected till carries the supervisor's
+     * identity and rejection reason on the audit log so the trail is complete.
+     * The physical cash the teller claimed to hold at open-time was never
+     * recognized by the system — no GL correction is required.
+     *
+     * @param tillId the ID of the PENDING_OPEN till to reject
+     * @param reason mandatory rejection reason for audit trail
+     * @return the till in CLOSED status with {@code closedBySupervisor} set
+     */
+    TellerTill rejectTillOpen(Long tillId, String reason);
+
+    /**
+     * Supervisor rejects a PENDING_CLOSE till. The till transitions back to
+     * OPEN so the teller can recount and re-submit.
+     *
+     * <p>Per RBI Internal Controls: rejection typically happens when the
+     * variance reported by the teller is implausibly large or the physical
+     * verification fails. The till returns to OPEN status so the teller
+     * does not lose access to their counter mid-shift; {@code countedBalance}
+     * and {@code varianceAmount} are cleared so the next close request
+     * starts fresh.
+     *
+     * @param tillId the ID of the PENDING_CLOSE till to reject
+     * @param reason mandatory rejection reason for audit trail
+     * @return the till back in OPEN status
+     */
+    TellerTill rejectTillClose(Long tillId, String reason);
 }
