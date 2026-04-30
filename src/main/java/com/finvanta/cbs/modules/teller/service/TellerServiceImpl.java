@@ -818,10 +818,19 @@ public class TellerServiceImpl implements TellerService {
             // the engine populates it only on POSTED, leaves it null on
             // PENDING_APPROVAL. Parsing the narration string is unsafe because
             // the operator supplies it verbatim via req.narration().
+            //
+            // CBS Tier-1 idempotency contract: every receipt field must be
+            // sourced from the STORED transaction, never from the live
+            // request. ctrTriggered derives from the amount, so we read
+            // dup.getAmount() -- not request.amount() -- to defend against
+            // a tampered or differently-rendered retry payload that could
+            // surface a different CTR flag than the original receipt.
             boolean priorPending = dup.getJournalEntryId() == null;
+            boolean priorCtrTriggered = dup.getAmount() != null
+                    && dup.getAmount().compareTo(CTR_PAN_THRESHOLD) >= 0;
             return mapToResponse(dup, till,
                     lookupDenominationsForResponse(tenantId, dup.getTransactionRef()),
-                    request.amount().compareTo(CTR_PAN_THRESHOLD) >= 0,
+                    priorCtrTriggered,
                     /* ficnTriggered */ false,
                     priorPending);
         }
@@ -987,10 +996,18 @@ public class TellerServiceImpl implements TellerService {
             // CBS dup-retry: journalEntryId is the authoritative pending
             // discriminator; narration parsing is unsafe (see mapToResponse
             // Javadoc on the deposit path).
+            //
+            // CBS Tier-1 idempotency contract: every receipt field must be
+            // sourced from the STORED transaction, never from the live
+            // request. ctrTriggered derives from the amount, so we read
+            // dup.getAmount() -- not request.amount() -- mirroring the
+            // chequeNumber discipline below.
             boolean priorPending = dup.getJournalEntryId() == null;
+            boolean priorCtrTriggered = dup.getAmount() != null
+                    && dup.getAmount().compareTo(CTR_PAN_THRESHOLD) >= 0;
             return mapWithdrawalToResponse(dup, till,
                     lookupWithdrawalDenominations(tenantId, dup.getTransactionRef()),
-                    request.amount().compareTo(CTR_PAN_THRESHOLD) >= 0,
+                    priorCtrTriggered,
                     dup.getChequeNumber(),
                     priorPending);
         }
