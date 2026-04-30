@@ -306,6 +306,23 @@ public class SecurityConfig {
                             .hasAnyRole("MAKER", "ADMIN")
                             .requestMatchers("/loan/prepayment/**")
                             .hasAnyRole("MAKER", "ADMIN")
+                            // CBS Teller (over-the-counter cash channel) per RBI Internal Controls.
+                            // /teller/till/{id}/approve and /teller/till/{id}/approve-close are
+                            // supervisor sign-off endpoints — restricted to CHECKER/ADMIN per
+                            // dual-control. The corresponding REST controller @PreAuthorize is
+                            // the second-level gate; the URL matcher here is defence-in-depth.
+                            .requestMatchers("/teller/till/*/approve")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            .requestMatchers("/teller/till/*/approve-close")
+                            .hasAnyRole("CHECKER", "ADMIN")
+                            // /teller/till/open, /teller/till/close, /teller/cash-deposit,
+                            // /teller/cash-withdrawal — confined to TELLER/MAKER/ADMIN.
+                            // CHECKER is excluded from posting cash transactions per RBI
+                            // segregation of duties (the checker who later approves a
+                            // pending teller transaction must not be the same operator
+                            // who initiated it).
+                            .requestMatchers("/teller/**")
+                            .hasAnyRole("TELLER", "MAKER", "ADMIN")
                             .requestMatchers("/audit/**")
                             .hasAnyRole("AUDITOR", "ADMIN")
                             .requestMatchers("/admin/mfa/**")
