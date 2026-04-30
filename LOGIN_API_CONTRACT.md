@@ -100,14 +100,35 @@ X-Tenant-Id: DEFAULT
 
 **Error responses**
 
+CBS applies anti-enumeration discipline (`AuthController.java:105-138`): every
+pre-password failure (user-not-found, wrong-password, wrong-password-on-locked,
+wrong-password-on-disabled) returns the same `AUTH_FAILED` code so an attacker
+cannot distinguish account-existence from password-failure. Account-status
+codes (`ACCOUNT_DISABLED`, `ACCOUNT_LOCKED`, `PASSWORD_EXPIRED`) are revealed
+ONLY after the password has been validated.
+
 | HTTP | errorCode | Cause |
 |---|---|---|
-| 401 | `AUTH_FAILED` | Invalid credentials (`AuthController.java:137`) |
-| 401 | `ACCOUNT_LOCKED` | Locked after `MAX_FAILED_ATTEMPTS` |
-| 401 | `PASSWORD_EXPIRED` | 90-day rotation rule (`AuthController.java:220`) |
+| 401 | `AUTH_FAILED` | Invalid credentials (user-not-found, wrong password, or any wrong-password against a locked/disabled account — anti-enumeration) (`AuthController.java:137, 173`) |
+| 401 | `ACCOUNT_DISABLED` | Correct password but `is_active = false` (`AuthController.java:195`) |
+| 401 | `ACCOUNT_LOCKED` | Correct password but account locked from prior failed attempts; auto-unlock not yet eligible (`AuthController.java:208`) |
+| 401 | `PASSWORD_EXPIRED` | Correct password but expired per rotation policy (`AuthController.java:220`) |
 | 400 | `MISSING_TENANT_ID` | `X-Tenant-Id` absent |
 | 400 | `INVALID_TENANT_ID` | `X-Tenant-Id` malformed |
 | 400 | `VALIDATION_FAILED` | username/password blank |
+
+> **Auto-unlock** (`AuthController.java:143-147`): if a user's lockout
+> duration has elapsed, the next login attempt resets `failedLoginAttempts`
+> automatically before the password check runs.
+
+> **Failed-attempt counter on disabled accounts**
+> (`AuthController.java:155-167`): even disabled accounts increment the
+> failed-attempt counter for SOC forensics (credential-stuffing detection).
+
+> **Login returns ONLY identity + tokens** (`AuthController.java:418-433`).
+> Operational context (branch status, business day, permissions, limits,
+> feature flags) MUST be fetched via `GET /api/v1/context/bootstrap`
+> AFTER login. Login itself targets <300ms and carries no business data.
 
 ---
 
@@ -132,9 +153,23 @@ The challenge token's `jti` is added to `RevokedRefreshToken` for single-use enf
 
 | HTTP | errorCode | Cause |
 |---|---|---|
-| 401 | `INVALID_MFA_CHALLENGE` | Challenge invalid, expired, or malformed (`AuthController.java:277`) |
-| 401 | `MFA_CHALLENGE_REUSED` | Challenge already consumed (`AuthController.java:318`) |
-| 401 | `INVALID_OTP` | TOTP code mismatch (counter increments) |
+| 401 | `INVALID_MFA_CHALLENGE` | Challenge token invalid / expired (>5 min) / not an MFA-challenge type (`AuthController.java:277`) |
+| 401 | `INVALID_MFA_CHALLENGE` | Challenge has no `jti` claim — malformed (`AuthController.java:296`) |
+| 401 | `INVALID_MFA_CHALLENGE` | Challenge tenant ≠ request tenant — cross-tenant replay attempt (`AuthController.java:330`) |
+| 401 | `MFA_CHALLENGE_REUSED` | Challenge `jti` already on the denylist (`AuthController.java:318`) |
+| 401 | `MFA_CHALLENGE_REUSED` | Concurrent verify race — unique-constraint trip on the denylist (`AuthController.java:406`) |
+| 401 | `ACCOUNT_INVALID` | User no longer active or now locked between challenge issuance and verify (`AuthController.java:342`) |
+| 401 | `MFA_VERIFICATION_FAILED` | TOTP code mismatch — counter increments toward account lockout (`AuthController.java:356, 380`) |
+
+> **MFA failure increments the lockout counter** (`AuthController.java:364-376`):
+> an attacker who knows the password cannot brute-force OTPs across unlimited
+> 5-minute challenge windows. After `MAX_FAILED_ATTEMPTS` the account is
+> locked just as it would be on password failures.
+
+> **OTP replay protection across channels**: `MfaService.verifyLoginTotp`
+> consumes the OTP via the same replay-protected path the JSP UI uses, so
+> an OTP burned on the JSP channel cannot be replayed on the API channel
+> (and vice versa).
 
 ---
 
@@ -171,9 +206,20 @@ Source: `AuthController.java:496`.
 
 | HTTP | errorCode | Cause |
 |---|---|---|
-| 401 | `INVALID_REFRESH_TOKEN` | Expired, malformed, signature invalid, or wrong type |
+| 401 | `INVALID_REFRESH_TOKEN` | Token signature invalid, expired, or unparseable (`AuthController.java:509`) |
+| 401 | `NOT_REFRESH_TOKEN` | Caller presented an access (or other non-refresh) token (`AuthController.java:518`) |
+| 401 | `LEGACY_REFRESH_TOKEN` | Token has no `jti` claim — predates the rotation policy; force re-auth (`AuthController.java:548`) |
+| 401 | `REFRESH_TOKEN_REUSED` | Token's `jti` is already on the denylist — replay detection per OWASP JWT Cheat Sheet (`AuthController.java:570`) |
+| 401 | `REFRESH_TOKEN_REUSED` | Concurrent rotation — unique-constraint trip on the denylist (`AuthController.java:644`) |
 | 401 | `ACCOUNT_INVALID` | User no longer active or now locked (`AuthController.java:586`) |
-| 401 | `REFRESH_TOKEN_REVOKED` | Token's `jti` is on the denylist (replay attempt) |
+
+> **Refresh-token reuse is the canonical theft-detection signal.** Per
+> RBI / OWASP JWT Cheat Sheet, if a refresh token's `jti` is presented
+> twice, exactly one of two things happened: (a) the legitimate client
+> retried after a network glitch — but the new pair was already issued
+> on the first attempt; or (b) the token was stolen and replayed. Both
+> are surfaced as `REFRESH_TOKEN_REUSED` to force re-authentication and
+> emit a `REFRESH_TOKEN_REUSED` audit event the SOC can pivot on.
 
 ---
 
@@ -192,7 +238,18 @@ X-Tenant-Id: DEFAULT
 
 **Success — HTTP 200** — `ApiResponse<LoginSessionContext>` (`LoginSessionContext.java:39`).
 
-The record carries 8 sub-blocks: `token`, `user`, `branch`, `businessDay`, `role`, `limits`, `operationalConfig`, `featureFlags`.
+The record carries 8 sub-blocks: `token`, `user`, `branch`, `businessDay`,
+`role`, `limits`, `operationalConfig`, `featureFlags`.
+
+> ⚠️ The example below is **illustrative**. The exact field values for
+> `permissionsByModule`, `allowedModules`, `featureFlags`, and
+> `operationalConfig` are populated at runtime by `SessionContextService`
+> from the `permissions` / `role_permissions` / feature-flag config.
+> BFF clients SHOULD treat unknown keys as forward-compatible additions
+> and rely on the canonical TypeScript types generated from the
+> `LoginSessionContext` record rather than pinning to this example.
+> Sub-record shapes (field names + types) ARE stable — verified at
+> `LoginSessionContext.java:64, 81, 104, 127`.
 
 ```json
 {
@@ -268,7 +325,16 @@ the browser's 4 KB cookie limit — see Appendix A for the diagnostic.
 
 Signed HMAC-SHA256 with `cbs.jwt.secret`. Source: `JwtTokenService.java`.
 
-### 3.1 Access Token (`JwtTokenService.java:81`, expires 15 minutes)
+**Token expiry windows.** The expiry durations cited below are the
+**default values** quoted in the wiki summary; the actual values are
+**configuration-driven** via Spring `@Value` properties on
+`JwtTokenService` (`accessMinutes`, `refreshHours`). Production
+deployments may override these via `cbs.jwt.access-minutes` /
+`cbs.jwt.refresh-hours`. BFF clients MUST NOT hardcode the expiry —
+they MUST read `expiresAt` from the response (Unix epoch seconds) and
+schedule refresh based on that value.
+
+### 3.1 Access Token (`JwtTokenService.java:81`, default 15 minutes)
 
 ```json
 {
