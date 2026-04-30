@@ -39,6 +39,20 @@
         <li><a href="${pageContext.request.contextPath}/deposit/transfer" class="nav-link"><i class="bi bi-arrow-left-right"></i><span class="nav-text">Fund Transfer</span></a></li>
         </c:if>
 
+        <%-- CBS Teller (over-the-counter cash channel) per RBI Internal Controls.
+             ROLE_TELLER and ROLE_MAKER can open tills + post cash transactions;
+             ROLE_CHECKER/ROLE_ADMIN approve PENDING_OPEN tills and supervise.
+             Routes match TellerWebController @RequestMapping("/teller") and
+             TellerApiController.@PreAuthorize matrix. --%>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_TELLER') || pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_CHECKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li class="nav-section">Teller (Cash Counter)</li>
+        </c:if>
+        <c:if test="${pageContext.request.isUserInRole('ROLE_TELLER') || pageContext.request.isUserInRole('ROLE_MAKER') || pageContext.request.isUserInRole('ROLE_ADMIN')}">
+        <li><a href="${pageContext.request.contextPath}/teller/till/open" class="nav-link"><i class="bi bi-cash-stack"></i><span class="nav-text">Open Till</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/teller/cash-deposit" class="nav-link"><i class="bi bi-plus-circle"></i><span class="nav-text">Cash Deposit</span></a></li>
+        <li><a href="${pageContext.request.contextPath}/teller/cash-withdrawal" class="nav-link"><i class="bi bi-dash-circle"></i><span class="nav-text">Cash Withdrawal</span></a></li>
+        </c:if>
+
         <li class="nav-section">Transaction Inquiry</li>
         <li><a href="${pageContext.request.contextPath}/txn360/search?q=" class="nav-link"><i class="bi bi-diagram-3"></i><span class="nav-text">Transaction 360</span></a></li>
 
