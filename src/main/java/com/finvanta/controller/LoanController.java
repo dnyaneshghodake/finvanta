@@ -63,6 +63,8 @@ public class LoanController {
     private final DepositAccountRepository depositAccountRepository;
     private final StandingInstructionRepository siRepository;
     private final StandingInstructionServiceImpl siService;
+    private final CollateralRepository collateralRepository;
+    private final LoanDocumentRepository documentRepository;
 
     public LoanController(
             LoanApplicationService applicationService,

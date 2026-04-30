@@ -46,4 +46,9 @@ public interface ChargeConfigRepository extends JpaRepository<ChargeConfig, Long
      */
     List<ChargeConfig> findByTenantIdAndEventTriggerAndIsActiveTrueOrderByChargeCode(
             String tenantId, String eventTrigger);
+
+    /**
+     * Find all charge configs for a tenant ordered by charge code.
+     */
+    List<ChargeConfig> findByTenantIdOrderByChargeCode(String tenantId);
 }

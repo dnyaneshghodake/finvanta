@@ -91,7 +91,7 @@ public class LoanDocumentServiceImpl implements LoanDocumentService {
         doc.setContentType(contentType);
         doc.setFileSize((long) fileContent.length);
         doc.setRemarks(remarks);
-        doc.setVerificationStatus(com.finvanta.domain.enums.DocumentVerificationStatus.PENDING);
+        doc.setVerificationStatus("UPLOADED");
 
         LoanDocument saved = documentRepository.save(doc);
 
@@ -158,7 +158,7 @@ public class LoanDocumentServiceImpl implements LoanDocumentService {
                         "DOCUMENT_NOT_FOUND",
                         "Document not found: " + documentId));
 
-        doc.setVerificationStatus(com.finvanta.domain.enums.DocumentVerificationStatus.VERIFIED);
+        doc.setVerificationStatus("VERIFIED");
         doc.setVerifiedBy(user);
         doc.setVerifiedDate(java.time.LocalDate.now());
         doc.setUpdatedBy(user);
@@ -180,7 +180,7 @@ public class LoanDocumentServiceImpl implements LoanDocumentService {
                         "DOCUMENT_NOT_FOUND",
                         "Document not found: " + documentId));
 
-        doc.setVerificationStatus(com.finvanta.domain.enums.DocumentVerificationStatus.REJECTED);
+        doc.setVerificationStatus("REJECTED");
         doc.setVerifiedBy(user);
         doc.setVerifiedDate(java.time.LocalDate.now());
         doc.setRejectionReason(rejectionReason);
