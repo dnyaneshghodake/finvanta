@@ -340,11 +340,12 @@ class TellerCashDepositIntegrationTest {
         // "amount > perTransactionLimit" THROWS TRANSACTION_LIMIT_EXCEEDED. Step 7's
         // MakerCheckerService.requiresApproval uses the SAME field but is unreachable
         // for amount-based routing on a non-REVERSAL/WRITE_OFF type, because Step 6
-        // already aborted. Per Finacle TRAN_AUTH this is intentional: amount-driven
-        // PENDING_APPROVAL only applies to ALWAYS_REQUIRE_APPROVAL types (REVERSAL,
-        // WRITE_OFF, WRITE_OFF_RECOVERY). For CASH_DEPOSIT the only valid above-limit
-        // path is hard rejection -- the maker must split the deposit or escalate to
-        // a higher-privilege role offline.
+        // already aborted. Per CBS Tier-1 transaction-authorization standard this is
+        // intentional: amount-driven PENDING_APPROVAL only applies to
+        // ALWAYS_REQUIRE_APPROVAL types (REVERSAL, WRITE_OFF, WRITE_OFF_RECOVERY).
+        // For CASH_DEPOSIT the only valid above-limit path is hard rejection --
+        // the maker must split the deposit or escalate to a higher-privilege role
+        // offline.
         //
         // This test therefore asserts the rejection path: the engine throws, and
         // because cashDeposit() is @Transactional the parent rolls back -- no ledger,
