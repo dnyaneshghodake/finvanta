@@ -100,6 +100,8 @@ public class EodTrialService {
         results.add(checkBranchesDayOpen(tenantId, businessDate));
         results.add(checkEodStatus(tenantId, businessDate));
         results.add(checkBatchesClosed(tenantId, businessDate));
+        results.add(checkTellerTillsClosed(businessDate));
+        results.add(checkBranchVaultsClosed(businessDate));
         results.add(checkLoanAccounts(tenantId));
         results.add(checkCasaAccounts(tenantId));
         results.add(checkGlRecon());
@@ -185,6 +187,44 @@ public class EodTrialService {
             return EodCheckResult.pass("BATCHES", "Transaction Batches", "All batches CLOSED");
         } catch (Exception e) {
             return EodCheckResult.blocker("BATCHES", "Transaction Batches", "Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * CBS Tier-1: teller till custody-chain check per RBI Master Circular on
+     * Cash Management at Branches §4.3. Reuses the apply-path validator so the
+     * trial and apply screens agree on the same predicate -- a teller who sees
+     * a green "Teller Tills" badge on the trial UI knows the subsequent Apply
+     * will not throw {@code TELLER_TILLS_STILL_OPEN}. BLOCKER severity so the
+     * trial UI marks it red and the Apply button stays disabled.
+     */
+    private EodCheckResult checkTellerTillsClosed(LocalDate date) {
+        try {
+            tellerEodValidationService.validateAllTillsClosed(date);
+            return EodCheckResult.pass("TELLER_TILLS", "Teller Tills", "All tills CLOSED");
+        } catch (BusinessException e) {
+            return EodCheckResult.blocker("TELLER_TILLS", "Teller Tills", e.getMessage());
+        } catch (Exception e) {
+            return EodCheckResult.blocker("TELLER_TILLS", "Teller Tills", "Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * CBS Tier-1: branch vault custody-chain check per RBI Master Circular on
+     * Cash Management at Branches §4.3. BLOCKER -- EOD must not generate
+     * balance snapshots (Steps 8.6/8.7 of {@code EodOrchestrator}) while the
+     * branch cash safe is still OPEN, because the
+     * {@code SUM(till) + vault == GL BANK_OPERATIONS} invariant only holds
+     * when both sides are CLOSED with verified counted balances.
+     */
+    private EodCheckResult checkBranchVaultsClosed(LocalDate date) {
+        try {
+            tellerEodValidationService.validateAllVaultsClosed(date);
+            return EodCheckResult.pass("BRANCH_VAULTS", "Branch Vaults", "All vaults CLOSED");
+        } catch (BusinessException e) {
+            return EodCheckResult.blocker("BRANCH_VAULTS", "Branch Vaults", e.getMessage());
+        } catch (Exception e) {
+            return EodCheckResult.blocker("BRANCH_VAULTS", "Branch Vaults", "Error: " + e.getMessage());
         }
     }
 

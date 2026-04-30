@@ -268,6 +268,15 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.TELLER_TILL_NOT_OPEN,
                     CbsErrorCodes.TELLER_TILL_INVALID_STATE,
                     CbsErrorCodes.TELLER_TILL_DUPLICATE,
+                    // CBS Tier-1 EOD pre-flight blockers per RBI Master Circular
+                    // on Cash Management at Branches §4.3. 409 CONFLICT mirrors
+                    // BATCHES_STILL_OPEN semantics: the operation itself is valid
+                    // but the system state (open tills / open vaults) conflicts
+                    // with the requested transition (start EOD). The BFF can
+                    // hyperlink the error directly to the Teller / Vault pending
+                    // queues so the admin clears the blockers in one hop.
+                    CbsErrorCodes.TELLER_TILLS_STILL_OPEN,
+                    CbsErrorCodes.TELLER_VAULTS_NOT_CLOSED,
                     "WORKFLOW_VERSION_MISMATCH" -> HttpStatus.CONFLICT;
             case CbsErrorCodes.ACCT_INSUFFICIENT_BALANCE,
                     CbsErrorCodes.ACCT_FROZEN,
@@ -375,6 +384,12 @@ public class CbsApiExceptionHandler {
                     CbsErrorCodes.TELLER_TILL_INVALID_STATE,
                     CbsErrorCodes.TELLER_TILL_DUPLICATE,
                     CbsErrorCodes.TELLER_TILL_LIMIT_EXCEEDED,
+                    // EOD pre-flight blockers are operationally recoverable by
+                    // the branch staff (close tills, close vault) so MEDIUM
+                    // severity -- not HIGH. The BFF marks them red on the EOD
+                    // trial page but does not fire the fraud-grade alert modal.
+                    CbsErrorCodes.TELLER_TILLS_STILL_OPEN,
+                    CbsErrorCodes.TELLER_VAULTS_NOT_CLOSED,
                     CbsErrorCodes.COMP_CTR_THRESHOLD -> CbsErrorCodes.SEVERITY_MEDIUM;
             default -> CbsErrorCodes.SEVERITY_LOW;
         };
@@ -471,6 +486,16 @@ public class CbsApiExceptionHandler {
                     "Cash deposit at or above CTR threshold requires PAN or Form 60/61 per PMLA Rule 9";
             case CbsErrorCodes.TELLER_INTERNAL ->
                     "Internal teller error. Note the correlation ID and contact support";
+            // CBS Tier-1 EOD pre-flight remediation: the BFF surfaces these on
+            // the EOD apply / trial screen. Messages direct the admin to the
+            // exact remediation queue rather than leaving them to hunt for the
+            // offending till or branch.
+            case CbsErrorCodes.TELLER_TILLS_STILL_OPEN ->
+                    "Close every OPEN / PENDING till (with supervisor sign-off) before running EOD. "
+                            + "Review the Teller > Pending Till Approvals queue";
+            case CbsErrorCodes.TELLER_VAULTS_NOT_CLOSED ->
+                    "Close every branch vault (after all tills are CLOSED) before running EOD. "
+                            + "Review the Teller > Branch Vault screen per branch";
             default -> null;
         };
     }
