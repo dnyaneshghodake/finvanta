@@ -110,8 +110,11 @@ public class WorkflowApiController {
     public ResponseEntity<ApiResponse<WorkflowResponse>>
             approve(@PathVariable Long id,
                     @Valid @RequestBody WorkflowActionRequest req) {
+        // CBS Optimistic Lock: pass the caller-supplied version through to the
+        // service. When null (older client), the service falls back to the
+        // JPA-only safety net.
         ApprovalWorkflow wf = workflowService
-                .approve(id, req.remarks());
+                .approve(id, req.version(), req.remarks());
         return ResponseEntity.ok(ApiResponse.success(
                 WorkflowResponse.from(wf),
                 "Approved: " + wf.getEntityType()
@@ -127,8 +130,9 @@ public class WorkflowApiController {
     public ResponseEntity<ApiResponse<WorkflowResponse>>
             reject(@PathVariable Long id,
                     @Valid @RequestBody WorkflowActionRequest req) {
+        // CBS Optimistic Lock: see approve() above for rationale.
         ApprovalWorkflow wf = workflowService
-                .reject(id, req.remarks());
+                .reject(id, req.version(), req.remarks());
         return ResponseEntity.ok(ApiResponse.success(
                 WorkflowResponse.from(wf),
                 "Rejected: " + wf.getEntityType()
@@ -154,7 +158,15 @@ public class WorkflowApiController {
 
     public record WorkflowActionRequest(
             @NotBlank(message = "Remarks are required")
-            String remarks) {}
+            String remarks,
+            // CBS Optimistic Lock per RBI Operational Risk Guidelines:
+            // the version returned on the GET /pending response. The service
+            // layer rejects the action with WORKFLOW_VERSION_MISMATCH if
+            // another user has already actioned this workflow since the
+            // caller's last read. Optional for backward compatibility --
+            // when absent, JPA @Version still protects at the persistence
+            // layer but the failure surfaces as a less friendly error.
+            Long version) {}
 
     // === Response DTOs ===
 
@@ -165,6 +177,10 @@ public class WorkflowApiController {
      */
     public record WorkflowResponse(
             Long id,
+            // CBS Optimistic Lock: JPA @Version exposed to the BFF so the
+            // CHECKER's approve/reject call can echo it back. Service layer
+            // rejects mismatches with WORKFLOW_VERSION_MISMATCH.
+            Long version,
             String entityType,
             Long entityId,
             String actionType,
@@ -182,6 +198,7 @@ public class WorkflowApiController {
         static WorkflowResponse from(ApprovalWorkflow w) {
             return new WorkflowResponse(
                     w.getId(),
+                    w.getVersion(),
                     w.getEntityType(),
                     w.getEntityId(),
                     w.getActionType(),

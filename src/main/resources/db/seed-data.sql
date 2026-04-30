@@ -120,3 +120,7 @@ VALUES ('DEFAULT', 'admin', '{noop}finvanta123', 'System Admin', 'admin@finvanta
 
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_by)
 VALUES ('DEFAULT', 'auditor1', '{noop}finvanta123', 'Auditor User', 'auditor@finvanta.com', 'AUDITOR', 1, 0, 0, 1, 0, 'SYSTEM');
+
+-- Teller (CBS TELLER module -- cash counter only, per RBI Internal Controls)
+INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, version, created_by)
+VALUES ('DEFAULT', 'teller1', '{noop}finvanta123', 'Teller User One', 'teller1@finvanta.com', 'TELLER', 1, 0, 0, 1, 0, 'SYSTEM');

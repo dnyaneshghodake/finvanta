@@ -16,6 +16,17 @@
 <div class="fv-card">
     <div class="card-header"><i class="bi bi-person-plus"></i> CASA Account Opening <span class="badge bg-info ms-2">Finacle ACCTOPN</span> <div class="float-end"><a href="${pageContext.request.contextPath}/deposit/accounts" class="btn btn-sm btn-outline-secondary" data-fv-cancel="${pageContext.request.contextPath}/deposit/accounts"><i class="bi bi-arrow-left"></i> Back <span class="fv-kbd">F3</span></a></div></div>
     <div class="card-body">
+    <%-- CBS ACCTOPN Field Coverage Contract per CBS Account Opening standard:
+         this form intentionally captures only the 6 fields needed to OPEN the account
+         (customerId, branchId, accountType, productCode, nomineeName, nomineeRelationship).
+         The remaining 23 fields on OpenAccountRequest (PAN/Aadhaar, KYC status, address,
+         contact, FATCA, etc.) are inherited from the CIF record at the service layer --
+         see DepositController.openAccount (DepositController.java:241-254) for the explicit
+         null fill-ins. This is by design: per CBS ACCTOPN, account-level personal
+         attributes denormalize from the CIF and must not be re-entered at account opening.
+         The React UI sends all 29 fields directly because it is API-first; the JSP path
+         relies on the service-layer CIF inheritance. See JSP_DTO_CROSSWALK_MATRIX.md §1
+         and DTO_PARITY_AUDIT_REPORT.md §2.1 for the full parity map. --%>
     <form method="post" action="${pageContext.request.contextPath}/deposit/open" class="fv-form" id="casaOpenForm">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
 

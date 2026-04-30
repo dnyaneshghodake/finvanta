@@ -2,13 +2,18 @@ package com.finvanta.repository;
 
 import com.finvanta.domain.entity.DepositTransaction;
 
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -20,11 +25,32 @@ public interface DepositTransactionRepository extends JpaRepository<DepositTrans
 
     Optional<DepositTransaction> findByTenantIdAndTransactionRef(String tenantId, String transactionRef);
 
+    /**
+     * CBS Reversal Safety: acquire PESSIMISTIC_WRITE lock on the transaction row before
+     * evaluating the isReversed flag. Closes the TOCTOU window where two concurrent
+     * reversal requests could both observe isReversed=false and double-reverse.
+     * 30s lock timeout per CBS TRAN_LOCK standard.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
+    @Query("SELECT dt FROM DepositTransaction dt WHERE dt.tenantId = :tenantId "
+            + "AND dt.transactionRef = :transactionRef")
+    Optional<DepositTransaction> findAndLockByTenantIdAndTransactionRef(
+            @Param("tenantId") String tenantId, @Param("transactionRef") String transactionRef);
+
     List<DepositTransaction> findByTenantIdAndDepositAccountIdOrderByPostingDateDesc(
             String tenantId, Long depositAccountId);
 
-    /** Mini statement: last N transactions */
-    @Query("SELECT dt FROM DepositTransaction dt WHERE dt.tenantId = :tenantId "
+    /**
+     * Mini statement: last N transactions.
+     *
+     * <p>JOIN FETCH dt.depositAccount so downstream mappers (e.g. {@code AccountMapper.toTxnResponse})
+     * can read the account number without triggering LazyInitializationException once the
+     * read-only service transaction closes. OSIV is disabled cluster-wide; every query whose
+     * result is surfaced to a controller MUST eager-fetch the relations the mapper touches.
+     */
+    @Query("SELECT dt FROM DepositTransaction dt JOIN FETCH dt.depositAccount "
+            + "WHERE dt.tenantId = :tenantId "
             + "AND dt.depositAccount.id = :accountId ORDER BY dt.postingDate DESC")
     List<DepositTransaction> findRecentTransactions(
             @Param("tenantId") String tenantId,
@@ -75,8 +101,27 @@ public interface DepositTransactionRepository extends JpaRepository<DepositTrans
             @Param("username") String username,
             @Param("valueDate") LocalDate valueDate);
 
-    /** Idempotency check */
-    Optional<DepositTransaction> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
+    /**
+     * CBS Idempotency lookup: returns a previously-committed transaction matching
+     * the supplied idempotency key.
+     *
+     * <p>JOIN FETCH dt.depositAccount so callers in
+     * {@code DepositAccountModuleServiceImpl} can return this entity to a
+     * controller whose mapper ({@code AccountMapper.toTxnResponse}) reads
+     * {@code entity.getDepositAccount().getAccountNumber()}. Without the eager
+     * fetch, the lazy proxy is detached when the read-only service transaction
+     * closes (OSIV disabled cluster-wide) and the mapper trips
+     * {@code LazyInitializationException} -- the same hazard the
+     * {@link #findRecentTransactions} query was hardened against.
+     *
+     * <p>Safe for legacy callers (e.g. {@code DepositAccountServiceImpl.deposit
+     * /withdraw/transfer} idempotency early-returns): the eager load is harmless
+     * extra work for paths that don't surface the entity to a mapper.
+     */
+    @Query("SELECT dt FROM DepositTransaction dt JOIN FETCH dt.depositAccount "
+            + "WHERE dt.tenantId = :tenantId AND dt.idempotencyKey = :idempotencyKey")
+    Optional<DepositTransaction> findByTenantIdAndIdempotencyKey(
+            @Param("tenantId") String tenantId, @Param("idempotencyKey") String idempotencyKey);
 
     /**
      * CBS Transaction 360: lookup by voucher number (VCH/...).

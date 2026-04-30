@@ -1,5 +1,12 @@
 <%@ taglib prefix="c" uri="jakarta.tags.core" %>
 <%@ taglib prefix="fmt" uri="jakarta.tags.fmt" %>
+<%@ page import="java.util.UUID" %>
+<%-- CBS Idempotency per RBI Operational Risk Guidelines: mint a server-side UUID
+     once per page render. The same key flows on every browser-initiated retry
+     of this form submission, so the service layer's findByTenantIdAndIdempotencyKey
+     dedupe returns the original DepositTransaction instead of double-posting.
+     A new render of the page (e.g., after success) gets a fresh key. --%>
+<c:set var="idempotencyKey" value="<%= UUID.randomUUID().toString() %>" />
 <c:set var="pageTitle" value="Cash Withdrawal" />
 <%@ include file="../layout/header.jsp" %>
 <%@ include file="../layout/sidebar.jsp" %>
@@ -32,6 +39,10 @@
 
         <form method="post" action="${pageContext.request.contextPath}/deposit/withdraw/${account.accountNumber}" class="fv-form" id="withdrawForm">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
+            <%-- CBS Idempotency: server-minted UUID -- see scriptlet at top. Browser retries
+                 (refresh/back button) resubmit the same key; the service layer dedupe returns
+                 the previously-committed DepositTransaction without double-posting GL. --%>
+            <input type="hidden" name="idempotencyKey" value="${idempotencyKey}"/>
             <div class="row mb-3">
                 <div class="col-md-6 fv-mandatory-group">
                     <label for="withdrawAmount" class="form-label fv-required">Amount (INR)</label>

@@ -31,10 +31,15 @@ public interface DepositAccountRepository extends JpaRepository<DepositAccount, 
             @Param("tenantId") String tenantId, @Param("accountNumber") String accountNumber);
 
     /** CBS Tier-1: 30s lock timeout per Finacle ACCT_LOCK. Prevents indefinite blocking
-     *  when concurrent postings contend on the same account (e.g., deposit + withdrawal). */
+     *  when concurrent postings contend on the same account (e.g., deposit + withdrawal).
+     *  JOIN FETCH customer+branch so downstream mappers (AccountMapper.toAccountResponse)
+     *  can read customer name and branch code without LazyInitializationException when
+     *  OSIV is disabled. The lock applies to the DepositAccount row; the joined rows
+     *  are read-locked by the DB engine's row-level locking semantics. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
-    @Query("SELECT da FROM DepositAccount da WHERE da.tenantId = :tenantId AND da.accountNumber = :accountNumber")
+    @Query("SELECT da FROM DepositAccount da JOIN FETCH da.customer JOIN FETCH da.branch "
+            + "WHERE da.tenantId = :tenantId AND da.accountNumber = :accountNumber")
     Optional<DepositAccount> findAndLockByTenantIdAndAccountNumber(
             @Param("tenantId") String tenantId, @Param("accountNumber") String accountNumber);
 

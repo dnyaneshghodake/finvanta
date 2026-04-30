@@ -93,8 +93,40 @@ public class ApprovalWorkflowService {
         return saved;
     }
 
+    /**
+     * @deprecated Prefer {@link #approve(Long, Long, String)} which gates on the
+     * caller-supplied version for explicit optimistic-lock enforcement at the
+     * controller boundary. This overload is retained only for legacy callers
+     * that have not yet been wired to capture the entity version on read.
+     */
+    @Deprecated
     @Transactional
     public ApprovalWorkflow approve(Long workflowId, String remarks) {
+        return approve(workflowId, null, remarks);
+    }
+
+    /**
+     * CBS Maker-Checker approval with explicit optimistic-lock check per RBI
+     * Operational Risk Guidelines.
+     *
+     * <p>The caller (controller) MUST pass the entity {@code version} that was
+     * returned to the operator when the pending-approval queue was rendered.
+     * This closes the TOCTOU window where two CHECKERs simultaneously open the
+     * same workflow item -- without this gate, the second checker's status check
+     * passes (still PENDING_APPROVAL on their stale read), {@code save()} then
+     * succeeds because JPA's {@code @Version} bump only races on the actual
+     * commit, and (for {@code Transaction} workflows) GL re-execution fires
+     * twice.
+     *
+     * <p>When {@code expectedVersion} is null, the legacy un-gated path is taken
+     * (still safe at the persistence layer via JPA {@code @Version} but surfaces
+     * as a generic 500 instead of a friendly {@code WORKFLOW_VERSION_MISMATCH}).
+     *
+     * @throws BusinessException {@code WORKFLOW_VERSION_MISMATCH} if a different
+     *         user has acted on this workflow since the caller's last read.
+     */
+    @Transactional
+    public ApprovalWorkflow approve(Long workflowId, Long expectedVersion, String remarks) {
         String tenantId = TenantContext.getCurrentTenant();
         String checkerUserId = SecurityUtil.getCurrentUsername();
 
@@ -103,6 +135,17 @@ public class ApprovalWorkflowService {
                 .filter(w -> w.getTenantId().equals(tenantId))
                 .orElseThrow(() ->
                         new BusinessException("WORKFLOW_NOT_FOUND", "Approval workflow not found: " + workflowId));
+
+        // CBS Optimistic Lock Gate per RBI Operational Risk: reject the request
+        // if the caller's expected version does not match the current persisted
+        // version. This catches the TOCTOU race BEFORE the GL re-execution fires.
+        // Skipped when expectedVersion is null (legacy overload).
+        if (expectedVersion != null && !expectedVersion.equals(workflow.getVersion())) {
+            throw new BusinessException(
+                    "WORKFLOW_VERSION_MISMATCH",
+                    "Workflow item has been modified by another user. Reload the page and retry. "
+                            + "Submitted version: " + expectedVersion + ", current: " + workflow.getVersion());
+        }
 
         if (workflow.getStatus() != ApprovalStatus.PENDING_APPROVAL) {
             throw new BusinessException(
@@ -144,8 +187,21 @@ public class ApprovalWorkflowService {
         return saved;
     }
 
+    /**
+     * @deprecated Prefer {@link #reject(Long, Long, String)} for the same
+     * reasons as {@link #approve(Long, Long, String)}.
+     */
+    @Deprecated
     @Transactional
     public ApprovalWorkflow reject(Long workflowId, String remarks) {
+        return reject(workflowId, null, remarks);
+    }
+
+    /**
+     * Version-gated rejection. Mirrors {@link #approve(Long, Long, String)}.
+     */
+    @Transactional
+    public ApprovalWorkflow reject(Long workflowId, Long expectedVersion, String remarks) {
         String tenantId = TenantContext.getCurrentTenant();
         String checkerUserId = SecurityUtil.getCurrentUsername();
 
@@ -154,6 +210,14 @@ public class ApprovalWorkflowService {
                 .filter(w -> w.getTenantId().equals(tenantId))
                 .orElseThrow(() ->
                         new BusinessException("WORKFLOW_NOT_FOUND", "Approval workflow not found: " + workflowId));
+
+        // CBS Optimistic Lock Gate -- see approve(Long, Long, String) for rationale.
+        if (expectedVersion != null && !expectedVersion.equals(workflow.getVersion())) {
+            throw new BusinessException(
+                    "WORKFLOW_VERSION_MISMATCH",
+                    "Workflow item has been modified by another user. Reload the page and retry. "
+                            + "Submitted version: " + expectedVersion + ", current: " + workflow.getVersion());
+        }
 
         if (workflow.getStatus() != ApprovalStatus.PENDING_APPROVAL) {
             throw new BusinessException(

@@ -64,11 +64,11 @@
                 <div class="row mb-3">
                     <div class="col-md-3"><label class="form-label">PAN Number</label><span class="fv-help-icon" data-fv-help="Per RBI KYC: IMMUTABLE after CIF creation. Format: AAAAA0000A. Validated via 4th-char type check.">?</span><input type="text" name="panNumber" id="panNumber" class="form-control" data-fv-type="pan" value="<c:out value='${customer.panNumber}'/>" maxlength="10" pattern="[A-Z]{5}[0-9]{4}[A-Z]{1}" title="AAAAA0000A" placeholder="ABCDE1234F" tabindex="13" /><small class="text-muted" id="panHint">Immutable after creation</small></div>
                     <div class="col-md-3"><label class="form-label">Aadhaar Number</label><span class="fv-help-icon" data-fv-help="Per UIDAI: IMMUTABLE after CIF creation. 12 digits with Verhoeff checksum. Server validates check digit.">?</span><input type="text" name="aadhaarNumber" id="aadhaarNumber" class="form-control" data-fv-type="aadhaar" value="<c:out value='${customer.aadhaarNumber}'/>" maxlength="12" pattern="[0-9]{12}" title="12 digits" inputmode="numeric" tabindex="14" /><small class="text-muted" id="aadhaarHint">Immutable after creation</small></div>
-                    <div class="col-md-3"><label class="form-label">Photo ID Type</label><select name="photoIdType" id="photoIdType" class="form-select" onchange="syncPhotoId();"><option value="">--</option><option value="PASSPORT">Passport</option><option value="VOTER_ID">Voter ID</option><option value="DRIVING_LICENSE">DL</option><option value="PAN_CARD">PAN Card</option><option value="AADHAAR">Aadhaar</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Photo ID Type</label><select name="photoIdType" id="photoIdType" class="form-select" onchange="syncPhotoId();"><option value="">--</option><option value="PASSPORT">Passport</option><option value="VOTER_ID">Voter ID</option><option value="DRIVING_LICENSE">DL</option><option value="NREGA_CARD">NREGA Card</option><option value="PAN_CARD">PAN Card</option><option value="AADHAAR">Aadhaar</option></select></div>
                     <div class="col-md-3"><label class="form-label">Photo ID Number</label><input type="text" name="photoIdNumber" id="photoIdNumber" class="form-control" maxlength="30" /></div>
                 </div>
                 <div class="row mb-3">
-                    <div class="col-md-3"><label class="form-label">Address Proof Type</label><select name="addressProofType" id="addressProofType" class="form-select" onchange="syncAddressProof();"><option value="">--</option><option value="PASSPORT">Passport</option><option value="VOTER_ID">Voter ID</option><option value="UTILITY_BILL">Utility Bill</option><option value="AADHAAR">Aadhaar</option></select></div>
+                    <div class="col-md-3"><label class="form-label">Address Proof Type</label><select name="addressProofType" id="addressProofType" class="form-select" onchange="syncAddressProof();"><option value="">--</option><option value="PASSPORT">Passport</option><option value="VOTER_ID">Voter ID</option><option value="DRIVING_LICENSE">Driving License</option><option value="UTILITY_BILL">Utility Bill</option><option value="BANK_STATEMENT">Bank Statement</option><option value="AADHAAR">Aadhaar</option><option value="RATION_CARD">Ration Card</option><option value="RENT_AGREEMENT">Rent Agreement</option></select></div>
                     <div class="col-md-3"><label class="form-label">Address Proof No.</label><input type="text" name="addressProofNumber" id="addressProofNumber" class="form-control" maxlength="30" /></div>
                     <div class="col-md-3"><label class="form-label">KYC Mode</label><select name="kycMode" class="form-select"><option value="IN_PERSON">In-Person</option><option value="VIDEO_KYC">Video KYC</option><option value="DIGITAL_KYC">Digital KYC</option><option value="CKYC_DOWNLOAD">CKYC Download</option></select></div>
                     <div class="col-md-3"><label class="form-label">CKYC Number (KIN)</label><input type="text" class="form-control bg-light" maxlength="14" placeholder="Auto-assigned by CERSAI" disabled /><small class="text-muted">System-managed after CERSAI registration</small></div>
@@ -79,6 +79,31 @@
                 </div>
 
                 </div><%-- end KYC Identity section body --%>
+                <%-- CBS Compliance & OVD section per RBI KYC Direction §3 / FEMA 1999 / FATCA-CRS.
+                     Fixes JSP/REST-DTO crosswalk finding F6. The Customer entity already supports
+                     these fields with PiiEncryptionConverter on the OVD numbers (passport, voterId,
+                     drivingLicense). Spring's @ModelAttribute + Lombok @Setter wires the form
+                     directly to the entity; encryption happens at the JPA layer. --%>
+                <div class="fv-section-header" onclick=""><i class="bi bi-shield-lock"></i> Compliance &amp; Additional OVDs (RBI KYC §3 / FATCA / FEMA) <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div class="fv-section-body">
+                <div class="row mb-3">
+                    <div class="col-md-3"><label class="form-label">Resident Status</label><span class="fv-help-icon" data-fv-help="Per FEMA 1999: determines applicable account types (NRE/NRO/FCNR) and reporting obligations.">?</span><select name="residentStatus" class="form-select">
+                        <option value="RESIDENT" ${customer.residentStatus == 'RESIDENT' or empty customer.residentStatus ? 'selected' : ''}>Resident</option>
+                        <option value="NRI" ${customer.residentStatus == 'NRI' ? 'selected' : ''}>NRI</option>
+                        <option value="PIO" ${customer.residentStatus == 'PIO' ? 'selected' : ''}>PIO</option>
+                        <option value="OCI" ${customer.residentStatus == 'OCI' ? 'selected' : ''}>OCI</option>
+                        <option value="FOREIGN_NATIONAL" ${customer.residentStatus == 'FOREIGN_NATIONAL' ? 'selected' : ''}>Foreign National</option>
+                    </select></div>
+                    <div class="col-md-3"><label class="form-label">Source of Funds</label><span class="fv-help-icon" data-fv-help="Per PMLA 2002 Section 12: mandatory disclosure for high-value or risk-tagged accounts.">?</span><input type="text" name="sourceOfFunds" class="form-control" value="<c:out value='${customer.sourceOfFunds}'/>" maxlength="100" placeholder="Salary, business income, etc." /></div>
+                    <div class="col-md-3"><label class="form-label">FATCA Country</label><span class="fv-help-icon" data-fv-help="ISO 3166 alpha-2 country code of tax residence outside India. Leave blank for Indian-only tax residents.">?</span><input type="text" name="fatcaCountry" class="form-control" value="<c:out value='${customer.fatcaCountry}'/>" maxlength="2" pattern="[A-Z]{2}" placeholder="US / GB / SG" /></div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-3"><label class="form-label">Passport Number</label><span class="fv-help-icon" data-fv-help="Officially Valid Document per RBI KYC §3. Encrypted at rest via PiiEncryptionConverter.">?</span><input type="text" name="passportNumber" class="form-control" value="<c:out value='${customer.passportNumber}'/>" maxlength="20" /></div>
+                    <div class="col-md-3"><label class="form-label">Passport Expiry</label><input type="date" name="passportExpiry" class="form-control" value="${customer.passportExpiry}" /></div>
+                    <div class="col-md-3"><label class="form-label">Voter ID</label><span class="fv-help-icon" data-fv-help="EPIC number per Election Commission. OVD per RBI KYC §3.">?</span><input type="text" name="voterId" class="form-control" value="<c:out value='${customer.voterId}'/>" maxlength="20" /></div>
+                    <div class="col-md-3"><label class="form-label">Driving License</label><span class="fv-help-icon" data-fv-help="Driving License number. OVD per RBI KYC §3.">?</span><input type="text" name="drivingLicense" class="form-control" value="<c:out value='${customer.drivingLicense}'/>" maxlength="30" /></div>
+                </div>
+                </div><%-- end Compliance & OVD section body --%>
                 <div class="fv-section-header" onclick=""><i class="bi bi-geo-alt"></i> Correspondence Address <i class="bi bi-chevron-down fv-chevron"></i></div>
                 <div class="fv-section-body">
                 <div class="mb-2"><label class="form-label">Address Line</label><textarea name="address" class="form-control" rows="2" maxlength="500" placeholder="Flat/House No, Street, Locality"><c:out value="${customer.address}"/></textarea></div>
@@ -105,6 +130,40 @@
                 </div>
 
                 </div><%-- end Permanent Address section body --%>
+                <%-- CBS Corporate / Non-Individual Section per RBI KYC Direction §9.
+                     Conditionally rendered via JS when customerType is non-individual
+                     (COMPANY, PARTNERSHIP, HUF, TRUST, GOVERNMENT). Individual and
+                     derived types (INDIVIDUAL, JOINT, MINOR, NRI) hide this block.
+                     Fixes JSP/REST-DTO crosswalk finding F4 -- operators were previously
+                     unable to onboard corporate CIFs via JSP even though the Customer
+                     entity supported all fields (companyName, cin, gstin, etc.). --%>
+                <div id="corporateSectionHeader" class="fv-section-header" style="display:none;" onclick=""><i class="bi bi-building"></i> Corporate / Non-Individual Details (RBI KYC §9) <i class="bi bi-chevron-down fv-chevron"></i></div>
+                <div id="corporateSectionBody" class="fv-section-body" style="display:none;">
+                <div class="row mb-3">
+                    <div class="col-md-6 fv-mandatory-group"><label class="form-label fv-required">Company / Entity Name</label><span class="fv-help-icon" data-fv-help="Per RBI KYC Direction §9: mandatory for COMPANY / PARTNERSHIP / TRUST / HUF / GOVERNMENT customers. Must match CoI / Trust Deed / Partnership Deed.">?</span><input type="text" name="companyName" class="form-control" value="<c:out value='${customer.companyName}'/>" maxlength="300" /></div>
+                    <div class="col-md-6"><label class="form-label">Constitution Type</label><span class="fv-help-icon" data-fv-help="Per RBI: legal constitution of the entity. Drives CKYC NON_INDIVIDUAL sub-type and disclosure requirements.">?</span><select name="constitutionType" class="form-select">
+                        <option value="">-- Select --</option>
+                        <option value="PROPRIETORSHIP" ${customer.constitutionType == 'PROPRIETORSHIP' ? 'selected' : ''}>Proprietorship</option>
+                        <option value="PARTNERSHIP" ${customer.constitutionType == 'PARTNERSHIP' ? 'selected' : ''}>Partnership</option>
+                        <option value="LLP" ${customer.constitutionType == 'LLP' ? 'selected' : ''}>LLP</option>
+                        <option value="PRIVATE_LIMITED" ${customer.constitutionType == 'PRIVATE_LIMITED' ? 'selected' : ''}>Private Limited</option>
+                        <option value="PUBLIC_LIMITED" ${customer.constitutionType == 'PUBLIC_LIMITED' ? 'selected' : ''}>Public Limited</option>
+                        <option value="TRUST" ${customer.constitutionType == 'TRUST' ? 'selected' : ''}>Trust</option>
+                        <option value="SOCIETY" ${customer.constitutionType == 'SOCIETY' ? 'selected' : ''}>Society</option>
+                        <option value="HUF" ${customer.constitutionType == 'HUF' ? 'selected' : ''}>HUF</option>
+                        <option value="COOPERATIVE" ${customer.constitutionType == 'COOPERATIVE' ? 'selected' : ''}>Cooperative</option>
+                        <option value="GOVERNMENT" ${customer.constitutionType == 'GOVERNMENT' ? 'selected' : ''}>Government</option>
+                    </select></div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-4"><label class="form-label">CIN / LLPIN</label><span class="fv-help-icon" data-fv-help="Corporate Identification Number (MCA, 21 chars) or LLP Identification Number. Mandatory for PRIVATE_LIMITED / PUBLIC_LIMITED / LLP.">?</span><input type="text" name="cin" class="form-control" value="<c:out value='${customer.cin}'/>" maxlength="21" placeholder="L12345MH2000PLC123456" /></div>
+                    <div class="col-md-4"><label class="form-label">GSTIN</label><span class="fv-help-icon" data-fv-help="GST Registration Number (15 chars). Required for GST-registered business customers; optional for others.">?</span><input type="text" name="gstin" class="form-control" value="<c:out value='${customer.gstin}'/>" maxlength="15" placeholder="27AAAPL1234C1Z5" /></div>
+                    <div class="col-md-4"><label class="form-label">Date of Incorporation</label><input type="date" name="dateOfIncorporation" class="form-control" value="${customer.dateOfIncorporation}" /></div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-12"><label class="form-label">Nature of Business</label><span class="fv-help-icon" data-fv-help="Per CERSAI CKYC v2.0: mandatory for NON_INDIVIDUAL customers. Describe primary business activity (e.g., 'Retail trading of electronic goods').">?</span><textarea name="natureOfBusiness" class="form-control" rows="2" maxlength="200" placeholder="Primary business activity"><c:out value="${customer.natureOfBusiness}"/></textarea></div>
+                </div>
+                </div><%-- end Corporate section body --%>
                 <div class="fv-section-header" onclick=""><i class="bi bi-currency-rupee"></i> Income &amp; Exposure (RBI Norms) <i class="bi bi-chevron-down fv-chevron"></i></div>
                 <div class="fv-section-body">
                 <div class="row mb-3">
@@ -174,6 +233,24 @@ function togglePermanentAddrAdd() {
     var checked = document.getElementById('addrSameAdd').checked;
     block.style.display = checked ? 'none' : '';
 }
+
+/* CBS Corporate section toggle per RBI KYC §9.
+   Non-individual customer types require entity-level KYC fields
+   (companyName / CIN / GSTIN / constitution / nature of business).
+   INDIVIDUAL / JOINT / MINOR / NRI map to CERSAI INDIVIDUAL sub-type
+   and hide the section; the rest are CERSAI NON_INDIVIDUAL. */
+var NON_INDIVIDUAL_TYPES = ['HUF', 'PARTNERSHIP', 'COMPANY', 'TRUST', 'GOVERNMENT'];
+function toggleCorporateSection() {
+    var type = document.querySelector('select[name="customerType"]').value;
+    var show = NON_INDIVIDUAL_TYPES.indexOf(type) !== -1;
+    document.getElementById('corporateSectionHeader').style.display = show ? '' : 'none';
+    document.getElementById('corporateSectionBody').style.display = show ? '' : 'none';
+}
+document.querySelector('select[name="customerType"]').addEventListener('change', toggleCorporateSection);
+/* Run on page load so edit-form rehydration and error re-renders
+   (when the form redisplays with operator-entered data) show the
+   corporate section if customerType was already non-individual. */
+toggleCorporateSection();
 </script>
 
 <%@ include file="../layout/footer.jsp" %>

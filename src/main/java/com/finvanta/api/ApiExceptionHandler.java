@@ -7,8 +7,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import jakarta.servlet.http.HttpServletRequest;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -170,7 +168,13 @@ public class ApiExceptionHandler {
                     "ALREADY_CLOSED",
                     "CLEARING_IN_PROGRESS",
                     "DUPLICATE_TRANSACTION",
-                    "ACCOUNT_ALREADY_EXISTS" -> HttpStatus.CONFLICT;
+                    "ACCOUNT_ALREADY_EXISTS",
+                    // CBS Optimistic Lock: thrown by ApprovalWorkflowService when
+                    // the caller's expected version doesn't match the persisted version.
+                    // Must be mapped here (not just in CbsApiExceptionHandler) because
+                    // WorkflowApiController lives in com.finvanta.api, which is scoped
+                    // to THIS handler, not the CBS handler.
+                    "WORKFLOW_VERSION_MISMATCH" -> HttpStatus.CONFLICT;
             case "INSUFFICIENT_BALANCE",
                     "ACCOUNT_FROZEN",
                     "ACCOUNT_CLOSED",
