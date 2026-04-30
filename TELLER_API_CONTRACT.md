@@ -5,6 +5,38 @@
 **Content-Type:** `application/json` (request + response)
 **Response Envelope:** `ApiResponse<T>` — `{ status, data, errorCode, message, timestamp }`
 
+## User Roles
+
+The teller module recognizes the standard CBS role hierarchy
+(least → most privilege for transactional operations):
+
+```
+TELLER < MAKER < CHECKER < ADMIN
+```
+
+`TELLER` is a first-class transactional role — a specialization of MAKER
+restricted to the over-the-counter cash channel. Per RBI Internal Controls
+the teller's per-transaction (INR 2L) and daily aggregate (INR 10L) limits
+are tighter than MAKER (INR 10L / INR 50L) because cash tellerage carries
+higher operational risk (physical cash handling, counterfeit exposure,
+FICN workflow).
+
+`AUDITOR` is read-only and is excluded from any mutation endpoint below.
+
+## Transaction Limits (per RBI Internal Controls)
+
+| Role | Per-txn | Daily aggregate | Notes |
+|------|---------|-----------------|-------|
+| TELLER  | INR 2L  | INR 10L  | Cash counter only; WRITE_OFF / REVERSAL / DISBURSEMENT explicitly disabled |
+| MAKER   | INR 10L | INR 50L  | Standard maker |
+| CHECKER | INR 50L | INR 2Cr  | Approver |
+| ADMIN   | INR 5Cr | INR 20Cr | Branch manager |
+
+Above-limit `CASH_DEPOSIT` / `CASH_WITHDRAWAL` requests are HARD-REJECTED
+with `TRANSACTION_LIMIT_EXCEEDED` (HTTP 422). They are NOT routed to
+maker-checker — the engine's amount-based PENDING_APPROVAL gate applies
+only to `REVERSAL`, `WRITE_OFF`, and `WRITE_OFF_RECOVERY` transaction types.
+
 ---
 
 ## Till Lifecycle
@@ -26,7 +58,7 @@ Opens a till for the authenticated teller on the current business date.
 ### GET /till/me
 Returns the authenticated teller's till for today.
 
-**Role:** ALL
+**Role:** TELLER, MAKER, CHECKER, ADMIN, AUDITOR
 **Response (200):** `ApiResponse<TellerTillResponse>`
 **Error (409):** `CBS-TELLER-001` — no till open
 
@@ -125,7 +157,7 @@ Opens the branch vault for the day.
 ### GET /vault/me
 Returns the branch vault for today.
 
-**Role:** ALL
+**Role:** TELLER, MAKER, CHECKER, ADMIN
 **Response (200):** `ApiResponse<VaultPosition>`
 
 ### POST /vault/buy
@@ -186,14 +218,17 @@ type IndianCurrencyDenomination =
 | Code | HTTP | Meaning |
 |------|------|---------|
 | CBS-TELLER-001 | 409 | No till open for today |
-| CBS-TELLER-002 | 409 | Till not in expected state |
+| CBS-TELLER-002 | 409 | Till not in expected state (e.g. CLOSED before checker approval) |
 | CBS-TELLER-003 | 403 | Till ownership violation |
 | CBS-TELLER-004 | 400 | Denomination sum ≠ amount |
 | CBS-TELLER-005 | 400 | Invalid denomination |
 | CBS-TELLER-006 | 422 | Till/vault insufficient cash |
-| CBS-TELLER-007 | 400 | Till cash limit exceeded |
-| CBS-TELLER-008 | 422 | Counterfeit detected (FICN) |
+| CBS-TELLER-007 | 400 | Till cash limit exceeded (soft cap, routes to maker-checker) |
+| CBS-TELLER-008 | 422 | Counterfeit detected (FICN); response includes `FicnAcknowledgementResponse` |
 | CBS-TELLER-009 | 400 | Invalid business date |
-| CBS-TELLER-010 | 409 | Till already exists |
-| CBS-COMP-002 | 422 | CTR threshold (PAN required) |
-| CBS-WF-001 | 403 | Maker = checker |
+| CBS-TELLER-010 | 409 | Till already exists for teller on business date |
+| CBS-TELLER-099 | 500 | Internal teller error (defensive; e.g. counterfeit on a withdrawal request) |
+| CBS-COMP-002  | 422 | CTR threshold (PAN or Form 60/61 required per PMLA Rule 9) |
+| CBS-WF-001    | 403 | Maker = checker (self-approval blocked) |
+| TRANSACTION_LIMIT_EXCEEDED | 422 | Amount above role's per-transaction limit |
+| ACCESS_DENIED | 403 | `@PreAuthorize` denied (insufficient role) |
