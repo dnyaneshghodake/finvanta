@@ -145,6 +145,16 @@ public class AccountingService {
             String branchCode,
             String voucherNumber,
             String transactionRef) {
+        // CBS SECURITY: Enforce that this method is ONLY called from TransactionEngine.
+        // The engine token is set by TransactionEngine.generateEngineToken() before calling
+        // GL posting. If token is null, someone is bypassing the transaction engine —
+        // this is a security violation that must fail fast.
+        if (ENGINE_TOKEN.get() == null) {
+            throw new IllegalStateException(
+                    "SECURITY_VIOLATION: AccountingService.postJournalEntry() called outside TransactionEngine. "
+                    + "All GL postings must go through TransactionEngine.execute() to enforce validation chain.");
+        }
+
         String tenantId = TenantContext.getCurrentTenant();
         JournalEntry entry = postJournalEntryInternal(valueDate, narration, sourceModule, sourceRef, lines, tenantId);
 

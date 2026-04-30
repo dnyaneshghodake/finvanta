@@ -6,6 +6,7 @@ import com.finvanta.domain.entity.LoanApplication;
 import com.finvanta.domain.entity.LoanDocument;
 import com.finvanta.domain.enums.ApplicationStatus;
 import com.finvanta.domain.enums.CollateralType;
+import com.finvanta.domain.enums.DocumentType;
 import com.finvanta.domain.enums.SIFrequency;
 import com.finvanta.domain.enums.SIStatus;
 import com.finvanta.repository.BranchRepository;
@@ -23,6 +24,7 @@ import com.finvanta.service.BusinessDateService;
 import com.finvanta.service.CollateralService;
 import com.finvanta.service.LoanAccountService;
 import com.finvanta.service.LoanApplicationService;
+import com.finvanta.service.LoanDocumentService;
 import com.finvanta.service.LoanRestructuringService;
 import com.finvanta.service.LoanScheduleService;
 import com.finvanta.service.impl.StandingInstructionServiceImpl;
@@ -48,10 +50,10 @@ public class LoanController {
     private final LoanScheduleService scheduleService;
     private final CollateralService collateralService;
     private final LoanRestructuringService restructuringService;
+    private final LoanDocumentService documentService;
     private final BusinessDateService businessDateService;
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
-    private final CollateralRepository collateralRepository;
     private final LoanDocumentRepository documentRepository;
     private final LoanTransactionRepository transactionRepository;
     private final LoanAccountRepository accountRepository;
@@ -68,10 +70,10 @@ public class LoanController {
             LoanScheduleService scheduleService,
             CollateralService collateralService,
             LoanRestructuringService restructuringService,
+            LoanDocumentService documentService,
             BusinessDateService businessDateService,
             CustomerRepository customerRepository,
             BranchRepository branchRepository,
-            CollateralRepository collateralRepository,
             LoanDocumentRepository documentRepository,
             LoanTransactionRepository transactionRepository,
             LoanAccountRepository accountRepository,
@@ -86,10 +88,10 @@ public class LoanController {
         this.scheduleService = scheduleService;
         this.collateralService = collateralService;
         this.restructuringService = restructuringService;
+        this.documentService = documentService;
         this.businessDateService = businessDateService;
         this.customerRepository = customerRepository;
         this.branchRepository = branchRepository;
-        this.collateralRepository = collateralRepository;
         this.documentRepository = documentRepository;
         this.transactionRepository = transactionRepository;
         this.accountRepository = accountRepository;
@@ -619,21 +621,17 @@ public class LoanController {
         return "redirect:/loan/verify/" + applicationId;
     }
 
-    /** Verify a document — CHECKER/ADMIN (branch-validated via application) */
+    /**
+     * Verify a document — CHECKER/ADMIN (branch-validated via application).
+     * Delegates to LoanDocumentService.
+     */
     @PostMapping("/document/verify/{documentId}")
     public String verifyDocument(
             @PathVariable Long documentId, @RequestParam Long applicationId, RedirectAttributes redirectAttributes) {
         try {
-            // CBS Tier-1: Validate branch access via the parent application
-            LoanApplication app = applicationService.getApplication(applicationId);
-            LoanDocument doc = documentRepository
-                    .findById(documentId)
-                    .orElseThrow(() -> new RuntimeException("Document not found"));
-            doc.setVerificationStatus("VERIFIED");
-            doc.setVerifiedBy(SecurityUtil.getCurrentUsername());
-            doc.setVerifiedDate(businessDateService.getCurrentBusinessDate());
-            doc.setUpdatedBy(SecurityUtil.getCurrentUsername());
-            documentRepository.save(doc);
+            // Validate branch access via the parent application
+            applicationService.getApplication(applicationId);
+            documentService.verifyDocument(documentId);
             redirectAttributes.addFlashAttribute("success", "Document verified");
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
@@ -641,7 +639,7 @@ public class LoanController {
         return "redirect:/loan/verify/" + applicationId;
     }
 
-    /** Reject a document — CHECKER/ADMIN */
+    /** Reject a document — CHECKER/ADMIN. Delegates to LoanDocumentService. */
     @PostMapping("/document/reject/{documentId}")
     public String rejectDocument(
             @PathVariable Long documentId,
@@ -649,15 +647,7 @@ public class LoanController {
             @RequestParam String rejectionReason,
             RedirectAttributes redirectAttributes) {
         try {
-            LoanDocument doc = documentRepository
-                    .findById(documentId)
-                    .orElseThrow(() -> new RuntimeException("Document not found"));
-            doc.setVerificationStatus("REJECTED");
-            doc.setVerifiedBy(SecurityUtil.getCurrentUsername());
-            doc.setVerifiedDate(businessDateService.getCurrentBusinessDate());
-            doc.setRejectionReason(rejectionReason);
-            doc.setUpdatedBy(SecurityUtil.getCurrentUsername());
-            documentRepository.save(doc);
+            documentService.rejectDocument(documentId, rejectionReason);
             redirectAttributes.addFlashAttribute("success", "Document rejected");
         } catch (Exception e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
