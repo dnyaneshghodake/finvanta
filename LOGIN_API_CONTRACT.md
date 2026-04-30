@@ -163,13 +163,16 @@ The challenge token's `jti` is added to `RevokedRefreshToken` for single-use enf
 
 > **MFA failure increments the lockout counter** (`AuthController.java:364-376`):
 > an attacker who knows the password cannot brute-force OTPs across unlimited
-> 5-minute challenge windows. After `MAX_FAILED_ATTEMPTS` the account is
-> locked just as it would be on password failures.
+> 5-minute challenge windows. After `AppUser.MAX_FAILED_ATTEMPTS = 5`
+> (`AppUser.java:34`) the account is locked for
+> `AppUser.LOCKOUT_DURATION_MINUTES = 30` minutes (`AppUser.java:36`),
+> just as it would be on password failures. Auto-unlock applies after
+> the 30-minute window elapses.
 
-> **OTP replay protection across channels**: `MfaService.verifyLoginTotp`
-> consumes the OTP via the same replay-protected path the JSP UI uses, so
-> an OTP burned on the JSP channel cannot be replayed on the API channel
-> (and vice versa).
+> **TOTP algorithm** — RFC 6238 (HMAC-SHA1) with replay protection per
+> RFC 6238 §5.2: `MfaService.verifyLoginTotp` (`MfaService.java:198`)
+> tracks the last verified time-step so an OTP consumed on one channel
+> (JSP or API) cannot be replayed on the other.
 
 ---
 
@@ -256,10 +259,10 @@ The record carries 8 sub-blocks: `token`, `user`, `branch`, `businessDay`,
   "status": "SUCCESS",
   "data": {
     "token": {
+      "accessToken": "eyJhbGciOiJIUzI1NiJ9...",
+      "refreshToken": "eyJhbGciOiJIUzI1NiJ9...",
       "tokenType": "Bearer",
-      "expiresAt": 1735734567,
-      "issuedAt": "2026-04-01T10:00:00",
-      "tenantId": "DEFAULT"
+      "expiresAt": 1735734567
     },
     "user": {
       "userId": 5,
@@ -292,26 +295,52 @@ The record carries 8 sub-blocks: `token`, `user`, `branch`, `businessDay`,
       "role": "ADMIN",
       "makerCheckerRole": "ADMIN",
       "permissionsByModule": {
-        "DEPOSIT":  ["VIEW", "OPEN", "ACTIVATE", "FREEZE", "CLOSE", "REVERSE"],
-        "LOAN":     ["VIEW", "VERIFY", "APPROVE", "DISBURSE", "WRITE_OFF"],
-        "CUSTOMER": ["VIEW", "EDIT", "DEACTIVATE", "KYC_VERIFY"],
-        "TELLER":   ["TILL_APPROVE", "VAULT_APPROVE"],
-        "ADMIN":    ["BRANCH_SWITCH", "USER_MANAGE", "EOD_RUN", "PRODUCT_CONFIG"]
+        "DEPOSIT":  ["DEPOSIT_VIEW", "DEPOSIT_ACTIVATE", "DEPOSIT_REVERSE"],
+        "LOAN":     ["LOAN_VIEW", "LOAN_VERIFY", "LOAN_APPROVE", "LOAN_DISBURSE"],
+        "CUSTOMER": ["CUSTOMER_VIEW", "CUSTOMER_KYC_VERIFY"]
       },
-      "allowedModules": ["DEPOSIT", "LOAN", "CUSTOMER", "TELLER", "ADMIN", "AUDIT"]
+      "allowedModules": ["DEPOSIT", "LOAN", "CUSTOMER", "TELLER", "ADMIN"]
     },
     "limits": {
-      "perTransactionLimit": 50000000.00,
-      "dailyAggregateLimit": 200000000.00
+      "transactionLimits": [
+        {
+          "transactionType": "ALL",
+          "channel": null,
+          "perTransactionLimit": 50000000.00,
+          "dailyAggregateLimit": 200000000.00
+        }
+      ]
     },
-    "operationalConfig": { },
+    "operationalConfig": {
+      "baseCurrency": "INR",
+      "decimalPrecision": 2,
+      "roundingMode": "HALF_UP",
+      "fiscalYearStartMonth": 4,
+      "businessDayPolicy": "BRANCH_SCOPED"
+    },
     "featureFlags": [
-      { "key": "TELLER_MODULE", "enabled": true },
-      { "key": "FICN_REGISTER", "enabled": true }
+      { "flagCode": "TELLER_MODULE", "category": "MODULE", "enabled": true },
+      { "flagCode": "FICN_REGISTER", "category": "MODULE", "enabled": true }
     ]
   }
 }
 ```
+
+**Verified sub-record shapes** (`LoginSessionContext.java`):
+
+| Sub-record | Fields | Source line |
+|---|---|---|
+| `TokenInfo` | `accessToken`, `refreshToken`, `tokenType`, `expiresAt` | `:51` |
+| `UserContext` | `userId`, `username`, `displayName`, `authenticationLevel`, `loginTimestamp`, `lastLoginTimestamp`, `passwordExpiryDate`, `mfaEnabled` | `:64` |
+| `BranchContext` | `branchId`, `branchCode`, `branchName`, `ifscCode`, `branchType`, `zoneCode`, `regionCode`, `headOffice` | `:81` |
+| `BusinessDayContext` | `businessDate`, `dayStatus`, `isHoliday`, `previousBusinessDate`, `nextBusinessDate` | `:104` |
+| `RoleContext` | `role`, `makerCheckerRole`, `permissionsByModule` (`Map<String, List<String>>`), `allowedModules` (`List<String>`) | `:127` |
+| `LimitsContext` | `transactionLimits` (`List<TransactionLimitEntry>`) | `:144` |
+| `TransactionLimitEntry` | `transactionType`, `channel`, `perTransactionLimit`, `dailyAggregateLimit` | `:147` |
+| `OperationalConfig` | `baseCurrency`, `decimalPrecision`, `roundingMode`, `fiscalYearStartMonth`, `businessDayPolicy` | `:160` |
+| `FeatureFlagEntry` | `flagCode`, `category`, `enabled` | `:182` |
+
+Serialization uses `@JsonInclude(NON_NULL)` (`LoginSessionContext.java:38`), so any null sub-block is omitted from the wire payload entirely.
 
 **ADMIN bootstrap is significantly larger than other roles.** ADMIN's
 `permissionsByModule` covers every module (vs MAKER which is restricted
@@ -325,16 +354,26 @@ the browser's 4 KB cookie limit — see Appendix A for the diagnostic.
 
 Signed HMAC-SHA256 with `cbs.jwt.secret`. Source: `JwtTokenService.java`.
 
-**Token expiry windows.** The expiry durations cited below are the
-**default values** quoted in the wiki summary; the actual values are
-**configuration-driven** via Spring `@Value` properties on
-`JwtTokenService` (`accessMinutes`, `refreshHours`). Production
-deployments may override these via `cbs.jwt.access-minutes` /
-`cbs.jwt.refresh-hours`. BFF clients MUST NOT hardcode the expiry —
-they MUST read `expiresAt` from the response (Unix epoch seconds) and
-schedule refresh based on that value.
+**Token expiry windows are configuration-driven.** The exact properties
+read by `JwtTokenService` constructor (`JwtTokenService.java:62-74`) are:
 
-### 3.1 Access Token (`JwtTokenService.java:81`, default 15 minutes)
+| Property | Used as | Default citation |
+|---|---|---|
+| `cbs.jwt.secret` | HMAC-SHA256 signing key | (production: must be set via `CBS_JWT_SECRET` env var per Javadoc line 36) |
+| `cbs.jwt.access-token-expiry-minutes` | Access token TTL | typically 15 (Javadoc line 29) |
+| `cbs.jwt.refresh-token-expiry-hours` | Refresh token TTL | typically 8 (Javadoc line 30) |
+| `cbs.jwt.issuer` | `iss` claim value | typically `finvanta-cbs` |
+
+**MFA challenge expiry is hardcoded** at 5 minutes
+(`JwtTokenService.java:55`: `MFA_CHALLENGE_EXPIRY_MS = 5L * 60L * 1000L`)
+and is NOT externally configurable.
+
+**BFF rule:** read `expiresAt` from every successful login / refresh
+response (Unix epoch seconds, computed at `AuthController.java:452-455`)
+and schedule refresh based on that value. Do NOT hardcode 15-minute
+logic; production deployments may override the access-token TTL.
+
+### 3.1 Access Token (`JwtTokenService.java:81`, TTL = `cbs.jwt.access-token-expiry-minutes`)
 
 ```json
 {
@@ -424,12 +463,25 @@ return leastPrivilegeFirst.stream()
 
 ### 4.3 ADMIN-Specific Capabilities
 
-- Sees all branches (no branch filter on queries) — `BranchAccessValidator.java:82`
-- `/admin/switch-branch` to switch operational branch context — `SecurityConfig.java:191`
-- `/batch/eod/apply` to run EOD — `SecurityConfig.java:195`
-- `/admin/products/**`, `/admin/limits/**`, `/admin/charges/**` — admin-only product/limit/charge config
-- `/admin/mfa/**` — MFA enrollment/reset for other users
-- All matchers below are guarded by `hasRole("ADMIN")` in `SecurityConfig.java:191-260`
+| Capability | Path | URL matcher source |
+|---|---|---|
+| Branch isolation exemption (sees all branches) | (no path — runtime check) | `BranchAccessValidator.java:82` |
+| Switch operational branch context | `/admin/switch-branch` | `SecurityConfig.java:191` |
+| Run EOD batch | `/batch/**` | `SecurityConfig.java:195` |
+| Branch master add | `/branch/add` | `SecurityConfig.java:197` |
+| Customer deactivate | `/customer/deactivate/**` | `SecurityConfig.java:203` |
+| Branch master edit | `/branch/edit/**` | `SecurityConfig.java:217` |
+| Calendar / day-control | `/calendar/**` | `SecurityConfig.java:219` |
+| Loan write-off | `/loan/write-off/**` | `SecurityConfig.java:231` |
+| Loan restructure / moratorium | `/loan/restructure/**`, `/loan/moratorium/**` | `SecurityConfig.java:259-262` |
+| Transaction batch admin | `/batch/txn/**` | `SecurityConfig.java:263` |
+| Product / limit / charge config | `/admin/products/**`, `/admin/limits/**`, `/admin/charges/**` | `SecurityConfig.java:265-269` |
+| Deposit freeze / unfreeze | `/deposit/freeze/**`, `/deposit/unfreeze/**` | `SecurityConfig.java:291-294` |
+| MFA enrollment / reset for other users | `/admin/mfa/**` | `SecurityConfig.java:356` |
+
+All paths are guarded by `hasRole("ADMIN")` on the JSP chain
+(`SecurityConfig.uiSecurityFilterChain`). REST API `@PreAuthorize`
+annotations on individual controller methods are the second-level gate.
 
 ---
 
