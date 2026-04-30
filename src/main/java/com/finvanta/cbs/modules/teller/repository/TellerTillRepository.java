@@ -78,6 +78,34 @@ public interface TellerTillRepository extends JpaRepository<TellerTill, Long> {
             @Param("id") Long id);
 
     /**
+     * Acquires PESSIMISTIC_WRITE on the till row by ID before reading. MUST be
+     * used by supervisor approve/reject endpoints
+     * ({@code approveTillOpen}, {@code approveTillClose}, {@code rejectTillOpen},
+     * {@code rejectTillClose}) so two concurrent supervisor clicks on the same
+     * till serialize cleanly at the DB layer. The first thread holds the row
+     * lock until commit; the second blocks, then re-reads the (now OPEN /
+     * CLOSED / OPEN-after-recoverable-reject) status and falls through the
+     * {@code isPendingOpen()} / {@code isPendingClose()} guard with a clean
+     * {@code TELLER_TILL_INVALID_STATE} domain error.
+     *
+     * <p>Without this lock, both threads would pass the status guard, mutate
+     * the till, and only the second {@code save()} would fail with an opaque
+     * {@code OptimisticLockingFailureException} (mapped to HTTP 409
+     * {@code VERSION_CONFLICT}) -- a poor operator UX for a known race.
+     *
+     * <p>30s lock timeout per CBS TRAN_LOCK standard. JOIN FETCH branch so
+     * the mapper can read {@code till.getBranch().getBranchName()} after the
+     * {@code @Transactional} boundary closes.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
+    @Query("SELECT t FROM TellerTill t JOIN FETCH t.branch "
+            + "WHERE t.tenantId = :tenantId AND t.id = :id")
+    Optional<TellerTill> findAndLockById(
+            @Param("tenantId") String tenantId,
+            @Param("id") Long id);
+
+    /**
      * Lists all tills at a branch in a given lifecycle status. Used by the
      * supervisor pipeline (PENDING_OPEN approval, PENDING_CLOSE sign-off) and
      * by the EOD orchestrator to detect tills that did not close before BOD.

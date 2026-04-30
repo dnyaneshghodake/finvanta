@@ -238,10 +238,11 @@ public class TellerServiceImpl implements TellerService {
         String tenantId = TenantContext.getCurrentTenant();
         String supervisor = SecurityUtil.getCurrentUsername();
 
-        // Use findByIdWithBranch (JOIN FETCH branch) so the mapper can read
-        // entity.getBranch().getBranchName() AFTER this @Transactional boundary
-        // closes without LazyInitializationException -- OSIV is disabled in v2.
-        TellerTill till = tillRepository.findByIdWithBranch(tenantId, tillId)
+        // CBS lock-then-check per CBS TRAN_LOCK: acquire PESSIMISTIC_WRITE on
+        // the till row FIRST so two concurrent CHECKER clicks on the same till
+        // serialize at the DB. JOIN FETCH branch keeps the mapper safe after
+        // the @Transactional boundary closes (OSIV disabled in v2).
+        TellerTill till = tillRepository.findAndLockById(tenantId, tillId)
                 .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
                         "Till not found: " + tillId));
 
@@ -367,8 +368,10 @@ public class TellerServiceImpl implements TellerService {
                     "Rejection reason is mandatory per CBS audit rules");
         }
 
-        // JOIN FETCH branch so the mapper can read branch metadata after TX close.
-        TellerTill till = tillRepository.findByIdWithBranch(tenantId, tillId)
+        // CBS lock-then-check: PESSIMISTIC_WRITE on the till row serializes
+        // concurrent reject + approve clicks on the same PENDING_OPEN till.
+        // JOIN FETCH branch keeps the mapper safe after TX close.
+        TellerTill till = tillRepository.findAndLockById(tenantId, tillId)
                 .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
                         "Till not found: " + tillId));
 
@@ -422,7 +425,9 @@ public class TellerServiceImpl implements TellerService {
                     "Rejection reason is mandatory per CBS audit rules");
         }
 
-        TellerTill till = tillRepository.findByIdWithBranch(tenantId, tillId)
+        // CBS lock-then-check: PESSIMISTIC_WRITE on the till row serializes
+        // concurrent reject + approve clicks on the same PENDING_CLOSE till.
+        TellerTill till = tillRepository.findAndLockById(tenantId, tillId)
                 .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
                         "Till not found: " + tillId));
 
@@ -472,10 +477,9 @@ public class TellerServiceImpl implements TellerService {
         String tenantId = TenantContext.getCurrentTenant();
         String supervisor = SecurityUtil.getCurrentUsername();
 
-        // Use findByIdWithBranch (JOIN FETCH branch) so the mapper can read
-        // entity.getBranch().getBranchName() AFTER this @Transactional boundary
-        // closes without LazyInitializationException -- OSIV is disabled in v2.
-        TellerTill till = tillRepository.findByIdWithBranch(tenantId, tillId)
+        // CBS lock-then-check: PESSIMISTIC_WRITE on the till row serializes
+        // concurrent CHECKER clicks on the same PENDING_CLOSE till.
+        TellerTill till = tillRepository.findAndLockById(tenantId, tillId)
                 .orElseThrow(() -> new BusinessException(CbsErrorCodes.TELLER_TILL_INVALID_STATE,
                         "Till not found: " + tillId));
 
