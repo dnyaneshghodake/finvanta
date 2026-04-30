@@ -6,8 +6,11 @@ import com.finvanta.cbs.modules.teller.dto.request.CashWithdrawalRequest;
 import com.finvanta.cbs.modules.teller.dto.request.OpenTillRequest;
 import com.finvanta.cbs.modules.teller.dto.response.CashDepositResponse;
 import com.finvanta.cbs.modules.teller.dto.response.CashWithdrawalResponse;
+import com.finvanta.cbs.modules.teller.dto.response.TellerCashMovementResponse;
 import com.finvanta.cbs.modules.teller.dto.response.TellerTillResponse;
+import com.finvanta.cbs.modules.teller.dto.response.VaultPositionResponse;
 import com.finvanta.cbs.modules.teller.mapper.TellerTillMapper;
+import com.finvanta.cbs.modules.teller.mapper.VaultMapper;
 import com.finvanta.cbs.modules.teller.service.TellerService;
 import com.finvanta.cbs.modules.teller.service.VaultService;
 
@@ -68,11 +71,14 @@ public class TellerApiController {
     private final TellerService tellerService;
     private final VaultService vaultService;
     private final TellerTillMapper tillMapper;
+    private final VaultMapper vaultMapper;
 
-    public TellerApiController(TellerService tellerService, VaultService vaultService, TellerTillMapper tillMapper) {
+    public TellerApiController(TellerService tellerService, VaultService vaultService,
+            TellerTillMapper tillMapper, VaultMapper vaultMapper) {
         this.tellerService = tellerService;
         this.vaultService = vaultService;
         this.tillMapper = tillMapper;
+        this.vaultMapper = vaultMapper;
     }
 
     // === Till Lifecycle ===
@@ -285,69 +291,84 @@ public class TellerApiController {
     }
 
     // === Vault Operations ===
+    // All vault endpoints route through VaultMapper to return DTOs rather
+    // than raw JPA entities -- closes the C3 entity-exposure finding from
+    // CBS_TIER1_AUDIT_REPORT.md for the vault subsystem.
 
     @PostMapping("/vault/open")
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<Object>> openVault(
+    public ResponseEntity<ApiResponse<VaultPositionResponse>> openVault(
             @RequestParam BigDecimal openingBalance) {
         var vault = vaultService.openVault(openingBalance);
-        return ResponseEntity.ok(ApiResponse.success(vault, "Vault opened"));
+        return ResponseEntity.ok(ApiResponse.success(
+                vaultMapper.toResponse(vault), "Vault opened"));
     }
 
     @GetMapping("/vault/me")
     @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'CHECKER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<Object>> myBranchVault() {
+    public ResponseEntity<ApiResponse<VaultPositionResponse>> myBranchVault() {
         var vault = vaultService.getMyBranchVault();
-        return ResponseEntity.ok(ApiResponse.success(vault));
+        return ResponseEntity.ok(ApiResponse.success(vaultMapper.toResponse(vault)));
     }
 
     @PostMapping("/vault/buy")
     @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<Object>> requestBuyCash(
+    public ResponseEntity<ApiResponse<TellerCashMovementResponse>> requestBuyCash(
             @RequestParam BigDecimal amount,
             @RequestParam(required = false) String remarks) {
         var mov = vaultService.requestBuyCash(amount, remarks);
-        return ResponseEntity.ok(ApiResponse.success(mov, "Buy cash request submitted (PENDING custodian approval)"));
+        return ResponseEntity.ok(ApiResponse.success(
+                vaultMapper.toResponse(mov),
+                "Buy cash request submitted (PENDING custodian approval)"));
     }
 
     @PostMapping("/vault/sell")
     @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<Object>> requestSellCash(
+    public ResponseEntity<ApiResponse<TellerCashMovementResponse>> requestSellCash(
             @RequestParam BigDecimal amount,
             @RequestParam(required = false) String remarks) {
         var mov = vaultService.requestSellCash(amount, remarks);
-        return ResponseEntity.ok(ApiResponse.success(mov, "Sell cash request submitted (PENDING custodian approval)"));
+        return ResponseEntity.ok(ApiResponse.success(
+                vaultMapper.toResponse(mov),
+                "Sell cash request submitted (PENDING custodian approval)"));
     }
 
     @PostMapping("/vault/movement/{movementId}/approve")
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<Object>> approveMovement(@PathVariable Long movementId) {
+    public ResponseEntity<ApiResponse<TellerCashMovementResponse>> approveMovement(
+            @PathVariable Long movementId) {
         var mov = vaultService.approveMovement(movementId);
-        return ResponseEntity.ok(ApiResponse.success(mov, "Movement approved; balances updated"));
+        return ResponseEntity.ok(ApiResponse.success(
+                vaultMapper.toResponse(mov),
+                "Movement approved; balances updated"));
     }
 
     @PostMapping("/vault/movement/{movementId}/reject")
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<Object>> rejectMovement(
+    public ResponseEntity<ApiResponse<TellerCashMovementResponse>> rejectMovement(
             @PathVariable Long movementId,
             @RequestParam String reason) {
         var mov = vaultService.rejectMovement(movementId, reason);
-        return ResponseEntity.ok(ApiResponse.success(mov, "Movement rejected"));
+        return ResponseEntity.ok(ApiResponse.success(
+                vaultMapper.toResponse(mov), "Movement rejected"));
     }
 
     @GetMapping("/vault/movements/pending")
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<Object>> pendingMovements() {
-        var list = vaultService.getPendingMovements();
+    public ResponseEntity<ApiResponse<List<TellerCashMovementResponse>>> pendingMovements() {
+        List<TellerCashMovementResponse> list = vaultService.getPendingMovements().stream()
+                .map(vaultMapper::toResponse)
+                .toList();
         return ResponseEntity.ok(ApiResponse.success(list));
     }
 
     @PostMapping("/vault/close")
     @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<Object>> closeVault(
+    public ResponseEntity<ApiResponse<VaultPositionResponse>> closeVault(
             @RequestParam BigDecimal countedBalance,
             @RequestParam(required = false) String remarks) {
         var vault = vaultService.closeVault(countedBalance, remarks);
-        return ResponseEntity.ok(ApiResponse.success(vault, "Vault CLOSED"));
+        return ResponseEntity.ok(ApiResponse.success(
+                vaultMapper.toResponse(vault), "Vault CLOSED"));
     }
 }

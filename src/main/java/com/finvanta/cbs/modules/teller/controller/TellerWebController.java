@@ -10,6 +10,7 @@ import com.finvanta.cbs.modules.teller.dto.response.CashDepositResponse;
 import com.finvanta.cbs.modules.teller.dto.response.CashWithdrawalResponse;
 import com.finvanta.cbs.modules.teller.exception.FicnDetectedException;
 import com.finvanta.cbs.modules.teller.service.TellerService;
+import com.finvanta.cbs.modules.teller.service.VaultService;
 import com.finvanta.util.BusinessException;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -78,9 +79,11 @@ public class TellerWebController {
     private static final BigDecimal CTR_PAN_THRESHOLD = new BigDecimal("50000");
 
     private final TellerService tellerService;
+    private final VaultService vaultService;
 
-    public TellerWebController(TellerService tellerService) {
+    public TellerWebController(TellerService tellerService, VaultService vaultService) {
         this.tellerService = tellerService;
+        this.vaultService = vaultService;
     }
 
     // =====================================================================
@@ -408,5 +411,151 @@ public class TellerWebController {
         } catch (NumberFormatException e) {
             return 0L;
         }
+    }
+
+    // =====================================================================
+    // Vault Operations -- JSP screens
+    // =====================================================================
+
+    /**
+     * Vault dashboard. Shows the branch's current vault position (if open
+     * for today) and a teller's pending vault buy/sell requests. CHECKER /
+     * ADMIN see the supervisor controls; TELLER / MAKER see the request form.
+     */
+    @GetMapping("/vault")
+    @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'CHECKER', 'ADMIN')")
+    public String showVaultDashboard(Model model) {
+        try {
+            model.addAttribute("vault", vaultService.getMyBranchVault());
+        } catch (BusinessException ignored) {
+            // No vault open for today; the JSP shows the open form for
+            // CHECKER/ADMIN, or a "vault not open" notice for tellers.
+        }
+        return "teller/vault-dashboard";
+    }
+
+    @PostMapping("/vault/open")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public String submitOpenVault(
+            @RequestParam BigDecimal openingBalance,
+            RedirectAttributes redirect) {
+        try {
+            vaultService.openVault(openingBalance);
+            redirect.addFlashAttribute("success",
+                    "Vault opened with INR " + openingBalance);
+        } catch (BusinessException ex) {
+            log.warn("Vault open failed: {} -- {}", ex.getErrorCode(), ex.getMessage());
+            redirect.addFlashAttribute("errorCode", ex.getErrorCode());
+            redirect.addFlashAttribute("error", ex.getMessage());
+        }
+        return "redirect:/teller/vault";
+    }
+
+    @PostMapping("/vault/buy")
+    @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
+    public String submitBuyCash(
+            @RequestParam BigDecimal amount,
+            @RequestParam(required = false) String remarks,
+            RedirectAttributes redirect) {
+        try {
+            var mov = vaultService.requestBuyCash(amount, remarks);
+            redirect.addFlashAttribute("success",
+                    "Buy request submitted (PENDING custodian approval). Ref: "
+                            + mov.getMovementRef());
+        } catch (BusinessException ex) {
+            log.warn("Vault buy request failed: {} -- {}", ex.getErrorCode(), ex.getMessage());
+            redirect.addFlashAttribute("errorCode", ex.getErrorCode());
+            redirect.addFlashAttribute("error", ex.getMessage());
+        }
+        return "redirect:/teller/vault";
+    }
+
+    @PostMapping("/vault/sell")
+    @PreAuthorize("hasAnyRole('TELLER', 'MAKER', 'ADMIN')")
+    public String submitSellCash(
+            @RequestParam BigDecimal amount,
+            @RequestParam(required = false) String remarks,
+            RedirectAttributes redirect) {
+        try {
+            var mov = vaultService.requestSellCash(amount, remarks);
+            redirect.addFlashAttribute("success",
+                    "Sell request submitted (PENDING custodian approval). Ref: "
+                            + mov.getMovementRef());
+        } catch (BusinessException ex) {
+            log.warn("Vault sell request failed: {} -- {}", ex.getErrorCode(), ex.getMessage());
+            redirect.addFlashAttribute("errorCode", ex.getErrorCode());
+            redirect.addFlashAttribute("error", ex.getMessage());
+        }
+        return "redirect:/teller/vault";
+    }
+
+    /**
+     * Custodian queue: PENDING vault buy/sell movements awaiting sign-off.
+     * Mirrors the till pending queue but for vault movements per RBI
+     * Internal Controls (vault custodian dual control).
+     */
+    @GetMapping("/vault/pending")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public String showVaultPendingQueue(Model model) {
+        model.addAttribute("pendingMovements", vaultService.getPendingMovements());
+        return "teller/vault-pending";
+    }
+
+    @PostMapping("/vault/movement/{movementId}/approve")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public String approveVaultMovementWeb(
+            @org.springframework.web.bind.annotation.PathVariable Long movementId,
+            RedirectAttributes redirect) {
+        try {
+            var mov = vaultService.approveMovement(movementId);
+            redirect.addFlashAttribute("success",
+                    mov.getMovementType() + " " + mov.getMovementRef()
+                            + " APPROVED; balances updated.");
+        } catch (BusinessException ex) {
+            log.warn("Vault movement approve failed: {} -- {}", ex.getErrorCode(), ex.getMessage());
+            redirect.addFlashAttribute("errorCode", ex.getErrorCode());
+            redirect.addFlashAttribute("error", ex.getMessage());
+        }
+        return "redirect:/teller/vault/pending";
+    }
+
+    @PostMapping("/vault/movement/{movementId}/reject")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public String rejectVaultMovementWeb(
+            @org.springframework.web.bind.annotation.PathVariable Long movementId,
+            @RequestParam String reason,
+            RedirectAttributes redirect) {
+        try {
+            var mov = vaultService.rejectMovement(movementId, reason);
+            redirect.addFlashAttribute("success",
+                    "Movement " + mov.getMovementRef() + " REJECTED.");
+        } catch (BusinessException ex) {
+            log.warn("Vault movement reject failed: {} -- {}", ex.getErrorCode(), ex.getMessage());
+            redirect.addFlashAttribute("errorCode", ex.getErrorCode());
+            redirect.addFlashAttribute("error", ex.getMessage());
+        }
+        return "redirect:/teller/vault/pending";
+    }
+
+    @PostMapping("/vault/close")
+    @PreAuthorize("hasAnyRole('CHECKER', 'ADMIN')")
+    public String submitCloseVault(
+            @RequestParam BigDecimal countedBalance,
+            @RequestParam(required = false) String remarks,
+            RedirectAttributes redirect) {
+        try {
+            var vault = vaultService.closeVault(countedBalance, remarks);
+            String varianceMsg = vault.getVarianceAmount() != null
+                    && vault.getVarianceAmount().signum() != 0
+                            ? " (variance: INR " + vault.getVarianceAmount() + ")"
+                            : " (zero variance)";
+            redirect.addFlashAttribute("success",
+                    "Vault CLOSED" + varianceMsg);
+        } catch (BusinessException ex) {
+            log.warn("Vault close failed: {} -- {}", ex.getErrorCode(), ex.getMessage());
+            redirect.addFlashAttribute("errorCode", ex.getErrorCode());
+            redirect.addFlashAttribute("error", ex.getMessage());
+        }
+        return "redirect:/teller/vault";
     }
 }
