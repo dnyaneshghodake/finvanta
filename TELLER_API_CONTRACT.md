@@ -37,6 +37,30 @@ with `TRANSACTION_LIMIT_EXCEEDED` (HTTP 422). They are NOT routed to
 maker-checker — the engine's amount-based PENDING_APPROVAL gate applies
 only to `REVERSAL`, `WRITE_OFF`, and `WRITE_OFF_RECOVERY` transaction types.
 
+### Maker-checker model — two independent mechanisms
+
+The teller module uses TWO separate maker-checker mechanisms; both are
+active, and neither overlaps the other:
+
+1. **Supervisor inline checks (fully active):** `maker ≠ checker` is
+   enforced in-service on every supervisor action — till open approve /
+   reject, till close approve / reject, vault movement approve / reject,
+   and vault close (opener ≠ closer per RBI joint-custody requirement
+   for vault operations [citation pending]). Fires `CBS-WF-001`
+   (HTTP 403).
+2. **Engine PENDING_APPROVAL workflow (not exercised for teller cash):**
+   `TransactionEngine.execute` Step 7 can route transactions to
+   PENDING_APPROVAL, which later re-executes through
+   `ApprovalWorkflowService.approve()` (which also enforces maker ≠
+   checker via `WORKFLOW_SELF_APPROVAL`). But for `CASH_DEPOSIT` and
+   `CASH_WITHDRAWAL`, Step 6 hard-rejects above-limit amounts before
+   Step 7 can route, and neither cash type is in `ALWAYS_REQUIRE_APPROVAL`
+   (which contains only `REVERSAL`, `WRITE_OFF`, `WRITE_OFF_RECOVERY`).
+   So `pendingApproval: true` is structurally unreachable on teller cash
+   responses today. The response field + the `if (r.isPendingApproval())`
+   branches in the service are kept as defensive scaffolding for future
+   config changes.
+
 ---
 
 ## Till Lifecycle
@@ -162,11 +186,32 @@ Posts a customer cash deposit with denomination breakdown.
 ```
 
 **`pendingApproval` semantics:**
-- `false` → deposit POSTED, ledger and till mutated.
-- `true` → till cash-limit soft cap exceeded (`CBS-TELLER-007`) routed the deposit
-  to maker-checker. Ledger and till UNCHANGED until checker approves via the
-  workflow API. Amount-based PENDING_APPROVAL from per-txn limit does NOT apply
-  (above-limit deposits are hard-rejected — see Transaction Limits section).
+- `false` → deposit POSTED, ledger and till mutated. This is the ONLY reachable
+  outcome for `/cash-deposit` on the current engine configuration.
+- `true` → reserved for a future configuration where `CASH_DEPOSIT` is added to
+  `MakerCheckerService.ALWAYS_REQUIRE_APPROVAL`. Not reachable today (see
+  "Maker-checker model" section above). The field stays on the response for
+  forward compatibility; BFF clients should treat a `true` value as "pending
+  checker approval; ledger and till UNCHANGED" if/when it appears.
+
+**Response field behaviour when `pendingApproval` is `true`
+(forward-compatibility contract):**
+
+| Field | Value on pending | Txn360 lookup behaviour |
+|---|---|---|
+| `transactionRef` | server-generated (starts with `TXN-`) | resolves to a row in `deposit_transactions` with `journal_entry_id IS NULL` — treated as a PENDING placeholder, not a 404 |
+| `voucherNumber` | `null` — the engine allocates voucher numbers only on POSTED journal entries (Step 8 of `TransactionEngine`) | `/txn360/voucher/{null}` is not a valid lookup; BFF MUST NOT query Txn360 by voucher until `pendingApproval` flips to `false` on approval |
+| `balanceBefore` / `balanceAfter` | both equal to the account's CURRENT ledger balance (not mutated) — pending deposits/withdrawals do not touch the ledger | same — Txn360 shows the unchanged balance on the pending row |
+| `tillBalanceAfter` | current till balance (not mutated) | reflects the teller's live cash-in-hand |
+| `denominations[]` | empty `[]` — denomination rows are persisted only on POSTED deposits (the pending path skips `persistDenominations`) | Txn360 denomination drill-down returns empty until approval |
+| `ctrTriggered` | derived from the stored request amount | stable across retries |
+
+The PENDING row is committed so that retry dedup works (same
+idempotency key returns the pending receipt). When the checker later
+approves, `TransactionReExecutionService` posts the GL, allocates the
+voucher, and updates the same `transactionRef` row — at that point
+`voucherNumber` becomes non-null and `/txn360/voucher/{voucherNumber}`
+becomes queryable.
 
 **Errors:**
 - `CBS-TELLER-001` (409) — till not open for today
@@ -227,8 +272,9 @@ Pays out cash to a customer with denomination breakdown.
 }
 ```
 
-**`pendingApproval` semantics:** identical to `/cash-deposit` — `true` only on till
-cash-limit soft-cap routing, never on amount-based per-txn limit.
+**`pendingApproval` semantics:** identical to `/cash-deposit` — structurally
+unreachable on current engine configuration (see "Maker-checker model" section).
+The field stays on the response for forward compatibility.
 
 **Errors:**
 - `CBS-TELLER-001` (409) — till not open for today
@@ -318,8 +364,16 @@ Rejects a PENDING_CLOSE till (recoverable: returns to OPEN, clears variance).
 
 ## Vault Operations
 
-All vault endpoints return DTOs (`VaultPositionResponse` / `TellerCashMovementResponse`)
-via `VaultMapper`. Raw JPA entity exposure has been eliminated.
+All vault endpoints return DTOs (`VaultPositionResponse` /
+`TellerCashMovementResponse`) via `VaultMapper`. Raw JPA entity exposure
+has been eliminated. The endpoint signatures below always name the DTO
+(`VaultPositionResponse`, `TellerCashMovementResponse`) and never the JPA
+entity (`VaultPosition`, `TellerCashMovement`) — if an older version of
+this doc showed entity names in signatures, that was a documentation bug,
+not a wire-format change; the wire format has always been the DTO.
+ArchUnit rule `cashDenominationRepository_onlyAccessedFromTellerService`
+and the entity-import rule on `TellerApiController` enforce this at
+build time.
 
 ### VaultPositionResponse shape
 
@@ -367,34 +421,38 @@ Opens the branch vault for the day.
 
 **Role:** CHECKER, ADMIN
 **Params:** `openingBalance` (BigDecimal)
-**Response (200):** `ApiResponse<VaultPosition>`
+**Response (200):** `ApiResponse<VaultPositionResponse>`
 
 ### GET /vault/me
 Returns the branch vault for today.
 
 **Role:** TELLER, MAKER, CHECKER, ADMIN
-**Response (200):** `ApiResponse<VaultPosition>`
+**Response (200):** `ApiResponse<VaultPositionResponse>`
+**Error (409):** `CBS-TELLER-002` — vault not open for branch today / no branch assignment
 
 ### POST /vault/buy
 Teller requests cash from vault (vault→till). Creates PENDING movement.
 
 **Role:** TELLER, MAKER, ADMIN
 **Params:** `amount` (BigDecimal), `remarks` (optional)
-**Response (200):** `ApiResponse<TellerCashMovement>` (status=PENDING)
+**Response (200):** `ApiResponse<TellerCashMovementResponse>` (status=PENDING)
 
 ### POST /vault/sell
 Teller returns cash to vault (till→vault). Creates PENDING movement.
 
 **Role:** TELLER, MAKER, ADMIN
 **Params:** `amount` (BigDecimal), `remarks` (optional)
-**Response (200):** `ApiResponse<TellerCashMovement>` (status=PENDING)
+**Response (200):** `ApiResponse<TellerCashMovementResponse>` (status=PENDING)
 
 ### POST /vault/movement/{movementId}/approve
-Vault custodian approves a PENDING movement. Balances move atomically.
+Vault custodian approves a PENDING movement. Balances move atomically under
+PESSIMISTIC_WRITE locks on vault and till (in that order). Both must be in
+OPEN status — a CLOSED-till or CLOSED-vault movement is rejected.
 
 **Role:** CHECKER, ADMIN
-**Response (200):** `ApiResponse<TellerCashMovement>` (status=APPROVED)
-**Error (403):** `CBS-WF-001` — maker = checker
+**Response (200):** `ApiResponse<TellerCashMovementResponse>` (status=APPROVED)
+**Error (403):** `CBS-WF-001` — maker = checker (requester ≠ custodian enforced inline)
+**Error (409):** `CBS-TELLER-002` — movement not PENDING / till not OPEN / vault not OPEN
 **Error (422):** `CBS-TELLER-006` — vault/till has insufficient cash
 
 ### POST /vault/movement/{movementId}/reject
@@ -402,20 +460,150 @@ Vault custodian rejects a PENDING movement. No balance change.
 
 **Role:** CHECKER, ADMIN
 **Params:** `reason` (mandatory)
-**Response (200):** `ApiResponse<TellerCashMovement>` (status=REJECTED)
+**Response (200):** `ApiResponse<TellerCashMovementResponse>` (status=REJECTED)
+**Error (403):** `CBS-WF-001` — maker = checker (requester cannot reject own request per RBI dual-control)
+**Error (409):** `CBS-TELLER-002` — movement not PENDING
 
 ### GET /vault/movements/pending
-Returns PENDING movements at the branch for today.
+Returns PENDING movements at the branch for today. Empty list when the
+authenticated principal has no branch assignment.
 
 **Role:** CHECKER, ADMIN
-**Response (200):** `ApiResponse<List<TellerCashMovement>>`
+**Response (200):** `ApiResponse<List<TellerCashMovementResponse>>`
 
 ### POST /vault/close
 Closes the vault after all tills are CLOSED. Custodian enters physical count.
 
 **Role:** CHECKER, ADMIN
 **Params:** `countedBalance` (BigDecimal), `remarks` (optional)
-**Response (200):** `ApiResponse<VaultPosition>` (status=CLOSED, variance computed)
+**Response (200):** `ApiResponse<VaultPositionResponse>` (status=CLOSED, variance computed)
+**Error (403):** `CBS-WF-001` — opener ≠ closer (RBI joint-custody rule on
+branch vault operations: the custodian who opened the vault at BOD cannot
+close it at EOD; specific RBI master-circular reference [citation pending])
+**Error (409):** `CBS-TELLER-002` — vault already CLOSED / one or more tills still OPEN or PENDING at this branch / one or more vault movements still PENDING at this branch
+
+---
+
+## Idempotency Contract
+
+Both `/cash-deposit` and `/cash-withdrawal` require a non-blank
+`idempotencyKey` (UUID v4 recommended). Cash-posting idempotency is
+operationally stricter than account-only transfers — a double-post
+against physical cash directly creates an EOD till variance which has
+to be investigated and reconciled by the branch supervisor. Every
+client MUST therefore generate a fresh UUID per logical request and
+reuse it verbatim on every retry of that request. Specific RBI
+references (master direction / IT governance audit clause) [citation
+pending — to be filled in by the compliance team before production
+go-live].
+
+### Transport
+
+- **Body field.** The key is carried on the request body (`idempotencyKey`
+  on `CashDepositRequest` / `CashWithdrawalRequest` records), NOT as an
+  `X-Idempotency-Key` header. The v2 teller endpoints do not read the
+  header. `@NotBlank` validation rejects missing / empty keys at the
+  controller boundary with HTTP 400.
+- **Character set / length.** The field accepts up to 100 chars
+  (`@Size(max=100)`); UUID v4 is 36 chars. No format regex is enforced,
+  but BFF SHOULD mint UUIDs to avoid collisions.
+- **Per-render minting (JSP channel).** The JSP teller screens mint a
+  fresh UUID on the server for every page render and embed it as a
+  hidden form field; this is the same contract the BFF/React channel
+  must implement client-side per logical action.
+
+### Scope of uniqueness
+
+- **Per `(tenant_id, idempotency_key)`** — global across all modules
+  (teller, CASA, loan, FD, clearing). Enforced at TWO tiers:
+  - Engine tier: `idempotency_registry` unique index on
+    `(tenant_id, idempotency_key)`.
+  - Module tier: `deposit_transactions` has
+    `UNIQUE (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL`.
+- A key collision across modules (e.g. a BFF accidentally reused a
+  loan-disbursement key on a teller deposit) returns the prior result
+  verbatim — callers should treat UUID v4 randomness as the isolation
+  mechanism.
+
+### TTL / retention
+
+- **Keys are retained indefinitely (verified in code).** The
+  `idempotency_registry` table has no TTL column and no scheduled
+  cleanup job exists in the codebase as of this PR. Rows are append-only
+  for the operational lifetime of the row's parent transaction.
+- Storage growth is bounded — one row per financial transaction — and
+  the registry's archival lifecycle SHOULD follow the same policy as
+  `deposit_transactions`. The exact retention window is governed by
+  the bank's regulatory data-retention policy [citation pending — to
+  be filled in by the compliance team alongside the deposit-transaction
+  retention rule].
+- **BFF retry guidance (operational, not a contract guarantee):** the
+  server will accept a retry with the same key for as long as the key
+  is in the registry (i.e., indefinitely). BFF clients SHOULD pick a
+  reasonable bounded retry window per their own resilience policy and
+  fall back to minting a new key if retries beyond that window are
+  required (the original key stays on the registry with its
+  terminal-state result).
+
+### Retry semantics (reachable outcomes)
+
+1. **Lock-then-check ordering.** The service acquires PESSIMISTIC_WRITE on
+   the account and till rows BEFORE checking the idempotency registry. This
+   serializes concurrent retries on the same key at the DB level — the
+   second caller blocks, then observes the first caller's committed
+   transaction and returns the prior receipt without re-posting.
+2. **Byte-for-byte prior-receipt on retry.** A retry with a key that was
+   already processed returns the STORED transaction's fields (txnRef,
+   voucherNumber, amount, balanceBefore/After, narration, channel,
+   ctrTriggered derived from stored amount, chequeNumber, denomination
+   breakdown). Live-request fields are NOT leaked through — this defends
+   against tampered retry payloads.
+3. **State-dependent checks skipped on retry.** Balance / minimum-balance /
+   daily-limit / till-cash checks apply only to first-time requests. A
+   retry of a successful withdrawal never fails with
+   `ACCT_INSUFFICIENT_BALANCE` just because the original debit emptied
+   the account.
+4. **Rejected-at-open till retry.** If a supervisor rejects a
+   `PENDING_OPEN` till (status = CLOSED, `openedAt == null`, no GL post,
+   no cash movement), a subsequent `/till/open` by the same teller on the
+   same business date transparently PURGES the rejected row (audit-logged
+   as `REJECTED_TILL_PURGED`) and creates a fresh PENDING_OPEN. The
+   `CBS-TELLER-010` duplicate guard still blocks retry on any CLOSED
+   till with `openedAt != null` (a till that actually worked a shift).
+5. **Maker-checker re-execution appends `_APPROVED`.** Structurally
+   unreachable for teller cash today (see "Maker-checker model"
+   section), but if/when a checker-approved teller transaction flows
+   through `TransactionReExecutionService`, the engine appends
+   `_APPROVED` to the original key so the re-execution doesn't collide
+   with the pending registry row.
+
+---
+
+## EOD Pre-Flight Gates
+
+EOD apply (`POST /batch/eod/apply`) is blocked by the teller module
+until the cash custody chain is fully closed. The gates implement a
+standard CBS Tier-1 pattern (close all till + vault subledgers BEFORE
+running EOD reconciliation and balance snapshots, so that snapshots
+assert against verified counted balances rather than live mid-shift
+figures); specific RBI master-circular reference [citation pending]:
+
+1. Every teller till at every operational branch must be in CLOSED
+   status — or the apply fails with `CBS-TELLER-100` (HTTP 409). The
+   error message enumerates the offending branches.
+2. Every branch vault must be in CLOSED status (per business date) —
+   or the apply fails with `CBS-TELLER-101` (HTTP 409). A missing vault
+   row also counts as "not closed" (the branch is expected to open a
+   vault row even if its opening balance is zero, per RBI audit-trail
+   completeness).
+3. Sequential ordering is enforced on the single-branch close path:
+   `vault.close()` rejects with `CBS-TELLER-002` if any till at that
+   branch is still active, AND if any vault movement is still PENDING.
+
+The same predicate is surfaced on the EOD trial-run UI
+(`POST /batch/eod/trial`) as BLOCKER-severity checks
+(`TELLER_TILLS`, `BRANCH_VAULTS`) so admins see the gate before
+clicking Apply.
 
 ---
 
@@ -427,6 +615,26 @@ type IndianCurrencyDenomination =
   | 'NOTE_50'   | 'NOTE_20'  | 'NOTE_10'  | 'NOTE_5'
   | 'COIN_BUCKET';
 ```
+
+### Denomination row shape — request vs response (deliberate asymmetry)
+
+The `denominations[]` array has a DIFFERENT shape on request and
+response. This is intentional and BFF consumers MUST NOT deduplicate
+into a single schema:
+
+| Field | Request row | Response row | Why |
+|---|---|---|---|
+| `denomination` | ✅ required | ✅ echoed | enum key |
+| `unitCount` | ✅ required (long ≥ 0) | ✅ echoed | # of pieces tendered / paid out |
+| `counterfeitCount` | ✅ required (long ≥ 0) | ✅ echoed on deposit, always 0 on withdrawal | FICN flag; rejected at boundary for withdrawals |
+| `totalValue` | ❌ NOT on request | ✅ server-computed INR amount | `denomination.value() * unitCount`, pre-computed so BFF / receipt slip can render without reimplementing the enum math |
+
+Rationale for the extra field: the request cannot trust the client to
+compute `totalValue` — the server MUST compute it from the enum
+`value()` so that a tampered request cannot overstate the rupee
+amount. The response carries the server-computed value so the BFF
+receipt slip renders the same figure the GL posted. Two schemas,
+`DenominationEntry` (request) and `DenominationLine` (response).
 
 ## Error Code Reference
 
@@ -441,9 +649,11 @@ type IndianCurrencyDenomination =
 | CBS-TELLER-007 | 400 | Till cash limit exceeded (soft cap, routes to maker-checker) |
 | CBS-TELLER-008 | 422 | Counterfeit detected (FICN); response includes `FicnAcknowledgementResponse` |
 | CBS-TELLER-009 | 400 | Invalid business date |
-| CBS-TELLER-010 | 409 | Till already exists for teller on business date |
+| CBS-TELLER-010 | 409 | Till already exists for teller on business date (not a rejected-at-open till — those are auto-purged, see Idempotency section) |
 | CBS-TELLER-099 | 500 | Internal teller error (defensive; e.g. counterfeit on a withdrawal request) |
+| CBS-TELLER-100 | 409 | EOD pre-flight: one or more teller tills are still OPEN / PENDING on the EOD business date |
+| CBS-TELLER-101 | 409 | EOD pre-flight: one or more branch vaults are still OPEN on the EOD business date |
 | CBS-COMP-002  | 422 | CTR threshold (PAN or Form 60/61 required per PMLA Rule 9) |
-| CBS-WF-001    | 403 | Maker = checker (self-approval blocked) |
-| TRANSACTION_LIMIT_EXCEEDED | 422 | Amount above role's per-transaction limit |
+| CBS-WF-001    | 403 | Maker = checker (self-approval blocked). Fired on till approve/reject, vault movement approve/reject, and vault close (opener ≠ closer per RBI joint-custody). |
+| TRANSACTION_LIMIT_EXCEEDED | 422 | Amount above role's per-transaction limit (hard-rejected for CASH_DEPOSIT/CASH_WITHDRAWAL — never routed to maker-checker) |
 | ACCESS_DENIED | 403 | `@PreAuthorize` denied (insufficient role) |
