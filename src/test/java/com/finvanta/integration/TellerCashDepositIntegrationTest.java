@@ -134,14 +134,13 @@ class TellerCashDepositIntegrationTest {
         branch.setCreatedBy("SYSTEM");
         branch = branchRepository.save(branch);
         testBranchId = branch.getId();
-        // Switch to the teller principal for the rest of the test. We use
-        // ROLE_MAKER (not ROLE_TELLER) because TransactionLimitService /
-        // SecurityUtil.getCurrentUserRole() only recognize MAKER/CHECKER/ADMIN
-        // as transactional roles; ROLE_TELLER alone would be rejected with
-        // NO_TRANSACTIONAL_ROLE inside the engine. The TellerApiController
-        // @PreAuthorize matrix accepts MAKER as an alias for TELLER, so this
-        // is functionally equivalent for the integration path under test.
-        setSecurityContext(testBranchId, "BR001", TELLER_USER, "ROLE_MAKER");
+        // Switch to the teller principal for the rest of the test. ROLE_TELLER
+        // is the first-class transactional role for the over-the-counter cash
+        // channel per RBI Internal Controls. SecurityUtil.getCurrentUserRole()
+        // recognizes TELLER as the most restrictive transactional role; the
+        // TELLER/ALL transaction_limits row in data.sql provides the per-txn
+        // and daily aggregate caps the engine validates against.
+        setSecurityContext(testBranchId, "BR001", TELLER_USER, "ROLE_TELLER");
 
         Customer customer = new Customer();
         customer.setTenantId(TENANT);
@@ -197,21 +196,21 @@ class TellerCashDepositIntegrationTest {
     }
 
     /**
-     * Seeds a per-transaction limit on CASH_DEPOSIT for ROLE_MAKER. When the
-     * deposit amount exceeds {@code perTxnLimit}, the engine routes the
-     * transaction to PENDING_APPROVAL instead of posting it. Used by the
-     * maker-checker scenario to deterministically force the pending path
-     * without depending on production limit configuration.
+     * Seeds a per-transaction limit on CASH_DEPOSIT for ROLE_TELLER. When the
+     * deposit amount exceeds {@code perTxnLimit}, the engine rejects the
+     * transaction with TRANSACTION_LIMIT_EXCEEDED (Step 6 of the engine).
+     * Used by the above-limit rejection scenario to deterministically force
+     * the hard-reject path without depending on production limit configuration.
      *
-     * <p>Role is "MAKER" (not "TELLER") to match what
+     * <p>Role is "TELLER" -- matches what
      * {@link com.finvanta.util.SecurityUtil#getCurrentUserRole()} returns for
-     * the test principal -- see comment on setupReferenceData() for why the
-     * teller principal authenticates as ROLE_MAKER.
+     * the test principal. TELLER is the most restrictive transactional role
+     * in the hierarchy {@code TELLER < MAKER < CHECKER < ADMIN}.
      */
     private void seedTransactionLimit(BigDecimal perTxnLimit) {
         TransactionLimit lim = new TransactionLimit();
         lim.setTenantId(TENANT);
-        lim.setRole("MAKER");
+        lim.setRole("TELLER");
         lim.setTransactionType("CASH_DEPOSIT");
         lim.setPerTransactionLimit(perTxnLimit);
         lim.setDailyAggregateLimit(perTxnLimit.multiply(new BigDecimal("100")));

@@ -295,11 +295,25 @@ VALUES ('DEFAULT', 'admin', '{noop}finvanta123', 'Vikram Joshi (Branch Manager)'
 INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
 VALUES ('DEFAULT', 'auditor1', '{noop}finvanta123', 'Meera Kulkarni (Internal Auditor)', 'auditor@finvanta.com', 'AUDITOR', 1, 0, 0, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
+-- Tellers (Cash Counter Officers) — CBS TELLER module per RBI Internal Controls.
+-- Per RBI: the teller is a dedicated role for the over-the-counter cash channel,
+-- distinct from MAKER. Teller limits are tighter than MAKER because cash tellerage
+-- carries higher operational risk (physical cash, counterfeit exposure, FICN).
+INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'teller1', '{noop}finvanta123', 'Asha Kulkarni (Cash Teller)', 'teller1@finvanta.com', 'TELLER', 1, 0, 0, 1, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO app_users (tenant_id, username, password_hash, full_name, email, role, is_active, is_locked, failed_login_attempts, branch_id, mfa_enabled, version, created_at, created_by)
+VALUES ('DEFAULT', 'teller2', '{noop}finvanta123', 'Rohan Gupta (Cash Teller)', 'teller2@finvanta.com', 'TELLER', 1, 0, 0, 2, 0, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
 -- Transaction Limits (CBS Internal Controls -- per-role amount limits)
 -- Per RBI guidelines: every financial transaction must be validated against configured limits
+-- TELLER: INR 2L per transaction, INR 10L daily aggregate (cash counter only)
 -- MAKER: INR 10L per transaction, INR 50L daily aggregate
 -- CHECKER: INR 50L per transaction, INR 2Cr daily aggregate
 -- ADMIN: INR 5Cr per transaction, INR 20Cr daily aggregate
+INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
+VALUES ('DEFAULT', 'TELLER', 'ALL', 200000.00, 1000000.00, 1, 'Teller default limit: INR 2L per txn, INR 10L daily (tighter than MAKER -- cash counter risk)', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
 INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
 VALUES ('DEFAULT', 'MAKER', 'ALL', 1000000.00, 5000000.00, 1, 'Maker default limit: INR 10L per txn, INR 50L daily', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
@@ -311,6 +325,20 @@ VALUES ('DEFAULT', 'ADMIN', 'ALL', 50000000.00, 200000000.00, 1, 'Admin default 
 
 INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
 VALUES ('DEFAULT', 'MAKER', 'WRITE_OFF', 0.00, 0.00, 1, 'Makers cannot perform write-offs (enforced via limit=0)', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+-- Teller exclusions: the teller role MUST NOT be able to perform non-cash
+-- operations. Per RBI Internal Controls, the cash channel is segregated from
+-- loan disbursement, write-off, and reversal workflows. Limit=0 on these types
+-- blocks the operation at TransactionEngine Step 6 even if the @PreAuthorize
+-- matrix were ever relaxed.
+INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
+VALUES ('DEFAULT', 'TELLER', 'WRITE_OFF', 0.00, 0.00, 1, 'Tellers cannot perform write-offs (cash counter only)', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
+VALUES ('DEFAULT', 'TELLER', 'REVERSAL', 0.00, 0.00, 1, 'Tellers cannot perform reversals (checker/admin only)', 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
+INSERT INTO transaction_limits (tenant_id, role, transaction_type, per_transaction_limit, daily_aggregate_limit, is_active, description, version, created_at, created_by)
+VALUES ('DEFAULT', 'TELLER', 'DISBURSEMENT', 0.00, 0.00, 1, 'Tellers cannot disburse loans (maker/checker flow)', 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
 -- ============================================================
 -- E2E TEST SCENARIO SEED DATA
@@ -552,11 +580,27 @@ INSERT INTO permissions (tenant_id, permission_code, description, module, risk_l
 INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'REPORT_VIEW', 'View reports and MIS', 'REPORT', 'LOW', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'AUDIT_VIEW', 'View audit trail', 'REPORT', 'LOW', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
 
+-- TELLER-specific permissions (CBS TELLER module per RBI Internal Controls).
+-- Cash counter operations confined to the teller role. Till open / close is
+-- routed through maker-checker when above the branch threshold.
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'TELLER_TILL_OPEN', 'Open teller till for the day', 'TELLER', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'TELLER_TILL_CLOSE', 'Request till close (physical cash count)', 'TELLER', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'TELLER_TILL_APPROVE', 'Supervisor approval of till open/close', 'TELLER', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'TELLER_CASH_DEPOSIT', 'Post customer cash deposit at counter', 'TELLER', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'TELLER_CASH_WITHDRAWAL', 'Pay out cash withdrawal at counter', 'TELLER', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'TELLER_VAULT_REQUEST', 'Request vault buy/sell movement', 'TELLER', 'MEDIUM', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+INSERT INTO permissions (tenant_id, permission_code, description, module, risk_level, is_active, version, created_at, created_by) VALUES ('DEFAULT', 'TELLER_VAULT_APPROVE', 'Vault custodian approval of movements', 'TELLER', 'HIGH', 1, 0, CURRENT_TIMESTAMP, 'SYSTEM');
+
 -- === ROLE-PERMISSION MAPPING (segregation of duties per RBI) ===
+-- TELLER: Cash counter only (CBS TELLER module). Confined to physical cash
+-- operations at the branch counter; cannot initiate loans, deposits, or clearing.
+INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','TELLER',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND permission_code IN ('TELLER_TILL_OPEN','TELLER_TILL_CLOSE','TELLER_CASH_DEPOSIT','TELLER_CASH_WITHDRAWAL','TELLER_VAULT_REQUEST','DEPOSIT_VIEW','CUSTOMER_VIEW');
 -- MAKER: Can CREATE/INITIATE but NOT APPROVE/VERIFY (segregation of duties)
 INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','MAKER',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND permission_code IN ('LOAN_CREATE','LOAN_REPAYMENT','LOAN_VIEW','DEPOSIT_OPEN','DEPOSIT_DEPOSIT','DEPOSIT_WITHDRAW','DEPOSIT_TRANSFER','DEPOSIT_VIEW','CUSTOMER_CREATE','CUSTOMER_VIEW','CLEARING_INITIATE');
--- CHECKER: Can VERIFY/APPROVE but NOT CREATE (segregation of duties)
-INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','CHECKER',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND permission_code IN ('LOAN_VERIFY','LOAN_APPROVE','LOAN_DISBURSE','LOAN_VIEW','DEPOSIT_ACTIVATE','DEPOSIT_CLOSE','DEPOSIT_REVERSE','DEPOSIT_VIEW','CUSTOMER_KYC_VERIFY','CUSTOMER_VIEW','CLEARING_APPROVE','CLEARING_SETTLE','CLEARING_REVERSE','GL_VIEW','REPORT_VIEW');
+-- CHECKER: Can VERIFY/APPROVE but NOT CREATE (segregation of duties).
+-- Includes teller supervisor approvals (TILL_APPROVE, VAULT_APPROVE) -- the
+-- maker-checker on high-value till opens and the vault custodian sign-off.
+INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','CHECKER',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND permission_code IN ('LOAN_VERIFY','LOAN_APPROVE','LOAN_DISBURSE','LOAN_VIEW','DEPOSIT_ACTIVATE','DEPOSIT_CLOSE','DEPOSIT_REVERSE','DEPOSIT_VIEW','CUSTOMER_KYC_VERIFY','CUSTOMER_VIEW','CLEARING_APPROVE','CLEARING_SETTLE','CLEARING_REVERSE','GL_VIEW','REPORT_VIEW','TELLER_TILL_APPROVE','TELLER_VAULT_APPROVE');
 -- ADMIN: ALL permissions (self-approval blocked by workflow engine, not by permission matrix)
 INSERT INTO role_permissions (tenant_id, role, permission_id, is_active, grant_type, version, created_at, created_by) SELECT 'DEFAULT','ADMIN',id,1,'ALLOW',0,CURRENT_TIMESTAMP,'SYSTEM' FROM permissions WHERE tenant_id='DEFAULT' AND is_active=TRUE;
 -- AUDITOR: Read-only permissions only (no financial operations)
